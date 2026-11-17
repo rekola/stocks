@@ -9,13 +9,18 @@ row, all over made-up numbers. There is no data model yet.
 
     cmake -B build
     cmake --build build -j
-    build/stocks           # in the terminal
-    build/stocks --gtk     # in a window, when cellui is built with GTK
-    build/stocks --plain   # one frame as text
+    build/stocks                 # on the display cellui picks
+    build/stocks --ui terminal   # in the terminal
+    build/stocks --ui window     # in a window, when cellui is built with GTK
 
 Keys: arrows, PgUp/PgDn, Home/End move; `<` `>` pick the sort column and `r`
 reverses it; Tab moves between the tags and the table; `q` quits. Clicking a
-heading sorts; clicking a tag or row chooses it; the wheel scrolls.
+heading sorts; clicking a tag or row chooses it; the wheel scrolls. The table
+fills the screen and follows it when it is resized.
 
-To build against a local cellui checkout: `-DFETCHCONTENT_SOURCE_DIR_CELLUI=/path/to/cellui`.
-Needs libunistring (`libunistring-dev`).
+cellui is not pinned while the two are developed together: the build fetches its
+`main`. To build against a local checkout:
+`-DFETCHCONTENT_SOURCE_DIR_CELLUI=/path/to/cellui`. Needs libunistring
+(`libunistring-dev`).
+
+The data model is planned in [plans/data-model.md](plans/data-model.md).

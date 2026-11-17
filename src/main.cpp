@@ -1,25 +1,17 @@
 // The stock browser. For now: cellui's Table, TagBar and trace chart over
 // made-up rows (there is no data model yet).
-//   stocks           full screen in the terminal
-//   stocks --gtk     in a GTK window (when cellui is built with it)
-//   stocks --plain   one frame as text
+//   stocks                 on the display cellui picks
+//   stocks --ui terminal   in the terminal;  --ui window  in a window
 // Keys: arrows, PgUp/PgDn, Home/End move; < and > pick the sort column, r
 // reverses it; Tab moves between the tags and the table; q quits. Clicking a
 // heading sorts, clicking a tag or row chooses it, the wheel scrolls.
-#include <cellui/Backend.h>
-#include <cellui/BufferPlane.h>
-#include <cellui/InputDispatcher.h>
+#include <cellui/Application.h>
 #include <cellui/Table.h>
 #include <cellui/TagBar.h>
-#ifdef CELLUI_HAS_GTK
-#include <cellui/gtk/Window.h>
-#endif
-#include <cellui/term/TerminalSession.h>
 
-#include <cmath>
 #include <cstdio>
-#include <cstring>
 #include <memory>
+#include <optional>
 #include <random>
 #include <string>
 #include <vector>
@@ -88,163 +80,75 @@ struct Quotes : TableModel {
   }
 };
 
-class Demo {
+// The screen: tags on the top row, the table filling what is between them and
+// the status line, which are laid out again whenever the display changes size.
+class Browser {
  public:
-  Demo(const DisplayInfo & display, int rows, int cols, int preset, int sort_column, SortOrder sort_order)
-      : display_(display), buffer_(rows, cols), root_plane_(buffer_, styles_), charts_(chartsFor(display)), dispatcher_(root_) {
-    root_plane_.setProportionalText(display.proportional_text);
-    if (display.pictures && display.cell_px_height > 0 && display.cell_px_width > 0) {
-      root_plane_.setCellPixelSize(display.cell_px_height, display.cell_px_width);
-      root_plane_.setDisplayScale(display.display_scale);
-      root_plane_.setHdrPictures(display.hdr_pictures);
-    }
-    tags_ = std::make_unique<TagBar>(root_plane_);
-    tags_->attach(root_);
-    tags_->setTags({"Commodities", "Nasdaq Helsinki", "Currencies"});
-    tags_->resize(1, cols);
-    tags_->move(0, 1);
-    table_ = std::make_unique<Table>(root_plane_, *charts_);
-    table_->attach(root_);
-    // A taller row gives the pictures room; in cells it is still one row of braille.
-    table_->setRowHeight(display.pictures ? 2 : 1);
-    table_->setColumns({{"Symbol", 8, Align::LEFT, true, false},
-                        {"Name", 0, Align::LEFT, true, false},
-                        {"Price", 10, Align::RIGHT, true, false},
-                        {"Change", 9, Align::RIGHT, true, false},
-                        {"60 days", 22, Align::LEFT, false, true}});
-    table_->resize(std::max(2, rows - 3), cols);
-    table_->move(2, 0);
-    tag_connection_ = tags_->chosen.connect([this](int i) { showPreset(i); });
-    tags_->select(preset);
-    if (sort_column >= 0) table_->sortBy(sort_column, sort_order);
-    dispatcher_.setFocus(table_.get());
-    table_->render();
-    tags_->render();
-  }
-
-  int preset() const { return tags_->selected(); }
-  int sortColumn() const { return table_->sortColumn(); }
-  SortOrder sortOrder() const { return table_->sortOrder(); }
-
-  void showPreset(int i) {
-    if (i < 0) return;
-    table_->setModel(std::make_shared<Quotes>(makeRows(i)));
-    table_->select(0);
-  }
-
-  // Returns false when the demo should end.
-  bool offer(const Input & in) {
-    if (in.getKind() != Input::Kind::RELEASE && in.getId() == 'q' && !in.hasCtrl()) return false;
-    if (in.getKind() != Input::Kind::RELEASE && in.getId() == Key::Tab) dispatcher_.setFocus(dispatcher_.focused() == table_.get() ? static_cast<Widget *>(tags_.get()) : table_.get());
-    else dispatcher_.offer(in);
-    return true;
-  }
-
-  // The frame as cells with its pictures and what a display needs besides.
-  void present(Backend & backend) {
-    status();
-    root_plane_.refresh();
-    FrameInfo info;
-    info.text_runs = root_plane_.takeTextRuns();
-    info.borders = root_plane_.takeBorders();
-    dispatcher_.setHitAreas(root_plane_.takeHitAreas());
-    backend.present(buffer_, {}, root_plane_.images(), &info);
-  }
-
-  std::string text() {
-    status();
-    root_plane_.refresh();
-    return buffer_.toPlainText();
+  explicit Browser(Application & app)
+      : app_(app), tags_(app.root()), table_(app.root(), app.charts()), status_(app.root()) {
+    tags_.attach(app.widgets());
+    table_.attach(app.widgets());
+    status_.attach(app.widgets());
+    tags_.setTags({"Commodities", "Nasdaq Helsinki", "Currencies"});
+    table_.setColumns({{"Symbol", 8, Align::LEFT, true, false},
+                       {"Name", 0, Align::LEFT, true, false},
+                       {"Price", 10, Align::RIGHT, true, false},
+                       {"Change", 9, Align::RIGHT, true, false},
+                       {"60 days", 22, Align::LEFT, false, true}});
+    layout(app.rows(), app.cols());
+    resized_ = app.resized.connect([this](int rows, int cols) { layout(rows, cols); });
+    display_ = app.display_changed.connect([this] { layout(app_.rows(), app_.cols()); });
+    tag_ = tags_.chosen.connect([this](int i) {
+      if (i < 0) return;
+      table_.setModel(std::make_shared<Quotes>(makeRows(i)));
+      table_.select(0);
+    });
+    tags_.select(0);
+    app.input().setFocus(&table_);
+    app.setInputHook([this](const Input & in) {
+      if (in.getKind() == Input::Kind::RELEASE || in.getId() != 'q' || in.hasCtrl() || in.hasAlt()) return false;
+      app_.quit();
+      return true;
+    });
   }
 
  private:
-  void status() {
-    std::string line = " stocks - made-up data.  ";
-    line += "Click a heading or press < > r to sort, Tab switches focus, q quits";
-    CellBuffer::Style bar;
-    bar.fg = styles_.theme.info_line_fg;
-    bar.bg = styles_.theme.info_line_bg;
-    int rows = buffer_.rows(), cols = buffer_.cols();
-    buffer_.write(rows - 1, 0, std::string(static_cast<size_t>(cols), ' '), bar);
-    buffer_.write(rows - 1, 0, Plane::cutToCells(line, cols, TextOverflow::ELLIPSIS), bar);
+  void layout(int rows, int cols) {
+    tags_.resize(1, std::max(1, cols - 1));
+    tags_.move(0, 1);
+    // A taller row gives a picture room; in cells it is still one row of braille.
+    table_.setRowHeight(app_.display().pictures ? 2 : 1);
+    table_.resize(std::max(2, rows - 3), cols);
+    table_.move(2, 0);
+    status_.resize(1, cols);
+    status_.move(rows - 1, 0);
+    const StyleProvider & styles = app_.root().getStyles();
+    status_.setFgColor(styles.info_line_fg_color);
+    status_.setBgColor(styles.info_line_bg_color);
+    status_.fill();
+    status_.putstr(0, 0, Plane::cutToCells(" stocks - made-up data.  Click a heading or press < > r to sort, Tab switches focus, q quits", cols, TextOverflow::ELLIPSIS));
   }
 
-  DisplayInfo display_;
-  StyleProvider styles_;
-  CellBuffer buffer_;
-  BufferPlane root_plane_;
-  std::unique_ptr<Charts> charts_;
-  Widget root_;
-  InputDispatcher dispatcher_;
-  std::unique_ptr<TagBar> tags_;
-  std::unique_ptr<Table> table_;
-  Connection tag_connection_;
+  Application & app_;
+  TagBar tags_;
+  Table table_;
+  Widget status_;
+  Connection resized_, display_, tag_;
 };
-
-// Drives a demo on a backend until it ends.
-int run(Backend & backend) {
-  auto make = [&](int preset, int sort_column, SortOrder order) {
-    return std::make_unique<Demo>(backend.display(), backend.rows(), backend.cols(), preset, sort_column, order);
-  };
-  auto demo = make(0, -1, SortOrder::NONE);
-  auto & loop = backend.eventLoop();
-  backend.setFrameHandler([&](int64_t) { demo->present(backend); });
-  loop.addSource({backend.inputFd(), backend.wakeFd()}, [&] {
-    for (const BackendEvent & e : backend.poll()) {
-      switch (e.type) {
-        case BackendEvent::Type::CLOSE: loop.quit(); break;
-        case BackendEvent::Type::INPUT:
-          if (!demo->offer(e.input)) loop.quit();
-          break;
-        case BackendEvent::Type::RESIZE:
-        case BackendEvent::Type::DISPLAY: demo = make(demo->preset(), demo->sortColumn(), demo->sortOrder()); break;
-        default: break;
-      }
-    }
-    backend.requestFrame();
-  });
-  backend.requestFrame();
-  loop.run();
-  return 0;
-}
 
 }  // namespace
 
 int main(int argc, char ** argv) {
-  bool window = false, plain = false;
-  for (int i = 1; i < argc; i++) {
-    if (!std::strcmp(argv[i], "--plain")) plain = true;
-    else if (!std::strcmp(argv[i], "--gtk")) window = true;
-    else {
-      std::fprintf(stderr, "usage: %s [--gtk | --plain]\n", argv[0]);
-      return 2;
-    }
-  }
-  if (plain) {
-    Demo demo(DisplayInfo{}, 20, 100, 1, 2, SortOrder::DESCENDING);
-    std::fputs(demo.text().c_str(), stdout);
-    return 0;
-  }
   std::string error;
-#ifdef CELLUI_HAS_GTK
-  if (window) {
-    auto w = gtk::Window::open({}, &error);
-    if (!w) {
-      std::fprintf(stderr, "stocks: %s\n", error.c_str());
-      return 1;
-    }
-    return run(*w);
-  }
-#else
-  if (window) {
-    std::fprintf(stderr, "stocks: cellui was built without GTK\n");
-    return 1;
-  }
-#endif
-  auto session = term::TerminalSession::open(term::SessionOptions(), &error);
-  if (!session) {
+  auto app = cellui::Application::open(argc, argv, &error);
+  if (!app) {
     std::fprintf(stderr, "stocks: %s\n", error.c_str());
     return 1;
   }
-  return run(*session);
+  if (!app->arguments().empty()) {
+    std::fprintf(stderr, "usage: %s [--ui auto|terminal|window] [--theme original|dark|light]\n", argv[0]);
+    return 2;
+  }
+  Browser browser(*app);
+  return app->run();
 }
