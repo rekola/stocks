@@ -38,8 +38,11 @@ enable_testing()
 add_test(NAME stocks_rejects_an_unknown_ui COMMAND stocks --ui nonesuch)
 set_tests_properties(stocks_rejects_an_unknown_ui PROPERTIES PASS_REGULAR_EXPRESSION "unknown --ui")
 
-# The browser on a test display: keys in, what it shows out.
-add_executable(stocks_tests tests/test_main.cpp tests/BrowserTests.cpp)
-target_link_libraries(stocks_tests PRIVATE stocks_lib)
-add_test(NAME stocks_tests COMMAND stocks_tests)
-set_tests_properties(stocks_tests PROPERTIES TIMEOUT 60)
+# The browser on a test display: keys in, what it shows out. cellui's test display
+# (TestBackend) is built where there is a POSIX event loop, so not on Windows.
+if(NOT WIN32)
+  add_executable(stocks_tests tests/test_main.cpp tests/BrowserTests.cpp)
+  target_link_libraries(stocks_tests PRIVATE stocks_lib)
+  add_test(NAME stocks_tests COMMAND stocks_tests)
+  set_tests_properties(stocks_tests PROPERTIES TIMEOUT 60)
+endif()
