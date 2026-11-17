@@ -17,5 +17,6 @@ A stock data browser for the terminal and a GTK window, built on
   (`.claude/hooks/check-pr-footer.py` reminds you) and update the body
   without it.
 - Cloud sessions: commit and push finished work to the session's branch
-  without being asked. Once a branch's pull request is merged, start the
-  next change on a new branch off the latest default branch.
+  without being asked.
+- Never re-use a branch. Once a branch's pull request is merged, start the
+  next change on a new branch with a new name, off the latest default branch.
