@@ -20,25 +20,36 @@ namespace {
 
 using namespace cellui;
 
+// One row is one edge: what one unit of `base` costs in `quote`.
 struct Instrument {
-  std::string symbol, name;
+  std::string base, quote, name;
   double price, change;  // change in percent
   std::vector<float> history;
 };
 
 // A random walk per instrument, the same every run.
 std::vector<Instrument> makeRows(int preset) {
-  static const char * names[3][12] = {
-    {"Gold", "Silver", "Brent Crude", "WTI Crude", "Copper", "Natural Gas", "Platinum", "Wheat", "Corn", "Coffee", "Sugar", "Cotton"},
-    {"Nokia", "Fortum", "Sampo", "Kone", "UPM", "Neste", "Stora Enso", "Wartsila", "Elisa", "Orion", "Nordea", "Metso"},
-    {"EUR/USD", "USD/JPY", "GBP/USD", "USD/CHF", "AUD/USD", "USD/CAD", "EUR/SEK", "EUR/GBP", "USD/NOK", "EUR/CHF", "NZD/USD", "USD/CNY"}};
+  struct Seed {
+    const char *base, *quote, *name;
+  };
+  static const Seed seeds[3][12] = {
+    {{"XAU", "USD", "Gold"}, {"XAG", "USD", "Silver"}, {"BRENT", "USD", "Brent Crude"}, {"WTI", "USD", "WTI Crude"},
+     {"HG", "USD", "Copper"}, {"NG", "USD", "Natural Gas"}, {"XPT", "USD", "Platinum"}, {"ZW", "USD", "Wheat"},
+     {"ZC", "USD", "Corn"}, {"KC", "USD", "Coffee"}, {"SB", "USD", "Sugar"}, {"CT", "USD", "Cotton"}},
+    {{"NOKIA", "EUR", "Nokia"}, {"FORTUM", "EUR", "Fortum"}, {"SAMPO", "EUR", "Sampo"}, {"KNEBV", "EUR", "Kone"},
+     {"UPM", "EUR", "UPM-Kymmene"}, {"NESTE", "EUR", "Neste"}, {"STERV", "EUR", "Stora Enso"}, {"WRT1V", "EUR", "Wartsila"},
+     {"ELISA", "EUR", "Elisa"}, {"ORNBV", "EUR", "Orion"}, {"NDA FI", "EUR", "Nordea"}, {"METSO", "EUR", "Metso"}},
+    {{"EUR", "USD", "Euro"}, {"USD", "JPY", "US dollar"}, {"GBP", "USD", "British pound"}, {"USD", "CHF", "US dollar"},
+     {"AUD", "USD", "Australian dollar"}, {"USD", "CAD", "US dollar"}, {"EUR", "SEK", "Euro"}, {"EUR", "GBP", "Euro"},
+     {"USD", "NOK", "US dollar"}, {"EUR", "CHF", "Euro"}, {"NZD", "USD", "New Zealand dollar"}, {"USD", "CNY", "US dollar"}}};
   std::mt19937 rng(static_cast<unsigned>(preset) * 7919u + 1u);
   std::uniform_real_distribution<double> step(-0.03, 0.032), start(1.5, 300.0);
   std::vector<Instrument> rows;
-  for (int i = 0; i < 12; i++) {
+  for (const Seed & seed : seeds[preset]) {
     Instrument r;
-    r.name = names[preset][i];
-    r.symbol = r.name.substr(0, 4);
+    r.base = seed.base;
+    r.quote = seed.quote;
+    r.name = seed.name;
     double p = start(rng);
     for (int d = 0; d < 60; d++) {
       p *= 1.0 + step(rng);
@@ -64,18 +75,19 @@ struct Quotes : TableModel {
   std::string text(int r, int c) const override {
     const Instrument & i = rows[static_cast<size_t>(r)];
     switch (c) {
-      case 0: return i.symbol;
-      case 1: return i.name;
-      case 2: return fixed(i.price, 2);
-      case 3: return fixed(i.change, 2, true) + "%";
+      case 0: return i.base;
+      case 1: return i.quote;
+      case 2: return i.name;
+      case 3: return fixed(i.price, 2);
+      case 4: return fixed(i.change, 2, true) + "%";
       default: return "";
     }
   }
   std::vector<float> trace(int r, int) const override { return rows[static_cast<size_t>(r)].history; }
   std::optional<Color> color(int r, int c) const override {
     const Instrument & i = rows[static_cast<size_t>(r)];
-    if (c != 3 && c != 4) return std::nullopt;
-    bool up = c == 3 ? i.change >= 0 : i.history.back() >= i.history.front();
+    if (c != 4 && c != 5) return std::nullopt;
+    bool up = c == 4 ? i.change >= 0 : i.history.back() >= i.history.front();
     return up ? Color(0x3f, 0xb9, 0x50) : Color(0xf8, 0x51, 0x49);
   }
 };
@@ -90,7 +102,8 @@ class Browser {
     table_.attach(app.widgets());
     status_.attach(app.widgets());
     tags_.setTags({"Commodities", "Nasdaq Helsinki", "Currencies"});
-    table_.setColumns({{"Symbol", 8, Align::LEFT, true, false},
+    table_.setColumns({{"Base", 8, Align::LEFT, true, false},
+                       {"Quote", 6, Align::LEFT, true, false},
                        {"Name", 0, Align::LEFT, true, false},
                        {"Price", 10, Align::RIGHT, true, false},
                        {"Change", 9, Align::RIGHT, true, false},
