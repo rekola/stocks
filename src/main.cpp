@@ -116,8 +116,6 @@ class Browser {
   void layout(int rows, int cols) {
     tags_.resize(1, std::max(1, cols - 1));
     tags_.move(0, 1);
-    // A taller row gives a picture room; in cells it is still one row of braille.
-    table_.setRowHeight(app_.display().pictures ? 2 : 1);
     table_.resize(std::max(2, rows - 3), cols);
     table_.move(2, 0);
     status_.resize(1, cols);
