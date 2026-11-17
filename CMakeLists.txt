@@ -25,12 +25,21 @@ FetchContent_Declare(cellui
   GIT_TAG main)
 FetchContent_MakeAvailable(cellui)
 
-# The application. For now it shows cellui's widgets over made-up rows; there
-# is no data model yet.
+# The browser: the screen, its commands and the made-up rows, as a library so the tests can drive it.
+add_library(stocks_lib STATIC src/Browser.cpp src/CommandDescriptions.cpp src/Quotes.cpp)
+target_include_directories(stocks_lib PUBLIC src)
+target_link_libraries(stocks_lib PUBLIC cellui)
+
 add_executable(stocks src/main.cpp)
-target_link_libraries(stocks PRIVATE cellui)
+target_link_libraries(stocks PRIVATE stocks_lib)
 
 enable_testing()
 # The program starts, reads its command line through cellui and says what is wrong with it.
 add_test(NAME stocks_rejects_an_unknown_ui COMMAND stocks --ui nonesuch)
 set_tests_properties(stocks_rejects_an_unknown_ui PROPERTIES PASS_REGULAR_EXPRESSION "unknown --ui")
+
+# The browser on a test display: keys in, what it shows out.
+add_executable(stocks_tests tests/test_main.cpp tests/BrowserTests.cpp)
+target_link_libraries(stocks_tests PRIVATE stocks_lib)
+add_test(NAME stocks_tests COMMAND stocks_tests)
+set_tests_properties(stocks_tests PROPERTIES TIMEOUT 60)

@@ -19,7 +19,9 @@ row, all over made-up numbers. There is no data model yet.
     build/stocks --ui window     # in a window, when cellui is built with GTK
 
 Keys: arrows, PgUp/PgDn, Home/End move; `<` `>` pick the sort column and `r`
-reverses it; Tab moves between the tags and the table; `q` quits. Clicking a
+reverses it; Tab moves between the tags and the table; `M-x` (`Ctrl+Shift+P` on
+the desktop keymap) opens the command palette, where every command is listed with
+its description and key; `q` (`C-x C-c`, `Ctrl+Q`) quits. Clicking a
 heading sorts; clicking a tag or row chooses it; the wheel scrolls. The table
 fills the screen and follows it when it is resized.
 
@@ -30,3 +32,12 @@ Windows, and runs `ctest`. To build against a local checkout:
 (`libunistring-dev`).
 
 The data model is planned in [plans/data-model.md](plans/data-model.md).
+
+## Tests
+
+    cmake --build build -j
+    ctest --test-dir build --output-on-failure
+
+`stocks_tests` drives the browser on a test display (no terminal or window): keys
+in, what it shows out. A test fails for a command without a description: add a
+line to `src/CommandDescriptions.cpp` with every new command.
