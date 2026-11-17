@@ -1,5 +1,10 @@
 # stocks
 
+[![Linux x86-64](https://github.com/rekola/stocks/actions/workflows/ci-linux-x86_64.yml/badge.svg)](https://github.com/rekola/stocks/actions/workflows/ci-linux-x86_64.yml)
+[![Linux ARM64](https://github.com/rekola/stocks/actions/workflows/ci-linux-arm64.yml/badge.svg)](https://github.com/rekola/stocks/actions/workflows/ci-linux-arm64.yml)
+[![Windows x86-64](https://github.com/rekola/stocks/actions/workflows/ci-windows-x86_64.yml/badge.svg)](https://github.com/rekola/stocks/actions/workflows/ci-windows-x86_64.yml)
+[![macOS ARM64](https://github.com/rekola/stocks/actions/workflows/ci-macos-arm64.yml/badge.svg)](https://github.com/rekola/stocks/actions/workflows/ci-macos-arm64.yml)
+
 A stock data browser for the terminal and a GTK window, built on
 [cellui](https://github.com/rekola/cellui).
 
@@ -19,7 +24,8 @@ heading sorts; clicking a tag or row chooses it; the wheel scrolls. The table
 fills the screen and follows it when it is resized.
 
 cellui is not pinned while the two are developed together: the build fetches its
-`main`. To build against a local checkout:
+`main`. CI builds on Linux (x86-64 and ARM64, with the GTK window), macOS and
+Windows, and runs `ctest`. To build against a local checkout:
 `-DFETCHCONTENT_SOURCE_DIR_CELLUI=/path/to/cellui`. Needs libunistring
 (`libunistring-dev`).
 
