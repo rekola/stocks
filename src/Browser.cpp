@@ -1,11 +1,6 @@
 #include "Browser.h"
 
-#include "CommandDescriptions.h"
 #include "Quotes.h"
-
-#include <cellui/InputDispatcher.h>
-#include <cellui/KeyStroke.h>
-#include <cellui/KeyStrokeNames.h>
 
 #include <algorithm>
 #include <cassert>
@@ -22,9 +17,14 @@ constexpr Preset kPresets[] = {{"Commodities", "show-commodities"}, {"Nasdaq Hel
 
 struct SortColumn {
   const char * command;
+  const char * description;
   int column;
 };
-constexpr SortColumn kSortColumns[] = {{"sort-by-base", 0}, {"sort-by-quote", 1}, {"sort-by-name", 2}, {"sort-by-price", 3}, {"sort-by-change", 4}};
+constexpr SortColumn kSortColumns[] = {{"sort-by-base", "Sort by the base symbol, ascending", 0},
+                                       {"sort-by-quote", "Sort by the quote symbol, ascending", 1},
+                                       {"sort-by-name", "Sort by the instrument's name, ascending", 2},
+                                       {"sort-by-price", "Sort by the price, ascending", 3},
+                                       {"sort-by-change", "Sort by the change over the last day, ascending", 4}};
 
 }  // namespace
 
@@ -37,19 +37,17 @@ Browser::Browser(Application & app)
   std::vector<std::string> tags;
   for (const Preset & preset : kPresets) tags.push_back(preset.tag);
   tags_.setTags(std::move(tags));
-  table_.setColumns({{"Base", 8, Align::LEFT, true, false},
-                     {"Quote", 6, Align::LEFT, true, false},
-                     {"Name", 0, Align::LEFT, true, false},
-                     {"Price", 10, Align::RIGHT, true, false},
-                     {"Change", 9, Align::RIGHT, true, false},
-                     {"60 days", 22, Align::LEFT, false, true}});
+  table_.setColumns({{.title = "Base", .width = 8},
+                     {.title = "Quote", .width = 6},
+                     {.title = "Name", .width = 0},
+                     {.title = "Price", .width = 10, .align = Align::RIGHT},
+                     {.title = "Change", .width = 9, .align = Align::RIGHT},
+                     {.title = "60 days", .width = 22, .sortable = false, .trace = true}});
   defineCommands();
   bindKeys();
   layout(app.rows(), app.cols());
-  resized_ = app.resized.connect([this](int rows, int cols) {
-    layout(rows, cols);
-    layoutPalette();
-  });
+  resized_ = app.resized.connect([this](int rows, int cols) { layout(rows, cols); });
+  // The theme's colours and the keymap profile (the help's key names) come with the display.
   display_ = app.display_changed.connect([this] { layout(app_.rows(), app_.cols()); });
   tag_ = tags_.chosen.connect([this](int i) {
     if (i < 0) return;
@@ -57,22 +55,13 @@ Browser::Browser(Application & app)
     table_.select(0);
     status_.setMessage(std::string("Showing ") + kPresets[i].tag);
   });
+  message_ = app.message.connect([this](const std::string & text) { status_.setMessage(text); });
   tags_.select(0);
   app.input().setFocus(&table_);
-  // M-x opens the palette; the palette, and a prompt, take every key while they are open.
-  status_.setCommandPaletteCallback([this] { openPalette(); });
   // The table eases to a scroll position where the display scrolls smoothly: it moves with each frame, and asks for the next.
   frame_ = app.frame_started.connect([this](double seconds) {
     if (table_.tick(seconds)) app_.requestFrame();
   });
-  app.setBeforeRefresh([this] { palette_.raise(); });
-  app.setInputHook([this](const Input & in) { return offer(in); });
-}
-
-std::vector<std::string> Browser::commandNames() const {
-  std::vector<std::string> names = commands_.matching("");
-  std::sort(names.begin(), names.end());
-  return names;
 }
 
 void Browser::layout(int rows, int cols) {
@@ -88,113 +77,39 @@ void Browser::layout(int rows, int cols) {
   info_.setFgColor(styles.info_line_fg_color);
   info_.setBgColor(styles.info_line_bg_color);
   info_.fill();
-  std::string palette = profile() == KeymapProfile::DESKTOP ? "Ctrl+Shift+P" : "M-x";
-  info_.putstr(0, 0, Plane::cutToCells(" stocks - made-up data.  " + palette + ": commands, < > r: sort, Tab: switch focus, q: quit", cols, TextOverflow::ELLIPSIS));
+  std::string help = " stocks - made-up data.  " + app_.bindingFor("command-palette") + ": commands, < > r: sort, Tab: switch focus, " +
+                     app_.bindingFor("quit") + ": quit";
+  info_.putstr(0, 0, Plane::cutToCells(help, cols, TextOverflow::ELLIPSIS));
 }
 
 void Browser::defineCommands() {
+  CommandRegistry & commands = app_.commands();
   for (size_t i = 0; i < std::size(kPresets); i++) {
-    commands_.define(kPresets[i].command, [this, i] { tags_.select(static_cast<int>(i)); });
+    commands.define(kPresets[i].command, std::string("Show the ") + kPresets[i].tag + " preset", [this, i] { tags_.select(static_cast<int>(i)); });
   }
-  commands_.define("next-preset", [this] { tags_.select(std::min(tags_.selected() + 1, static_cast<int>(std::size(kPresets)) - 1)); });
-  commands_.define("previous-preset", [this] { tags_.select(std::max(tags_.selected() - 1, 0)); });
+  const int last = static_cast<int>(std::size(kPresets)) - 1;
+  commands.define("next-preset", "Show the next preset", [this, last] { tags_.select(std::min(tags_.selected() + 1, last)); });
+  commands.define("previous-preset", "Show the previous preset", [this] { tags_.select(std::max(tags_.selected() - 1, 0)); });
   for (const SortColumn & sort : kSortColumns) {
-    commands_.define(sort.command, [this, column = sort.column] { table_.sortBy(column, SortOrder::ASCENDING); });
+    commands.define(sort.command, sort.description, [this, column = sort.column] { table_.sortBy(column, SortOrder::ASCENDING); });
   }
-  commands_.define("reverse-sort", [this] {
+  commands.define("reverse-sort", "Reverse the order of the sorted column", [this] {
     if (table_.sortColumn() < 0) {
       status_.setMessage("Not sorted");
       return;
     }
     table_.sortBy(table_.sortColumn(), table_.sortOrder() == SortOrder::ASCENDING ? SortOrder::DESCENDING : SortOrder::ASCENDING);
   });
-  commands_.define("clear-sort", [this] { table_.sortBy(-1, SortOrder::NONE); });
-  commands_.define("focus-tags", [this] { app_.input().setFocus(&tags_); });
-  commands_.define("focus-table", [this] { app_.input().setFocus(&table_); });
-  commands_.define("command-palette", [this] { openPalette(); });
-  commands_.define("quit", [this] { app_.quit(); });
+  commands.define("clear-sort", "Show the rows in the order the source gave them", [this] { table_.sortBy(-1, SortOrder::NONE); });
+  commands.define("focus-tags", "Move the keyboard to the preset tags", [this] { app_.input().setFocus(&tags_); });
+  commands.define("focus-table", "Move the keyboard to the table", [this] { app_.input().setFocus(&table_); });
+  commands.define("quit", "Leave stocks", [this] { app_.quit(); });
 }
 
 void Browser::bindKeys() {
-  using KeyStroke::pack;
-  const uint64_t ctrl_x = pack('x', true, false, false, false);
-  keymap_.bind(pack('q', false, false, false, false), "quit");
-  keymap_.bindPrefixed(KeymapProfile::TERMINAL, ctrl_x, pack('c', true, false, false, false), "quit");
-  keymap_.bind(KeymapProfile::DESKTOP, pack('q', true, false, false, false), "quit");
-  assert(keymap_.allBoundIn(commands_));
-}
-
-bool Browser::offer(const Input & in) {
-  const int id = in.getId();
-  const bool release = in.getKind() == Input::Kind::RELEASE;
-  const bool pointer = id == Key::Motion || (id >= Key::Button1 && id <= Key::Button11);
-  if (palette_.isOpen()) {
-    // Modal: it takes everything while it is open.
-    if (pointer) {
-      if (release) return true;
-      if (id == Key::Button1) handlePalette(palette_.click(in.getY(), in.getX()));
-      else if (id == Key::Button4 || id == Key::Button5) handlePalette(palette_.wheel(id == Key::Button4));
-    } else if (!release) {
-      handlePalette(palette_.key(InputDispatcher::keyDownFor(in)));
-    }
-    return true;
-  }
-  if (pointer) return false;
-  if (release) return status_.isReaderActive();
-  KeyDown e = InputDispatcher::keyDownFor(in);
-  return status_.keyDown(e) || dispatchCommand(e);
-}
-
-bool Browser::dispatchCommand(const KeyDown & e) {
-  if (e.mods.alt || e.mods.meta) return false;
-  const uint64_t stroke = KeyStroke::pack(e.key, e.mods);
-  // A started two-key sequence takes the next key, bound or not, so a half-typed prefix never does something else.
-  if (pending_prefix_) {
-    const uint64_t prefix = *pending_prefix_;
-    pending_prefix_.reset();
-    if (const std::string * name = keymap_.lookupPrefixed(prefix, stroke, profile())) return commands_.execute(*name);
-    status_.setMessage("Undefined key sequence");
-    return true;
-  }
-  if (keymap_.isPrefix(stroke, profile())) {
-    pending_prefix_ = stroke;
-    status_.setMessage("C-x-");
-    return true;
-  }
-  if (const std::string * name = keymap_.lookup(stroke, profile())) return commands_.execute(*name);
-  return false;
-}
-
-void Browser::openPalette() {
-  // Opening it aborts a prompt, as entering any prompt does.
-  status_.cancelReader();
-  std::vector<PaletteEntry> entries;
-  for (const std::string & name : commandNames()) entries.push_back({name, commandDescription(name), bindingFor(name)});
-  palette_.open(std::move(entries));
-  layoutPalette();
-}
-
-void Browser::layoutPalette() {
-  if (palette_.isOpen()) palette_.show(app_.root(), app_.rows(), app_.cols());
-}
-
-void Browser::handlePalette(CommandPalette::Result result) {
-  if (result == CommandPalette::Result::NONE) {
-    layoutPalette();  // the new query or selection
-    return;
-  }
-  std::string name;
-  if (result == CommandPalette::Result::CHOSEN && palette_.chosen()) name = palette_.chosen()->name;
-  // Closed before the command runs, which may open something of its own.
-  palette_.close();
-  if (!name.empty() && !commands_.execute(name)) status_.setMessage("Invalid command");
-}
-
-std::string Browser::bindingFor(const std::string & name) const {
-  if (name == "command-palette") return profile() == KeymapProfile::DESKTOP ? "Ctrl+Shift+P" : "M-x";
-  auto sequences = keymap_.sequencesFor(name, profile());
-  if (sequences.empty()) return "";
-  // The shortest, then the first by value, so the choice is the same every run.
-  auto best = std::min_element(sequences.begin(), sequences.end(), [](const auto & a, const auto & b) { return a.size() != b.size() ? a.size() < b.size() : a < b; });
-  return KeyStroke::describe(*best, profile());
+  Keymap & keymap = app_.keymap();
+  keymap.bind("q", "quit");
+  keymap.bind(KeymapProfile::TERMINAL, "C-x C-c", "quit");
+  keymap.bind(KeymapProfile::DESKTOP, "Ctrl+Q", "quit");
+  assert(keymap.allBoundIn(app_.commands()));
 }

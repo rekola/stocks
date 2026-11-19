@@ -26,7 +26,7 @@ FetchContent_Declare(cellui
 FetchContent_MakeAvailable(cellui)
 
 # The browser: the screen, its commands and the made-up rows, as a library so the tests can drive it.
-add_library(stocks_lib STATIC src/Browser.cpp src/CommandDescriptions.cpp src/Quotes.cpp)
+add_library(stocks_lib STATIC src/Browser.cpp src/Quotes.cpp)
 target_include_directories(stocks_lib PUBLIC src)
 target_link_libraries(stocks_lib PUBLIC cellui)
 
