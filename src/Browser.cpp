@@ -61,6 +61,10 @@ Browser::Browser(Application & app)
   app.input().setFocus(&table_);
   // M-x opens the palette; the palette, and a prompt, take every key while they are open.
   status_.setCommandPaletteCallback([this] { openPalette(); });
+  // The table eases to a scroll position where the display scrolls smoothly: it moves with each frame, and asks for the next.
+  frame_ = app.frame_started.connect([this](double seconds) {
+    if (table_.tick(seconds)) app_.requestFrame();
+  });
   app.setBeforeRefresh([this] { palette_.raise(); });
   app.setInputHook([this](const Input & in) { return offer(in); });
 }

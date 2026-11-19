@@ -53,5 +53,5 @@ class Browser {
   cellui::Keymap keymap_;
   // The first shortcut of a two-key sequence (C-x), while it waits for the second.
   std::optional<uint64_t> pending_prefix_;
-  cellui::Connection resized_, display_, tag_;
+  cellui::Connection resized_, display_, tag_, frame_;
 };
