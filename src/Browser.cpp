@@ -58,6 +58,10 @@ Browser::Browser(Application & app)
   message_ = app.message.connect([this](const std::string & text) { status_.setMessage(text); });
   tags_.select(0);
   app.input().setFocus(&table_);
+  // The table eases to a scroll position where the display scrolls smoothly: it moves with each frame, and asks for the next.
+  frame_ = app.frame_started.connect([this](double seconds) {
+    if (table_.tick(seconds)) app_.requestFrame();
+  });
 }
 
 void Browser::layout(int rows, int cols) {

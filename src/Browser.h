@@ -28,5 +28,5 @@ class Browser {
   cellui::Table table_;
   cellui::Widget info_;
   cellui::StatusLine status_;
-  cellui::Connection resized_, display_, tag_, message_;
+  cellui::Connection resized_, display_, tag_, message_, frame_;
 };
