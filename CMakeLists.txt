@@ -25,10 +25,15 @@ FetchContent_Declare(cellui
   GIT_TAG main)
 FetchContent_MakeAvailable(cellui)
 
+# The data model: plain values and the Store they live in. Knows nothing of the screen.
+add_library(stocks_model STATIC src/model/MemoryStore.cpp)
+target_include_directories(stocks_model PUBLIC src)
+target_compile_features(stocks_model PUBLIC cxx_std_20)
+
 # The browser: the screen, its commands and the made-up rows, as a library so the tests can drive it.
 add_library(stocks_lib STATIC src/Browser.cpp src/CommandDescriptions.cpp src/Quotes.cpp)
 target_include_directories(stocks_lib PUBLIC src)
-target_link_libraries(stocks_lib PUBLIC cellui)
+target_link_libraries(stocks_lib PUBLIC cellui stocks_model)
 
 add_executable(stocks src/main.cpp)
 target_link_libraries(stocks PRIVATE stocks_lib)
@@ -41,7 +46,7 @@ set_tests_properties(stocks_rejects_an_unknown_ui PROPERTIES PASS_REGULAR_EXPRES
 # The browser on a test display: keys in, what it shows out. cellui's test display
 # (TestBackend) is built where there is a POSIX event loop, so not on Windows.
 if(NOT WIN32)
-  add_executable(stocks_tests tests/test_main.cpp tests/BrowserTests.cpp)
+  add_executable(stocks_tests tests/test_main.cpp tests/BrowserTests.cpp tests/ModelTests.cpp)
   target_link_libraries(stocks_tests PRIVATE stocks_lib)
   add_test(NAME stocks_tests COMMAND stocks_tests)
   set_tests_properties(stocks_tests PROPERTIES TIMEOUT 60)
