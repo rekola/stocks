@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <memory>
 #include <functional>
 #include <mutex>
 
@@ -176,6 +177,34 @@ void Snapshot::appendActions(const EventKey & k, const std::vector<CorporateActi
 namespace {
 
 // Writers take the lock one at a time and publish a new snapshot with one pointer swap; readers only load the pointer.
+// The current snapshot, read and replaced atomically: std::atomic<std::shared_ptr> where the
+// library has it (C++20), else the shared_ptr atomic functions it replaced (Apple's libc++ has
+// only those).
+class SnapshotSlot {
+ public:
+  explicit SnapshotSlot(std::shared_ptr<const Snapshot> s) : p_(std::move(s)) {}
+#if defined(__cpp_lib_atomic_shared_ptr)
+  std::shared_ptr<const Snapshot> load() const { return p_.load(); }
+  void store(std::shared_ptr<const Snapshot> s) { p_.store(std::move(s)); }
+
+ private:
+  std::atomic<std::shared_ptr<const Snapshot>> p_;
+#else
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#endif
+  std::shared_ptr<const Snapshot> load() const { return std::atomic_load(&p_); }
+  void store(std::shared_ptr<const Snapshot> s) { std::atomic_store(&p_, std::move(s)); }
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif
+
+ private:
+  std::shared_ptr<const Snapshot> p_;
+#endif
+};
+
 class MemoryStore : public Store {
  public:
   MemoryStore() : current_(std::make_shared<const Snapshot>()) {}
@@ -222,7 +251,7 @@ class MemoryStore : public Store {
   }
 
   std::mutex writer_;
-  std::atomic<std::shared_ptr<const Snapshot>> current_;
+  SnapshotSlot current_;
 };
 
 }  // namespace

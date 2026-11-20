@@ -18,8 +18,7 @@ row, all over made-up numbers. There is no data model yet.
     build/stocks --ui terminal   # in the terminal
     build/stocks --ui window     # in a window, when cellui is built with GTK
 
-Keys: arrows, PgUp/PgDn, Home/End move; `<` `>` pick the sort column and `r`
-reverses it; Tab moves between the tags and the table; `M-x` (`Ctrl+Shift+P` on
+Keys: arrows, PgUp/PgDn, Home/End move; Tab moves between the tags and the table; `M-x` (`Ctrl+Shift+P` on
 the desktop keymap) opens the command palette, where every command is listed with
 its description and key; `q` (`C-x C-c`, `Ctrl+Q`) quits. Clicking a
 heading sorts; clicking a tag or row chooses it; the wheel scrolls. The table

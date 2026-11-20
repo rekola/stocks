@@ -2,8 +2,8 @@
 // candles (made-up ones for now).
 //   stocks                 on the display cellui picks
 //   stocks --ui terminal   in the terminal;  --ui window  in a window
-// Keys: arrows, PgUp/PgDn, Home/End move; < and > pick the sort column, r
-// reverses it; Tab moves between the tags and the table; M-x (Ctrl+Shift+P)
+// Keys: arrows, PgUp/PgDn, Home/End move; Tab moves between the tags and the
+// table; M-x (Ctrl+Shift+P)
 // opens the command palette; q quits. Clicking a heading sorts, clicking a tag
 // or row chooses it, the wheel scrolls.
 #include "Browser.h"

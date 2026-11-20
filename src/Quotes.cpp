@@ -62,9 +62,8 @@ std::optional<cellui::Color> Quotes::color(int r, int c) const {
   return up ? cellui::Color(0x3f, 0xb9, 0x50) : cellui::Color(0xf8, 0x51, 0x49);
 }
 
-int Quotes::compare(int column, int a, int b) const {
-  auto by = [](double x, double y) { return x < y ? -1 : y < x ? 1 : 0; };
-  if (column == PRICE) return by(at(a).price, at(b).price);
-  if (column == CHANGE) return by(at(a).change, at(b).change);
-  return TableModel::compare(column, a, b);
+std::optional<double> Quotes::number(int r, int c) const {
+  if (c == PRICE) return at(r).price;
+  if (c == CHANGE) return at(r).change;
+  return std::nullopt;
 }

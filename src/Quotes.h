@@ -5,6 +5,7 @@
 #include <cellui/Table.h>
 
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -33,10 +34,10 @@ class Quotes : public cellui::TableModel {
   std::string text(int r, int c) const override;
   // The edge a row shows: its identity.
   const EdgeKey & edge(int r) const { return at(r).key; }
-  std::vector<float> trace(int r, int) const override { return at(r).history; }
+  std::span<const float> trace(int r, int) const override { return at(r).history; }
   std::optional<cellui::Color> color(int r, int c) const override;
-  // Prices and changes by their values, not their rounded text.
-  int compare(int column, int a, int b) const override;
+  // Prices and changes sort by their values, not their rounded text.
+  std::optional<double> number(int r, int c) const override;
 
  private:
   const QuoteRow & at(int r) const { return rows[static_cast<size_t>(r)]; }

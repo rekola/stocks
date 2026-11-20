@@ -31,6 +31,12 @@ struct Fixture {
   void type(const std::string & s) {
     for (char c : s) press(c);
   }
+  void click(int row, int col) {
+    for (auto kind : {Input::Kind::PRESS, Input::Kind::RELEASE}) {
+      app->handle(BackendEvent::makeInput(Input(Key::Button1, row, col, false, false, false, false, kind)));
+      app->present();
+    }
+  }
   std::string text() {
     app->present();
     return backend->text();
@@ -55,11 +61,11 @@ TEST(meta_x_opens_the_palette_and_a_chosen_command_runs) {
   f.press('x', kModAlt);
   CHECK(f.app->commandPaletteOpen());
   CHECK(f.text().find("show-currencies") != std::string::npos);  // the list is as tall as the screen allows
-  f.type("sort-by-pr");
-  CHECK(f.text().find("sort-by-price") != std::string::npos && f.text().find("sort-by-name") == std::string::npos);
+  f.type("show-curr");
+  CHECK(f.text().find("show-currencies") != std::string::npos && f.text().find("show-commodities") == std::string::npos);
   f.press(Key::Enter);
   CHECK(!f.app->commandPaletteOpen());
-  CHECK(f.browser->table().sortColumn() == Quotes::PRICE && f.browser->table().sortOrder() == SortOrder::ASCENDING);
+  CHECK(f.browser->tags().selected() == 2);
 }
 
 TEST(the_palette_takes_every_key_while_open_and_escape_closes_it_at_once_without_running) {
@@ -69,7 +75,7 @@ TEST(the_palette_takes_every_key_while_open_and_escape_closes_it_at_once_without
   CHECK(f.app->commandPaletteOpen());
   f.press(Key::Escape);  // at once, though a terminal's bare Escape otherwise waits for the key after it
   CHECK(!f.app->commandPaletteOpen());
-  CHECK(f.browser->table().sortColumn() == -1);
+  CHECK(f.browser->tags().selected() == 0);  // nothing ran
   f.press('x', kModAlt);
   f.press('g', kModCtrl);  // Emacs's cancel
   CHECK(!f.app->commandPaletteOpen());
@@ -106,20 +112,17 @@ TEST(preset_commands_choose_the_tag_and_fill_the_table) {
   CHECK(!f.app->execute("no-such-command"));
 }
 
-TEST(sort_commands_reverse_and_clear) {
+TEST(a_click_on_a_heading_sorts_and_prices_sort_by_value) {
   Fixture f;
-  CHECK(f.app->execute("sort-by-name"));
-  CHECK(f.browser->table().sortColumn() == Quotes::NAME);
-  CHECK(f.app->execute("reverse-sort"));
-  CHECK(f.browser->table().sortOrder() == SortOrder::DESCENDING);
-  CHECK(f.app->execute("clear-sort"));
-  CHECK(f.browser->table().sortColumn() == -1);
-}
-
-TEST(prices_sort_by_value) {
-  Fixture f;
-  CHECK(f.app->execute("sort-by-price"));
+  // The Price heading, on the table's first row.
+  std::string text = f.text();
+  size_t line = 0;
+  for (int row = 0; row < 2; row++) line = text.find('\n', line) + 1;
+  int col = static_cast<int>(text.find("Price", line) - line);
+  CHECK(col > 0 && text.find('\n', line) > line + static_cast<size_t>(col));
+  f.click(2, col);
   const Table & table = f.browser->table();
+  CHECK(table.sortColumn() == Quotes::PRICE && table.sortOrder() == SortOrder::ASCENDING);
   auto & quotes = static_cast<const Quotes &>(*table.model());
   for (int p = 1; p < quotes.rowCount(); p++) CHECK(quotes.rows[static_cast<size_t>(table.rowAt(p - 1))].price <= quotes.rows[static_cast<size_t>(table.rowAt(p))].price);
 }
@@ -183,7 +186,7 @@ TEST(a_preset_shows_one_row_per_edge_with_its_dataset) {
   f.app->execute("show-currencies");
   Table & t = f.browser->table();
   CHECK(t.model()->rowCount() == 2);  // the same pair on the same market from two datasets: two rows
-  f.app->execute("sort-by-dataset");
+  t.sortBy(Quotes::DATASET, SortOrder::ASCENDING);
   CHECK(t.model()->text(t.rowAt(0), Quotes::DATASET) == "provider-a" && t.model()->text(t.rowAt(1), Quotes::DATASET) == "provider-b");
   CHECK(t.model()->text(t.rowAt(0), Quotes::BASE) == "EUR" && t.model()->text(t.rowAt(0), Quotes::QUOTE) == "USD");
   CHECK(t.model()->text(t.rowAt(0), Quotes::PRICE) == "1.10" && t.model()->text(t.rowAt(0), Quotes::CHANGE) == "+10.00%");
