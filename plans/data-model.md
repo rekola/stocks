@@ -1,7 +1,8 @@
 # Data model
 
 Status: steps 1 and 2 are built (`src/model/`: `Types.h`, `Store.h`,
-`MemoryStore.cpp`, tests in `tests/ModelTests.cpp`). The table still shows the
+`MemoryStore.cpp`, tests in `tests/ModelTests.cpp`), as an immutable persistent
+store. The table still shows the
 made-up rows. The order book is stored but not used by anything yet.
 
 ## Goals
@@ -78,23 +79,34 @@ A row needs the instrument's symbol and name, the dataset, the latest price and
 the change over the last interval (from `lastCandles`), and the trace of recent
 closes. So the table gets a Dataset column. The row's identity is the edge key.
 
-## Store
+## Store and snapshots
 
-`Store` (`src/model/Store.h`) is the only way in or out; `makeMemoryStore()` is
-the in-memory implementation.
+**Decided: the store is an immutable, persistent value** (`immer` vectors and
+maps). `Snapshot` (`src/model/Store.h`) is one version of everything: it never
+changes, copying it is cheap, and a write makes a new snapshot that shares almost
+all of its storage with the one before. A reader takes `store.snapshot()` once
+and reads it as long as it likes, with no locks, and sees one consistent world.
+`Store` is the write side and the source of snapshots; `makeMemoryStore()` is
+the in-memory one, and a server-backed store would hand out snapshots too.
 
-- Adding an instrument, market or dataset by symbol/name returns the record
-  already there if there is one, so sources can add what they use without
-  checking first.
-- Lookups by id and by name; lists of all three.
-- `edges(market)`: the keys with data in a market (candles or a book).
-- `appendCandles`, `candles(key, range)`, `lastCandles(key, n)`.
-- `appendBooks`, `books(key, range)`, `bookAt(key, time)` (the snapshot standing
-  at a time).
-- `appendAnnouncements`/`announcements`, `appendActions`/`actions`, and
+- Writes: `addInstrument`/`addMarket`/`addDataset` (by symbol or name: the
+  record already there is returned), `appendCandles`, `appendBooks`,
+  `appendAnnouncements`, `appendActions`. Writers take a lock one at a time and
+  publish the new snapshot with one pointer swap; `snapshot()` never waits. A
+  write that changes nothing publishes nothing, and each one that does makes the
+  next `version()`.
+- Reads on a snapshot: lookups by id and name, `edges(market)` (keys with
+  candles or a book in a market), `candles(key, range)`, `lastCandles(key, n)`,
+  `books(key, range)`, `bookAt(key, time)`, `announcements`, `actions`, and
   `events(instrument)` for the datasets that say anything about an instrument.
-- Reads return values, never references into the store. Time ranges are
-  half-open `[from, to)`; time is UTC milliseconds.
+- Series come back as `Seq<T>` (an immer `flex_vector`): slices share storage
+  with the snapshot, and a reference into one is valid as long as it is held.
+  Time ranges are half-open `[from, to)`; time is UTC milliseconds.
+- Appending at the end of a series is effectively constant time; a correction or
+  late item in the middle is logarithmic. Tested with readers and writers on
+  several threads, and clean under ThreadSanitizer.
+- The UI takes a snapshot per refresh. The writer tells it that a new version
+  exists through cellui's `ThreadInbox`; the UI never waits on the store.
 
 ## Steps
 
@@ -152,13 +164,12 @@ That much is arithmetic. What is not settled:
   `NOK1V`. Today a symbol is one instrument; a symbol alias table per dataset,
   or a canonical id assigned when a source is added, is needed once a second
   provider arrives.
-- **Threading**: see "Concurrency options" below.
 - **Gaps in a series**: the store does not fill or mark missing bars; whether it
   should is decided when a source shows what its gaps look like.
 
 ## Concurrency options
 
-Not decided. The need: the UI reads the store while sources fill it from other
+Decided: C, with immer (built). The others are kept for the reasoning. The need: the UI reads the store while sources fill it from other
 threads, and prediction models will read long histories without freezing the
 screen or seeing half an update. Today a store belongs to one thread.
 
@@ -213,7 +224,6 @@ Snapshot reads and durability for free, and it points at the server later.
 Costs: a heavy dependency, an impedance mismatch for series of bars, and the
 model's types become a schema.
 
-Recommendation: C behind a `Snapshot`/`Store` split, starting with D's chunked
-series if we want no dependency, because the prediction models are the readers
-that most need a stable view, and the UI gets lock-free reads. A is what we do
-meanwhile and still the right way to deliver "something changed" to the UI.
+Chosen: C behind a `Snapshot`/`Store` split, because the prediction models are
+the readers that most need a stable view, and the UI gets lock-free reads. A is
+still the way to tell the UI that something changed.

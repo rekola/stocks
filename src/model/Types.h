@@ -4,11 +4,17 @@
 #include <limits>
 #include <tuple>
 #include <functional>
+#include <immer/flex_vector.hpp>
 #include <optional>
 #include <string>
 #include <vector>
 
 // The data model's plain values. Nothing here knows the screen or where data comes from.
+
+// An immutable, time-ordered sequence. Slices and copies share storage, and a reference into one stays valid for as
+// long as that sequence is held.
+template <class T>
+using Seq = immer::flex_vector<T>;
 
 // Ids are assigned by the Store; a default-constructed id (0) is "none".
 template <class Tag>
@@ -84,7 +90,7 @@ struct Candle {
 // dataset.
 struct CandleSeries {
   int64_t intervalMs = 0;
-  std::vector<Candle> candles;
+  Seq<Candle> candles;
 };
 
 struct BookLevel {
@@ -116,4 +122,27 @@ struct CorporateAction {
   double value = 0;
   InstrumentId currency;  // dividends only
   std::string note;
+};
+
+// Hashes for the keys, for the store's persistent maps.
+inline size_t hashCombine(size_t seed, size_t v) { return seed ^ (v + 0x9e3779b97f4a7c15ull + (seed << 6) + (seed >> 2)); }
+
+template <class Tag>
+struct std::hash<Id<Tag>> {
+  size_t operator()(Id<Tag> i) const { return std::hash<uint32_t>()(i.value); }
+};
+template <>
+struct std::hash<EdgeKey> {
+  size_t operator()(const EdgeKey & k) const {
+    size_t h = std::hash<InstrumentId>()(k.base);
+    h = hashCombine(h, std::hash<InstrumentId>()(k.quote));
+    h = hashCombine(h, std::hash<MarketId>()(k.market));
+    return hashCombine(h, std::hash<DatasetId>()(k.dataset));
+  }
+};
+template <>
+struct std::hash<EventKey> {
+  size_t operator()(const EventKey & k) const {
+    return hashCombine(std::hash<InstrumentId>()(k.instrument), std::hash<DatasetId>()(k.dataset));
+  }
 };
