@@ -39,5 +39,5 @@ The data model is planned in [plans/data-model.md](plans/data-model.md).
     ctest --test-dir build --output-on-failure
 
 `stocks_tests` drives the browser on a test display (no terminal or window): keys
-in, what it shows out. A test fails for a command without a description: add a
-line to `src/CommandDescriptions.cpp` with every new command.
+in, what it shows out. A test fails for a command without a description: define
+every command with one (`app.commands().define(name, description, fn)`).

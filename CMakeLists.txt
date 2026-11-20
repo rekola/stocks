@@ -43,8 +43,8 @@ target_compile_features(stocks_model PUBLIC cxx_std_20)
 find_package(Threads REQUIRED)
 target_link_libraries(stocks_model PUBLIC immer Threads::Threads)
 
-# The browser: the screen, its commands and the made-up rows, as a library so the tests can drive it.
-add_library(stocks_lib STATIC src/Browser.cpp src/CommandDescriptions.cpp src/Quotes.cpp src/Synthetic.cpp)
+# The browser: the screen, its commands and the rows it shows, as a library so the tests can drive it.
+add_library(stocks_lib STATIC src/Browser.cpp src/Quotes.cpp src/Synthetic.cpp)
 target_include_directories(stocks_lib PUBLIC src)
 target_link_libraries(stocks_lib PUBLIC cellui stocks_model)
 
