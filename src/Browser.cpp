@@ -1,6 +1,7 @@
 #include "Browser.h"
 
 #include "Quotes.h"
+#include "source/Source.h"
 
 #include <algorithm>
 #include <cassert>
@@ -53,11 +54,19 @@ Browser::Browser(Application & app, std::shared_ptr<Store> store)
   display_ = app.display_changed.connect([this] { layout(app_.rows(), app_.cols()); });
   tag_ = tags_.chosen.connect([this](int i) {
     if (i < 0) return;
-    auto snapshot = store_->snapshot();
-    std::optional<Market> market = snapshot->findMarket(kPresets[i].tag);
-    table_.setModel(std::make_shared<Quotes>(market ? makeRows(*snapshot, market->id) : std::vector<QuoteRow>{}));
+    showPreset(i);
     table_.select(0);
     status_.setMessage(std::string("Showing ") + kPresets[i].tag);
+  });
+  changed_ = table_.on<StoreChanged>([this](const StoreChanged &, EventContext &) {
+    refresh();
+    app_.requestFrame();  // the data came from another thread, not from an input
+    return Handled::no;
+  });
+  said_ = table_.on<SourceMessage>([this](const SourceMessage & m, EventContext &) {
+    status_.setMessage(m.text);
+    app_.requestFrame();
+    return Handled::no;
   });
   message_ = app.message.connect([this](const std::string & text) { status_.setMessage(text); });
   tags_.select(0);
@@ -66,6 +75,30 @@ Browser::Browser(Application & app, std::shared_ptr<Store> store)
   frame_ = app.frame_started.connect([this](double seconds) {
     if (table_.tick(seconds)) app_.requestFrame();
   });
+}
+
+void Browser::showPreset(int i) {
+  auto snapshot = store_->snapshot();
+  std::optional<Market> market = snapshot->findMarket(kPresets[i].tag);
+  table_.setModel(std::make_shared<Quotes>(market ? makeRows(*snapshot, market->id) : std::vector<QuoteRow>{}));
+  shown_version_ = snapshot->version();
+}
+
+void Browser::refresh() {
+  const int preset = tags_.selected();
+  if (preset < 0 || store_->snapshot()->version() == shown_version_) return;
+  std::optional<EdgeKey> selected;
+  if (auto * quotes = dynamic_cast<const Quotes *>(table_.model().get()); quotes && table_.selectedRow() >= 0)
+    selected = quotes->edge(table_.selectedRow());
+  const int column = table_.sortColumn();
+  const SortOrder order = table_.sortOrder();
+  showPreset(preset);
+  if (column >= 0) table_.sortBy(column, order);
+  const auto & quotes = static_cast<const Quotes &>(*table_.model());
+  int row = quotes.rowCount() > 0 ? 0 : -1;
+  for (int r = 0; selected && r < quotes.rowCount(); r++)
+    if (quotes.edge(r) == *selected) row = r;
+  if (row >= 0) table_.select(row);
 }
 
 void Browser::layout(int rows, int cols) {
@@ -81,7 +114,7 @@ void Browser::layout(int rows, int cols) {
   info_.setFgColor(styles.info_line_fg_color);
   info_.setBgColor(styles.info_line_bg_color);
   info_.fill();
-  std::string help = " stocks - made-up data.  " + app_.bindingFor("command-palette") + ": commands, < > r: sort, Tab: switch focus, " +
+  std::string help = " stocks.  " + app_.bindingFor("command-palette") + ": commands, < > r: sort, Tab: switch focus, " +
                      app_.bindingFor("quit") + ": quit";
   info_.putstr(0, 0, Plane::cutToCells(help, cols, TextOverflow::ELLIPSIS));
 }

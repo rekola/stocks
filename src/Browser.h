@@ -24,6 +24,10 @@ class Browser {
   cellui::StatusLine & statusLine() { return status_; }
 
  private:
+  // The rows of preset `i` from the store's current snapshot.
+  void showPreset(int i);
+  // Shows what the store holds now, keeping the sort and the selected row.
+  void refresh();
   void layout(int rows, int cols);
   void defineCommands();
   void bindKeys();
@@ -34,5 +38,6 @@ class Browser {
   cellui::Table table_;
   cellui::Widget info_;
   cellui::StatusLine status_;
-  cellui::Connection resized_, display_, tag_, message_, frame_;
+  uint64_t shown_version_ = 0;  // of the snapshot the table shows
+  cellui::Connection resized_, display_, tag_, message_, frame_, changed_, said_;
 };

@@ -1,6 +1,6 @@
 # Data model
 
-Status: steps 1 to 3 are built (`src/model/`: `Types.h`, `Store.h`,
+Status: steps 1 to 4 are built (`src/model/`: `Types.h`, `Store.h`,
 `MemoryStore.cpp`, tests in `tests/ModelTests.cpp`), as an immutable persistent
 store. The table still shows the
 made-up rows. The order book is stored but not used by anything yet.
@@ -115,14 +115,52 @@ the in-memory one, and a server-backed store would hand out snapshots too.
 3. ~~Wire the table to it~~ Done: a preset is a market of the same name, rows
    are edges (`QuoteRow` is the display row built from a snapshot), a Dataset
    column, latest price and change from the candles. Rows come in the store's
-   key order; the table has no refresh yet (it reads a snapshot when a preset is
-   chosen).
-4. A first real source (CSV or a provider). The synthetic source
-   (`src/Synthetic.cpp`) already fills the store with made-up daily candles. The
-   table follows new versions through `ThreadInbox` once a source runs on its
-   own thread.
+   key order.
+4. ~~A first real source~~ Done: Yahoo (see Sources). The table follows the
+   store as sources write to it.
 5. The simple order-book view for the prediction models, once the questions
    below are settled.
+
+## Sources
+
+A **source** (`src/source/Source.h`) is an adapter for one provider: a blocking
+`load(store, http, listener)` that reads the provider and writes what it finds
+into the store as its own dataset. The app has several, and the user picks which
+run (`--source NAME`, repeatable; later a setting). `SourceRunner` runs them one
+after another on a thread of its own; its callbacks are posted to the UI thread
+through cellui's `ThreadInbox` (`StoreChanged`, `SourceMessage`), where the
+browser takes a new snapshot, keeping the sort and the selected row, and asks
+for a frame. The UI never waits on a source.
+
+- **HTTP** goes through [httpclient](https://github.com/rekola/httpclient)
+  (`src/source/Http.h`): WinHTTP on Windows, libcurl elsewhere. Sources see only
+  the small `Http` interface, so tests give them canned responses. httpclient has
+  no build system of its own, so `CMakeLists.txt` compiles the two backend
+  sources it needs.
+- **Universe** (`src/source/Universe.cpp`): the instruments of the presets, with
+  each provider's symbol for them. A source reads its own column; this is the
+  simple form of the "identity across sources" question below.
+- **Yahoo** (`YahooSource`, dataset `yahoo-1d`): one chart request per
+  instrument (`range`, daily bars, `events=div|split`), second host as a
+  fallback, a pause between requests, a stop on rate limiting. Days without a
+  price are skipped; dividends and splits become corporate actions (a split is
+  new shares per old). Unofficial, no key, for personal use. Yahoo's history is
+  already adjusted for splits, so the series does not show a split's jump; the
+  action is stored beside it.
+- **Synthetic**: made-up prices, for runs without a network.
+
+Not done:
+
+- A universal scraper: one adapter driven by a description of a page (where the
+  rows, symbols, dates and numbers are) instead of a hand-written adapter per
+  site, so new targets are data, not code. Needs a design of that description;
+  JSON endpoints and HTML tables are the two shapes to cover.
+- A disk cache of raw responses, so the app starts without a network and does
+  not ask the provider for the same history on every launch (and asks only for
+  what is new).
+- A way to pick sources and filter them by use case at run time, and a refresh.
+- Announcements (a source for company news) and a real order-book source (crypto
+  exchanges are the free ones).
 
 ## Decided
 
