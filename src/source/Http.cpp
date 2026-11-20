@@ -7,8 +7,6 @@
 #include <CurlClient.h>
 #endif
 
-#include <mutex>
-
 namespace {
 
 class HttpClientHttp : public Http {
@@ -17,9 +15,7 @@ class HttpClientHttp : public Http {
 #ifdef _WIN32
     httpclient::WinHTTPClientFactory factory(kUserAgent);
 #else
-    static std::once_flag once;
-    std::call_once(once, [] { httpclient::CurlClientFactory::globalInit(); });
-    httpclient::CurlClientFactory factory(kUserAgent);
+    httpclient::CurlClientFactory factory(kUserAgent);  // libcurl is initialized when the program starts
 #endif
     client_ = factory.createClient(/*enable_cookies=*/false, /*enable_keepalive=*/true);
     client_->setConnectTimeout(10);
