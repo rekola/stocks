@@ -2,6 +2,7 @@
 
 #include "Browser.h"
 #include "Quotes.h"
+#include "Synthetic.h"
 
 #include <cellui/Application.h>
 #include <cellui/TestBackend.h>
@@ -13,12 +14,15 @@ namespace {
 struct Fixture {
   test::TestBackend * backend;
   std::unique_ptr<Application> app;
+  std::shared_ptr<Store> store = makeMemoryStore();
   std::unique_ptr<Browser> browser;
-  Fixture() {
+  // Over the made-up data, or over a store the test has filled.
+  explicit Fixture(bool synthetic = true) {
+    if (synthetic) fillSyntheticData(*store);
     auto owned = std::make_unique<test::TestBackend>(24, 100);
     backend = owned.get();
     app = Application::adopt(std::move(owned));
-    browser = std::make_unique<Browser>(*app);
+    browser = std::make_unique<Browser>(*app, store);
   }
   void press(int key, unsigned mods = 0) {
     app->handle(BackendEvent::makeInput(keyInput(key, mods, Input::Kind::PRESS)));
@@ -93,7 +97,10 @@ TEST(preset_commands_choose_the_tag_and_fill_the_table) {
   CHECK(f.browser->tags().selected() == 0);
   CHECK(f.app->execute("show-currencies"));
   CHECK(f.browser->tags().selected() == 2);
-  CHECK(f.browser->table().model()->text(f.browser->table().rowAt(0), Quotes::BASE) == "EUR");
+  bool euro = false;  // the rows come in the store's order, not a hand-written one
+  for (int r = 0; r < f.browser->table().model()->rowCount(); r++)
+    euro = euro || f.browser->table().model()->text(f.browser->table().rowAt(r), Quotes::NAME) == "Euro";
+  CHECK(euro);
   CHECK(f.app->execute("previous-preset"));
   CHECK(f.browser->tags().selected() == 1);
   CHECK(!f.app->execute("no-such-command"));
@@ -163,4 +170,44 @@ TEST(tab_moves_the_keyboard_between_the_table_and_the_tags) {
   CHECK(f.app->input().focused() == &f.browser->tags());
   f.press(Key::Right);
   CHECK(f.browser->tags().selected() == 1);
+}
+
+TEST(a_preset_shows_one_row_per_edge_with_its_dataset) {
+  Fixture f(false);
+  Instrument eur = f.store->addInstrument({{}, "EUR", "Euro", InstrumentKind::Currency});
+  Instrument usd = f.store->addInstrument({{}, "USD", "US dollar", InstrumentKind::Currency});
+  Market currencies = f.store->addMarket({{}, "Currencies"});
+  Dataset a = f.store->addDataset({{}, "provider-a"}), b = f.store->addDataset({{}, "provider-b"});
+  f.store->appendCandles({eur.id, usd.id, currencies.id, a.id}, 1000, {{0, 1, 1, 1, 1.00, 1}, {1000, 1, 1, 1, 1.10, 1}});
+  f.store->appendCandles({eur.id, usd.id, currencies.id, b.id}, 1000, {{0, 1, 1, 1, 2.00, 1}, {1000, 1, 1, 1, 1.00, 1}});
+  f.app->execute("show-currencies");
+  Table & t = f.browser->table();
+  CHECK(t.model()->rowCount() == 2);  // the same pair on the same market from two datasets: two rows
+  f.app->execute("sort-by-dataset");
+  CHECK(t.model()->text(t.rowAt(0), Quotes::DATASET) == "provider-a" && t.model()->text(t.rowAt(1), Quotes::DATASET) == "provider-b");
+  CHECK(t.model()->text(t.rowAt(0), Quotes::BASE) == "EUR" && t.model()->text(t.rowAt(0), Quotes::QUOTE) == "USD");
+  CHECK(t.model()->text(t.rowAt(0), Quotes::PRICE) == "1.10" && t.model()->text(t.rowAt(0), Quotes::CHANGE) == "+10.00%");
+  CHECK(t.model()->text(t.rowAt(1), Quotes::PRICE) == "1.00" && t.model()->text(t.rowAt(1), Quotes::CHANGE) == "-50.00%");
+  CHECK(t.model()->trace(t.rowAt(1), Quotes::HISTORY).size() == 2);
+}
+
+TEST(a_preset_whose_market_has_no_data_shows_no_rows_and_a_book_alone_is_not_a_row) {
+  Fixture f(false);
+  Instrument eur = f.store->addInstrument({{}, "EUR", "Euro", InstrumentKind::Currency});
+  Instrument usd = f.store->addInstrument({{}, "USD", "US dollar", InstrumentKind::Currency});
+  Market currencies = f.store->addMarket({{}, "Currencies"});
+  Dataset a = f.store->addDataset({{}, "provider-a"});
+  CHECK(f.browser->table().model()->rowCount() == 0);  // Commodities: no such market
+  f.store->appendBooks({eur.id, usd.id, currencies.id, a.id}, {{0, {{1, 1}}, {{2, 1}}}});
+  f.app->execute("show-currencies");
+  CHECK(f.browser->table().model()->rowCount() == 0);
+}
+
+TEST(the_made_up_data_fills_every_preset) {
+  Fixture f;
+  for (const char * command : {"show-commodities", "show-nasdaq-helsinki", "show-currencies"}) {
+    f.app->execute(command);
+    CHECK(f.browser->table().model()->rowCount() == 12);
+    CHECK(f.browser->table().model()->text(f.browser->table().rowAt(0), Quotes::DATASET) == "synthetic");
+  }
 }
