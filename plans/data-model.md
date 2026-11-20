@@ -102,8 +102,7 @@ the in-memory implementation.
 2. ~~In-memory `Store`, with tests.~~ Done.
 3. Wire the table to it: a preset selects markets, rows are edges, a Dataset
    column, latest price and change from candles. Retire `Quotes.h`'s
-   `Instrument` (it has the same name as the model's, which now lives in
-   `namespace stocks`).
+   `QuoteRow` (the made-up row, renamed so `Instrument` means the model's).
 4. A first source that fills the store (synthetic or CSV), replacing the
    made-up rows.
 5. The simple order-book view for the prediction models, once the questions
@@ -153,9 +152,68 @@ That much is arithmetic. What is not settled:
   `NOK1V`. Today a symbol is one instrument; a symbol alias table per dataset,
   or a canonical id assigned when a source is added, is needed once a second
   provider arrives.
-- **Threading**: the store is read on the UI thread while sources fill it from
-  other threads. Today a store belongs to one thread. Likely a single writer
-  posting changes to the UI thread (cellui's `ThreadInbox`) so the UI never
-  locks; to be decided with the first source.
+- **Threading**: see "Concurrency options" below.
 - **Gaps in a series**: the store does not fill or mark missing bars; whether it
   should is decided when a source shows what its gaps look like.
+
+## Concurrency options
+
+Not decided. The need: the UI reads the store while sources fill it from other
+threads, and prediction models will read long histories without freezing the
+screen or seeing half an update. Today a store belongs to one thread.
+
+**A. One owner, changes posted to it.** Sources send batches to the thread that
+owns the store (cellui's `ThreadInbox`); only that thread touches the store.
+Simplest and needs nothing new. Cost: a model on another thread cannot read,
+only get copies, and a big append blocks the UI thread while it is applied.
+
+**B. A lock around the store** (`std::shared_mutex`). Reads already return
+values, so a read is a copy made under the lock. Easy to retrofit. Cost: a long
+range read blocks the writer and the reverse; a model sees a different world on
+each call unless it holds the lock across many calls.
+
+**C. Immutable, persistent store (Clojure style).** The whole store is an
+immutable value. A write builds a new version that shares almost all of its
+structure with the old one (persistent maps and vectors, as in the `immer`
+library: header-only, Boost licence, with a persistent vector and map, and
+`flex_vector` that slices and concatenates cheaply). One writer publishes each
+new version by swapping one pointer (`std::atomic<std::shared_ptr>`); a reader
+takes the current version once and reads it for as long as it likes, with no
+locks and no waiting.
+- A model gets a consistent as-of view of everything (candles, books,
+  announcements, actions) for free, and a backtest can hold the exact version
+  it ran on.
+- Old versions are cheap, so undo, comparing versions, and "what did we know at
+  version N" cost almost nothing; reads can return slices that share storage
+  instead of copying.
+- Appending to the end of a series, the common case, is effectively constant
+  time; a correction in the middle is logarithmic (base 32), not a copy of the
+  series.
+- Costs: a dependency (or our own structure), somewhat more memory and slower
+  scans than a flat `std::vector`, and the interface splits in two: an
+  immutable `Snapshot` with all the read methods, and a `Store` that takes
+  writes and hands out snapshots. The current `Store` already separates reads
+  from writes, so that split is mechanical. The UI would take a snapshot per
+  refresh and the writer would tell it "version N exists" through the inbox.
+
+**D. Copy-on-write chunks.** The dependency-free version of C. A series is a
+list of immutable chunks (say 1024 bars) held by `shared_ptr`; an append copies
+the last chunk and the list of chunks, not the series. Readers keep the chunks
+they took. Same snapshot interface as C, less machinery, worse for corrections
+far back and for sharing between versions of a whole store.
+
+**E. Append-only series with lock-free readers.** Chunked storage that is
+never moved, plus an atomic length: readers see the bars up to the length they
+loaded. Very fast for pure appends, but corrections (the replace rule) and
+announcements arriving out of order break it, so it would need to be combined
+with one of the above.
+
+**F. A database as the store** (SQLite in WAL mode, or a columnar format).
+Snapshot reads and durability for free, and it points at the server later.
+Costs: a heavy dependency, an impedance mismatch for series of bars, and the
+model's types become a schema.
+
+Recommendation: C behind a `Snapshot`/`Store` split, starting with D's chunked
+series if we want no dependency, because the prediction models are the readers
+that most need a stable view, and the UI gets lock-free reads. A is what we do
+meanwhile and still the right way to deliver "something changed" to the UI.

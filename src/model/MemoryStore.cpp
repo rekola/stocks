@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <map>
 
-namespace stocks {
 namespace {
 
 // Put `item` into the time-ordered `v`: in place of an element at the same time that `same` calls the same one,
@@ -174,5 +173,3 @@ class MemoryStore : public Store {
 }  // namespace
 
 std::unique_ptr<Store> makeMemoryStore() { return std::make_unique<MemoryStore>(); }
-
-}  // namespace stocks

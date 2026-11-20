@@ -4,8 +4,6 @@
 
 #include <memory>
 
-namespace stocks {
-
 // Everything the application knows, behind one interface. Data sources write only through it and everything else reads
 // through it, so a store backed by a server can replace the in-memory one. Reads return values, never references into
 // the store. Not thread-safe: one thread owns a store (the writer posts changes to the UI thread).
@@ -60,5 +58,3 @@ class Store {
 
 // An in-memory store.
 std::unique_ptr<Store> makeMemoryStore();
-
-}  // namespace stocks

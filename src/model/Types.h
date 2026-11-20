@@ -10,8 +10,6 @@
 
 // The data model's plain values. Nothing here knows the screen or where data comes from.
 
-namespace stocks {
-
 // Ids are assigned by the Store; a default-constructed id (0) is "none".
 template <class Tag>
 struct Id {
@@ -119,5 +117,3 @@ struct CorporateAction {
   InstrumentId currency;  // dividends only
   std::string note;
 };
-
-}  // namespace stocks

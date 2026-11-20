@@ -2,8 +2,6 @@
 
 #include "model/Store.h"
 
-using namespace stocks;
-
 namespace {
 
 struct World {

@@ -4,7 +4,7 @@
 #include <random>
 
 // A random walk per instrument, the same every run.
-std::vector<Instrument> makeRows(int preset) {
+std::vector<QuoteRow> makeRows(int preset) {
   struct Seed {
     const char *base, *quote, *name;
   };
@@ -20,9 +20,9 @@ std::vector<Instrument> makeRows(int preset) {
      {"USD", "NOK", "US dollar"}, {"EUR", "CHF", "Euro"}, {"NZD", "USD", "New Zealand dollar"}, {"USD", "CNY", "US dollar"}}};
   std::mt19937 rng(static_cast<unsigned>(preset) * 7919u + 1u);
   std::uniform_real_distribution<double> step(-0.03, 0.032), start(1.5, 300.0);
-  std::vector<Instrument> rows;
+  std::vector<QuoteRow> rows;
   for (const Seed & seed : seeds[preset]) {
-    Instrument r;
+    QuoteRow r;
     r.base = seed.base;
     r.quote = seed.quote;
     r.name = seed.name;
