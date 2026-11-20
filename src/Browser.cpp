@@ -2,6 +2,8 @@
 
 #include "Quotes.h"
 
+#include <cellui/Layout.h>
+
 #include <algorithm>
 #include <cassert>
 
@@ -15,17 +17,6 @@ struct Preset {
 };
 constexpr Preset kPresets[] = {{"Commodities", "show-commodities"}, {"Nasdaq Helsinki", "show-nasdaq-helsinki"}, {"Currencies", "show-currencies"}};
 
-struct SortColumn {
-  const char * command;
-  const char * description;
-  int column;
-};
-constexpr SortColumn kSortColumns[] = {{"sort-by-base", "Sort by the base symbol, ascending", 0},
-                                       {"sort-by-quote", "Sort by the quote symbol, ascending", 1},
-                                       {"sort-by-name", "Sort by the instrument's name, ascending", 2},
-                                       {"sort-by-price", "Sort by the price, ascending", 3},
-                                       {"sort-by-change", "Sort by the change over the last day, ascending", 4}};
-
 }  // namespace
 
 Browser::Browser(Application & app)
@@ -37,6 +28,7 @@ Browser::Browser(Application & app)
   std::vector<std::string> tags;
   for (const Preset & preset : kPresets) tags.push_back(preset.tag);
   tags_.setTags(std::move(tags));
+  info_.setColors(&StyleProvider::info_line_fg_color, &StyleProvider::info_line_bg_color);
   table_.setColumns({{.title = "Base", .width = 8},
                      {.title = "Quote", .width = 6},
                      {.title = "Name", .width = 0},
@@ -45,10 +37,14 @@ Browser::Browser(Application & app)
                      {.title = "60 days", .width = 22, .sortable = false, .trace = true}});
   defineCommands();
   bindKeys();
+  showHelp();
   layout(app.rows(), app.cols());
   resized_ = app.resized.connect([this](int rows, int cols) { layout(rows, cols); });
-  // The theme's colours and the keymap profile (the help's key names) come with the display.
-  display_ = app.display_changed.connect([this] { layout(app_.rows(), app_.cols()); });
+  // The keymap profile (the help's key names) and the theme's colours come with the display.
+  display_ = app.display_changed.connect([this] {
+    showHelp();
+    info_.render();
+  });
   tag_ = tags_.chosen.connect([this](int i) {
     if (i < 0) return;
     table_.setModel(std::make_shared<Quotes>(makeRows(i)));
@@ -64,22 +60,15 @@ Browser::Browser(Application & app)
   });
 }
 
+// The tags on the top row (one cell in), a gap, the table, the info line and the status line.
 void Browser::layout(int rows, int cols) {
-  tags_.resize(1, std::max(1, cols - 1));
-  tags_.move(0, 1);
-  table_.resize(std::max(2, rows - 4), cols);
-  table_.move(2, 0);
-  info_.resize(1, cols);
-  info_.move(rows - 2, 0);
-  status_.resize(1, cols);
-  status_.move(rows - 1, 0);
-  const StyleProvider & styles = app_.root().getStyles();
-  info_.setFgColor(styles.info_line_fg_color);
-  info_.setBgColor(styles.info_line_bg_color);
-  info_.fill();
-  std::string help = " stocks - made-up data.  " + app_.bindingFor("command-palette") + ": commands, < > r: sort, Tab: switch focus, " +
-                     app_.bindingFor("quit") + ": quit";
-  info_.putstr(0, 0, Plane::cutToCells(help, cols, TextOverflow::ELLIPSIS));
+  layoutRows(0, 0, rows, cols,
+             {{.widget = &tags_, .margin_start = 1}, {.size = 1}, {.widget = &table_, .fill = 1}, {.widget = &info_}, {.widget = &status_}});
+}
+
+void Browser::showHelp() {
+  info_.setText(" stocks - made-up data.  " + app_.bindingFor("command-palette") + ": commands, click a heading: sort, Tab: switch focus, " +
+                app_.bindingFor("quit") + ": quit");
 }
 
 void Browser::defineCommands() {
@@ -90,17 +79,6 @@ void Browser::defineCommands() {
   const int last = static_cast<int>(std::size(kPresets)) - 1;
   commands.define("next-preset", "Show the next preset", [this, last] { tags_.select(std::min(tags_.selected() + 1, last)); });
   commands.define("previous-preset", "Show the previous preset", [this] { tags_.select(std::max(tags_.selected() - 1, 0)); });
-  for (const SortColumn & sort : kSortColumns) {
-    commands.define(sort.command, sort.description, [this, column = sort.column] { table_.sortBy(column, SortOrder::ASCENDING); });
-  }
-  commands.define("reverse-sort", "Reverse the order of the sorted column", [this] {
-    if (table_.sortColumn() < 0) {
-      status_.setMessage("Not sorted");
-      return;
-    }
-    table_.sortBy(table_.sortColumn(), table_.sortOrder() == SortOrder::ASCENDING ? SortOrder::DESCENDING : SortOrder::ASCENDING);
-  });
-  commands.define("clear-sort", "Show the rows in the order the source gave them", [this] { table_.sortBy(-1, SortOrder::NONE); });
   commands.define("focus-tags", "Move the keyboard to the preset tags", [this] { app_.input().setFocus(&tags_); });
   commands.define("focus-table", "Move the keyboard to the table", [this] { app_.input().setFocus(&table_); });
   commands.define("quit", "Leave stocks", [this] { app_.quit(); });

@@ -3,6 +3,7 @@
 #include <cellui/Table.h>
 
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -28,10 +29,10 @@ class Quotes : public cellui::TableModel {
   std::vector<Instrument> rows;
   int rowCount() const override { return static_cast<int>(rows.size()); }
   std::string text(int r, int c) const override;
-  std::vector<float> trace(int r, int) const override { return at(r).history; }
+  std::span<const float> trace(int r, int) const override { return at(r).history; }
   std::optional<cellui::Color> color(int r, int c) const override;
-  // Prices and changes by their values, not their rounded text.
-  int compare(int column, int a, int b) const override;
+  // Prices and changes sort by their values, not their rounded text.
+  std::optional<double> number(int r, int c) const override;
 
  private:
   const Instrument & at(int r) const { return rows[static_cast<size_t>(r)]; }
