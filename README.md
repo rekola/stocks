@@ -8,15 +8,18 @@
 A stock data browser for the terminal and a GTK window, built on
 [cellui](https://github.com/rekola/cellui).
 
-So far it is the browser's skeleton: a row of preset tags (commodities, Nasdaq
-Helsinki, currencies) over a sortable, scrollable table with a price trace per
-row, all over made-up numbers. There is no data model yet.
+A row of preset tags (commodities, Nasdaq Helsinki, currencies) over a sortable,
+scrollable table with a price trace per row. The rows are the edges of a
+[data model](plans/data-model.md) that data sources fill on a thread of their
+own; the table follows as the data arrives. The default source is Yahoo Finance
+(daily candles, dividends and splits; unofficial, no key, for personal use).
 
     cmake -B build
     cmake --build build -j
     build/stocks                 # on the display cellui picks
     build/stocks --ui terminal   # in the terminal
     build/stocks --ui window     # in a window, when cellui is built with GTK
+    build/stocks --source synthetic   # made-up prices, no network
 
 Keys: arrows, PgUp/PgDn, Home/End move; Tab moves between the tags and the table; `M-x` (`Ctrl+Shift+P` on
 the desktop keymap) opens the command palette, where every command is listed with
@@ -28,7 +31,11 @@ cellui is not pinned while the two are developed together: the build fetches its
 `main`. CI builds on Linux (x86-64 and ARM64, with the GTK window), macOS and
 Windows, and runs `ctest`. To build against a local checkout:
 `-DFETCHCONTENT_SOURCE_DIR_CELLUI=/path/to/cellui`. Needs libunistring
-(`libunistring-dev`).
+(`libunistring-dev`) and, except on Windows, libcurl (`libcurl4-openssl-dev`);
+on Windows HTTP goes through WinHTTP. Both are behind
+[httpclient](https://github.com/rekola/httpclient), fetched at a pinned commit
+like [immer](https://github.com/arximboldi/immer) and
+[nlohmann/json](https://github.com/nlohmann/json).
 
 The data model is planned in [plans/data-model.md](plans/data-model.md).
 
