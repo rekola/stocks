@@ -1,5 +1,5 @@
-// The stock browser. For now: cellui's Table, TagBar and trace chart over
-// made-up rows (there is no data model yet).
+// The stock browser: cellui's Table, TagBar and trace chart over a store of
+// candles (made-up ones for now).
 //   stocks                 on the display cellui picks
 //   stocks --ui terminal   in the terminal;  --ui window  in a window
 // Keys: arrows, PgUp/PgDn, Home/End move; < and > pick the sort column, r
@@ -7,10 +7,12 @@
 // opens the command palette; q quits. Clicking a heading sorts, clicking a tag
 // or row chooses it, the wheel scrolls.
 #include "Browser.h"
+#include "Synthetic.h"
 
 #include <cellui/Application.h>
 
 #include <cstdio>
+#include <memory>
 #include <string>
 
 int main(int argc, char ** argv) {
@@ -24,6 +26,8 @@ int main(int argc, char ** argv) {
     std::fprintf(stderr, "usage: %s [--ui auto|terminal|window] [--theme original|dark|light]\n", argv[0]);
     return 2;
   }
-  Browser browser(*app);
+  std::shared_ptr<Store> store = makeMemoryStore();
+  fillSyntheticData(*store);
+  Browser browser(*app, store);
   return app->run();
 }

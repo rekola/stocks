@@ -1,6 +1,6 @@
 # Data model
 
-Status: steps 1 and 2 are built (`src/model/`: `Types.h`, `Store.h`,
+Status: steps 1 to 3 are built (`src/model/`: `Types.h`, `Store.h`,
 `MemoryStore.cpp`, tests in `tests/ModelTests.cpp`), as an immutable persistent
 store. The table still shows the
 made-up rows. The order book is stored but not used by anything yet.
@@ -112,11 +112,15 @@ the in-memory one, and a server-backed store would hand out snapshots too.
 
 1. ~~Types, with tests.~~ Done.
 2. ~~In-memory `Store`, with tests.~~ Done.
-3. Wire the table to it: a preset selects markets, rows are edges, a Dataset
-   column, latest price and change from candles. Retire `Quotes.h`'s
-   `QuoteRow` (the made-up row, renamed so `Instrument` means the model's).
-4. A first source that fills the store (synthetic or CSV), replacing the
-   made-up rows.
+3. ~~Wire the table to it~~ Done: a preset is a market of the same name, rows
+   are edges (`QuoteRow` is the display row built from a snapshot), a Dataset
+   column, latest price and change from the candles. Rows come in the store's
+   key order; the table has no refresh yet (it reads a snapshot when a preset is
+   chosen).
+4. A first real source (CSV or a provider). The synthetic source
+   (`src/Synthetic.cpp`) already fills the store with made-up daily candles. The
+   table follows new versions through `ThreadInbox` once a source runs on its
+   own thread.
 5. The simple order-book view for the prediction models, once the questions
    below are settled.
 

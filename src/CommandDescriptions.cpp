@@ -17,6 +17,7 @@ std::string commandDescription(std::string_view name) {
       {"show-nasdaq-helsinki", "Show the Nasdaq Helsinki preset"},
       {"sort-by-base", "Sort by the base symbol, ascending"},
       {"sort-by-change", "Sort by the change over the last day, ascending"},
+      {"sort-by-dataset", "Sort by the name of the dataset the row comes from, ascending"},
       {"sort-by-name", "Sort by the instrument's name, ascending"},
       {"sort-by-price", "Sort by the price, ascending"},
       {"sort-by-quote", "Sort by the quote symbol, ascending"},

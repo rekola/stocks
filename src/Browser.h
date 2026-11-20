@@ -8,6 +8,9 @@
 #include <cellui/Table.h>
 #include <cellui/TagBar.h>
 
+#include "model/Store.h"
+
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -19,7 +22,8 @@
 // is the echo area; M-x (Ctrl+Shift+P on the desktop keymap) opens the palette.
 class Browser {
  public:
-  explicit Browser(cellui::Application & app);
+  // Shows what `store` holds: a preset is a market of that name, a row an edge in it.
+  Browser(cellui::Application & app, std::shared_ptr<Store> store);
 
   cellui::Table & table() { return table_; }
   cellui::TagBar & tags() { return tags_; }
@@ -44,6 +48,7 @@ class Browser {
   cellui::KeymapProfile profile() const { return app_.root().keymapProfile(); }
 
   cellui::Application & app_;
+  std::shared_ptr<Store> store_;
   cellui::TagBar tags_;
   cellui::Table table_;
   cellui::Widget info_;

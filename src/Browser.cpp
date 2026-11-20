@@ -24,12 +24,12 @@ struct SortColumn {
   const char * command;
   int column;
 };
-constexpr SortColumn kSortColumns[] = {{"sort-by-base", 0}, {"sort-by-quote", 1}, {"sort-by-name", 2}, {"sort-by-price", 3}, {"sort-by-change", 4}};
+constexpr SortColumn kSortColumns[] = {{"sort-by-base", 0}, {"sort-by-quote", 1}, {"sort-by-name", 2}, {"sort-by-dataset", 3}, {"sort-by-price", 4}, {"sort-by-change", 5}};
 
 }  // namespace
 
-Browser::Browser(Application & app)
-    : app_(app), tags_(app.root()), table_(app.root(), app.charts()), info_(app.root()), status_(app.root()) {
+Browser::Browser(Application & app, std::shared_ptr<Store> store)
+    : app_(app), store_(std::move(store)), tags_(app.root()), table_(app.root(), app.charts()), info_(app.root()), status_(app.root()) {
   tags_.attach(app.widgets());
   table_.attach(app.widgets());
   info_.attach(app.widgets());
@@ -40,6 +40,7 @@ Browser::Browser(Application & app)
   table_.setColumns({{"Base", 8, Align::LEFT, true, false},
                      {"Quote", 6, Align::LEFT, true, false},
                      {"Name", 0, Align::LEFT, true, false},
+                     {"Dataset", 12, Align::LEFT, true, false},
                      {"Price", 10, Align::RIGHT, true, false},
                      {"Change", 9, Align::RIGHT, true, false},
                      {"60 days", 22, Align::LEFT, false, true}});
@@ -53,7 +54,9 @@ Browser::Browser(Application & app)
   display_ = app.display_changed.connect([this] { layout(app_.rows(), app_.cols()); });
   tag_ = tags_.chosen.connect([this](int i) {
     if (i < 0) return;
-    table_.setModel(std::make_shared<Quotes>(makeRows(i)));
+    auto snapshot = store_->snapshot();
+    std::optional<Market> market = snapshot->findMarket(kPresets[i].tag);
+    table_.setModel(std::make_shared<Quotes>(market ? makeRows(*snapshot, market->id) : std::vector<QuoteRow>{}));
     table_.select(0);
     status_.setMessage(std::string("Showing ") + kPresets[i].tag);
   });
