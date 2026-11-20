@@ -36,22 +36,12 @@ FetchContent_Declare(immer
   GIT_TAG v0.8.1)
 FetchContent_MakeAvailable(immer)
 
-# httpclient: one HTTP interface over WinHTTP and libcurl. It has no build system of its own, so the sources it needs
-# are compiled here. Pinned to a commit.
+# httpclient: one HTTP interface over WinHTTP and libcurl (Linux, macOS: libcurl; Windows: WinHTTP). It folds host
+# names with utf8proc or libunistring, and takes whichever is installed (libunistring is, for cellui). Pinned.
 FetchContent_Declare(httpclient
   GIT_REPOSITORY https://github.com/rekola/httpclient
-  GIT_TAG fbf8ae2b2f6fd4fcc6b0f0adf68b6c77671e1f62)
+  GIT_TAG 1c0b44efb1ae71e7ae923ae45050212790d3d301)
 FetchContent_MakeAvailable(httpclient)
-if(WIN32)
-  add_library(stocks_http STATIC ${httpclient_SOURCE_DIR}/src/WinHTTPClient.cpp ${httpclient_SOURCE_DIR}/src/URI.cpp)
-  target_link_libraries(stocks_http PUBLIC winhttp)
-else()
-  find_package(CURL REQUIRED)
-  add_library(stocks_http STATIC ${httpclient_SOURCE_DIR}/src/CurlClient.cpp)
-  target_link_libraries(stocks_http PUBLIC CURL::libcurl)
-endif()
-target_include_directories(stocks_http PUBLIC ${httpclient_SOURCE_DIR}/include)
-target_compile_features(stocks_http PUBLIC cxx_std_17)
 
 # nlohmann/json: reads the providers' answers. Header-only; pinned.
 set(JSON_BuildTests OFF CACHE BOOL "" FORCE)
@@ -72,7 +62,7 @@ target_link_libraries(stocks_model PUBLIC immer Threads::Threads)
 add_library(stocks_lib STATIC src/Browser.cpp src/Quotes.cpp src/Synthetic.cpp src/source/Http.cpp src/source/Universe.cpp
   src/source/YahooSource.cpp src/source/SourceRunner.cpp)
 target_include_directories(stocks_lib PUBLIC src)
-target_link_libraries(stocks_lib PUBLIC cellui stocks_model stocks_http nlohmann_json::nlohmann_json)
+target_link_libraries(stocks_lib PUBLIC cellui stocks_model httpclient::httpclient nlohmann_json::nlohmann_json)
 target_compile_definitions(stocks_lib PUBLIC STOCKS_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
 
 add_executable(stocks src/main.cpp)

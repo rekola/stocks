@@ -33,7 +33,9 @@ Windows, and runs `ctest`. To build against a local checkout:
 `-DFETCHCONTENT_SOURCE_DIR_CELLUI=/path/to/cellui`. Needs libunistring
 (`libunistring-dev`) and, except on Windows, libcurl (`libcurl4-openssl-dev`);
 on Windows HTTP goes through WinHTTP. Both are behind
-[httpclient](https://github.com/rekola/httpclient), fetched at a pinned commit
+[httpclient](https://github.com/rekola/httpclient), which builds itself (and
+folds host names with the libunistring that is already needed, or a utf8proc if
+that is installed), fetched at a pinned commit
 like [immer](https://github.com/arximboldi/immer) and
 [nlohmann/json](https://github.com/nlohmann/json).
 
