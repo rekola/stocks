@@ -3,6 +3,7 @@
 #include "Browser.h"
 #include "Quotes.h"
 #include "Synthetic.h"
+#include "source/Source.h"
 
 #include <cellui/Application.h>
 #include <cellui/TestBackend.h>
@@ -213,4 +214,34 @@ TEST(the_made_up_data_fills_every_preset) {
     CHECK(f.browser->table().model()->rowCount() == 12);
     CHECK(f.browser->table().model()->text(f.browser->table().rowAt(0), Quotes::DATASET) == "synthetic");
   }
+}
+
+TEST(the_table_follows_the_store_when_told_it_changed_and_keeps_the_sort_and_the_selection) {
+  Fixture f(false);
+  Instrument eur = f.store->addInstrument({{}, "EUR", "Euro", InstrumentKind::Currency});
+  Instrument usd = f.store->addInstrument({{}, "USD", "US dollar", InstrumentKind::Currency});
+  Instrument gbp = f.store->addInstrument({{}, "GBP", "British pound", InstrumentKind::Currency});
+  Market currencies = f.store->addMarket({{}, "Currencies"});
+  Dataset a = f.store->addDataset({{}, "provider-a"});
+  EdgeKey eurusd{eur.id, usd.id, currencies.id, a.id}, gbpusd{gbp.id, usd.id, currencies.id, a.id};
+  f.store->appendCandles(eurusd, 1000, {{0, 1, 1, 1, 1.0, 1}, {1000, 1, 1, 1, 1.1, 1}});
+  f.app->execute("show-currencies");
+  Table & t = f.browser->table();
+  CHECK(t.model()->rowCount() == 1);
+  t.sortBy(Quotes::PRICE, SortOrder::ASCENDING);
+
+  f.store->appendCandles(gbpusd, 1000, {{0, 1, 1, 1, 1.2, 1}, {1000, 1, 1, 1, 1.3, 1}});
+  f.app->widgets().postToRoot(StoreChanged{});  // what the source thread's post turns into
+  CHECK(t.model()->rowCount() == 2);
+  CHECK(t.sortColumn() == Quotes::PRICE);
+  CHECK(t.model()->text(t.rowAt(0), Quotes::BASE) == "EUR" && t.model()->text(t.rowAt(1), Quotes::BASE) == "GBP");
+
+  t.select(t.rowAt(1));  // GBP; new data for EUR must not move the selection
+  f.store->appendCandles(eurusd, 1000, {{2000, 1, 1, 1, 1.5, 1}});
+  f.app->widgets().postToRoot(StoreChanged{});
+  CHECK(t.model()->text(t.selectedRow(), Quotes::BASE) == "GBP");
+  CHECK(t.model()->text(t.rowAt(1), Quotes::BASE) == "EUR");  // 1.5 sorts after 1.3
+
+  f.app->widgets().postToRoot(SourceMessage{"yahoo: NOKIA.HE: HTTP 404"});
+  CHECK(f.text().find("yahoo: NOKIA.HE: HTTP 404") != std::string::npos);
 }
