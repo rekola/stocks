@@ -1,7 +1,9 @@
 # Data model
 
-Status: plan, nothing built. Decisions marked **Decided** come from the
-discussion so far; everything under "Open questions" is not locked.
+Status: steps 1 to 3 are built (`src/model/`: `Types.h`, `Store.h`,
+`MemoryStore.cpp`, tests in `tests/ModelTests.cpp`), as an immutable persistent
+store. The table still shows the
+made-up rows. The order book is stored but not used by anything yet.
 
 ## Goals
 
@@ -13,118 +15,133 @@ discussion so far; everything under "Open questions" is not locked.
   instruments, so stocks, commodities, currencies and indices need no special
   cases.
 - In memory first. Later a server collects data and fills the same tables when
-  the application starts, so the model sits behind an interface a server-backed
-  store can implement. C++ throughout.
+  the application starts, so the model sits behind an interface (`Store`) that a
+  server-backed store can implement.
 
 ## The graph
 
-**Nodes are instruments.** One type for everything that can be priced or that
-prices something: a company's share, a currency, a commodity, an index. An
-instrument has an id, a symbol, a name and a kind (`company`, `currency`,
-`commodity`, `index`, ...). A currency is an instrument like any other, which is
-what lets Forex be currency to currency.
+**Nodes are instruments**: a company's share, a currency, a commodity, an
+index. An instrument has an id, a symbol, a name and a kind. A currency is an
+instrument like any other, which is what lets Forex be currency to currency.
 
-**Edges are always between two instruments.** An edge `base -> quote` says
-"one unit of `base` costs this much `quote`". Usually `base` is a company and
-`quote` a currency (NOKIA -> EUR); for Forex both are currencies (EUR -> USD).
+**Edges are between two instruments.** An edge `base -> quote` says "one unit
+of `base` costs this much `quote`" (NOKIA -> EUR, EUR -> USD).
 
-**Decided: the key of an edge** is
-
-    (base instrument, quote instrument, market, dataset)
+**The key of an edge** is `(base, quote, market, dataset)`:
 
 - **market**: the same instrument can be listed on several markets with
-  different prices (Nasdaq Helsinki, Nasdaq Stockholm, a dark pool). A market is
-  its own small record (id, name, and later its currency, calendar, time zone).
-- **dataset**: where a fact came from, with at least a name; other fields can be
-  added later (source, license, whether it is derived, such as a prediction).
-  Because the dataset is in the key, two sources that disagree about the same
-  pair on the same market both stay; nothing is merged on write.
+  different prices. A market is its own small record (id, name; later its
+  currency, calendar and time zone).
+- **dataset**: where a fact came from (a provider, a file, a prediction model).
+  Because it is in the key, two sources that disagree about the same pair on
+  the same market both stay; nothing is merged on write.
 
-**Decided: payloads on an edge.** For now:
+## What hangs on the keys
 
-- **Candles**: time-ordered OHLCV bars (open, high, low, close, volume) with a
-  timestamp and an interval.
+**Decided: one series per key**, never one object per bar.
+
+On an edge key (a price of something):
+
+- **Candles**: a time-ordered series of OHLCV bars, one bar per start time, all
+  the same interval. The interval belongs to the series; a dataset with two
+  intervals (1 minute and 1 day) is two datasets. A bar at a time already in the
+  series replaces it, so corrections need no special path.
 - **Order book snapshots**: the bids and asks standing at a moment (price and
-  size per level). Quotes carry information even when nothing traded: they say
-  that somebody would have bought or sold at a price. Order books are kept
-  apart from candles because they are a different kind of fact, but they share
-  the edge key.
+  size per level), time-ordered. Kept apart from candles because they are a
+  different kind of fact, but under the same key. Quotes carry information even
+  when nothing traded.
 
-Later, other payloads (predictions from the machine learning models, as their
-own dataset) hang on the same keys.
+On an event key `(instrument, dataset)` (something said about the company
+itself, so it has no market or quote currency):
+
+- **Announcements**: time, category, headline, body, url. Press releases,
+  filings, profit warnings. Same time and headline replaces; same time with
+  another headline is a second announcement.
+- **Corporate actions**: the ex-date, a kind (`Split`, `Dividend`, `Other`), a
+  value (new shares per old for a split, amount per share for a dividend), the
+  currency instrument of a dividend and a note. Same time and kind replaces.
+
+Both are facts for the prediction models as much as for the screen, so they sit
+in the store as data, not as annotations on the table.
+
+Later: predictions from the machine learning models, as their own datasets on
+the same keys.
 
 ## What the application shows
 
-**Decided: a preset names a market, not instruments.** Choosing a tag
-(Commodities, Nasdaq Helsinki, Currencies) selects markets. The system then
-looks up which edges exist in them and shows **one table row per edge**, not per
-instrument. If two datasets have data for the same instrument on the selected
-market, they are two rows. Merging such rows is later work and not important
-now.
+**A preset names a market, not instruments.** Choosing a tag (Commodities,
+Nasdaq Helsinki, Currencies) selects markets. The system looks up which edges
+have data there and shows **one table row per edge**. If two datasets have data
+for the same instrument on the selected market, they are two rows. Merging such
+rows is later work.
 
-A row needs: the instrument's symbol and name, the dataset, the latest price and
-the change over the last interval (from the candle series), and the trace of
-recent closes. So the table gets a Dataset column. The row's identity is the
-edge key.
+A row needs the instrument's symbol and name, the dataset, the latest price and
+the change over the last interval (from `lastCandles`), and the trace of recent
+closes. So the table gets a Dataset column. The row's identity is the edge key.
 
-## Storage interface (in memory first)
+## Store and snapshots
 
-A `Store` interface with an in-memory implementation:
+**Decided: the store is an immutable, persistent value** (`immer` vectors and
+maps). `Snapshot` (`src/model/Store.h`) is one version of everything: it never
+changes, copying it is cheap, and a write makes a new snapshot that shares almost
+all of its storage with the one before. A reader takes `store.snapshot()` once
+and reads it as long as it likes, with no locks, and sees one consistent world.
+`Store` is the write side and the source of snapshots; `makeMemoryStore()` is
+the in-memory one, and a server-backed store would hand out snapshots too.
 
-- `instruments`, `markets`, `datasets`: add, find by id, find by symbol.
-- `edges(market)`: the edge keys that have data in a market (what a preset
-  needs).
-- `candles(edge key, range)`, `append(edge key, candles)`.
-- `book(edge key, time)`, `append(edge key, snapshot)`.
+- Writes: `addInstrument`/`addMarket`/`addDataset` (by symbol or name: the
+  record already there is returned), `appendCandles`, `appendBooks`,
+  `appendAnnouncements`, `appendActions`. Writers take a lock one at a time and
+  publish the new snapshot with one pointer swap; `snapshot()` never waits. A
+  write that changes nothing publishes nothing, and each one that does makes the
+  next `version()`.
+- Reads on a snapshot: lookups by id and name, `edges(market)` (keys with
+  candles or a book in a market), `candles(key, range)`, `lastCandles(key, n)`,
+  `books(key, range)`, `bookAt(key, time)`, `announcements`, `actions`, and
+  `events(instrument)` for the datasets that say anything about an instrument.
+- Series come back as `Seq<T>` (an immer `flex_vector`): slices share storage
+  with the snapshot, and a reference into one is valid as long as it is held.
+  Time ranges are half-open `[from, to)`; time is UTC milliseconds.
+- Appending at the end of a series is effectively constant time; a correction or
+  late item in the middle is logarithmic. Tested with readers and writers on
+  several threads, and clean under ThreadSanitizer.
+- The UI takes a snapshot per refresh. The writer tells it that a new version
+  exists through cellui's `ThreadInbox`; the UI never waits on the store.
 
-Data sources (a source adapter per provider, a CSV reader, later the server)
-only ever write through this interface, and everything else reads through it.
-A source may feed the same edge from several places, as separate datasets.
+## Steps
 
-## Steps (not started)
+1. ~~Types, with tests.~~ Done.
+2. ~~In-memory `Store`, with tests.~~ Done.
+3. ~~Wire the table to it~~ Done: a preset is a market of the same name, rows
+   are edges (`QuoteRow` is the display row built from a snapshot), a Dataset
+   column, latest price and change from the candles. Rows come in the store's
+   key order; the table has no refresh yet (it reads a snapshot when a preset is
+   chosen).
+4. A first real source (CSV or a provider). The synthetic source
+   (`src/Synthetic.cpp`) already fills the store with made-up daily candles. The
+   table follows new versions through `ThreadInbox` once a source runs on its
+   own thread.
+5. The simple order-book view for the prediction models, once the questions
+   below are settled.
 
-1. Types: `Instrument`, `Market`, `Dataset`, `EdgeKey`, `Candle`,
-   `BookSnapshot`, with tests.
-2. In-memory `Store` with the lookups above, with tests.
-3. Wire the table to it: a preset selects markets, rows are edges, a Dataset
-   column, latest price and change from candles.
-4. A first source that fills the store (synthetic or CSV), replacing the made-up
-   rows.
-5. The simple order-book view for the prediction models (see below), once the
-   question is settled.
+## Decided
+
+- Prices are `double`. Nothing here settles trades.
+- The model has a slot for corporate actions and announcements, kept as their
+  own series (above). Prices are stored as reported; adjusting for splits and
+  dividends is computed from the corporate actions when a model asks, never
+  written back over the bars.
 
 ## Open questions
-
-### One edge with the whole history, or one edge per candle?
-
-Undecided. Either way the key above already contains dataset and market, so
-conflicting facts coexist.
-
-- **A series per key** (one edge object holding a time-ordered candle vector):
-  appending a candle is cheap, a range read is a slice, the table's
-  latest/change/trace come straight from the tail, and there are far fewer
-  keys. A correction to an old candle needs an in-place edit, and the series
-  needs a policy for gaps.
-- **One edge per candle** (the timestamp becomes part of the key): corrections
-  and late data are just new facts, and a dataset can disagree with itself over
-  time. But the number of keys explodes (years of daily bars for thousands of
-  instruments), reads need an index by time, and almost every consumer wants a
-  series anyway.
-
-A middle road: store series, expose the same read interface either way, so the
-choice can change without touching callers. To be settled before step 1 is
-finished.
 
 ### The order book in a simple form for the prediction models
 
 The prediction models want something simpler than the full book: *if I want to
-buy 1000 shares, what price would I have paid, given the book?* Walking the
-book answers it for one snapshot: for a buy of quantity Q, take the asks from
-the best price up, level by level, until Q is filled; the effective price is
-the volume-weighted average of the fills (and the sell side is the same over
-the bids). The limit as Q goes to zero is the best ask (or bid), and the
-difference from the mid price is the cost of the size, which a model can use
-directly.
+buy 1000 shares, what price would I have paid, given the book?* For a buy of
+quantity Q, take the asks from the best price up, level by level, until Q is
+filled; the effective price is the volume-weighted average of the fills (the
+sell side is the same over the bids). The limit as Q goes to zero is the best
+ask (or bid), and the difference from the mid price is the cost of the size.
 
 That much is arithmetic. What is not settled:
 
@@ -135,28 +152,82 @@ That much is arithmetic. What is not settled:
 - **Which quantities?** A fixed set (100, 1000, 10000 shares), a size relative
   to typical volume, or a notional amount in the quote currency, which compares
   across instruments better than shares do.
-- **A book too thin for Q.** No price (an empty value), the price of what could
-  be filled plus a flag for the unfilled part, or a penalty price. A model
-  needs to tell "thin" from "missing".
+- **A book too thin for Q.** No price, the price of what could be filled plus a
+  flag for the unfilled part, or a penalty price. A model needs to tell "thin"
+  from "missing".
 - **Time alignment.** Snapshots do not arrive at candle boundaries. Take the
-  last snapshot before the bar's close, an average over the bar, or keep them
-  separate and let the model resample.
+  last snapshot before the bar's close (`bookAt` does this), an average over the
+  bar, or keep them separate and let the model resample.
 - **Fees, tick size and hidden liquidity** are ignored in the plain walk;
   whether any belongs in the data layer or in the model.
 
 ### Smaller ones
 
-- **Prices as `double`, or fixed-point / decimal?** `double` is simplest and
-  adequate for display and models; exact decimals matter for anything that
-  settles.
-- **Corporate actions** (splits, dividends): store prices as reported and keep
-  adjustment factors as their own series, or store adjusted prices?
-- **Time**: UTC timestamps with an explicit interval per series; how sessions,
-  holidays and time zones are represented (probably on the market).
+- **Time**: sessions, holidays and time zones are probably on the market.
 - **Identity across sources**: one provider calls it `NOKIA.HE`, another
-  `NOK1V`. A symbol alias table per dataset, or a canonical instrument id
-  assigned when a source is added.
-- **Threading**: the store is read on the UI thread while sources fill it from
-  other threads. Likely a single writer posting changes to the UI thread
-  (cellui's `ThreadInbox`) so the UI never locks; to be decided with the first
-  source.
+  `NOK1V`. Today a symbol is one instrument; a symbol alias table per dataset,
+  or a canonical id assigned when a source is added, is needed once a second
+  provider arrives.
+- **Gaps in a series**: the store does not fill or mark missing bars; whether it
+  should is decided when a source shows what its gaps look like.
+
+## Concurrency options
+
+Decided: C, with immer (built). The others are kept for the reasoning. The need: the UI reads the store while sources fill it from other
+threads, and prediction models will read long histories without freezing the
+screen or seeing half an update. Today a store belongs to one thread.
+
+**A. One owner, changes posted to it.** Sources send batches to the thread that
+owns the store (cellui's `ThreadInbox`); only that thread touches the store.
+Simplest and needs nothing new. Cost: a model on another thread cannot read,
+only get copies, and a big append blocks the UI thread while it is applied.
+
+**B. A lock around the store** (`std::shared_mutex`). Reads already return
+values, so a read is a copy made under the lock. Easy to retrofit. Cost: a long
+range read blocks the writer and the reverse; a model sees a different world on
+each call unless it holds the lock across many calls.
+
+**C. Immutable, persistent store (Clojure style).** The whole store is an
+immutable value. A write builds a new version that shares almost all of its
+structure with the old one (persistent maps and vectors, as in the `immer`
+library: header-only, Boost licence, with a persistent vector and map, and
+`flex_vector` that slices and concatenates cheaply). One writer publishes each
+new version by swapping one pointer (`std::atomic<std::shared_ptr>`); a reader
+takes the current version once and reads it for as long as it likes, with no
+locks and no waiting.
+- A model gets a consistent as-of view of everything (candles, books,
+  announcements, actions) for free, and a backtest can hold the exact version
+  it ran on.
+- Old versions are cheap, so undo, comparing versions, and "what did we know at
+  version N" cost almost nothing; reads can return slices that share storage
+  instead of copying.
+- Appending to the end of a series, the common case, is effectively constant
+  time; a correction in the middle is logarithmic (base 32), not a copy of the
+  series.
+- Costs: a dependency (or our own structure), somewhat more memory and slower
+  scans than a flat `std::vector`, and the interface splits in two: an
+  immutable `Snapshot` with all the read methods, and a `Store` that takes
+  writes and hands out snapshots. The current `Store` already separates reads
+  from writes, so that split is mechanical. The UI would take a snapshot per
+  refresh and the writer would tell it "version N exists" through the inbox.
+
+**D. Copy-on-write chunks.** The dependency-free version of C. A series is a
+list of immutable chunks (say 1024 bars) held by `shared_ptr`; an append copies
+the last chunk and the list of chunks, not the series. Readers keep the chunks
+they took. Same snapshot interface as C, less machinery, worse for corrections
+far back and for sharing between versions of a whole store.
+
+**E. Append-only series with lock-free readers.** Chunked storage that is
+never moved, plus an atomic length: readers see the bars up to the length they
+loaded. Very fast for pure appends, but corrections (the replace rule) and
+announcements arriving out of order break it, so it would need to be combined
+with one of the above.
+
+**F. A database as the store** (SQLite in WAL mode, or a columnar format).
+Snapshot reads and durability for free, and it points at the server later.
+Costs: a heavy dependency, an impedance mismatch for series of bars, and the
+model's types become a schema.
+
+Chosen: C behind a `Snapshot`/`Store` split, because the prediction models are
+the readers that most need a stable view, and the UI gets lock-free reads. A is
+still the way to tell the UI that something changed.

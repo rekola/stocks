@@ -19,8 +19,8 @@ constexpr Preset kPresets[] = {{"Commodities", "show-commodities"}, {"Nasdaq Hel
 
 }  // namespace
 
-Browser::Browser(Application & app)
-    : app_(app), tags_(app.root()), table_(app.root(), app.charts()), info_(app.root()), status_(app.root()) {
+Browser::Browser(Application & app, std::shared_ptr<Store> store)
+    : app_(app), store_(std::move(store)), tags_(app.root()), table_(app.root(), app.charts()), info_(app.root()), status_(app.root()) {
   tags_.attach(app.widgets());
   table_.attach(app.widgets());
   info_.attach(app.widgets());
@@ -32,6 +32,7 @@ Browser::Browser(Application & app)
   table_.setColumns({{.title = "Base", .width = 8},
                      {.title = "Quote", .width = 6},
                      {.title = "Name", .width = 0},
+                     {.title = "Dataset", .width = 12},
                      {.title = "Price", .width = 10, .align = Align::RIGHT},
                      {.title = "Change", .width = 9, .align = Align::RIGHT},
                      {.title = "60 days", .width = 22, .sortable = false, .trace = true}});
@@ -47,7 +48,9 @@ Browser::Browser(Application & app)
   });
   tag_ = tags_.chosen.connect([this](int i) {
     if (i < 0) return;
-    table_.setModel(std::make_shared<Quotes>(makeRows(i)));
+    auto snapshot = store_->snapshot();
+    std::optional<Market> market = snapshot->findMarket(kPresets[i].tag);
+    table_.setModel(std::make_shared<Quotes>(market ? makeRows(*snapshot, market->id) : std::vector<QuoteRow>{}));
     table_.select(0);
     status_.setMessage(std::string("Showing ") + kPresets[i].tag);
   });
