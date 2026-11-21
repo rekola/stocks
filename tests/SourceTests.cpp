@@ -18,8 +18,21 @@ std::string fixture(const std::string & name) {
   return s.str();
 }
 
+// A small universe of its own, so the tests do not depend on what the lists on disk hold.
+const Universe & testUniverse() {
+  static const Universe u = {
+    {"Nasdaq Helsinki", "NOKIA", "EUR", "Nokia", "NOKIA.HE", InstrumentKind::Company},
+    {"Nasdaq Helsinki", "FORTUM", "EUR", "Fortum", "FORTUM.HE", InstrumentKind::Company},
+    {"Nasdaq Helsinki", "SAMPO", "EUR", "Sampo", "SAMPO.HE", InstrumentKind::Company},
+    {"Commodities", "XAU", "USD", "Gold", "GC=F", InstrumentKind::Commodity},
+    {"Commodities", "XAG", "USD", "Silver", "SI=F", InstrumentKind::Commodity},
+    {"Currencies", "EUR", "USD", "Euro", "EURUSD=X", InstrumentKind::Currency},
+  };
+  return u;
+}
+
 const UniverseEntry & entry(const std::string & yahoo) {
-  for (const UniverseEntry & e : universe())
+  for (const UniverseEntry & e : testUniverse())
     if (yahoo == e.yahoo) return e;
   static const UniverseEntry none{};
   return none;
@@ -156,10 +169,10 @@ TEST(loading_asks_for_every_instrument_and_reports_the_ones_that_fail) {
     return failed(404);
   };
   Listener listener;
-  YahooSource yahoo("1y", std::chrono::milliseconds(0));
+  YahooSource yahoo(testUniverse(), "1y", std::chrono::milliseconds(0));
   yahoo.load(*store, http, listener);
   CHECK(listener.changes == 3);
-  CHECK(listener.messages.size() == universe().size() - 3);
+  CHECK(listener.messages.size() == testUniverse().size() - 3);
   bool fortum = false, notFound = false;
   for (const std::string & m : listener.messages) {
     fortum = fortum || m == "yahoo: FORTUM.HE: not a chart response";
@@ -179,7 +192,7 @@ TEST(loading_tries_the_second_host_when_the_first_does_not_answer) {
     return url.find("/NOKIA.HE?") != std::string::npos ? ok(fixture("nokia.json")) : failed(404);
   };
   Listener listener;
-  YahooSource("1y", std::chrono::milliseconds(0)).load(*store, http, listener);
+  YahooSource(testUniverse(), "1y", std::chrono::milliseconds(0)).load(*store, http, listener);
   CHECK(listener.changes == 1);
   bool second = false;
   for (const std::string & u : http.urls) second = second || (u.find("query2") != std::string::npos && u.find("NOKIA.HE") != std::string::npos);
@@ -191,7 +204,7 @@ TEST(a_rate_limit_stops_the_load) {
   FakeHttp http;
   http.answer = [](const std::string &) { return failed(429); };
   Listener listener;
-  YahooSource("1y", std::chrono::milliseconds(0)).load(*store, http, listener);
+  YahooSource(testUniverse(), "1y", std::chrono::milliseconds(0)).load(*store, http, listener);
   CHECK(http.urls.size() == 1 && listener.messages.size() == 1 && listener.changes == 0);
 }
 
@@ -202,7 +215,7 @@ TEST(a_cancelled_load_stops_between_requests) {
   struct Cancelling : Listener {
     bool cancelled() const override { return !messages.empty(); }
   } listener;
-  YahooSource("1y", std::chrono::milliseconds(0)).load(*store, http, listener);
+  YahooSource(testUniverse(), "1y", std::chrono::milliseconds(0)).load(*store, http, listener);
   CHECK(http.urls.size() == 2 && listener.messages.size() == 1);  // both hosts for the first instrument, then stop
 }
 
@@ -210,9 +223,9 @@ TEST(the_runner_runs_the_sources_on_its_own_thread_and_reports_changes) {
   std::shared_ptr<Store> store = makeMemoryStore();
   std::atomic<int> changes{0};
   std::vector<std::unique_ptr<Source>> sources;
-  sources.push_back(std::make_unique<SyntheticSource>());
+  sources.push_back(std::make_unique<SyntheticSource>(testUniverse()));
   SourceRunner runner(store, std::move(sources), [&] { changes++; }, [](std::string) {});
   runner.wait();
   CHECK(changes == 1);
-  CHECK(store->snapshot()->edges(store->snapshot()->findMarket("Currencies")->id).size() == 12);
+  CHECK(store->snapshot()->edges(store->snapshot()->findMarket("Currencies")->id).size() == 1);
 }

@@ -1,0 +1,103 @@
+# market: Nasdaq Helsinki
+# kind,base,quote,name,yahoo: what one unit of `base` costs in `quote`; `yahoo` is Yahoo's ticker
+kind,base,quote,name,yahoo
+company,ADMCM,EUR,Admicom Oyj,ADMCM.HE
+company,AFAGR,EUR,Afarak Group SE,AFAGR.HE
+company,AIFORIA,EUR,Aiforia Technologies Oyj,AIFORIA.HE
+company,AKTIA,EUR,Aktia Pankki Oyj,AKTIA.HE
+company,ALISA,EUR,Alisa Pankki Oyj,ALISA.HE
+company,ALMA,EUR,Alma Media Oyj,ALMA.HE
+company,APETIT,EUR,Apetit Oyj,APETIT.HE
+company,ASPO,EUR,Aspo Oyj,ASPO.HE
+company,ATRAV,EUR,Atria Oyj,ATRAV.HE
+company,BIOBV,EUR,Biohit Oyj,BIOBV.HE
+company,BITTI,EUR,Bittium Oyj,BITTI.HE
+company,CAPMAN,EUR,CapMan Oyj,CAPMAN.HE
+company,CTH1V,EUR,Componenta Corporation,CTH1V.HE
+company,CTY1S,EUR,Citycon Oyj,CTY1S.HE
+company,DETEC,EUR,Detection Technology Oyj,DETEC.HE
+company,DIGIA,EUR,Digia Oyj,DIGIA.HE
+company,EEZY,EUR,Eezy Oyj,EEZY.HE
+company,ELEAV,EUR,Elecster Oyj,ELEAV.HE
+company,ELISA,EUR,Elisa Oyj,ELISA.HE
+company,ENENTO,EUR,Enento Group Oyj,ENENTO.HE
+company,ETTE,EUR,Etteplan Oyj,ETTE.HE
+company,EVLI,EUR,Evli Oyj,EVLI.HE
+company,FIA1S,EUR,Finnair Oyj,FIA1S.HE
+company,FODELIA,EUR,Fodelia Oyj,FODELIA.HE
+company,FORTUM,EUR,Fortum Oyj,FORTUM.HE
+company,FSKRS,EUR,Fiskars Oyj Abp,FSKRS.HE
+company,GLA1V,EUR,Glaston Oyj Abp,GLA1V.HE
+company,GOFORE,EUR,Gofore Oyj,GOFORE.HE
+company,HARVIA,EUR,Harvia Oyj,HARVIA.HE
+company,HIAB,EUR,Hiab Oyj,HIAB.HE
+company,HONBS,EUR,Honkarakenne Oyj,HONBS.HE
+company,HUH1V,EUR,Huhtamäki Oyj,HUH1V.HE
+company,INDERES,EUR,Inderes Oyj,INDERES.HE
+company,INVEST,EUR,Investors House Oyj,INVEST.HE
+company,KALMAR,EUR,Kalmar Oyj,KALMAR.HE
+company,KAMUX,EUR,Kamux Oyj,KAMUX.HE
+company,KCR,EUR,Konecranes Plc,KCR.HE
+company,KEMIRA,EUR,Kemira Oyj,KEMIRA.HE
+company,KESKOA,EUR,Kesko Oyj,KESKOA.HE
+company,KESKOB,EUR,Kesko Oyj,KESKOB.HE
+company,KNEBV,EUR,KONE Oyj,KNEBV.HE
+company,KREATE,EUR,Kreate Group Oyj,KREATE.HE
+company,LOIHDE,EUR,Loihde Oyj,LOIHDE.HE
+company,MANTA,EUR,Mandatum Oyj,MANTA.HE
+company,MARAS,EUR,Martela Oyj,MARAS.HE
+company,MEKKO,EUR,Marimekko Oyj,MEKKO.HE
+company,METSO,EUR,Metso Oyj,METSO.HE
+company,MUSTI,EUR,Musti Group Oyj,MUSTI.HE
+company,NANOFH,EUR,Nanoform Finland Oyj,NANOFH.HE
+company,NDA-FI,EUR,Nordea Bank Abp,NDA-FI.HE
+company,NESTE,EUR,Neste Oyj,NESTE.HE
+company,NOKIA,EUR,Nokia Oyj,NOKIA.HE
+company,NXTMH,EUR,Nexstim Plc,NXTMH.HE
+company,OLVAS,EUR,Olvi Oyj,OLVAS.HE
+company,OMASP,EUR,Oma Säästöpankki Oyj,OMASP.HE
+company,ORNAV,EUR,Orion Oyj,ORNAV.HE
+company,ORNBV,EUR,Orion Oyj,ORNBV.HE
+company,ORTHEX,EUR,Orthex Oyj,ORTHEX.HE
+company,OUT1V,EUR,Outokumpu Oyj,OUT1V.HE
+company,PIHLIS,EUR,Pihlajalinna Oyj,PIHLIS.HE
+company,PNA1V,EUR,Panostaja Oyj,PNA1V.HE
+company,PON1V,EUR,Ponsse Oyj,PON1V.HE
+company,PUUILO,EUR,Puuilo Oyj,PUUILO.HE
+company,QPR1V,EUR,QPR Software Oyj,QPR1V.HE
+company,QTCOM,EUR,Qt Group Oyj,QTCOM.HE
+company,RAIVV,EUR,Raisio plc,RAIVV.HE
+company,RAUTE,EUR,Raute Oyj,RAUTE.HE
+company,REG1V,EUR,Revenio Group Oyj,REG1V.HE
+company,REMEDY,EUR,Remedy Entertainment Oyj,REMEDY.HE
+company,ROBIT,EUR,Robit Oyj,ROBIT.HE
+company,SAGCV,EUR,Saga Furs Oyj,SAGCV.HE
+company,SAMPO,EUR,Sampo Oyj,SAMPO.HE
+company,SANOMA,EUR,Sanoma Oyj,SANOMA.HE
+company,SCANFL,EUR,Scanfil Oyj,SCANFL.HE
+company,SIILI,EUR,Siili Solutions Oyj,SIILI.HE
+company,SPINN,EUR,Spinnova Oyj,SPINN.HE
+company,SRV1V,EUR,SRV Yhtiöt Oyj,SRV1V.HE
+company,SSABAH,EUR,SSAB AB (publ),SSABAH.HE
+company,SSABBH,EUR,SSAB AB (publ),SSABBH.HE
+company,STERV,EUR,Stora Enso Oyj,STERV.HE
+company,SUY1V,EUR,Suominen Oyj,SUY1V.HE
+company,TAALA,EUR,Taaleri Oyj,TAALA.HE
+company,TELIA1,EUR,Telia Company AB (publ),TELIA1.HE
+company,TEM1V,EUR,Tecnotree Oyj,TEM1V.HE
+company,TIETO,EUR,Tieto Oyj,TIETO.HE
+company,TNOM,EUR,Talenom Oyj,TNOM.HE
+company,TOKMAN,EUR,Tokmanni Group Oyj,TOKMAN.HE
+company,TRH1V,EUR,Trainers' House Oyj,TRH1V.HE
+company,TTALO,EUR,Terveystalo Oyj,TTALO.HE
+company,TULAV,EUR,Tulikivi Corporation,TULAV.HE
+company,TYRES,EUR,Nokian Renkaat Oyj,TYRES.HE
+company,UPM,EUR,UPM-Kymmene Oyj,UPM.HE
+company,VAIAS,EUR,Vaisala Oyj,VAIAS.HE
+company,VALMT,EUR,Valmet Oyj,VALMT.HE
+company,VERK,EUR,Verkkokauppa.com Oyj,VERK.HE
+company,VIK1V,EUR,Viking Line Abp,VIK1V.HE
+company,VINCIT,EUR,Vincit Oyj,VINCIT.HE
+company,WRT1V,EUR,Wärtsilä Oyj Abp,WRT1V.HE
+company,WUF1V,EUR,Wulff-Yhtiöt Oyj,WUF1V.HE
+company,YIT,EUR,YIT Oyj,YIT.HE
