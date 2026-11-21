@@ -136,14 +136,26 @@ Decided:
 - **Depth differs by interval.** Daily goes back as far as the data does; the
   intraday intervals go back a few years, the 5-minute ones the least.
 - **Every instrument gets intraday**, not a selection.
+- **The interval is not part of the edge key.** An edge (an instrument on a market in
+  a currency, as a dataset gives it) has its data in different forms: a series per
+  interval. So datasets are named for the provider (`nordnet`, `yahoo`), not for an
+  interval, and `bars` is keyed by edge, then interval. The app's `Store` keeps one
+  interval per edge today and refuses a second; holding several is the change to
+  make with the history step.
 
 Open:
 
-- **Interval in the key, or one dataset per interval?** The app's model keeps an
-  interval per series and a dataset in the edge key, so today "a different interval
-  is a different dataset" (`yahoo-1d`, `nordnet-1h`). The server's `bars` table has
-  an `interval` column. One of the two has to give: either the edge key gets the
-  interval, or the datasets are named per interval everywhere.
+- **A pyramid of bars.** Coarser levels (weekly, monthly) beside the daily and
+  intraday ones, so that an instrument without intraday data can still be compared
+  with one that has it: compare at the finest interval they all have. Whether it
+  helps is not clear yet. What it would give: charts and embeddings over decades
+  read a few thousand weekly bars instead of tens of thousands of daily ones; and a
+  common resolution for every instrument. What it costs: derived data has to say how
+  it was made (weeks and months follow the exchange's calendar and time zone), and
+  it can be made on demand from the finer series (a query, or a materialized view)
+  instead of stored. A provider's own coarse bars and ours made from finer ones are
+  different data and would be different series. Proposed: derive on demand first,
+  store a level only when a read is too slow.
 - **Time.** UTC milliseconds everywhere. A provider's intraday bars follow its own
   session times, so the bar's start is what the provider says, converted. Sessions, holidays and time zones belong
   to the market record and are not designed yet.
@@ -191,6 +203,14 @@ see data-model.md).
   provider (its ids for the instrument and the listing), adapter state (what was
   loaded, when, how far). A version sequence for ingest batches. New tables in a
   schema of their own, next to the legacy ones.
+- **Why an edge exists before it has data.** Discovery finds *listings*: this
+  instrument is traded on that market in that currency. That is catalog knowledge
+  and it comes first, from the provider's instrument lists; the bars come later,
+  from a separate and much slower step (one request per instrument and interval).
+  Without the edge, a found instrument would be invisible until its history was
+  loaded, "not loaded yet" could not be told from "does not exist", and the
+  history step would have nothing to ask for. In the server's catalog this is simply
+  the edges table; in the app's `Store` it is `addEdge`.
 - **Events**: announcements and corporate actions, per instrument and dataset, as
   in the model; stored like bars (rows, versioned).
 - **Identity across providers**: an internal instrument id, plus the **ISIN** where
@@ -221,14 +241,36 @@ see data-model.md).
 
 | Adapter | Gives | Status |
 |---|---|---|
-| **Nordnet** | Discovery (instruments) and history, by unofficial endpoints | Endpoints researched by the owner. **ETF discovery is built** (see below); history, intraday and the other instrument types are next. |
+| **Nordnet** | Discovery (instruments) and history, by unofficial endpoints | Endpoints researched by the owner. **Discovery of the ETFs and the PTC certificates is built** (see below); history and intraday are next. |
 | Legacy MariaDB | The existing bars (one row per bar), served by the server | Later. To learn: its schema, and how its instruments map to ours; whether the API reads it in place or it is copied into ClickHouse. |
-| Yahoo | Daily candles, dividends, splits; no discovery | Built in the app (`YahooSource`); slow one by one, for development and personal use. |
+| Yahoo | Daily candles, dividends, splits; no discovery | Built in the app (`YahooSource`, dataset `yahoo`); slow one by one, for development and personal use. |
 | ECB | Daily reference rates, every currency since 1999, in one file | Candidate. |
 | A paid bulk provider | Discovery and a whole exchange per request | Open: which, and what its licence allows to be shown. |
 
-**Nordnet ETF discovery** (`NordnetSource`, `etflist`), from the endpoint's
-behaviour as observed:
+**Nordnet discovery** (`NordnetSource`), from the endpoints' behaviour as observed.
+Every list is loaded the same way, with no category per endpoint: an instrument is
+whatever its list holds, and its kind comes from its own `instrument_type`. The
+lists so far are the ETFs (`etflist`) and the certificates of type PTC
+(`certificatelist?apply_filters=instrument_type=PTC`). **Without that filter the
+certificate list holds 64,861 instruments** (almost all bull and bear certificates),
+which is not worth loading; the filter gives 1,097. More lists are one entry each.
+
+- **Pacing**: requests are made one at a time, with 500 ms between them, a page of
+  500 (ETFs) or 1000 (certificates). Both lists together are 7 requests and about
+  10 seconds, most of it the server's own time (about 2 to 3 seconds a page). A 403
+  or 429 stops everything; another failure ends only that list. There is no retry,
+  no backoff and no cache yet: every load repeats all 7 requests. On the server
+  discovery runs on a schedule (a day is plenty), not on every start.
+- **Results go to the store a page at a time**, as they arrive, not all at the end:
+  each page is written and the UI told, so rows can appear while the rest loads.
+- **Markets** have only a numeric id in the answer. They are named from the id where
+  it is known (4 Xetra, 11 Nasdaq Stockholm, 14 Nasdaq Copenhagen, 24 Nasdaq
+  Helsinki, 53 to 55 First North Sweden, Finland and Denmark; inferred from the data)
+  and `Nordnet market N` otherwise. The slug's exchange code is not used: a listing
+  can carry the code of its home exchange while it trades on another market (a
+  Norwegian certificate on First North Sweden has the slug `onse`).
+
+The ETF list:
 
 - `GET https://www.nordnet.fi/api/2/instrument_search/query/etflist?sort_order=desc&sort_attribute=yield_1y&limit=N&offset=M`,
   with the headers `Accept: application/json`, `Origin` and `Referer`
@@ -246,9 +288,8 @@ behaviour as observed:
   1 on market 14 (Copenhagen, DKK). Every row has an ISIN; the same ISIN is listed
   on two markets 16 times; a symbol is never shared by two ISINs. Market ids carry
   no name in this answer; the slug suffix (`xeta`, `xsto`, `xcse`) does.
-- Stored: an instrument (kind ETF, ISIN, name), the quote currency, the market and
-  the edge, under the dataset `nordnet-1d` (the daily series is the first one that
-  will be loaded). Nordnet's own ids (instrument id, market id, identifier) are
+- Stored: an instrument (with its ISIN and name), the quote currency, the market and
+  the edge, under the dataset `nordnet`. Nordnet's own ids (instrument id, market id, identifier) are
   what the history requests need: the adapter keeps them for the history step, and
   on the server they become aliases in the catalog.
 
@@ -300,8 +341,8 @@ when it outgrows the disk.
    summary, one series, a long scan across many).
 2. The schema, in a file in this repository, and the ingest service with one
    adapter writing to it.
-3. The Nordnet adapter: ETF discovery (built), then its history and intraday, then
-   the other instrument types.
+3. The Nordnet adapter: discovery of ETFs and certificates (built), then its history
+   and intraday, then more lists as they are wanted.
 4. The API, and `RemoteStore` in the app.
 5. Serving the legacy MariaDB data.
 6. Order books, once the policy is decided.
@@ -310,7 +351,7 @@ when it outgrows the disk.
 ## Open questions
 
 - How many instruments in all, and how far back each intraday interval goes.
-- Interval in the edge key, or a dataset per interval.
+- A pyramid of coarser bars, and whether derived levels are stored or made on demand.
 - Order book depth, frequency and sources (not now).
 - Adjusted prices: query-time, or derived data.
 - ClickHouse with `FINAL`, `argMax` or a "current" table, for the long scans.
