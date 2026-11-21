@@ -47,6 +47,9 @@ struct Instrument {
   // The ISIN, where there is one. It identifies the instrument across markets: an ETF listed on two markets is one
   // instrument (and two edges), whatever its symbol on each.
   std::string isin;
+  // The provider's own type for it (Nordnet's UETF or PTC, Yahoo's EQUITY or FUTURE), "" if it gave none: finer than
+  // `kind` and not the same across providers. A preset can select edges by it.
+  std::string type;
 };
 
 // A place where an instrument is listed and priced. Currency, calendar and time zone join later.

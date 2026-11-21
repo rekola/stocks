@@ -5,6 +5,7 @@
 #include <immer/map.hpp>
 #include <immer/set.hpp>
 
+#include <functional>
 #include <memory>
 
 // One immutable version of everything the application knows. A snapshot never changes: a reader that holds one reads it
@@ -27,9 +28,11 @@ class Snapshot {
   const Seq<Market> & markets() const { return markets_; }
   const Seq<Dataset> & datasets() const { return datasets_; }
 
-  // The edges known in a market: those that have data (candles or books), and those a source has only added (a listing
-  // found by discovery, whose history is not loaded yet). What a preset needs. Sorted.
+  // The edges that have any data (candles or books) in a market: what a preset needs. Sorted. An instrument with no
+  // edge is not seen: nothing selects it.
   std::vector<EdgeKey> edges(MarketId) const;
+  // The same, only those whose base instrument `keep` accepts (by its kind, its type, ...).
+  std::vector<EdgeKey> edges(MarketId, const std::function<bool(const Instrument &)> & keep) const;
 
   // The bars in `range`, oldest first; an empty series for an unknown edge.
   CandleSeries candles(const EdgeKey &, TimeRange range = {}) const;
@@ -51,7 +54,6 @@ class Snapshot {
   Instrument add(Instrument);
   Market add(Market);
   Dataset add(Dataset);
-  bool addEdge(const EdgeKey &);  // false if it is known already
   bool appendCandles(const EdgeKey &, int64_t intervalMs, const std::vector<Candle> &);
   void appendBooks(const EdgeKey &, const std::vector<BookSnapshot> &);
   void appendAnnouncements(const EventKey &, const std::vector<Announcement> &);
@@ -95,8 +97,6 @@ class Store {
   virtual Instrument addInstrument(Instrument) = 0;
   virtual Market addMarket(Market) = 0;
   virtual Dataset addDataset(Dataset) = 0;
-  // An edge that is known before it has data: what discovery finds. False if it was known.
-  virtual bool addEdge(const EdgeKey &) = 0;
 
   // Candles. A bar at a time already in the series replaces it (a correction); the rest are inserted in order. The
   // first append fixes the series' interval, and an append with another interval changes nothing and returns false.

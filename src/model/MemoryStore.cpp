@@ -87,6 +87,14 @@ std::optional<Dataset> Snapshot::findDataset(const std::string & s) const {
 }
 
 std::vector<EdgeKey> Snapshot::edges(MarketId m) const { return sorted(edgesByMarket_.find(m)); }
+std::vector<EdgeKey> Snapshot::edges(MarketId m, const std::function<bool(const Instrument &)> & keep) const {
+  std::vector<EdgeKey> out;
+  for (const EdgeKey & k : edges(m)) {
+    auto base = instrument(k.base);
+    if (base && keep(*base)) out.push_back(k);
+  }
+  return out;
+}
 std::vector<EventKey> Snapshot::events(InstrumentId i) const { return sorted(eventsByInstrument_.find(i)); }
 
 CandleSeries Snapshot::candles(const EdgeKey & k, TimeRange r) const {
@@ -141,14 +149,6 @@ Dataset Snapshot::add(Dataset d) {
   Dataset out = addNamed(datasets_, datasetByName_, d, d.name);
   if (datasets_.size() != before) version_++;
   return out;
-}
-
-bool Snapshot::addEdge(const EdgeKey & k) {
-  const auto * set = edgesByMarket_.find(k.market);
-  if (set && set->count(k)) return false;
-  edgesByMarket_ = edgesByMarket_.set(k.market, (set ? *set : immer::set<EdgeKey>{}).insert(k));
-  version_++;
-  return true;
 }
 
 bool Snapshot::appendCandles(const EdgeKey & k, int64_t intervalMs, const std::vector<Candle> & in) {
@@ -235,9 +235,6 @@ class MemoryStore : public Store {
   }
   Dataset addDataset(Dataset d) override {
     return write([&](Snapshot & s) { return s.add(std::move(d)); });
-  }
-  bool addEdge(const EdgeKey & k) override {
-    return write([&](Snapshot & s) { return s.addEdge(k); });
   }
   bool appendCandles(const EdgeKey & k, int64_t intervalMs, const std::vector<Candle> & c) override {
     return write([&](Snapshot & s) { return s.appendCandles(k, intervalMs, c); });

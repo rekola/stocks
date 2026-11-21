@@ -138,12 +138,13 @@ for a frame. The UI never waits on a source.
   the small `Http` interface, so tests give them canned responses. httpclient has
   no build system of its own, so `CMakeLists.txt` compiles the two backend
   sources it needs.
-- **Universe** (`src/source/Universe.cpp`, `data/universe/*.csv`): the
-  instruments of the presets, as lists on disk, one file per market, with each
-  provider's symbol for them (a source reads its own column). The lists are
-  checked against Yahoo by `tools/universe/build_universe.py`, and are not
-  complete: about 100 Helsinki shares, 30 commodity futures, 88 currency pairs.
-  This is the simple form of the "identity across sources" question below.
+- **Yahoo's instrument lists** (`src/source/InstrumentLists.cpp`, `data/yahoo/*.csv`):
+  Yahoo has no discovery, so its adapter has lists of its own, one file per market,
+  with Yahoo's ticker for each instrument, and reads them when it loads. They stand in
+  until every adapter finds its own instruments, and then they go; the synthetic source
+  follows them meanwhile. They are checked against Yahoo by
+  `tools/yahoo/build_lists.py` and are not complete: about 100 Helsinki shares, 30
+  commodity futures, 88 currency pairs. No other part of the program knows them.
 - **Yahoo** (`YahooSource`, dataset `yahoo`): one chart request per
   instrument (`range`, daily bars, `events=div|split`), second host as a
   fallback, a pause between requests, a stop on rate limiting. Days without a
@@ -152,15 +153,18 @@ for a frame. The UI never waits on a source.
   already adjusted for splits, so the series does not show a split's jump; the
   action is stored beside it.
 - **Nordnet** (`NordnetSource`, no key, no login): discovery from Nordnet's
-  unofficial instrument search. It loads every list it knows in the same way, with
-  no category of its own for each: the ETFs (about 2300) and the certificates of
-  type PTC (about 1100), as 7 requests, a page at a time into the store. An
-  instrument is whatever its list holds, with its ISIN; one listed on two markets is
-  one instrument and two edges (an instrument with an ISIN is found by it, and by
-  nothing else). The edges are known before they have data (`Store::addEdge`: a
-  listing is found before its bars are loaded), under the dataset `nordnet`; the
-  history step loads their bars. A market is named from Nordnet's market id where
-  that is known. Its endpoints are described in [server.md](server.md).
+  unofficial instrument search. It loads every list it knows in the same way, with no
+  category of its own for each: the ETFs (about 2300) and the certificates of type PTC
+  (about 1100), as 7 requests, a page at a time into the store, and again every five
+  minutes (`Source::refreshInterval`, run by `SourceRunner`). Each listing is an
+  instrument (a node, with its ISIN and Nordnet's own type) and, from the price block
+  of the listing, today's daily bar under the dataset `nordnet`, replaced at each
+  reload and added at a new day. **An edge exists only when it has data**: a node with
+  no edge is not seen, and a listing that has not traded has no bar. An instrument
+  listed on two markets is one instrument and two edges (an instrument with an ISIN is
+  found by it, and by nothing else). Edges can be selected by the base instrument's
+  type or kind (`Snapshot::edges(market, filter)`). The history step loads the earlier
+  bars. Its endpoints are described in [server.md](server.md).
 - **Synthetic**: made-up prices, for runs without a network.
 
 Not done:

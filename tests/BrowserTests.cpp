@@ -4,7 +4,7 @@
 #include "Quotes.h"
 #include "Synthetic.h"
 #include "source/Source.h"
-#include "source/Universe.h"
+#include "source/InstrumentLists.h"
 
 #include <cellui/Application.h>
 #include <cellui/TestBackend.h>
@@ -14,11 +14,11 @@ using namespace cellui;
 namespace {
 
 // The lists on disk, which the made-up data follows.
-const Universe & universe() {
-  static const Universe u = [] {
+const InstrumentList & instrumentList() {
+  static const InstrumentList u = [] {
     std::string error;
-    Universe loaded = loadUniverse(std::filesystem::path(STOCKS_DATA_DIR) / "universe", error);
-    if (loaded.empty()) std::fprintf(stderr, "  universe: %s\n", error.c_str());
+    InstrumentList loaded = loadInstrumentLists(std::filesystem::path(STOCKS_DATA_DIR) / "yahoo", error);
+    if (loaded.empty()) std::fprintf(stderr, "  lists: %s\n", error.c_str());
     return loaded;
   }();
   return u;
@@ -26,7 +26,7 @@ const Universe & universe() {
 
 size_t countInMarket(const std::string & market) {
   size_t n = 0;
-  for (const UniverseEntry & e : universe()) n += e.market == market;
+  for (const ListEntry & e : instrumentList()) n += e.market == market;
   return n;
 }
 
@@ -37,7 +37,7 @@ struct Fixture {
   std::unique_ptr<Browser> browser;
   // Over the made-up data, or over a store the test has filled.
   explicit Fixture(bool synthetic = true) {
-    if (synthetic) fillSyntheticData(*store, universe());
+    if (synthetic) fillSyntheticData(*store, instrumentList());
     auto owned = std::make_unique<test::TestBackend>(24, 100);
     backend = owned.get();
     app = Application::adopt(std::move(owned));

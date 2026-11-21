@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Builds data/universe/*.csv: the instruments the presets show, each checked against Yahoo's chart endpoint.
+"""Builds data/yahoo/*.csv: the instruments Yahoo is asked for (it has no discovery), each checked against its chart endpoint.
 
-usage: build_universe.py [OUTPUT_DIR]      (default: data/universe next to this script's repository root)
+usage: build_lists.py [OUTPUT_DIR]      (default: data/yahoo in this script's repository)
 
 The candidates are listed below; a candidate Yahoo does not know, or has no recent price for, is left out and reported, so the files hold only
 tickers that answered. The lists are not meant to be complete. One request per candidate, paused between them: run it
@@ -98,7 +98,7 @@ def write(path, market, rows):
 
 
 def main():
-    out = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(__file__), "..", "..", "data", "universe")
+    out = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(__file__), "..", "..", "data", "yahoo")
     os.makedirs(out, exist_ok=True)
     missing = []
 

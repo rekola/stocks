@@ -236,17 +236,25 @@ TEST(an_instrument_with_an_isin_is_that_isin_whatever_its_symbol_or_market) {
   CHECK(w.store->addInstrument({{}, "XAIX", "no isin", InstrumentKind::Other}).id == a.id);
 }
 
-TEST(an_edge_can_be_known_before_it_has_data) {
+TEST(edges_can_be_selected_by_the_type_of_their_base_instrument) {
   World w;
-  EdgeKey k = w.key(w.hel.id, w.a.id);
-  uint64_t v = w.snap()->version();
-  CHECK(w.snap()->edges(w.hel.id).empty());
-  CHECK(w.store->addEdge(k));
-  CHECK(w.snap()->version() == v + 1);
-  CHECK(w.snap()->edges(w.hel.id).size() == 1 && w.snap()->edges(w.hel.id)[0] == k);
-  CHECK(w.snap()->candles(k).candles.empty());
-  CHECK(!w.store->addEdge(k) && w.snap()->version() == v + 1);  // known already: nothing changes
-  w.store->appendCandles(k, 1000, {bar(0, 1)});
-  CHECK(w.snap()->edges(w.hel.id).size() == 1);  // data does not make it a second edge
-  CHECK(w.snap()->edges(w.sto.id).empty());
+  Instrument etf = w.store->addInstrument({{}, "FLXK", "A fund", InstrumentKind::Etf, "IE00BHZRR030", "UETF"});
+  Instrument cert = w.store->addInstrument({{}, "4GLD", "A certificate", InstrumentKind::Other, "DE000A0S9GB0", "PTC"});
+  EdgeKey a{etf.id, w.eur.id, w.hel.id, w.a.id}, b{cert.id, w.eur.id, w.hel.id, w.a.id}, c{w.nokia.id, w.eur.id, w.hel.id, w.a.id};
+  for (const EdgeKey & k : {a, b, c}) w.store->appendCandles(k, 1000, {bar(0, 1)});
+  CHECK(w.snap()->findInstrument("FLXK")->type == "UETF" && w.snap()->findInstrument("NOKIA")->type.empty());
+  CHECK(w.snap()->edges(w.hel.id).size() == 3);
+  auto isType = [](const char * t) { return [t](const Instrument & i) { return i.type == t; }; };
+  CHECK(w.snap()->edges(w.hel.id, isType("PTC")).size() == 1 && w.snap()->edges(w.hel.id, isType("PTC"))[0] == b);
+  CHECK(w.snap()->edges(w.hel.id, isType("UETF")).size() == 1);
+  CHECK(w.snap()->edges(w.hel.id, isType("nothing")).empty());
+  CHECK(w.snap()->edges(w.hel.id, [](const Instrument & i) { return i.kind == InstrumentKind::Etf; }).size() == 1);
+  CHECK(w.snap()->edges(w.sto.id, isType("PTC")).empty());
+}
+
+TEST(an_instrument_with_no_edge_is_not_seen_by_a_market) {
+  World w;
+  w.store->addInstrument({{}, "LONELY", "No data", InstrumentKind::Etf, "XX0000000000", "UETF"});
+  CHECK(w.snap()->findInstrument("LONELY"));  // it exists, as a node
+  for (const Market & m : w.snap()->markets()) CHECK(w.snap()->edges(m.id).empty());
 }

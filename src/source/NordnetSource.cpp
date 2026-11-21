@@ -1,9 +1,10 @@
 #include "source/NordnetSource.h"
 
-#include "source/Universe.h"
+#include "source/InstrumentLists.h"
 
 #include <nlohmann/json.hpp>
 
+#include <optional>
 #include <thread>
 
 using nlohmann::json;
@@ -26,6 +27,16 @@ int64_t integer(const json & o, const char * key) {
   auto it = o.find(key);
   return it != o.end() && it->is_number_integer() ? it->get<int64_t>() : 0;
 }
+
+// A price in the price block: {"price": 65.03, "decimals": 2}.
+std::optional<double> price(const json & block, const char * key) {
+  auto it = block.find(key);
+  if (it == block.end() || !it->is_object()) return std::nullopt;
+  auto p = it->find("price");
+  return p != it->end() && p->is_number() ? std::optional<double>(p->get<double>()) : std::nullopt;
+}
+
+constexpr int64_t kDayMs = 86400000;
 
 }  // namespace
 
@@ -81,8 +92,21 @@ bool NordnetSource::parsePage(const std::string & body, Page & page, std::string
       l.marketSubId = static_cast<int>(integer(m, "market_sub_id"));
       l.identifier = text(m, "identifier");
     }
-    if (row.is_object() && row.contains("nnx_info") && row["nnx_info"].is_object())
+    if (row.is_object() && row.contains("nnx_info") && row["nnx_info"].is_object()) {
       l.slug = text(row["nnx_info"], "display_slug");
+      l.bookId = text(row["nnx_info"], "market_data_order_book_id");
+    }
+    if (row.is_object() && row.contains("price_info") && row["price_info"].is_object()) {
+      const json & p = row["price_info"];
+      auto open = price(p, "open"), high = price(p, "high"), low = price(p, "low"), last = price(p, "last");
+      const int64_t tick = integer(p, "tick_timestamp");
+      if (open && high && low && last && tick > 0) {
+        auto volume = p.find("turnover_volume");
+        l.hasBar = true;
+        l.bar = {tick - tick % kDayMs, *open, *high, *low, *last,
+                 volume != p.end() && volume->is_number() ? volume->get<double>() : 0.0};
+      }
+    }
     if (row.is_object() && row.contains("exchange_info") && row["exchange_info"].is_object())
       l.country = text(row["exchange_info"], "exchange_country");
     if (l.instrumentId == 0 || l.symbol.empty() || l.isin.empty() || l.currency.empty() || l.marketId == 0) {
@@ -128,10 +152,11 @@ void NordnetSource::load(Store & store, Http & http, SourceListener & listener) 
       for (NordnetListing & l : page.listings) {
         l.list = list.name;
         Market market = store.addMarket({{}, marketName(l)});
-        Instrument base = store.addInstrument({{}, l.symbol, l.name, kindOf(l.type), l.isin});
+        Instrument base = store.addInstrument({{}, l.symbol, l.name, kindOf(l.type), l.isin, l.type});
         const char * label = currencyName(l.currency);
         Instrument quote = store.addInstrument({{}, l.currency, *label ? label : l.currency, InstrumentKind::Currency});
-        store.addEdge({base.id, quote.id, market.id, dataset.id});
+        // Today's bar makes the edge; a listing with none stays a node nothing selects.
+        if (l.hasBar) store.appendCandles({base.id, quote.id, market.id, dataset.id}, kDayMs, {l.bar});
       }
       found += page.listings.size();
       listings_.insert(listings_.end(), page.listings.begin(), page.listings.end());

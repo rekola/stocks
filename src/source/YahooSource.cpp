@@ -20,7 +20,7 @@ std::optional<double> number(const json & column, size_t i) {
 
 }  // namespace
 
-bool YahooSource::parse(const std::string & body, const UniverseEntry & e, Store & store, std::string & error) {
+bool YahooSource::parse(const std::string & body, const ListEntry & e, Store & store, std::string & error) {
   json doc = json::parse(body, nullptr, /*allow_exceptions=*/false);
   if (doc.is_discarded() || !doc.is_object() || !doc.contains("chart")) {
     error = "not a chart response";
@@ -84,7 +84,16 @@ bool YahooSource::parse(const std::string & body, const UniverseEntry & e, Store
 
 void YahooSource::load(Store & store, Http & http, SourceListener & listener) {
   static const char * const kHosts[] = {"query1.finance.yahoo.com", "query2.finance.yahoo.com"};
-  for (const UniverseEntry & e : universe_) {
+  InstrumentList list = list_;
+  if (fromFiles_) {
+    std::string error;
+    list = resolveList(spec_, error);
+    if (list.empty()) {
+      listener.message("yahoo: " + error);
+      return;
+    }
+  }
+  for (const ListEntry & e : list) {
     if (listener.cancelled()) return;
     std::string error;
     bool done = false;

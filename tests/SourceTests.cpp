@@ -6,6 +6,8 @@
 #include "source/YahooSource.h"
 
 #include <atomic>
+#include <chrono>
+#include <thread>
 #include <fstream>
 #include <functional>
 #include <sstream>
@@ -19,9 +21,9 @@ std::string fixture(const std::string & name) {
   return s.str();
 }
 
-// A small universe of its own, so the tests do not depend on what the lists on disk hold.
-const Universe & testUniverse() {
-  static const Universe u = {
+// A small list of its own, so the tests do not depend on what the lists on disk hold.
+const InstrumentList & testList() {
+  static const InstrumentList u = {
     {"Nasdaq Helsinki", "NOKIA", "EUR", "Nokia", "NOKIA.HE", InstrumentKind::Company},
     {"Nasdaq Helsinki", "FORTUM", "EUR", "Fortum", "FORTUM.HE", InstrumentKind::Company},
     {"Nasdaq Helsinki", "SAMPO", "EUR", "Sampo", "SAMPO.HE", InstrumentKind::Company},
@@ -32,10 +34,10 @@ const Universe & testUniverse() {
   return u;
 }
 
-const UniverseEntry & entry(const std::string & yahoo) {
-  for (const UniverseEntry & e : testUniverse())
+const ListEntry & entry(const std::string & yahoo) {
+  for (const ListEntry & e : testList())
     if (yahoo == e.yahoo) return e;
-  static const UniverseEntry none{};
+  static const ListEntry none{};
   return none;
 }
 
@@ -141,10 +143,10 @@ TEST(loading_asks_for_every_instrument_and_reports_the_ones_that_fail) {
     return failed(404);
   };
   Listener listener;
-  YahooSource yahoo(testUniverse(), "1y", std::chrono::milliseconds(0));
+  YahooSource yahoo(testList(), "1y", std::chrono::milliseconds(0));
   yahoo.load(*store, http, listener);
   CHECK(listener.changes == 3);
-  CHECK(listener.messages.size() == testUniverse().size() - 3);
+  CHECK(listener.messages.size() == testList().size() - 3);
   bool fortum = false, notFound = false;
   for (const std::string & m : listener.messages) {
     fortum = fortum || m == "yahoo: FORTUM.HE: not a chart response";
@@ -164,7 +166,7 @@ TEST(loading_tries_the_second_host_when_the_first_does_not_answer) {
     return url.find("/NOKIA.HE?") != std::string::npos ? ok(fixture("nokia.json")) : failed(404);
   };
   Listener listener;
-  YahooSource(testUniverse(), "1y", std::chrono::milliseconds(0)).load(*store, http, listener);
+  YahooSource(testList(), "1y", std::chrono::milliseconds(0)).load(*store, http, listener);
   CHECK(listener.changes == 1);
   bool second = false;
   for (const std::string & u : http.urls) second = second || (u.find("query2") != std::string::npos && u.find("NOKIA.HE") != std::string::npos);
@@ -176,7 +178,7 @@ TEST(a_rate_limit_stops_the_load) {
   FakeHttp http;
   http.answer = [](const std::string &) { return failed(429); };
   Listener listener;
-  YahooSource(testUniverse(), "1y", std::chrono::milliseconds(0)).load(*store, http, listener);
+  YahooSource(testList(), "1y", std::chrono::milliseconds(0)).load(*store, http, listener);
   CHECK(http.urls.size() == 1 && listener.messages.size() == 1 && listener.changes == 0);
 }
 
@@ -187,7 +189,7 @@ TEST(a_cancelled_load_stops_between_requests) {
   struct Cancelling : Listener {
     bool cancelled() const override { return !messages.empty(); }
   } listener;
-  YahooSource(testUniverse(), "1y", std::chrono::milliseconds(0)).load(*store, http, listener);
+  YahooSource(testList(), "1y", std::chrono::milliseconds(0)).load(*store, http, listener);
   CHECK(http.urls.size() == 2 && listener.messages.size() == 1);  // both hosts for the first instrument, then stop
 }
 
@@ -195,9 +197,89 @@ TEST(the_runner_runs_the_sources_on_its_own_thread_and_reports_changes) {
   std::shared_ptr<Store> store = makeMemoryStore();
   std::atomic<int> changes{0};
   std::vector<std::unique_ptr<Source>> sources;
-  sources.push_back(std::make_unique<SyntheticSource>(testUniverse()));
+  sources.push_back(std::make_unique<SyntheticSource>(testList()));
   SourceRunner runner(store, std::move(sources), [&] { changes++; }, [](std::string) {});
   runner.wait();
   CHECK(changes == 1);
   CHECK(store->snapshot()->edges(store->snapshot()->findMarket("Currencies")->id).size() == 1);
+}
+
+TEST(the_sources_say_so_when_their_lists_are_missing_and_do_nothing) {
+  auto store = makeMemoryStore();
+  FakeHttp http;
+  http.answer = [](const std::string &) { return failed(404); };
+  Listener a, b;
+  YahooSource(ListSpec{"/no/such/directory", {}}).load(*store, http, a);
+  SyntheticSource(ListSpec{"/no/such/directory", {}}).load(*store, http, b);
+  CHECK(http.urls.empty() && store->snapshot()->version() == 0);
+  CHECK(a.messages.size() == 1 && a.messages[0].find("yahoo: ") == 0);
+  CHECK(b.messages.size() == 1 && b.messages[0].find("synthetic: ") == 0);
+}
+
+TEST(the_sources_read_the_lists_on_disk_when_they_load) {
+  auto store = makeMemoryStore();
+  FakeHttp http;
+  http.answer = [](const std::string &) { return failed(404); };
+  Listener listener;
+  YahooSource(ListSpec{"", {"Currencies"}}, "1y", std::chrono::milliseconds(0)).load(*store, http, listener);
+  CHECK(http.urls.size() >= 80 && http.urls[0].find("=X") != std::string::npos);  // the currency pairs, one request each
+  auto store2 = makeMemoryStore();
+  Listener l2;
+  SyntheticSource(ListSpec{"", {"Commodities"}}).load(*store2, http, l2);
+  CHECK(l2.changes == 1 && store2->snapshot()->edges(store2->snapshot()->findMarket("Commodities")->id).size() >= 28);
+  CHECK(!store2->snapshot()->findMarket("Currencies"));
+}
+
+namespace {
+// A source that counts its loads and asks to be loaded again.
+class CountingSource : public Source {
+ public:
+  CountingSource(std::atomic<int> & loads, std::chrono::milliseconds interval) : loads_(loads), interval_(interval) {}
+  std::string name() const override { return "counting"; }
+  std::string description() const override { return ""; }
+  void load(Store &, Http &, SourceListener & listener) override {
+    loads_++;
+    listener.changed();
+  }
+  std::chrono::milliseconds refreshInterval() const override { return interval_; }
+
+ private:
+  std::atomic<int> & loads_;
+  std::chrono::milliseconds interval_;
+};
+
+bool waitFor(const std::function<bool()> & done) {
+  for (int i = 0; i < 400 && !done(); i++) std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  return done();
+}
+}  // namespace
+
+TEST(a_source_that_asks_to_be_refreshed_is_loaded_again_and_again_until_the_runner_stops) {
+  std::shared_ptr<Store> store = makeMemoryStore();
+  std::atomic<int> loads{0}, once{0}, changes{0};
+  int after = 0;
+  {
+    std::vector<std::unique_ptr<Source>> sources;
+    sources.push_back(std::make_unique<CountingSource>(loads, std::chrono::milliseconds(10)));
+    sources.push_back(std::make_unique<CountingSource>(once, std::chrono::milliseconds(0)));  // not again
+    SourceRunner runner(store, std::move(sources), [&] { changes++; }, [](std::string) {});
+    CHECK(waitFor([&] { return loads >= 4; }));
+    CHECK(once == 1);  // loaded in the first pass only
+    CHECK(changes >= 5);
+    after = loads;
+  }  // the destructor stops the thread, even though a source still wants to be loaded
+  int stopped = loads;
+  std::this_thread::sleep_for(std::chrono::milliseconds(60));
+  CHECK(loads == stopped && stopped >= after);
+}
+
+TEST(a_runner_with_no_refreshing_source_finishes_by_itself) {
+  std::shared_ptr<Store> store = makeMemoryStore();
+  std::atomic<int> a{0}, b{0};
+  std::vector<std::unique_ptr<Source>> sources;
+  sources.push_back(std::make_unique<CountingSource>(a, std::chrono::milliseconds(0)));
+  sources.push_back(std::make_unique<CountingSource>(b, std::chrono::milliseconds(0)));
+  SourceRunner runner(store, std::move(sources), [] {}, [](std::string) {});
+  runner.wait();  // returns: nothing refreshes
+  CHECK(a == 1 && b == 1);
 }
