@@ -4,6 +4,7 @@
 #include "Quotes.h"
 #include "Synthetic.h"
 #include "source/Source.h"
+#include "source/Universe.h"
 
 #include <cellui/Application.h>
 #include <cellui/TestBackend.h>
@@ -12,6 +13,23 @@ using namespace cellui;
 
 namespace {
 
+// The lists on disk, which the made-up data follows.
+const Universe & universe() {
+  static const Universe u = [] {
+    std::string error;
+    Universe loaded = loadUniverse(std::filesystem::path(STOCKS_DATA_DIR) / "universe", error);
+    if (loaded.empty()) std::fprintf(stderr, "  universe: %s\n", error.c_str());
+    return loaded;
+  }();
+  return u;
+}
+
+size_t countInMarket(const std::string & market) {
+  size_t n = 0;
+  for (const UniverseEntry & e : universe()) n += e.market == market;
+  return n;
+}
+
 struct Fixture {
   test::TestBackend * backend;
   std::unique_ptr<Application> app;
@@ -19,7 +37,7 @@ struct Fixture {
   std::unique_ptr<Browser> browser;
   // Over the made-up data, or over a store the test has filled.
   explicit Fixture(bool synthetic = true) {
-    if (synthetic) fillSyntheticData(*store);
+    if (synthetic) fillSyntheticData(*store, universe());
     auto owned = std::make_unique<test::TestBackend>(24, 100);
     backend = owned.get();
     app = Application::adopt(std::move(owned));
@@ -207,11 +225,14 @@ TEST(a_preset_whose_market_has_no_data_shows_no_rows_and_a_book_alone_is_not_a_r
   CHECK(f.browser->table().model()->rowCount() == 0);
 }
 
-TEST(the_made_up_data_fills_every_preset) {
+TEST(the_made_up_data_fills_every_preset_with_what_the_lists_hold) {
   Fixture f;
+  const char * markets[] = {"Commodities", "Nasdaq Helsinki", "Currencies"};
+  int i = 0;
   for (const char * command : {"show-commodities", "show-nasdaq-helsinki", "show-currencies"}) {
     f.app->execute(command);
-    CHECK(f.browser->table().model()->rowCount() == 12);
+    CHECK(f.browser->table().model()->rowCount() > 0);
+    CHECK(static_cast<size_t>(f.browser->table().model()->rowCount()) == countInMarket(markets[i++]));
     CHECK(f.browser->table().model()->text(f.browser->table().rowAt(0), Quotes::DATASET) == "synthetic");
   }
 }

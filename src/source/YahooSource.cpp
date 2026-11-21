@@ -84,7 +84,7 @@ bool YahooSource::parse(const std::string & body, const UniverseEntry & e, Store
 
 void YahooSource::load(Store & store, Http & http, SourceListener & listener) {
   static const char * const kHosts[] = {"query1.finance.yahoo.com", "query2.finance.yahoo.com"};
-  for (const UniverseEntry & e : universe()) {
+  for (const UniverseEntry & e : universe_) {
     if (listener.cancelled()) return;
     std::string error;
     bool done = false;

@@ -138,9 +138,12 @@ for a frame. The UI never waits on a source.
   the small `Http` interface, so tests give them canned responses. httpclient has
   no build system of its own, so `CMakeLists.txt` compiles the two backend
   sources it needs.
-- **Universe** (`src/source/Universe.cpp`): the instruments of the presets, with
-  each provider's symbol for them. A source reads its own column; this is the
-  simple form of the "identity across sources" question below.
+- **Universe** (`src/source/Universe.cpp`, `data/universe/*.csv`): the
+  instruments of the presets, as lists on disk, one file per market, with each
+  provider's symbol for them (a source reads its own column). The lists are
+  checked against Yahoo by `tools/universe/build_universe.py`, and are not
+  complete: about 100 Helsinki shares, 30 commodity futures, 88 currency pairs.
+  This is the simple form of the "identity across sources" question below.
 - **Yahoo** (`YahooSource`, dataset `yahoo-1d`): one chart request per
   instrument (`range`, daily bars, `events=div|split`), second host as a
   fallback, a pause between requests, a stop on rate limiting. Days without a
@@ -159,7 +162,8 @@ Not done:
 - A disk cache of raw responses, so the app starts without a network and does
   not ask the provider for the same history on every launch (and asks only for
   what is new).
-- A way to pick sources and filter them by use case at run time, and a refresh.
+- A way to pick sources and filter them by use case at run time, and a refresh
+  (`--source` and `--market` pick them at start-up).
 - Announcements (a source for company news) and a real order-book source (crypto
   exchanges are the free ones).
 

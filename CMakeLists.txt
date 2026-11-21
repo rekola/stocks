@@ -63,7 +63,8 @@ add_library(stocks_lib STATIC src/Browser.cpp src/Quotes.cpp src/Synthetic.cpp s
   src/source/YahooSource.cpp src/source/SourceRunner.cpp)
 target_include_directories(stocks_lib PUBLIC src)
 target_link_libraries(stocks_lib PUBLIC cellui stocks_model httpclient::httpclient nlohmann_json::nlohmann_json)
-target_compile_definitions(stocks_lib PUBLIC STOCKS_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
+target_compile_definitions(stocks_lib PUBLIC STOCKS_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
+  STOCKS_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")
 
 add_executable(stocks src/main.cpp)
 target_link_libraries(stocks PRIVATE stocks_lib)
@@ -76,7 +77,7 @@ set_tests_properties(stocks_rejects_an_unknown_ui PROPERTIES PASS_REGULAR_EXPRES
 # The browser on a test display: keys in, what it shows out. cellui's test display
 # (TestBackend) is built where there is a POSIX event loop, so not on Windows.
 if(NOT WIN32)
-  add_executable(stocks_tests tests/test_main.cpp tests/BrowserTests.cpp tests/ModelTests.cpp tests/SourceTests.cpp)
+  add_executable(stocks_tests tests/test_main.cpp tests/BrowserTests.cpp tests/ModelTests.cpp tests/SourceTests.cpp tests/UniverseTests.cpp)
   target_link_libraries(stocks_tests PRIVATE stocks_lib)
   add_test(NAME stocks_tests COMMAND stocks_tests)
   set_tests_properties(stocks_tests PROPERTIES TIMEOUT 60)

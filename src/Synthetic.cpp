@@ -4,14 +4,14 @@
 
 #include <random>
 
-void fillSyntheticData(Store & store) {
+void fillSyntheticData(Store & store, const Universe & universe) {
   constexpr Timestamp kDay = 86400000, kStart = 1767225600000;  // 2026-01-01 00:00 UTC
   Dataset synthetic = store.addDataset({{}, "synthetic"});
   std::string market;
   unsigned preset = 0;
   std::mt19937 rng;
   std::uniform_real_distribution<double> step(-0.03, 0.032), start(1.5, 300.0), wick(0.0, 0.01), volume(1e3, 1e6);
-  for (const UniverseEntry & e : universe()) {
+  for (const UniverseEntry & e : universe) {
     if (market != e.market) {  // one random walk sequence per market, the same every run
       market = e.market;
       rng.seed(preset++ * 7919u + 1u);
