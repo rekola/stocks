@@ -194,28 +194,24 @@ the exchange's calendar.
     what is stored; storing 00:00 UTC would invent a time and a time zone. With dates,
     daylight saving and time zones do not enter at all, and bars of different markets
     line up by date, which is what comparing instruments needs.
-- **Slot numbers, for compatibility with the legacy platform (decided direction).** The
-  legacy platform keys its bars by numbers, not by instants: a day number for days, and
-  the same idea for the others: an **hour number**, an **absolute week number**, a
-  **10-minute slot number**, and so on. This system does the same, so that the legacy
-  data and the new need no conversion: the key of a bar is the number of its slot, an
-  integer that counts slots of that resolution from a fixed origin, and a resolution
-  code says which kind of number it is. Weeks start on Monday (confirmed), and day
-  numbers are Date::Calc's (confirmed). The resolution codes are the legacy platform's,
-  which the owner will supply; they include resolutions the providers do not have
-  (10 minutes), and the providers' own (5 and 15 minutes, 4 hours) are added to them.
-  What is still needed from the owner, because compatibility depends on it exactly:
-  - the origin and the base of each number (is hour 0 the first hour of 1 January of
-    the year 1, and are the numbers 0-based or 1-based, as the day number is 1-based);
-  - the time of the intraday numbers: UTC, or the exchange's local time. UTC is
-    unambiguous; local time repeats or skips an hour at daylight saving;
-  - the numbers for months and quarters, if the legacy platform has them.
-  A provider's bar (an instant) is turned into a slot number by counting slots in UTC.
-  This **cannot represent a bar that does not start on a slot boundary**: Yahoo's hourly
-  bars on US exchanges start at :30 (the open is 09:30), so they fall between hour
-  numbers. Such bars need an offset in the resolution (an hourly series starting at :30,
-  with its own code) or must be kept as provided and marked; to be decided with the
-  first US data.
+- **Slot numbers, as in the legacy platform (decided).** The key of a bar is a number,
+  not an instant:
+  - a **date resolution** by a day number (Date::Calc's, confirmed; weeks start on
+    Monday, confirmed);
+  - an **intraday resolution by its slot number in UTC**: the UTC Unix seconds of the
+    start divided by the length of the resolution, rounded down. The hour number is the
+    UTC seconds divided by 3600, a 10-minute slot number the seconds divided by 600, and
+    so on. UTC, so no time zone and no daylight saving: no repeated or skipped hour.
+  - **absolute week numbers** are to come from the day numbers (the owner will check
+    how); **months and quarters have no numbering yet**. Until then a week, month or
+    quarter bar is keyed by the day number of its first day.
+  The resolution codes are the legacy platform's, which the owner will supply with the
+  details of the plan; they include resolutions the providers do not have (10 minutes),
+  and the providers' own (5 and 15 minutes, 4 hours) are added to them. In the app
+  (`Dates.h`): `slotOfInstant`, `instantOfSlot`, `onSlotBoundary`.
+- **The old Nordnet data comes from the legacy system.** Its history is imported from
+  there, so the old bars need not be fetched from Nordnet; the import has to map the
+  legacy codes and numbers onto these, and say which dataset the bars belong to.
 - **Coarser date levels follow from day bars by date arithmetic alone**: the week of a
   date, its month and its quarter need no calendar of the market, so the pyramid of
   weekly, monthly and quarterly bars (see the question above) can be made from daily
@@ -292,6 +288,59 @@ must be explicit, because bars of different markets are not always comparable:
   calendar is a node, and "market has calendar" a statement.
 - For the embeddings this means building the slots from intraday bars aligned by UTC
   time where the markets differ, and from date bars where the definitions match.
+
+### Open: bars that do not start on the hour (the US exchanges)
+
+Measured on Yahoo: the hourly, 30-minute and 5-minute bars of a US share (AAPL) start at
+**09:30 New York time** (14:30 UTC in winter, 13:30 in summer), because the exchange
+opens at 09:30; Helsinki's hourly bars start on the hour. A bar that starts at :30
+does not fall on an hour number (`onSlotBoundary` says so), and bars of the US and of
+Helsinki would not line up hour for hour, which would disturb the market regime work.
+Data collected on the assumption that hourly bars start on the hour needs correcting.
+
+Kept as an open question. The owner's idea: **reconstruct the US hourly bars on the fly**
+from 30-minute bars (or finer), onto the hour grid, instead of storing what the provider
+calls hourly. What it brings and what to decide:
+
+- The finer bars are only available for a short window (Yahoo: 30 and 5 minutes 60 days
+  back; Nordnet: a week), so the hourly history of the US shares that can be
+  reconstructed is as deep as the 30-minute history we have collected.
+- An hour slot on the UTC grid then holds two half-hours that belong to different
+  session hours: 14:00 to 15:00 UTC in winter holds only 14:30 to 15:00 (the open) of the
+  session, and the last slot holds the close. The first and last hour of the session are
+  half-filled; a rule is needed (keep them as partial, or mark them).
+- The US session moves by an hour in UTC with daylight saving (the open is 14:30 UTC in
+  winter and 13:30 in summer, while Helsinki's open moves with its own daylight saving
+  on other dates, so for some weeks of the year the two are shifted by one more hour
+  than usual). Slots by UTC hour therefore mean different parts of the session over the
+  year: the calendar question again.
+- Whether a provider's own coarse bars and bars reconstructed from finer ones are
+  different series (they are different data, as noted for the pyramid).
+
+### Yahoo's history is adjusted afterwards
+
+Measured: Yahoo **adjusts the history retroactively for splits**, in the prices and in
+the volume. AAPL's 4-for-1 split on 2020-08-31: the close of 2020-08-28 is returned as
+124.81 (it was 499.23 on the day) and its volume multiplied by 4; the split is listed in
+the chart's events (`date`, `numerator`, `denominator`, here 4 and 1) and the same for
+NESTE.HE's 3-for-1 in April 2019. The separate `adjclose` series is also adjusted for
+dividends (114.54 against 118.28 for 2020-08-20). Yahoo has no unadjusted prices to ask
+for. What this means:
+
+- "Stored as reported" cannot hold for Yahoo's prices: what is stored is **adjusted as
+  of the time it was fetched**. A bar fetched before a split and the same day's bar
+  fetched after differ.
+- A collector that only appends new days leaves old bars on the old scale after a split
+  and so produces a jump. It must notice a new split in the events (or that the last
+  stored bars disagree with the same bars fetched now) and **fetch the whole history
+  again**, so that the old bars are replaced; in the versioned, insert-only store this
+  makes new versions of the old bars and keeps the earlier ones, so "as of version N"
+  still gives what was known then.
+- Dividends are not applied to the OHLC prices (only to `adjclose`); the dividend events
+  are stored as corporate actions as before.
+- Whether the intraday bars are adjusted the same way is not measured.
+- Whether Nordnet's history is adjusted is not known; the legacy import will show
+  how the old data was handled.
 
 ### Rough size (to be measured)
 
@@ -599,9 +648,12 @@ when it outgrows the disk.
 
 - A graph of statements for the catalog: adopt it, and which predicates first.
 - Calendars: where they come from, and how weeks and months are cut for 24-hour markets.
-- Slot numbers (hour, 10-minute, absolute week, ...) in the legacy platform's convention:
-  the origin, the base and the time zone of each; and what to do with bars that do not
-  start on a slot boundary (US hourly bars at :30).
+- Absolute week numbers (from the day numbers), month and quarter numbering, and the
+  owner's resolution codes.
+- The US hourly bars that start at :30: reconstruct the hourly bars on the fly from 30-minute
+  ones, and how to treat the half-filled first and last hour.
+- Adjusted history: how the collector notices a split and refetches, and how the legacy
+  import treated adjustment.
 
 - How many instruments in all, and how far back each intraday interval goes.
 - A pyramid of coarser bars, and whether derived levels are stored or made on demand.
