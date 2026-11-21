@@ -203,14 +203,24 @@ see data-model.md).
   provider (its ids for the instrument and the listing), adapter state (what was
   loaded, when, how far). A version sequence for ingest batches. New tables in a
   schema of their own, next to the legacy ones.
-- **Why an edge exists before it has data.** Discovery finds *listings*: this
-  instrument is traded on that market in that currency. That is catalog knowledge
-  and it comes first, from the provider's instrument lists; the bars come later,
-  from a separate and much slower step (one request per instrument and interval).
-  Without the edge, a found instrument would be invisible until its history was
-  loaded, "not loaded yet" could not be told from "does not exist", and the
-  history step would have nothing to ask for. In the server's catalog this is simply
-  the edges table; in the app's `Store` it is `addEdge`.
+- **Nodes and edges: a node is seen only through an edge.** All the possible nodes
+  of the universe exist in the catalog, and an edge exists only when it has data. A
+  node with no edge is invisible, because every preset selects edges, so there is
+  nothing to show for it. There is no empty edge: discovery finds nodes and, where it
+  can, data that makes edges (see Nordnet). Nodes are instruments today and may be
+  other kinds later (the model's `EdgeKey` has instruments at both ends, which would
+  then widen).
+- **Selecting edges by the type of a node is where the trouble is.** A preset must be
+  able to say "the ETFs on this market", but: Nordnet's types (`UETF`, `KETF`, `PTC`)
+  and Yahoo's (`EQUITY`, `FUTURE`, `CURRENCY`) are different vocabularies, and the
+  same instrument can have a type from each; our coarse `kind` is the same across
+  providers but too coarse (a certificate is just `Other`); a type belongs to the
+  node but the preset selects edges, so each selection looks the node up (fine in
+  memory, an index in the database); and a node that is not an instrument may have no
+  type of the kind. Today an instrument keeps the first provider's own type
+  (`Instrument::type`) and its `kind`, and `Snapshot::edges(market, filter)` selects
+  by either. Open: a type table that maps provider types to a common taxonomy, and
+  what a preset's selection looks like (market, type, kind, ...).
 - **Events**: announcements and corporate actions, per instrument and dataset, as
   in the model; stored like bars (rows, versioned).
 - **Identity across providers**: an internal instrument id, plus the **ISIN** where
@@ -243,13 +253,16 @@ see data-model.md).
 |---|---|---|
 | **Nordnet** | Discovery (instruments) and history, by unofficial endpoints | Endpoints researched by the owner. **Discovery of the ETFs and the PTC certificates is built** (see below); history and intraday are next. |
 | Legacy MariaDB | The existing bars (one row per bar), served by the server | Later. To learn: its schema, and how its instruments map to ours; whether the API reads it in place or it is copied into ClickHouse. |
-| Yahoo | Daily candles, dividends, splits; no discovery | Built in the app (`YahooSource`, dataset `yahoo`); slow one by one, for development and personal use. |
+| Yahoo | Daily candles, dividends, splits; no discovery, so its adapter has instrument lists of its own (`data/yahoo`), which go when every adapter has discovery | Built in the app (`YahooSource`, dataset `yahoo`); slow one by one, for development and personal use. |
 | ECB | Daily reference rates, every currency since 1999, in one file | Candidate. |
 | A paid bulk provider | Discovery and a whole exchange per request | Open: which, and what its licence allows to be shown. |
 
 **Nordnet discovery** (`NordnetSource`), from the endpoints' behaviour as observed.
 Every list is loaded the same way, with no category per endpoint: an instrument is
-whatever its list holds, and its kind comes from its own `instrument_type`. The
+whatever its list holds, keeping its own `instrument_type`. Discovery **repeats every
+five minutes** (about 7 requests and 20 MB of JSON each time), and **each listing's
+price block is today's bar**, stored in the daily series: that is what makes the edge,
+and a reload replaces the bar. The
 lists so far are the ETFs (`etflist`) and the certificates of type PTC
 (`certificatelist?apply_filters=instrument_type=PTC`). **Without that filter the
 certificate list holds 64,861 instruments** (almost all bull and bear certificates),
@@ -288,10 +301,43 @@ The ETF list:
   1 on market 14 (Copenhagen, DKK). Every row has an ISIN; the same ISIN is listed
   on two markets 16 times; a symbol is never shared by two ISINs. Market ids carry
   no name in this answer; the slug suffix (`xeta`, `xsto`, `xcse`) does.
-- Stored: an instrument (with its ISIN and name), the quote currency, the market and
-  the edge, under the dataset `nordnet`. Nordnet's own ids (instrument id, market id, identifier) are
+- Stored: an instrument (with its ISIN, name and type) and the quote currency, and,
+  where the listing has traded, today's bar (`price_info`: open, high, low, last,
+  `turnover_volume`, `tick_timestamp`; its `close` is the previous close), under the
+  dataset `nordnet`. The daily bar starts at midnight UTC of its date, as the history's
+  do. 12 of 3401 listings had no price or tick time: they are nodes without an edge. Nordnet's own ids (instrument id, market id, identifier) are
   what the history requests need: the adapter keeps them for the history step, and
   on the server they become aliases in the catalog.
+
+**Nordnet history** (`api.prod.nntech.io`), as observed, not built yet:
+
+- `GET https://api.prod.nntech.io/market-data/v3/price-time-series/period/<PERIOD>/identifier/<ID>?resolution=<RESOLUTION>`
+  with `Accept: */*`, `Origin` and `Referer` (`https://www.nordnet.fi`) and `x-locale: fi-FI`.
+  The other browser headers (`Sec-*`, `Priority`) and a cookie are not needed.
+- `<ID>` is the listing's **`nnx_info.market_data_order_book_id`** (checked with the
+  BNPP RICI ETC example). Whether the numeric instrument id also works is untested.
+- The answer has `pricePoints` (`timeStamp` in ms, `open`, `high`, `low`, `last`,
+  `volume`), the previous close, the period's high and low, `returns` per period, and
+  `validResolutionsForPeriod`, `availablePeriods`, `returnedPeriod`,
+  `returnedResolution`.
+- Periods: `DAY_1 WEEK_1 MONTH_1 MONTH_3 MONTH_6 YTD YEAR_1 YEAR_3 YEAR_5 ALL`.
+  Resolutions seen: `WEEK`, `DAY`, `HOUR_4`, `HOUR_1`, `MIN_15`, `MIN_5` (the codes
+  from the original script), `MONTH` and `QUARTER` as well.
+- **The endpoint substitutes a resolution that is not valid for the period, and says
+  so only in `returnedResolution`.** The loader must read that field, never trust the
+  one it asked for. For the BNPP ETC: `YEAR_1` gives `HOUR_1`, `HOUR_4`, `DAY`,
+  `WEEK` and `MONTH`; `YEAR_3` and `YEAR_5` give `DAY` and coarser; `ALL` gives `DAY`,
+  `WEEK`, `MONTH` and `QUARTER` (1543 daily bars back to 2019-07-29, 139 KB, 1.1 s);
+  hourly goes back one year. `MIN_5` and `MIN_15` always came back as `HOUR_1` for
+  this instrument; liquid instruments may differ, to be tried.
+- Daily bars are stamped 00:00 UTC of the trading date, hourly bars on the hour in UTC
+  (the session hours differ between summer and winter time); `volume` was 0 for most
+  bars of the ETC, so it is not to be trusted yet.
+- **Nordnet gives the coarse levels itself** (`WEEK`, `MONTH`, `QUARTER`), which bears
+  on the pyramid question above: a provider's own coarse bars and ours made from finer
+  ones are different data.
+- Pacing is not decided: responses took 0.6 to 1.1 s each, and every instrument needs
+  one request per resolution.
 
 Licences and terms matter for a service that shows the data to others: check what
 each provider allows before it is on by default.
