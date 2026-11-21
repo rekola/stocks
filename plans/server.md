@@ -480,7 +480,7 @@ according to Nordnet" and "its ticker is NOKIA.HE, according to Yahoo".
 
 | Adapter | Gives | Status |
 |---|---|---|
-| **Nordnet** | Discovery (instruments) and history, by unofficial endpoints | Endpoints researched by the owner. **Discovery of the ETFs and the PTC certificates is built** (see below); history and intraday are next. |
+| **Nordnet** | Discovery (instruments) and history, by unofficial endpoints | Endpoints researched by the owner. **Discovery of the ETFs and the PTC certificates is built** (see below); next: the stocks endpoint, currencies and commodities by hand, metadata endpoints, history and intraday (see "Nordnet: what comes next"). |
 | Legacy MariaDB | The existing bars (one row per bar), served by the server | Later. To learn: its schema, and how its instruments map to ours; whether the API reads it in place or it is copied into ClickHouse. |
 | Yahoo | Daily candles, dividends, splits; no discovery, so its adapter has instrument lists of its own (`data/yahoo`), which go when every adapter has discovery | Built in the app (`YahooSource`, dataset `yahoo`); slow one by one, for development and personal use. |
 | ECB | Daily reference rates, every currency since 1999, in one file | Candidate. |
@@ -590,6 +590,67 @@ and they decide how history has to be collected):
 - Pacing is not decided: responses took 0.6 to 1.1 s each, and every instrument needs
   one request per resolution.
 
+### Nordnet: what comes next
+
+**Decided by the owner**, in this order of work:
+
+1. **The stocks endpoint.** Another of Nordnet's lists, loaded the same way as the ETFs and
+   certificates (no category of its own, the instrument keeps its own type), and, as
+   the owner says, it has minute bars. The owner will supply it. It builds on the
+   per-resolution store, so its intraday bars go into the series of their resolutions.
+2. **Currencies and commodities added by hand.** They are not in the discovery lists, so
+   there is a list kept by hand of the Nordnet instruments for them (name, Nordnet's ids,
+   market, quote currency), in a data file as `data/yahoo` is, loaded by the same adapter and
+   history endpoints. To settle: which ids they have (the order book id the history is
+   asked for by), and their calendar (24 hours, see calendars.md).
+3. **Metadata endpoints**, for getting ids and the like. The first use is the market list
+   (a market is a number in the discovery answers, and the names in the adapter are
+   inferred from the data: 4 Xetra, 11 Nasdaq Stockholm, 24 Nasdaq Helsinki, ...), and the
+   ids that the history endpoint wants for the instruments added by hand. The owner will
+   supply them with the details of the plan.
+4. **The history loader** on top of the history endpoint described above, with the old
+   data imported from the legacy system.
+
+**Suggested, added to the plan** (not decided; in the order I would do them):
+
+- **Keep every reload as a snapshot series.** The five-minute discovery reload replaces
+  today's bar each time and throws the snapshot away. Keeping each snapshot's last price
+  with its tick time, as a series per edge, collects an **intraday series for every
+  discovered instrument** without a single history request: by the afternoon dozens of
+  samples each, enough to estimate current correlations, which the regime embeddings
+  need for the present (embeddings.md, "A sketch of the present"). To decide: these are
+  samples, not bars (no high or low between them), so they belong in a dataset of their
+  own (`nordnet-snapshot`), and the true 5-minute bars from the history endpoint, when
+  they exist, are the better data for the same slots. To measure on a weekday, because the
+  markets were closed when this was written: how often the tick time and price change
+  between two reloads, how many instruments tick in five minutes, whether the prices are
+  delayed (the answers mark them as not real-time), and the storage (about 3,400
+  instruments by about 100 snapshots a day).
+- **Keep the facts the discovery already receives and drops**: `static_leverage` and the
+  direction (long or short) of a certificate, the issuer, a fund's category and fees. The
+  embeddings select the instruments that describe the market by leverage and direction
+  (embeddings.md), and names are not reliable for it. They are statements about the
+  instrument in the graph; until the graph exists, fields next to the type.
+- **Keep Nordnet's ids as aliases**: the instrument id, the market id and sub id, the
+  identifier on the market, the market-data and trading order book ids and the
+  `nnx_instrument_id`. The adapter holds them in memory for the history step, but they are
+  lost when it stops; they are catalog data (aliases per provider).
+- **Record when an instrument was first and last seen in discovery.** Every reload
+  sees which listings exist; a listing that disappears has been delisted or removed.
+  Recording the first and last time each was seen starts building the **listing and
+  delisting dates** the embeddings need against survivorship bias (embeddings.md) from
+  today, at no cost; the legacy data may have the earlier ones. Checking which
+  instruments in the legacy data no longer exist is a first step.
+- **Calendars for Nordnet's markets**: the generator and the reader for Xetra, Stockholm,
+  Copenhagen and Helsinki first (calendars.md), which gives the trading date of a tick
+  (now the UTC date) and the expected bars of a session for finding gaps in the history.
+- **Look at the traffic before adding the stocks list.** One reload is now about 7
+  requests and 20 MB of JSON every five minutes; the stocks list will add to it. The prices are
+  in the same answers as the instruments, so reloading the lists is how prices are
+  refreshed. If the metadata endpoints include one that gives prices for many ids at once,
+  the lists could be reloaded rarely (daily) and the prices often and cheaply; to ask the
+  owner when the metadata endpoints are known.
+
 Licences and terms matter for a service that shows the data to others: check what
 each provider allows before it is on by default.
 
@@ -638,8 +699,11 @@ when it outgrows the disk.
    summary, one series, a long scan across many).
 2. The schema, in a file in this repository, and the ingest service with one
    adapter writing to it.
-3. The Nordnet adapter: discovery of ETFs and certificates (built), then its history
-   and intraday, then more lists as they are wanted.
+3. The Nordnet adapter: discovery of ETFs and certificates (built), then, as decided,
+   the stocks endpoint, currencies and commodities by hand, the metadata endpoints and
+   the history loader with the legacy import; and, suggested, the snapshot series, the
+   facts and ids kept, first and last seen, calendars for its markets and a look at the
+   traffic (see "Nordnet: what comes next").
 4. The API, and `RemoteStore` in the app.
 5. Serving the legacy MariaDB data.
 6. Order books, once the policy is decided.
