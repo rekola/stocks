@@ -170,3 +170,9 @@ const char * currencyName(const std::string & symbol) {
     if (symbol == s) return n;
   return "";
 }
+
+Instrument currencyNode(Store & store, const std::string & symbol) {
+  if (auto known = store.snapshot()->findInstrument(symbol)) return *known;
+  const char * label = currencyName(symbol);
+  return store.addInstrument({{}, symbol, *label ? label : symbol, InstrumentKind::Currency});
+}

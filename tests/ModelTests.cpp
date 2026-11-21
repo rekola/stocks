@@ -27,7 +27,7 @@ Candle bar(Timestamp t, double close) { return {t, close, close, close, close, 1
 TEST(adding_the_same_symbol_or_name_returns_the_record_already_there) {
   World w;
   Instrument again = w.store->addInstrument({{}, "NOKIA", "Other name", InstrumentKind::Index});
-  CHECK(again.id == w.nokia.id && again.name == "Nokia" && again.kind == InstrumentKind::Company);
+  CHECK(again.id == w.nokia.id && again.name == "Other name" && again.kind == InstrumentKind::Index);  // the last said stands
   CHECK(w.store->addMarket({{}, "Nasdaq Helsinki"}).id == w.hel.id);
   CHECK(w.store->addDataset({{}, "provider-a"}).id == w.a.id);
   CHECK(w.snap()->instruments().size() == 2 && w.snap()->markets().size() == 2 && w.snap()->datasets().size() == 2);
@@ -214,7 +214,7 @@ TEST(a_snapshot_never_changes_and_a_write_makes_a_new_one_that_shares_the_old) {
 TEST(only_a_write_that_changes_something_makes_a_new_version) {
   World w;
   uint64_t v = w.snap()->version();
-  w.store->addInstrument({{}, "NOKIA", "again", InstrumentKind::Company});
+  w.store->addInstrument({{}, "NOKIA", "Nokia", InstrumentKind::Company});
   w.store->appendCandles(w.key(w.hel.id, w.a.id), Resolution::Min1, {});
   w.store->appendBooks(w.key(w.hel.id, w.a.id), {});
   CHECK(w.snap()->version() == v);

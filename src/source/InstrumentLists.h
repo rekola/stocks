@@ -1,6 +1,6 @@
 #pragma once
 
-#include "model/Types.h"
+#include "model/Store.h"
 
 #include <filesystem>
 #include <string>
@@ -31,6 +31,10 @@ std::filesystem::path findListsDirectory(const std::string & given);
 
 // The name of a currency that only appears as a quote ("" if unknown).
 const char * currencyName(const std::string & symbol);
+
+// The node for a currency's symbol: the one already in the store, whoever made it, else a new currency named as it is
+// usually called. A provider that has a currency gets the node this way and does not describe it.
+Instrument currencyNode(Store &, const std::string & symbol);
 
 // Which lists a source loads: a directory (empty for the default) and the markets to keep (empty for all of them).
 struct ListSpec {

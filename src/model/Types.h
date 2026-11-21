@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cmath>
 #include <cstdint>
 #include <limits>
 #include <tuple>
@@ -39,43 +40,78 @@ struct TimeRange {
   bool contains(Timestamp t) const { return t >= from && t < to; }
 };
 
-// Anything that can be priced or that prices something: a share, a currency, a commodity, an index.
-// What an instrument is, in one vocabulary for all providers: each adapter maps its own types onto these (Nordnet's UETF
-// and PTC, Yahoo's EQUITY and FUTURE, ...). The provider's own type is kept beside it, in `Instrument::type`.
-enum class InstrumentKind { Company, Currency, Commodity, Index, Etf, Certificate, Fund, Other };
-
-struct Instrument {
-  InstrumentId id;
-  std::string symbol, name;
-  InstrumentKind kind = InstrumentKind::Other;
-  // The ISIN, where there is one. It identifies the instrument across markets: an ETF listed on two markets is one
-  // instrument (and two edges), whatever its symbol on each.
-  std::string isin;
-  // The provider's own type for it (Nordnet's UETF or PTC, Yahoo's EQUITY or FUTURE), "" if it gave none: finer than
-  // `kind` and not the same across providers. A preset can select edges by it.
-  std::string type;
-};
-
-// A place where an instrument is listed and priced. Currency, calendar and time zone join later.
-// One thing said about a node: a predicate and its value. The first of the statements the catalog will hold (a dataset
-// joins them later); markets are the first nodes to have them.
+// One thing said about a node: a predicate and its value. Every node (an instrument, a market, a dataset) keeps what
+// is known about it as attributes, one value per predicate, all in the same way; a value can change. A dataset will join
+// the statement later, to say who says it.
 struct Attribute {
   std::string predicate, value;
   friend bool operator==(const Attribute &, const Attribute &) = default;
 };
 
-// The predicates a market has, and what an adapter finds one by.
 namespace predicate {
 inline constexpr const char * name = "name";
+inline constexpr const char * symbol = "symbol";
+inline constexpr const char * isin = "isin";
+inline constexpr const char * kind = "kind";
+inline constexpr const char * type = "type";  // the provider's own type
 inline constexpr const char * nordnetId = "nordnet-id";
 }  // namespace predicate
 
-// The id is a surrogate: a market is found by what is said about it, not by its id. The name is the value of its
-// `name` attribute (empty until one is known), so a market needs no name to exist and gets one later.
+enum class NodeType : uint8_t { Instrument, Market, Dataset };
+
+// Any node. The typed ids convert to it.
+struct NodeRef {
+  NodeType type = NodeType::Instrument;
+  uint32_t id = 0;
+  NodeRef() = default;
+  NodeRef(InstrumentId i) : type(NodeType::Instrument), id(i.value) {}
+  NodeRef(MarketId i) : type(NodeType::Market), id(i.value) {}
+  NodeRef(DatasetId i) : type(NodeType::Dataset), id(i.value) {}
+  friend bool operator==(const NodeRef &, const NodeRef &) = default;
+};
+
+// A price, volume or other number a provider does not give is undefined (NaN), not zero.
+inline constexpr double kUndefined = std::numeric_limits<double>::quiet_NaN();
+inline bool isDefined(double v) { return v == v; }
+
+// What an instrument is, in one vocabulary for all providers: each adapter maps its own types onto these (Nordnet's UETF
+// and PTC, Yahoo's EQUITY and FUTURE, ...). The provider's own type is kept beside it, in `Instrument::type`.
+enum class InstrumentKind { Company, Currency, Commodity, Index, Etf, Certificate, Fund, Other };
+
+inline const char * kindName(InstrumentKind k) {
+  switch (k) {
+    case InstrumentKind::Company: return "company";
+    case InstrumentKind::Currency: return "currency";
+    case InstrumentKind::Commodity: return "commodity";
+    case InstrumentKind::Index: return "index";
+    case InstrumentKind::Etf: return "etf";
+    case InstrumentKind::Certificate: return "certificate";
+    case InstrumentKind::Fund: return "fund";
+    case InstrumentKind::Other: break;
+  }
+  return "other";
+}
+inline InstrumentKind kindOfName(const std::string & s) {
+  for (InstrumentKind k : {InstrumentKind::Company, InstrumentKind::Currency, InstrumentKind::Commodity, InstrumentKind::Index,
+                           InstrumentKind::Etf, InstrumentKind::Certificate, InstrumentKind::Fund})
+    if (s == kindName(k)) return k;
+  return InstrumentKind::Other;
+}
+
+// The resolved view of an instrument's attributes, for the app.
+struct Instrument {
+  InstrumentId id;
+  std::string symbol, name;
+  InstrumentKind kind = InstrumentKind::Other;
+  std::string isin;  // an instrument with an ISIN is that ISIN: one listed on two markets is one instrument
+  std::string type;  // the provider's own type ("UETF", "EQUITY"), beside the combined kind
+};
+
+// The resolved view of a market's attributes. The id is a surrogate: a market is found by what is said about it. The
+// name is empty until one is known.
 struct Market {
   MarketId id;
   std::string name;
-  std::vector<Attribute> attributes;  // one value per predicate, the name among them
 };
 
 // Where a fact came from: a provider, a file, a prediction model. Two datasets that disagree both stay.
@@ -204,6 +240,10 @@ inline size_t hashCombine(size_t seed, size_t v) { return seed ^ (v + 0x9e3779b9
 template <class Tag>
 struct std::hash<Id<Tag>> {
   size_t operator()(Id<Tag> i) const { return std::hash<uint32_t>()(i.value); }
+};
+template <>
+struct std::hash<NodeRef> {
+  size_t operator()(NodeRef n) const { return hashCombine(static_cast<size_t>(n.type), n.id); }
 };
 template <>
 struct std::hash<EdgeKey> {

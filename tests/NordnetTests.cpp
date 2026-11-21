@@ -2,6 +2,7 @@
 
 #include "FakeHttp.h"
 #include "model/Dates.h"
+#include "source/InstrumentLists.h"
 #include "source/InstrumentTypes.h"
 #include "source/NordnetSource.h"
 
@@ -337,16 +338,16 @@ TEST(a_page_of_stocks_has_the_same_shape_and_a_bar_from_the_day_so_far) {
   CHECK(kindOfNordnetType(first.type) == InstrumentKind::Company);
 }
 
-TEST(a_fund_is_a_bar_of_one_price_its_nav) {
+TEST(a_fund_is_a_bar_with_only_its_nav_as_the_close) {
   NordnetSource::Page page;
   std::string error;
   CHECK(NordnetSource::parsePage(fixture("fundlist-1.json"), page, error));
   CHECK(page.listings.size() == 3);
   const NordnetListing & fund = page.listings[0];
   CHECK(fund.type == "FUCITS" && fund.currency == "USD" && fund.marketId == 78 && !fund.isin.empty());
-  // Only a last price (the NAV) and its tick: the bar's open, high, low and close are that price, no volume.
-  CHECK(fund.hasBar && fund.bar.open == 22.76 && fund.bar.high == 22.76 && fund.bar.low == 22.76 && fund.bar.close == 22.76);
-  CHECK(fund.bar.volume == 0);
+  // Only a last price (the NAV) and its tick: that is the close; the open, high, low and volume are undefined.
+  CHECK(fund.hasBar && fund.bar.close == 22.76);
+  CHECK(!isDefined(fund.bar.open) && !isDefined(fund.bar.high) && !isDefined(fund.bar.low) && !isDefined(fund.bar.volume));
   CHECK(fund.bar.time == dayNumberOfInstant(1795132800));  // dated by its tick
   CHECK(!fund.bookId.empty());  // the id the history is asked for by, with the NAV parameter
   CHECK(kindOfNordnetType(fund.type) == InstrumentKind::Fund);
@@ -372,7 +373,7 @@ TEST(a_market_is_found_by_its_nordnet_id_or_its_name_and_made_when_neither_is_th
   auto store = makeMemoryStore();
   // Another provider saw Helsinki first, by its name.
   Market helsinki = store->addMarket({{}, "Nasdaq Helsinki"});
-  CHECK(helsinki.attributes.size() == 1);
+  CHECK(store->snapshot()->attributes(helsinki.id).size() == 1);
   FakeHttp http;
   http.answer = pages;
   Listener listener;
@@ -381,72 +382,73 @@ TEST(a_market_is_found_by_its_nordnet_id_or_its_name_and_made_when_neither_is_th
 
   // A Nordnet market with a known name is found by it: Xetra is one market with a name and Nordnet's id.
   Market xetra = *s->findMarket("Xetra");
-  CHECK(s->findMarketByAttribute(predicate::nordnetId, "4")->id == xetra.id && xetra.attributes.size() == 2);
+  CHECK(s->findMarketByAttribute(predicate::nordnetId, "4")->id == xetra.id && s->attributes(xetra.id).size() == 2);
 
   // One with no name is found by the id alone, and has no name yet.
   Market unnamed = *s->findMarketByAttribute(predicate::nordnetId, "61");
-  CHECK(unnamed.name.empty() && unnamed.attributes.size() == 1);
+  CHECK(unnamed.name.empty() && s->attributes(unnamed.id).size() == 1);
   const size_t edges = s->edges(unnamed.id).size();
   CHECK(edges > 0);
 
   // A name filled in later is the same market, with the same edges, found by the name from then on.
-  store->setMarketAttribute(unnamed.id, {predicate::name, "Some Exchange"});
+  store->setAttribute(unnamed.id, {predicate::name, "Some Exchange"});
   auto named = store->snapshot();
   CHECK(named->findMarket("Some Exchange")->id == unnamed.id && named->market(unnamed.id)->name == "Some Exchange");
   CHECK(named->edges(unnamed.id).size() == edges);
   CHECK(named->findMarketByAttribute(predicate::nordnetId, "61")->id == unnamed.id);
 
-  // Loading again makes no other market and leaves the name.
+  // The name can change, and the old one finds nothing.
+  store->setAttribute(unnamed.id, {predicate::name, "Another Name"});
+  CHECK(!store->snapshot()->findMarket("Some Exchange") && store->snapshot()->findMarket("Another Name")->id == unnamed.id);
+
+  // Loading again makes no other market and leaves the name (Nordnet says nothing of this one's name).
   quick().load(*store, http, listener);
   auto again = store->snapshot();
-  CHECK(again->market(unnamed.id)->name == "Some Exchange" && again->markets().size() == named->markets().size());
+  CHECK(again->market(unnamed.id)->name == "Another Name" && again->markets().size() == named->markets().size());
 }
 
 TEST(a_market_a_provider_named_first_gets_the_nordnet_id_added) {
   auto store = makeMemoryStore();
   Market first = store->addMarket({{}, "Nasdaq Stockholm"});  // as another provider names it
   Market found = store->resolveMarket({{predicate::nordnetId, "11"}, {predicate::name, "Nasdaq Stockholm"}});
-  CHECK(found.id == first.id && found.attributes.size() == 2);
+  CHECK(found.id == first.id && store->snapshot()->attributes(first.id).size() == 2);
   CHECK(store->snapshot()->findMarketByAttribute(predicate::nordnetId, "11")->id == first.id);
   CHECK(store->snapshot()->markets().size() == 1);
-  // The id is looked up first: a second market is not made when the name is spelled differently.
+  // The id is looked up first, so no second market is made when the name is spelled differently; the name is then said
+  // again and changes.
   Market again = store->resolveMarket({{predicate::nordnetId, "11"}, {predicate::name, "OMX Stockholm"}});
-  CHECK(again.id == first.id && again.name == "Nasdaq Stockholm");  // the first value stays
+  CHECK(again.id == first.id && again.name == "OMX Stockholm" && store->snapshot()->markets().size() == 1);
 }
 
-TEST(an_attribute_another_market_has_is_not_taken_from_it) {
+TEST(every_kind_of_node_keeps_its_attributes_the_same_way) {
   auto store = makeMemoryStore();
-  Market a = store->addMarket({{}, "A"}), b = store->addMarket({{}, "B"});
-  store->setMarketAttribute(a.id, {predicate::nordnetId, "7"});
+  Instrument i = store->addInstrument({{}, "NOKIA", "Nokia", InstrumentKind::Company, "FI0009000681", "ESH"});
+  Dataset d = store->addDataset({{}, "nordnet"});
+  Market m = store->addMarket({{}, "Nasdaq Helsinki"});
+  store->setAttribute(i.id, {predicate::nordnetId, "16"});
+  store->setAttribute(d.id, {"description", "Nordnet"});
+  auto s = store->snapshot();
+  CHECK(s->findByAttribute(NodeType::Instrument, predicate::nordnetId, "16")->id == i.id.value);
+  CHECK(!s->findByAttribute(NodeType::Market, predicate::nordnetId, "16"));  // by type: another node's, not this one's
+  CHECK(s->attributes(i.id).size() == 6 && s->attributes(d.id).size() == 2 && s->attributes(m.id).size() == 1);
+
+  // The instrument's name changes and the view follows; unchanged says nothing new.
+  store->addInstrument({{}, "NOKIA", "Nokia Oyj", InstrumentKind::Company, "FI0009000681", "ESH"});
+  CHECK(store->snapshot()->instrument(i.id)->name == "Nokia Oyj");
   const uint64_t version = store->snapshot()->version();
-  store->setMarketAttribute(b.id, {predicate::nordnetId, "7"});
-  CHECK(store->snapshot()->version() == version);
-  CHECK(store->snapshot()->findMarketByAttribute(predicate::nordnetId, "7")->id == a.id);
-  CHECK(store->snapshot()->market(b.id)->attributes.size() == 1);
+  store->addInstrument({{}, "NOKIA", "Nokia Oyj", InstrumentKind::Company, "FI0009000681", "ESH"});
+  store->addInstrument({{}, "NOKIA", "", InstrumentKind::Other, "FI0009000681", ""});  // says nothing: empty and unknown
+  CHECK(store->snapshot()->version() == version && store->snapshot()->instrument(i.id)->kind == InstrumentKind::Company);
 }
 
-TEST(a_list_with_an_interval_is_left_alone_until_it_is_due) {
-  auto lists = etfAndCertificateLists();
-  lists[1].interval = std::chrono::hours(1);  // the certificates
-  NordnetSource source(lists, std::chrono::milliseconds(0));
+TEST(a_currency_is_the_node_the_store_has_for_its_symbol) {
   auto store = makeMemoryStore();
-  FakeHttp http;
-  http.answer = pages;
-  Listener listener;
-  source.load(*store, http, listener);
-  CHECK(http.urls.size() == 3 && source.listings().size() == 9);
-
-  FakeHttp again;
-  again.answer = pages;
-  Listener second;
-  source.load(*store, again, second);
-  CHECK(again.urls.size() == 2);                        // the two ETF pages; no request for the certificates
-  CHECK(source.listings().size() == 9);                 // what the certificates gave stays
-  CHECK(second.messages.size() == 1 && second.messages[0] == "nordnet: 9 listings (etflist 5)");
-}
-
-TEST(the_funds_are_loaded_hourly_and_the_rest_at_every_load) {
-  auto lists = NordnetSource::defaultLists();
-  CHECK(lists[0].interval.count() == 0 && lists[1].interval.count() == 0 && lists[3].interval.count() == 0);
-  CHECK(lists[2].name == "fundlist" && lists[2].interval == std::chrono::hours(1));
+  Instrument made = currencyNode(*store, "EUR");
+  CHECK(made.kind == InstrumentKind::Currency && made.name == "Euro");
+  // Another provider's use of the symbol gets the same node, and describes nothing.
+  const uint64_t version = store->snapshot()->version();
+  CHECK(currencyNode(*store, "EUR").id == made.id && store->snapshot()->version() == version);
+  // A node already there under the symbol, made by anyone, is the one it gets.
+  Instrument other = store->addInstrument({{}, "XYZ", "Xyz", InstrumentKind::Other});
+  CHECK(currencyNode(*store, "XYZ").id == other.id && currencyNode(*store, "XYZ").kind == InstrumentKind::Other);
 }

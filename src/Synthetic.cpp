@@ -19,7 +19,7 @@ void fillSyntheticData(Store & store, const InstrumentList & list) {
     }
     Market m = store.addMarket({{}, e.market});
     Instrument base = store.addInstrument({{}, e.base, e.name, e.kind});
-    Instrument quote = store.addInstrument({{}, e.quote, currencyName(e.quote), InstrumentKind::Currency});
+    Instrument quote = currencyNode(store, e.quote);
     std::vector<Candle> bars;
     double p = start(rng);
     for (int d = 0; d < 60; d++) {

@@ -56,7 +56,7 @@ bool YahooSource::parse(const std::string & body, const ListEntry & e, Store & s
   for (size_t i = 0; i < ts.size(); i++) {
     auto open = number(q["open"], i), high = number(q["high"], i), low = number(q["low"], i), close = number(q["close"], i);
     if (!ts[i].is_number_integer() || !open || !high || !low || !close) continue;  // a day without a price
-    bars.push_back({tradingDateOfDailyStamp(ts[i].get<int64_t>(), utcOffset), *open, *high, *low, *close, number(q["volume"], i).value_or(0)});
+    bars.push_back({tradingDateOfDailyStamp(ts[i].get<int64_t>(), utcOffset), *open, *high, *low, *close, number(q["volume"], i).value_or(kUndefined)});
   }
   if (bars.empty()) {
     error = "no candles";
@@ -71,7 +71,7 @@ bool YahooSource::parse(const std::string & body, const ListEntry & e, Store & s
     if (t != meta->end() && t->is_string()) type = t->get<std::string>();
   }
   Instrument base = store.addInstrument({{}, e.base, e.name, e.kind != InstrumentKind::Other ? e.kind : kindOfYahooType(type), "", type});
-  Instrument quote = store.addInstrument({{}, e.quote, currencyName(e.quote), InstrumentKind::Currency});
+  Instrument quote = currencyNode(store, e.quote);
   store.appendCandles({base.id, quote.id, market.id, dataset.id}, Resolution::Day, bars);
 
   if (result.contains("events") && result["events"].is_object()) {

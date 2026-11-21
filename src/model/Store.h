@@ -23,6 +23,10 @@ class Snapshot {
   std::optional<Market> market(MarketId) const;
   std::optional<Market> findMarket(const std::string & name) const;  // by its name attribute
   std::optional<Market> findMarketByAttribute(const std::string & predicate, const std::string & value) const;
+  // What is said about any node, in the order it was first said; and the node, of the type, that says `predicate` is
+  // `value` (the one made first, if several do).
+  std::vector<Attribute> attributes(NodeRef) const;
+  std::optional<NodeRef> findByAttribute(NodeType, const std::string & predicate, const std::string & value) const;
   std::optional<Dataset> dataset(DatasetId) const;
   std::optional<Dataset> findDataset(const std::string & name) const;
   const Seq<Instrument> & instruments() const { return instruments_; }
@@ -57,7 +61,7 @@ class Snapshot {
   // can call them, because it holds it const. Each one that changes something bumps the version.
   Instrument add(Instrument);
   Market resolve(const std::vector<Attribute> &);
-  void setAttribute(MarketId, const Attribute &);
+  void setAttribute(NodeRef, const Attribute &);
   Dataset add(Dataset);
   void appendCandles(const EdgeKey &, Resolution, const std::vector<Candle> &);
   void appendBooks(const EdgeKey &, const std::vector<BookSnapshot> &);
@@ -70,10 +74,8 @@ class Snapshot {
   Seq<Instrument> instruments_;
   Seq<Market> markets_;
   Seq<Dataset> datasets_;
-  immer::map<std::string, InstrumentId> instrumentBySymbol_;
-  immer::map<std::string, InstrumentId> instrumentByIsin_;
-  immer::map<std::string, MarketId> marketByAttribute_;  // "predicate\0value"
-  immer::map<std::string, DatasetId> datasetByName_;
+  immer::map<NodeRef, std::vector<Attribute>> attributes_;
+  immer::map<std::string, immer::set<uint32_t>> byAttribute_;  // "type predicate \0 value" to the ids that say it
   immer::map<SeriesKey, Seq<Candle>> series_;
   immer::map<EdgeKey, immer::set<int>> resolutions_;
   immer::map<EdgeKey, Seq<BookSnapshot>> books_;
@@ -93,20 +95,21 @@ class Store {
   // The current version. Hold it for as long as a consistent view is needed.
   virtual std::shared_ptr<const Snapshot> snapshot() const = 0;
 
-  // Add by name: the same symbol (instruments) or name (markets, datasets) again returns the one already there and
-  // keeps its first values. The returned record carries the assigned id. An instrument with an ISIN is found by it and
-  // by nothing else, so two with the same symbol and different ISINs stay two (the symbol finds the first).
+  // Nodes are found by what is said about them, and what is said can change: a value set again replaces the one it
+  // had (the last said stands; with two providers saying different things it is whichever wrote last, until the
+  // statements say who says them), and an empty value says nothing. Nothing is made twice.
+  //
+  // An instrument with an ISIN is found by it and by nothing else (two with the same symbol and different ISINs stay
+  // two, the symbol finds the first); one without is found by its symbol. Its symbol, name, ISIN, type and kind (unless
+  // Other) are then set. The returned record carries the assigned id.
   virtual Instrument addInstrument(Instrument) = 0;
-  // The market that has any of these attributes, tried in the order given; none has it, a market is created, with a
-  // new id, and the attributes. A market found gets the attributes whose predicate it has no value for (the first
-  // value stays). An attribute held by another market than the one found is left there: two markets saying one thing
-  // are not merged here.
+  // The market that has any of these attributes, tried in the order given; where none has, a market is made. The
+  // attributes are then set on it, so a market first seen by its Nordnet id is given its name when it is learned.
   virtual Market resolveMarket(const std::vector<Attribute> &) = 0;
   // By name alone.
   Market addMarket(Market m) { return resolveMarket({{predicate::name, m.name}}); }
-  // Sets the value of one predicate of a market, replacing the one it had, as when a name is learned later. The market
-  // keeps its id and its edges. A value that another market has is refused (nothing changes).
-  virtual void setMarketAttribute(MarketId, const Attribute &) = 0;
+  // Sets one attribute of any node: the same for all of them.
+  virtual void setAttribute(NodeRef, const Attribute &) = 0;
   virtual Dataset addDataset(Dataset) = 0;
 
   // Candles. An edge has a series for each resolution it has data in, as the provider gives it: nothing is derived from

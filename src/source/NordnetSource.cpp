@@ -101,17 +101,17 @@ bool NordnetSource::parsePage(const std::string & body, Page & page, std::string
       const json & p = row["price_info"];
       auto open = price(p, "open"), high = price(p, "high"), low = price(p, "low"), last = price(p, "last");
       const int64_t tick = integer(p, "tick_timestamp") / 1000;  // the answer is in milliseconds; seconds from here on
-      // A fund has only its NAV: a bar of one price, the close, which is also the last price while the slot is still in
-      // progress (the NAV of the day is dated by its tick).
+      // A fund has only its NAV: the bar's close, which is also the last price while the slot is still in progress (the
+      // NAV of the day is dated by its tick). Its open, high and low are undefined, and so is a volume the answer lacks.
       const bool fund = kindOfNordnetType(l.type) == InstrumentKind::Fund;
-      if (fund && last) open = high = low = last;
-      if (open && high && low && last && tick > 0) {
+      if (fund && last) open = high = low = kUndefined;
+      if ((fund || (open && high && low)) && last && tick > 0) {
         auto volume = p.find("turnover_volume");  // written to the bar when the answer has it; volume weights the bars
         l.hasBar = true;
         // Keyed by the trading date, not by the instant: the date of the last tick in UTC (a market east of UTC+9 around
         // its open would need its own time zone).
         l.bar = {dayNumberOfInstant(tick), *open, *high, *low, *last,
-                 volume != p.end() && volume->is_number() ? volume->get<double>() : 0.0};
+                 volume != p.end() && volume->is_number() ? volume->get<double>() : kUndefined};
       }
     }
     if (row.is_object() && row.contains("exchange_info") && row["exchange_info"].is_object())
@@ -168,8 +168,7 @@ void NordnetSource::load(Store & store, Http & http, SourceListener & listener) 
         if (const char * name = knownMarketName(l.marketId)) says.push_back({predicate::name, name});
         Market market = store.resolveMarket(says);
         Instrument base = store.addInstrument({{}, l.symbol, l.name, kindOfNordnetType(l.type), l.isin, l.type});
-        const char * label = currencyName(l.currency);
-        Instrument quote = store.addInstrument({{}, l.currency, *label ? label : l.currency, InstrumentKind::Currency});
+        Instrument quote = currencyNode(store, l.currency);
         // Today's bar makes the edge; a listing with none stays a node nothing selects.
         if (l.hasBar) store.appendCandles({base.id, quote.id, market.id, dataset.id}, Resolution::Day, {l.bar});
       }
