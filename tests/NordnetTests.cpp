@@ -365,8 +365,10 @@ TEST(a_stock_bar_carries_the_volume_when_the_answer_has_it) {
 
 TEST(the_default_lists_are_the_etfs_the_certificates_the_funds_and_the_stocks) {
   auto lists = NordnetSource::defaultLists();
-  CHECK(lists.size() == 4);
+  CHECK(lists.size() == 7);
   CHECK(lists[2].name == "fundlist" && lists[3].name == "stocklist");
+  CHECK(lists[4].name == "indices" && lists[5].name == "currencies" && lists[6].name == "commodities");
+  CHECK(lists[4].shape == NordnetSource::List::Shape::Indicators && lists[4].market == "Indices");
   CHECK(lists[3].url.find("/stocklist?") != std::string::npos && lists[3].pageSize == 1000);
 }
 
@@ -484,4 +486,73 @@ TEST(an_instrument_listed_on_two_markets_is_one_node_with_an_edge_and_a_say_for_
   };
   CHECK(identifier(onXetra) == "XAIX" && identifier(onStockholm) == "419021");
   CHECK(s->instrument(xaix.id)->symbol.empty());  // the instrument itself has none: a market gives it
+}
+
+TEST(an_indicator_list_gives_instruments_with_an_isin_and_a_bar_with_no_open_and_no_volume) {
+  std::vector<NordnetIndicator> rows;
+  std::string error;
+  CHECK(NordnetSource::parseIndicators(fixture("indicators-indices.json"), rows, error));
+  CHECK(rows.size() == 4);
+  const NordnetIndicator * dax = nullptr, * bric = nullptr;
+  for (const NordnetIndicator & r : rows) {
+    if (r.symbol == "DAX") dax = &r;
+    if (r.symbol == "BRIC50D") bric = &r;
+  }
+  CHECK(dax && dax->isin == "DE0008469008" && dax->type == "INDEX" && dax->country == "DE" && !dax->orderBookId.empty());
+  CHECK(dax->hasBar && dax->bar.close == 24802.78 && dax->bar.high == 25194.64 && dax->bar.low == 24801.22);
+  CHECK(!isDefined(dax->bar.open) && !isDefined(dax->bar.volume));
+  CHECK(bric && bric->isin.empty() && !bric->instrumentId.empty());  // some have no ISIN
+  CHECK(!NordnetSource::parseIndicators("{}", rows, error) && error == "not an indicator list");
+}
+
+TEST(the_indicator_lists_make_indices_in_points_currency_pairs_and_commodities_in_dollars) {
+  auto store = makeMemoryStore();
+  FakeHttp http;
+  http.answer = [](const std::string & url) {
+    if (url.find("WORLDMAP") != std::string::npos) return ok(fixture("indicators-indices.json"));
+    if (url.find("CURRENCY_GLOBAL") != std::string::npos) return ok(fixture("indicators-currencies.json"));
+    return ok(fixture("indicators-commodities.json"));
+  };
+  auto lists = NordnetSource::defaultLists();
+  lists.erase(lists.begin(), lists.begin() + 4);  // only the three indicator lists
+  Listener listener;
+  NordnetSource(lists, std::chrono::milliseconds(0)).load(*store, http, listener);
+  CHECK(http.urls.size() == 3 && http.urls[0].find("/instrument-screening/v1/indicator/web/list/WORLDMAP") != std::string::npos);
+  CHECK(http.urls[0].find("spark") == std::string::npos);  // no sparkline
+  auto s = store->snapshot();
+  DatasetId nordnet = s->findDataset("nordnet")->id;
+
+  // An index: its ISIN, in points, on the market named for the list.
+  Instrument dax = *s->findInstrumentByIsin("DE0008469008");
+  CHECK(dax.kind == InstrumentKind::Index && dax.type == "INDEX");
+  const InstrumentId points = s->findInstrument("pts")->id;
+  CHECK(s->instrument(points)->kind == InstrumentKind::Unit);
+  const EdgeKey onDax{dax.id, points, s->findMarket("Indices")->id, nordnet};
+  CHECK(s->lastCandles(onDax, Resolution::Day, 1).candles.size() == 1);
+  CHECK(s->symbol(onDax) == "DAX");
+  bool book = false;
+  for (const Attribute & a : s->attributes(onDax)) book = book || (a.predicate == predicate::orderBook && !a.value.empty());
+  CHECK(book);  // what its history is asked for by
+
+  // One with no ISIN is found by Nordnet's own id for it.
+  auto byNordnetId = s->findByAttribute(NodeType::Instrument, predicate::nordnetInstrument, "67f2c9b3-79a3-4083-98fe-7e6cff1ac09c");
+  CHECK(!byNordnetId || s->instrument({byNordnetId->id})->isin.empty());
+
+  // A pair is an edge between two currency nodes.
+  const EdgeKey eurusd{s->findInstrument("EUR")->id, s->findInstrument("USD")->id, s->findMarket("Currencies")->id, nordnet};
+  CHECK(s->lastCandles(eurusd, Resolution::Day, 1).candles.size() == 1 && s->symbol(eurusd) == "EURUSD");
+
+  // A commodity with an ISIN, quoted in dollars; one with none has Nordnet's id.
+  Instrument gold = *s->findInstrumentByIsin("XC0009655157");
+  CHECK(gold.kind == InstrumentKind::Commodity);
+  CHECK(s->lastCandles({gold.id, s->findInstrument("USD")->id, s->findMarket("Commodities")->id, nordnet}, Resolution::Day, 1).candles.size() == 1);
+  CHECK(listener.messages.size() == 1 && listener.messages[0].find("indices 4, currencies 2, commodities 3") != std::string::npos);
+
+  // Loading again replaces today's bars and makes nothing new.
+  const size_t instruments = s->instruments().size();
+  FakeHttp again;
+  again.answer = http.answer;
+  Listener second;
+  NordnetSource(lists, std::chrono::milliseconds(0)).load(*store, again, second);
+  CHECK(store->snapshot()->instruments().size() == instruments);
 }

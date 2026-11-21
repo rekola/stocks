@@ -1,0 +1,107 @@
+[
+ {
+  "instrumentId": "f6c303ea-13f0-4b8d-9704-5aa233534c73",
+  "isin": "XC0009677409",
+  "name": "Brent-öljy",
+  "orderBookId": "06cb93ce-adf2-43ea-9c20-371ef0163945",
+  "price": {
+   "absoluteDevelopment": 0.0179,
+   "accessType": "REALTIME",
+   "close": 89.769,
+   "development": 0.02,
+   "high": 89.7959,
+   "last": 89.7869,
+   "low": 89.7645,
+   "orderBookId": "06cb93ce-adf2-43ea-9c20-371ef0163945",
+   "orderBookStatus": "CONTINUOUS_TRADING",
+   "priceSource": "MORNINGSTAR",
+   "timestamp": 1795219499000
+  },
+  "slug": {
+   "displaySlug": "oil",
+   "instrumentClass": "INDICATOR",
+   "instrumentId": "f6c303ea-13f0-4b8d-9704-5aa233534c73",
+   "isNordnetMarkets": false,
+   "orderBookId": "06cb93ce-adf2-43ea-9c20-371ef0163945"
+  },
+  "sparkGraph": {
+   "development": [
+    0,
+    0.01,
+    0,
+    -0.02,
+    0.01
+   ]
+  },
+  "symbol": "OIL",
+  "type": "COMMODITY"
+ },
+ {
+  "instrumentId": "12c7e334-7526-4174-9fd8-991cd1d36604",
+  "isin": "XC0009655157",
+  "name": "Kulta",
+  "orderBookId": "46aaf605-e36f-4bc1-8c1e-764d50fbd23e",
+  "price": {
+   "absoluteDevelopment": 0.0,
+   "accessType": "REALTIME",
+   "close": 3524.44,
+   "development": 0.0,
+   "high": 3524.44,
+   "last": 3524.44,
+   "low": 3524.44,
+   "orderBookId": "46aaf605-e36f-4bc1-8c1e-764d50fbd23e",
+   "orderBookStatus": "CONTINUOUS_TRADING",
+   "priceSource": "MORNINGSTAR",
+   "timestamp": 1795229155000
+  },
+  "slug": {
+   "displaySlug": "gold",
+   "instrumentClass": "INDICATOR",
+   "instrumentId": "12c7e334-7526-4174-9fd8-991cd1d36604",
+   "isNordnetMarkets": false,
+   "orderBookId": "46aaf605-e36f-4bc1-8c1e-764d50fbd23e"
+  },
+  "sparkGraph": {
+   "development": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ]
+  },
+  "symbol": "GOLD",
+  "type": "COMMODITY"
+ },
+ {
+  "instrumentId": "5b4fc44e-ecd9-4fc3-8eea-9b32a5ffdff1",
+  "name": "Lyijy",
+  "orderBookId": "56789c6b-978e-49c5-b63a-b88812ccb4b9",
+  "price": {
+   "absoluteDevelopment": -16.3,
+   "accessType": "REALTIME",
+   "close": 1825.0,
+   "development": -0.89,
+   "last": 1808.7,
+   "orderBookId": "56789c6b-978e-49c5-b63a-b88812ccb4b9",
+   "orderBookStatus": "UNKNOWN",
+   "priceSource": "MORNINGSTAR",
+   "timestamp": 1795184955000
+  },
+  "slug": {
+   "displaySlug": "lead",
+   "instrumentClass": "INDICATOR",
+   "instrumentId": "5b4fc44e-ecd9-4fc3-8eea-9b32a5ffdff1",
+   "isNordnetMarkets": false,
+   "orderBookId": "56789c6b-978e-49c5-b63a-b88812ccb4b9"
+  },
+  "sparkGraph": {
+   "development": []
+  },
+  "symbol": "LEAD",
+  "type": "COMMODITY"
+ }
+]

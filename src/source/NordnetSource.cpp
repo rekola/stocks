@@ -20,6 +20,12 @@ const HttpHeaders kHeaders = {{"Accept", "application/json"},
                               {"Referer", "https://www.nordnet.fi/"},
                               {"Client-Id", "NEXT"}};
 
+// The indicator endpoint answers to this and to a Nordic locale only (the names come in that language).
+const HttpHeaders kIndicatorHeaders = {{"Accept", "*/*"},
+                                       {"Origin", "https://www.nordnet.fi"},
+                                       {"Referer", "https://www.nordnet.fi/"},
+                                       {"x-locale", "fi-FI"}};
+
 std::string text(const json & o, const char * key) {
   auto it = o.find(key);
   return it != o.end() && it->is_string() ? it->get<std::string>() : std::string();
@@ -43,13 +49,19 @@ std::optional<double> price(const json & block, const char * key) {
 }  // namespace
 
 std::vector<NordnetSource::List> NordnetSource::defaultLists() {
+  using Shape = List::Shape;
+  const std::string indicators = "https://api.prod.nntech.io/instrument-screening/v1/indicator/web/list/";
   const std::string base = "https://www.nordnet.fi/api/2/instrument_search/query/";
   const std::string sorted = "sort_order=asc&sort_attribute=symbol";  // a key that does not move between pages
   return {{"etflist", base + "etflist?" + sorted, 500},
           {"certificatelist", base + "certificatelist?apply_filters=instrument_type%3DPTC&" + sorted, 1000},
           // Priced once a day (a NAV), at a time that differs by provider and is not known: so, hourly.
           {"fundlist", base + "fundlist?" + sorted, 1000, std::chrono::hours(1)},
-          {"stocklist", base + "stocklist?" + sorted, 1000}};  // about 12,000 rows: a dozen pages
+          {"stocklist", base + "stocklist?" + sorted, 1000},  // about 12,000 rows: a dozen pages
+          // One answer each, no sparkline (it is only the day's development in per cent).
+          {"indices", indicators + "WORLDMAP", 0, std::chrono::milliseconds(0), Shape::Indicators, "Indices"},
+          {"currencies", indicators + "CURRENCY_GLOBAL", 0, std::chrono::milliseconds(0), Shape::Indicators, "Currencies"},
+          {"commodities", indicators + "COMMODITIES", 0, std::chrono::milliseconds(0), Shape::Indicators, "Commodities"}};
 }
 
 const char * NordnetSource::knownMarketName(int id) {
@@ -134,6 +146,99 @@ bool NordnetSource::parsePage(const std::string & body, Page & page, std::string
   return true;
 }
 
+bool NordnetSource::parseIndicators(const std::string & body, std::vector<NordnetIndicator> & rows, std::string & error) {
+  json doc = json::parse(body, nullptr, /*allow_exceptions=*/false);
+  if (doc.is_discarded() || !doc.is_array()) {
+    error = "not an indicator list";
+    return false;
+  }
+  for (const json & row : doc) {
+    if (!row.is_object()) continue;
+    NordnetIndicator r;
+    r.instrumentId = text(row, "instrumentId");
+    r.isin = text(row, "isin");
+    r.name = text(row, "name");
+    r.orderBookId = text(row, "orderBookId");
+    r.symbol = text(row, "symbol");
+    r.type = text(row, "type");
+    r.country = text(row, "countryCode");
+    if (r.symbol.empty() || r.orderBookId.empty() || r.type.empty()) continue;
+    if (auto p = row.find("price"); p != row.end() && p->is_object()) {
+      // The prices are bare numbers here, not {"price": ...} as in the search lists.
+      auto number = [&](const char * key) -> std::optional<double> {
+        auto it = p->find(key);
+        return it != p->end() && it->is_number() ? std::optional<double>(it->get<double>()) : std::nullopt;
+      };
+      const int64_t tick = integer(*p, "timestamp") / 1000;  // milliseconds in the answer
+      auto h = number("high"), l = number("low"), c = number("last");
+      if (h && l && c && tick > 0) {
+        r.hasBar = true;
+        // No open and no volume: undefined. Keyed by the date of the last tick in UTC.
+        r.bar = {dayNumberOfInstant(tick), kUndefined, *h, *l, *c, kUndefined};
+      }
+    }
+    rows.push_back(std::move(r));
+  }
+  return true;
+}
+
+size_t NordnetSource::loadIndicators(const List & list, Store & store, Http & http, SourceListener & listener, bool & stop) {
+  HttpResult r = http.get(list.url, kIndicatorHeaders);
+  if (!r.ok()) {
+    const bool refused = r.status == 429 || r.status == 403;
+    listener.message("nordnet: " + list.name + ": " +
+                     (r.status == 0 ? (r.error.empty() ? std::string("no answer") : r.error) : "HTTP " + std::to_string(r.status)) +
+                     (refused ? ", stopping" : ""));
+    stop = refused;
+    return 0;
+  }
+  std::vector<NordnetIndicator> rows;
+  std::string error;
+  if (!parseIndicators(r.body, rows, error)) {
+    listener.message("nordnet: " + list.name + ": " + error);
+    return 0;
+  }
+  Dataset dataset = store.addDataset({{}, "nordnet"});
+  Market market = store.addMarket({{}, list.market});
+  size_t written = 0;
+  for (NordnetIndicator & row : rows) {
+    row.list = list.name;
+    Instrument base, quote;
+    if (row.type == "CURRENCY") {
+      // A pair is an edge between two currencies: the name is "EUR/USD".
+      const size_t slash = row.name.find('/');
+      if (slash == std::string::npos) continue;
+      base = currencyNode(store, row.name.substr(0, slash));
+      quote = currencyNode(store, row.name.substr(slash + 1));
+    } else {
+      // An index or a commodity is its ISIN where Nordnet has one, else the id Nordnet gives it.
+      std::vector<Attribute> identifying;
+      if (!row.isin.empty()) identifying.push_back({predicate::isin, row.isin});
+      if (!row.instrumentId.empty()) identifying.push_back({predicate::nordnetInstrument, row.instrumentId});
+      if (identifying.empty()) continue;
+      const InstrumentKind kind = row.type == "INDEX" ? InstrumentKind::Index
+                                  : row.type == "COMMODITY" ? InstrumentKind::Commodity
+                                                            : InstrumentKind::Other;
+      std::vector<Attribute> rest = {{predicate::name, row.name}, {predicate::type, row.type}};
+      if (kind != InstrumentKind::Other) rest.push_back({predicate::kind, kindName(kind)});
+      base = store.resolveInstrument(identifying, rest);
+      // An index is in points. The answer gives a commodity no currency; the owner's table has them all in dollars.
+      quote = row.type == "INDEX" ? quoteNode(store, "pts") : currencyNode(store, "USD");
+    }
+    if (row.hasBar) {
+      const EdgeKey edge{base.id, quote.id, market.id, dataset.id};
+      store.appendCandles(edge, Resolution::Day, {row.bar});
+      store.setEdgeAttribute(edge, {predicate::symbol, row.symbol});
+      store.setEdgeAttribute(edge, {predicate::orderBook, row.orderBookId});
+      store.setEdgeAttribute(edge, {predicate::type, row.type});
+    }
+    written++;
+  }
+  indicators_.insert(indicators_.end(), rows.begin(), rows.end());
+  if (written) listener.changed();
+  return written;
+}
+
 void NordnetSource::load(Store & store, Http & http, SourceListener & listener) {
   std::string counts;  // "etflist 2304, certificatelist 1097": the lists loaded now
   int skipped = 0;
@@ -145,6 +250,14 @@ void NordnetSource::load(Store & store, Http & http, SourceListener & listener) 
     if (last != loaded_.end() && now - last->second < list.interval) continue;  // not due: what it gave stays
     loaded_[list.name] = now;
     std::erase_if(listings_, [&](const NordnetListing & l) { return l.list == list.name; });
+    std::erase_if(indicators_, [&](const NordnetIndicator & i) { return i.list == list.name; });
+    if (list.shape == List::Shape::Indicators) {
+      if (listener.cancelled()) return;
+      const size_t n = loadIndicators(list, store, http, listener, stop);
+      if (n) counts += (counts.empty() ? "" : ", ") + list.name + " " + std::to_string(n);
+      if (!stop && pause_.count() > 0) std::this_thread::sleep_for(pause_);
+      continue;
+    }
     size_t found = 0, offset = 0;
     for (int request = 0; request < 10000; request++) {  // a bound, in case total_hits is wrong
       if (listener.cancelled()) return;
@@ -202,6 +315,6 @@ void NordnetSource::load(Store & store, Http & http, SourceListener & listener) 
     if (!stop && pause_.count() > 0) std::this_thread::sleep_for(pause_);
   }
   if (!counts.empty())
-    listener.message("nordnet: " + std::to_string(listings_.size()) + " listings (" + counts + ")" +
+    listener.message("nordnet: " + std::to_string(listings_.size() + indicators_.size()) + " listings (" + counts + ")" +
                      (skipped ? ", " + std::to_string(skipped) + " rows left out" : std::string()));
 }

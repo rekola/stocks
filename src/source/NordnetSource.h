@@ -20,6 +20,16 @@ struct NordnetListing {
   Candle bar;
 };
 
+// One row of Nordnet's indicator lists (indices, currency pairs, commodities): not an exchange listing, so no market of its
+// own, but an instrument (an index or a commodity, with an ISIN where Nordnet has one) or a pair of currencies, and its
+// price block: high, low and last, with no open and no volume.
+struct NordnetIndicator {
+  std::string instrumentId, isin, name, orderBookId, symbol, type, country;
+  std::string list;
+  bool hasBar = false;
+  Candle bar;
+};
+
 // Nordnet's unofficial search endpoints: no key and no login (a cookie is not needed). Discovery loads every instrument
 // of every list it knows (ETFs, certificates, ...) in the same way, whatever their type. Each is an instrument (a node,
 // with its ISIN and its own type) and its quote currency; and from the price block of its listing, today's daily bar,
@@ -36,8 +46,13 @@ class NordnetSource : public Source {
     int pageSize;
     // How long to leave the list alone after it was loaded; a load that comes sooner skips it. Zero: at every load.
     std::chrono::milliseconds interval{0};
+    // What the list holds: the search lists above (paged, with a market per row), or an indicator list (indices,
+    // currency pairs or commodities in one answer) whose rows are all on the market named here.
+    enum class Shape { Search, Indicators } shape = Shape::Search;
+    std::string market;
   };
-  // The lists loaded: the ETFs, the certificates of type PTC, the funds and the stocks.
+  // The lists loaded: the ETFs, the certificates of type PTC, the funds and the stocks, then the indices, the currency pairs
+  // and the commodities.
   static std::vector<List> defaultLists();
 
   // `pause` is the wait between requests; they are made one at a time.
@@ -63,6 +78,11 @@ class NordnetSource : public Source {
   };
   // False, with `error` set, when `json` is not a page.
   static bool parsePage(const std::string & json, Page & page, std::string & error);
+  // The rows of an indicator list; False, with `error` set, when `json` is not one. Rows with no symbol, order book or
+  // type are left out.
+  static bool parseIndicators(const std::string & json, std::vector<NordnetIndicator> & rows, std::string & error);
+  // What the indicator lists gave, for the history step.
+  const std::vector<NordnetIndicator> & indicators() const { return indicators_; }
 
   // The name of a market by Nordnet's id where it is known, else null (the market is then found by the id alone).
   static const char * knownMarketName(int id);
@@ -74,5 +94,7 @@ class NordnetSource : public Source {
   std::chrono::milliseconds pause_;
   std::chrono::milliseconds refresh_;
   std::vector<NordnetListing> listings_;
+  std::vector<NordnetIndicator> indicators_;
+  size_t loadIndicators(const List &, Store &, Http &, SourceListener &, bool & stop);
   std::map<std::string, std::chrono::steady_clock::time_point> loaded_;  // when each list was last loaded
 };
