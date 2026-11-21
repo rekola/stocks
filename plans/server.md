@@ -639,37 +639,64 @@ and they decide how history has to be collected):
    market)` finds the edge by what the market says, whoever said it. A currency has no ISIN and
    is its code, said of the node itself. **Nothing but a currency is without an ISIN**: the
    adapters that have none (Yahoo) make no instruments.
-   **Yahoo makes no instruments.** It has no ISIN, so it finds the instrument another source
-   made, by the symbol its market calls it (the Yahoo lists name each instrument by Nordnet's symbol
-   and carry Yahoo's own ticker beside it; 99 of the 100 Helsinki ones matched, and the hundredth,
-   Nordea, is "NDA FI" at Nordnet and "NDA-FI" at Yahoo), and puts its own edge beside Nordnet's,
-   with its ticker as the edge's symbol. Nordnet runs first (the default is nordnet, then
-   yahoo); Yahoo run alone does nothing for stocks and says how many entries wait. With the server
-   the problem goes away, as the universe no longer disappears when the app is closed.
+   **Yahoo has no discovery, so its data files carry the ISIN** next to the ticker
+   (`kind,base,quote,name,yahoo,isin`): Yahoo makes its instrument from the file, by its ISIN, which
+   is the same node another source made, and its own edge has its ticker as the symbol. Nothing
+   waits on the load order. A currency has no ISIN and is its code; any other row without
+   an ISIN is refused by the list loader. The Helsinki file's ISINs come from Nordnet's stock list
+   (`tools/yahoo/build_lists.py` fetches it; 100 of 100 matched, Nordea being "NDA FI" at
+   Nordnet). **Yahoo's commodities are dropped**: they are futures contracts (see below).
+   **Indices**: Yahoo has them (`^GSPC` S&P 500 from 1927, `^IXIC`, `^DJI`, `^FTSE`, `^GDAXI`,
+   `^N225`, `^VIX`, `^OMXH25`, `^OMXSPI`, `^STOXX50E`), each with its own pseudo-exchange (SNP, NIM,
+   DJI, FGI, GER, OSA, STO, CXI, ZRH), which is the index's calculator, not a place where it
+   trades; Yahoo puts OMX Helsinki 25 under Stockholm. Nordnet's indices have no market at all, only
+   a country. So **an index is on a market named for the kind (`Indices`, as the pairs are on
+   `Currencies` and the commodities on `Commodities`) and is quoted in points**, a unit node
+   (kind Unit, symbol `pts`), not a currency: no price conversion applies to it, and the
+   currency an index is calculated in is a fact about the instrument, where Yahoo gives it.
+   `data/yahoo/indices.csv` holds the four whose ISINs Nordnet gives (DJIA, Nasdaq Composite,
+   DAX, OMX Stockholm PI); S&P 500, FTSE 100, Nikkei 225, VIX, EURO STOXX 50 and OMX Helsinki 25
+   wait for their ISINs (the legacy data has them).
+   **Fat edges have arbitrary attributes**, one string value per predicate, set the same way
+   as on any node; the price series (bars, books) are not attributes but typed columns of the
+   edge. Latest values for display (change in per cent) are computed from the bars, not
+   stored; numbers that change at every reload (Nordnet's yield figures, the previous close) are
+   not attributes either: they are samples, a series (the snapshot series of the suggestions). A
+   registry of predicates (name, type of value, one per dataset or not) is the guardrail, not yet
+   built.
+   **Edges are undirected**: the legacy platform wrote a pair in both directions (`invert`: the
+   price of USD in gold beside gold in USD). One edge is stored, in one direction, and the
+   other is read from it: the reciprocal of the close, and a bar's high and low swap (the high
+   of the inverse is the reciprocal of the low); the volume has no inverse. Not built.
    **Markets are found by code, Nordnet id or name, else made**; a market with no MIC (a crypto
    venue) is a surrogate id with the attributes it has.
    **A currency is the node the store has for its symbol**: a provider that has a currency gets
    that node (made, named as usually called, if none is there) and describes nothing.
-2. **Currency pairs and commodities.** The currencies are not added by hand: a currency is
-   found in the store by its symbol (above). What is listed by hand is the **edges**, the
-   Nordnet pairs and commodities with the order book ids their history is asked for by
-   (a pair is an edge between two currency nodes, not an instrument of its own), in a data
-   file as `data/yahoo` is. The owner's list of Nordnet's commodities (Gold, Silver, Copper,
-   Aluminium, Nickel, Lead, Zinc, WTI and Brent crude), each with an ISIN-like id (`XC...` for
-   most, one a US ISIN for WTI, and for Lead and Zinc only the ticker), a ticker, the quote
-   currency USD and the order book id, goes in `data/nordnet/commodities.csv` when the
-   history loader exists, because the discovery does not list them and an edge exists only when
-   it has data. To settle: whether Nordnet's are spot-like prices or continuous futures, and
-   what the legacy `invert` field ("USD/GOLD") is for (the direct edge is gold priced in USD).
+2. **Indices, currency pairs and commodities (built, from Nordnet's indicator lists).**
+   `instrument-screening/v1/indicator/web/list/WORLDMAP`, `CURRENCY_GLOBAL` and `COMMODITIES`
+   on `api.prod.nntech.io` (headers `Accept: */*`, `Origin`, `Referer` and `x-locale: fi-FI`;
+   only a Nordic locale is answered, so names come in Finnish or Swedish, not English;
+   `spark=true` adds the day's development in per cent, not used): 17 indices, 8 pairs and 9
+   commodities in one answer each. A row has Nordnet's instrument id, the ISIN where there is
+   one (indices and commodities; not the pairs, and not Lead, Zinc, BRIC 50 India and Shanghai),
+   the name, the order book id the history is asked for by, a symbol, a type
+   (INDEX, CURRENCY, COMMODITY), a country for most indices and the price: high, low and last
+   with a time, the previous close and the development; **no open and no volume** (undefined in
+   the bar). Their market is the list's (`Indices`, `Currencies`, `Commodities`; Nordnet gives
+   none), a pair is an edge between two currency nodes named "EUR/USD", an index is in points,
+   and a commodity is in dollars (the rows give no currency; the owner's legacy table has them
+   all in USD). An instrument without an ISIN is found by Nordnet's own id for it
+   (`nordnet-instrument`; the legacy table used the ticker). The ISINs of the metals are
+   Nordnet's own (`XC...`); whether the prices are spot-like or continuous futures is
+   still open, though Nordnet's gold (3,524 on the 21st) is not Yahoo's front-month futures
+   (3,515 on the 20th) and Morningstar is the stated source.
    **What Yahoo's "gold" is**: `GC=F` is not the price of gold. It is the front-month
    COMEX gold **futures contract** (the chart meta names it "Gold Dec 26", Yahoo's instrument
    type is FUTURE), rolled to the next contract when the front one expires: a series that
    follows the metal plus the cost of carry and jumps by the roll spread on roll days, a
-   different instrument. Yahoo has no spot gold (`XAUUSD=X` answers "not found"). So it does
-   not belong under the ISIN of the metal, and with the rule that Yahoo makes no instruments its
-   commodities (all `=F` futures) simply wait: they would need a node of their own (a
-   continuous contract, with no ISIN) if the long history (back to 2000) is wanted for
-   modelling; for a metal's price Nordnet's is the better start.
+   different instrument. Yahoo has no spot gold (`XAUUSD=X` answers "not found"). So the
+   Yahoo commodities are dropped; they would need a node of their own (a continuous
+   contract, with no ISIN) if their long history (back to 2000) is wanted for modelling.
 3. **Metadata endpoints**, for getting ids and the like. The first use is the market list
    (a market is a number in the discovery answers, and the names in the adapter are
    inferred from the data: 4 Xetra, 11 Nasdaq Stockholm, 24 Nasdaq Helsinki, ...), and the
