@@ -274,41 +274,82 @@ TEST(an_instrument_is_its_isin_whatever_its_symbol_or_market) {
   CHECK(w.store->addInstrument({{}, "EUR", "Euro", InstrumentKind::Currency}).id == w.eur.id);
 }
 
-TEST(what_a_market_calls_an_instrument_is_on_its_edge_there) {
+TEST(a_fat_edge_has_a_typed_listing_and_only_once_it_has_data) {
   World w;
   Instrument fund = w.store->addInstrument({{}, "", "Xtrackers AI", InstrumentKind::Etf, "IE00BGV5VN51"});
   const EdgeKey onHel{fund.id, w.eur.id, w.hel.id, w.a.id}, onSto{fund.id, w.eur.id, w.sto.id, w.a.id};
 
   // An edge exists once it has data: before that it takes nothing.
-  w.store->setEdgeAttribute(onHel, {predicate::symbol, "XAIX"});
-  CHECK(w.snap()->attributes(onHel).empty() && !w.snap()->findEdge(predicate::symbol, "XAIX", w.hel.id));
+  w.store->setListing(onHel, {"XAIX", "XAIX", "book-h", "UETF"});
+  CHECK(!w.snap()->listing(onHel) && !w.snap()->findEdge("XAIX", w.hel.id));
 
   w.store->appendCandles(onHel, Resolution::Day, {bar(1, 10)});
   w.store->appendCandles(onSto, Resolution::Day, {bar(1, 11)});
-  w.store->setEdgeAttribute(onHel, {predicate::symbol, "XAIX"});
-  w.store->setEdgeAttribute(onSto, {predicate::symbol, "XAIX-S"});
-  w.store->setEdgeAttribute(onSto, {predicate::identifier, "419021"});
+  w.store->setListing(onHel, {"XAIX", "XAIX", "book-h", "UETF"});
+  w.store->setListing(onSto, {"XAIX-S", "419021", "book-s", "UETF"});
 
-  // One instrument, a symbol for each market's edge, found by the market.
+  // One instrument, a listing for each market's edge, found by the market.
   CHECK(w.snap()->symbol(onHel) == "XAIX" && w.snap()->symbol(onSto) == "XAIX-S");
-  CHECK(*w.snap()->findEdge(predicate::symbol, "XAIX", w.hel.id) == onHel);
-  CHECK(!w.snap()->findEdge(predicate::symbol, "XAIX", w.sto.id));  // that market calls it something else
-  CHECK(*w.snap()->findEdge(predicate::symbol, "XAIX-S", w.sto.id) == onSto);
-  CHECK(w.snap()->findEdge(predicate::symbol, "XAIX", w.hel.id)->base == fund.id);
-  CHECK(w.snap()->attributes(onSto).size() == 2 && w.snap()->attributes(onHel).size() == 1);
+  CHECK(w.snap()->listing(onSto)->identifier == "419021" && w.snap()->listing(onSto)->orderBook == "book-s");
+  CHECK(*w.snap()->findEdge("XAIX", w.hel.id) == onHel);
+  CHECK(!w.snap()->findEdge("XAIX", w.sto.id));  // that market calls it something else
+  CHECK(*w.snap()->findEdge("XAIX-S", w.sto.id) == onSto);
+  CHECK(w.snap()->findEdge("XAIX", w.hel.id)->base == fund.id);
 
   // A symbol changing replaces the old, and the old finds nothing; an unchanged write makes no new version.
-  w.store->setEdgeAttribute(onHel, {predicate::symbol, "XAIX2"});
-  CHECK(!w.snap()->findEdge(predicate::symbol, "XAIX", w.hel.id) && *w.snap()->findEdge(predicate::symbol, "XAIX2", w.hel.id) == onHel);
+  w.store->setListing(onHel, {"XAIX2", "XAIX", "book-h", "UETF"});
+  CHECK(!w.snap()->findEdge("XAIX", w.hel.id) && *w.snap()->findEdge("XAIX2", w.hel.id) == onHel);
   const uint64_t version = w.snap()->version();
-  w.store->setEdgeAttribute(onHel, {predicate::symbol, "XAIX2"});
+  w.store->setListing(onHel, {"XAIX2", "XAIX", "book-h", "UETF"});
   CHECK(w.snap()->version() == version);
 
-  // The same data from another dataset is another edge, with its own say.
+  // The same data from another dataset is another edge, with its own listing.
   const EdgeKey other{fund.id, w.eur.id, w.hel.id, w.b.id};
   w.store->appendCandles(other, Resolution::Day, {bar(1, 10)});
-  w.store->setEdgeAttribute(other, {predicate::symbol, "XAIX.HE"});
-  CHECK(w.snap()->symbol(other) == "XAIX.HE" && *w.snap()->findEdge(predicate::symbol, "XAIX2", w.hel.id) == onHel);
+  w.store->setListing(other, {"XAIX.HE", "", "", "ETF"});
+  CHECK(w.snap()->symbol(other) == "XAIX.HE" && *w.snap()->findEdge("XAIX2", w.hel.id) == onHel);
+}
+
+TEST(a_thin_edge_is_a_typed_record_of_facts_about_an_instrument_from_a_dataset) {
+  World w;
+  const FactKey key{w.nokia.id, w.a.id};
+  CHECK(!w.snap()->companyFacts(key) && !w.snap()->instrumentFacts(key));
+
+  CompanyFacts c;
+  c.marketCap = 25e9;
+  c.pe = 12.5;
+  c.exDay = dayNumber(2026, 12, 1);
+  c.dividendCurrency = "EUR";
+  w.store->setFacts(key, c);
+  auto got = w.snap()->companyFacts(key);
+  CHECK(got && got->marketCap == 25e9 && got->exDay == dayNumber(2026, 12, 1) && !isDefined(got->eps));  // undefined stays so
+
+  // One record of each type per instrument and dataset; another dataset has its own.
+  InstrumentFacts i;
+  i.issuer = "Nokia Oyj";
+  i.owners = 1234;
+  w.store->setFacts(key, i);
+  CHECK(w.snap()->instrumentFacts(key)->owners == 1234 && w.snap()->companyFacts(key));
+  CHECK(!w.snap()->companyFacts({w.nokia.id, w.b.id}));
+
+  // An unchanged record, with its undefined numbers, makes no new version; a changed one does.
+  const uint64_t version = w.snap()->version();
+  w.store->setFacts(key, c);
+  CHECK(w.snap()->version() == version);
+  c.pe = 13.0;
+  w.store->setFacts(key, c);
+  CHECK(w.snap()->version() == version + 1 && w.snap()->companyFacts(key)->pe == 13.0);
+
+  FundFacts f;
+  f.category = "Greater China Equity";
+  f.rawRisk = 5;
+  CertificateFacts t;
+  t.leverage = 3;
+  t.direction = "Short";
+  w.store->setFacts(key, f);
+  w.store->setFacts(key, t);
+  CHECK(w.snap()->fundFacts(key)->rawRisk == 5 && !w.snap()->fundFacts(key)->msRating);
+  CHECK(w.snap()->certificateFacts(key)->leverage == 3 && w.snap()->certificateFacts(key)->direction == "Short");
 }
 
 TEST(edges_can_be_selected_by_the_type_of_their_base_instrument) {

@@ -2,6 +2,7 @@
 
 #include "FakeHttp.h"
 #include "model/Dates.h"
+#include "model/Isin.h"
 #include "source/InstrumentLists.h"
 #include "source/InstrumentTypes.h"
 #include "source/NordnetSource.h"
@@ -385,11 +386,11 @@ TEST(a_market_is_found_by_its_nordnet_id_or_its_name_and_made_when_neither_is_th
 
   // A Nordnet market with a known name is found by it: Xetra is one market with a name and Nordnet's id.
   Market xetra = *s->findMarket("Xetra");
-  CHECK(s->findMarketByAttribute(predicate::nordnetId, "4")->id == xetra.id && s->attributes(xetra.id).size() == 2);
+  CHECK(s->findMarketByAttribute(predicate::nordnetId, "4")->id == xetra.id && s->attributes(xetra.id).size() == 3);  // the id, the name and the country
 
   // One with no name is found by the id alone, and has no name yet.
   Market unnamed = *s->findMarketByAttribute(predicate::nordnetId, "61");
-  CHECK(unnamed.name.empty() && s->attributes(unnamed.id).size() == 1);
+  CHECK(unnamed.name.empty() && s->attributes(unnamed.id).size() == 2);  // the id and the country
   const size_t edges = s->edges(unnamed.id).size();
   CHECK(edges > 0);
 
@@ -477,14 +478,10 @@ TEST(an_instrument_listed_on_two_markets_is_one_node_with_an_edge_and_a_say_for_
   const EdgeKey onXetra{xaix.id, s->findInstrument("EUR")->id, xetra.id, nordnet};
   const EdgeKey onStockholm{xaix.id, s->findInstrument("SEK")->id, stockholm.id, nordnet};
   CHECK(s->symbol(onXetra) == "XAIX" && s->symbol(onStockholm) == "XAIX");
-  CHECK(*s->findEdge(predicate::symbol, "XAIX", xetra.id) == onXetra && *s->findEdge(predicate::symbol, "XAIX", stockholm.id) == onStockholm);
+  CHECK(*s->findEdge("XAIX", xetra.id) == onXetra && *s->findEdge("XAIX", stockholm.id) == onStockholm);
   // Each market's own id for it, and the order book its history is asked for by.
-  auto identifier = [&](const EdgeKey & k) {
-    for (const Attribute & a : s->attributes(k))
-      if (a.predicate == predicate::identifier) return a.value;
-    return std::string();
-  };
-  CHECK(identifier(onXetra) == "XAIX" && identifier(onStockholm) == "419021");
+  CHECK(s->listing(onXetra)->identifier == "XAIX" && s->listing(onStockholm)->identifier == "419021");
+  CHECK(!s->listing(onXetra)->orderBook.empty() && s->listing(onXetra)->type == "UETF");
   CHECK(s->instrument(xaix.id)->symbol.empty());  // the instrument itself has none: a market gives it
 }
 
@@ -530,13 +527,14 @@ TEST(the_indicator_lists_make_indices_in_points_currency_pairs_and_commodities_i
   const EdgeKey onDax{dax.id, points, s->findMarket("Indices")->id, nordnet};
   CHECK(s->lastCandles(onDax, Resolution::Day, 1).candles.size() == 1);
   CHECK(s->symbol(onDax) == "DAX");
-  bool book = false;
-  for (const Attribute & a : s->attributes(onDax)) book = book || (a.predicate == predicate::orderBook && !a.value.empty());
-  CHECK(book);  // what its history is asked for by
+  CHECK(!s->listing(onDax)->orderBook.empty() && s->listing(onDax)->type == "INDEX");  // what its history is asked for by
+  CHECK(s->instrumentFacts({dax.id, nordnet})->country == "DE");
 
-  // One with no ISIN is found by Nordnet's own id for it.
-  auto byNordnetId = s->findByAttribute(NodeType::Instrument, predicate::nordnetInstrument, "67f2c9b3-79a3-4083-98fe-7e6cff1ac09c");
-  CHECK(!byNordnetId || s->instrument({byNordnetId->id})->isin.empty());
+  // One with no ISIN gets one of ours, in the private namespace, from its symbol.
+  const std::string bric = privateIsin("NN", "BRIC50D");
+  CHECK(bric == "ZZNNBRIC50D" + std::string(1, bric.back()) && isValidIsin(bric));
+  CHECK(s->findInstrumentByIsin(bric) && s->findInstrumentByIsin(bric)->kind == InstrumentKind::Index);
+  CHECK(s->findInstrumentByIsin(privateIsin("NN", "LEAD"))->kind == InstrumentKind::Commodity);
 
   // A pair is an edge between two currency nodes.
   const EdgeKey eurusd{s->findInstrument("EUR")->id, s->findInstrument("USD")->id, s->findMarket("Currencies")->id, nordnet};
@@ -555,4 +553,73 @@ TEST(the_indicator_lists_make_indices_in_points_currency_pairs_and_commodities_i
   Listener second;
   NordnetSource(lists, std::chrono::milliseconds(0)).load(*store, again, second);
   CHECK(store->snapshot()->instruments().size() == instruments);
+}
+
+TEST(what_a_row_says_of_the_instrument_becomes_typed_facts_of_the_kinds_it_has) {
+  NordnetSource::Page stocks, funds, certificates;
+  std::string error;
+  CHECK(NordnetSource::parsePage(fixture("stocklist-1.json"), stocks, error));
+  CHECK(NordnetSource::parsePage(fixture("fundlist-1.json"), funds, error));
+  CHECK(NordnetSource::parsePage(fixture("certificatelist-1.json"), certificates, error));
+
+  // A stock with figures and a calendar; one with none says nothing of the kind.
+  CHECK(!stocks.listings[0].company);  // empty company and key ratio blocks
+  const NordnetListing & abbvie = stocks.listings[1];
+  CHECK(abbvie.company && abbvie.company->pe == 48.8 && abbvie.company->eps == 2.36 && abbvie.company->marketCap == 456283309908.0);
+  CHECK(abbvie.company->dividendAmount == 1.66 && abbvie.company->dividendCurrency == "EUR");
+  CHECK(abbvie.company->exDay != 0 && abbvie.company->exDay < abbvie.company->payDay);  // the ex-date comes first
+  CHECK(abbvie.company->reportType == "FOURTH_QUARTER_EARNINGS_RESULTS" && !isDefined(abbvie.company->pb));
+  CHECK(!abbvie.fund && !abbvie.certificate);
+  CHECK(abbvie.facts.tradable == true && abbvie.facts.owners == 1);
+
+  // A fund.
+  const NordnetListing & fund = funds.listings[0];
+  CHECK(fund.fund && fund.fund->category == "Greater China Equity" && fund.fund->rawRisk == 5 && fund.fund->msRating == 2);
+  CHECK(fund.fund->yearlyFee == 1.93 && fund.fund->totalMarketValue == 255946937.0 && fund.fund->lowCarbon == true);
+  CHECK(fund.fund->universeCountry == "FI" && fund.fund->universeCurrency == "EUR" && fund.fund->sfdrArticle == "Artikla 8");
+  CHECK(fund.fund->startDay == dayNumberOfInstant(704376000) && !fund.company);
+  CHECK(fund.facts.owners == 95 && fund.facts.pawnPercent == 70);
+
+  // A certificate: leverage, direction, the underlying.
+  const NordnetListing & bull = certificates.listings[1];
+  CHECK(bull.certificate && bull.certificate->leverage == 1 && bull.certificate->direction == "Long" && bull.certificate->highRisk == false);
+  CHECK(bull.certificate->underlyingName == "OMX Stockholm 30 Index" && bull.certificate->underlyingId == 16104939);
+  CHECK(bull.certificate->firstTradingDay != 0 && !isDefined(bull.certificate->managementFee));
+  CHECK(bull.facts.issuer == "Nordea Bank");
+  CHECK(certificates.listings[0].certificate->managementFee == 0.0);
+}
+
+TEST(the_facts_reach_the_store_as_thin_edges_of_the_dataset) {
+  auto store = makeMemoryStore();
+  FakeHttp http;
+  http.answer = pages;
+  Listener listener;
+  quick().load(*store, http, listener);
+  auto s = store->snapshot();
+  const DatasetId nordnet = s->findDataset("nordnet")->id;
+  const InstrumentId xaix = s->findInstrumentByIsin("IE00BGV5VN51")->id;
+  CHECK(s->instrumentFacts({xaix, nordnet})->tradable.has_value());
+  CHECK(s->fundFacts({xaix, nordnet}) && !s->companyFacts({xaix, nordnet}));  // an ETF has fund facts and no company's
+  const InstrumentId gold = s->findInstrumentByIsin("DE000A0S9GB0")->id;
+  CHECK(s->certificateFacts({gold, nordnet})->leverage == 1);
+  // Loading again changes nothing, undefined numbers and all.
+  const uint64_t version = s->version();
+  const size_t instruments = s->instruments().size();
+  FakeHttp again;
+  again.answer = pages;
+  quick().load(*store, again, listener);
+  CHECK(store->snapshot()->instruments().size() == instruments);
+  CHECK(store->snapshot()->version() > version);  // today's bars are written again
+}
+
+TEST(a_private_isin_is_in_a_namespace_nobody_issues_from_and_has_a_valid_check_digit) {
+  // The algorithm, on ISINs that exist.
+  for (const char * isin : {"DE0008469008", "US78378X1072", "RU000A0JP7K5", "XC0009655157", "FI0009000681", "US12573F1084"})
+    CHECK(isValidIsin(isin));
+  CHECK(!isValidIsin("DE0008469009") && !isValidIsin("DE000846900") && !isValidIsin(""));
+  const std::string zinc = privateIsin("NN", "ZINC");
+  CHECK(zinc == "ZZNNZINC0002" && isValidIsin(zinc));  // the same as the Python in tools/yahoo/build_lists.py
+  CHECK(privateIsin("YF", "GC") != privateIsin("NN", "GC"));  // another source, another instrument
+  CHECK(privateIsin("NN", "zinc") == zinc && privateIsin("NN", "Z-I NC") == zinc);  // case and punctuation do not matter
+  CHECK(privateIsin("NN", "TOOLONGSYM").empty() && privateIsin("N", "ZINC").empty());
 }

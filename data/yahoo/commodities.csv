@@ -1,0 +1,33 @@
+# market: Commodities
+# kind,base,quote,name,yahoo,isin: what one unit of `base` costs in `quote`; `yahoo` is Yahoo's ticker
+kind,base,quote,name,yahoo,isin
+commodity,XAU,USD,Gold,GC=F,XC0009655157
+commodity,XAG,USD,Silver,SI=F,XC0009653103
+commodity,XPT,USD,Platinum,PL=F,ZZYFXPT00006
+commodity,XPD,USD,Palladium,PA=F,ZZYFXPD00000
+commodity,HG,USD,Copper,HG=F,XC0009656965
+commodity,ALI,USD,Aluminum,ALI=F,XC0009677839
+commodity,WTI,USD,WTI Crude,CL=F,US12573F1084
+commodity,BRENT,USD,Brent Crude,BZ=F,XC0009677409
+commodity,NG,USD,Natural Gas,NG=F,ZZYFNG000006
+commodity,HO,USD,Heating Oil,HO=F,ZZYFHO000004
+commodity,RB,USD,RBOB Gasoline,RB=F,ZZYFRB000007
+commodity,TTF,EUR,Dutch TTF Gas,TTF=F,ZZYFTTF00005
+commodity,ZC,USX,Corn,ZC=F,ZZYFZC000006
+commodity,ZW,USX,Wheat,ZW=F,ZZYFZW000002
+commodity,KE,USX,KC HRW Wheat,KE=F,ZZYFKE000001
+commodity,ZS,USX,Soybeans,ZS=F,ZZYFZS000008
+commodity,ZM,USD,Soybean Meal,ZM=F,ZZYFZM000004
+commodity,ZL,USX,Soybean Oil,ZL=F,ZZYFZL000005
+commodity,ZO,USX,Oats,ZO=F,ZZYFZO000002
+commodity,ZR,USD,Rough Rice,ZR=F,ZZYFZR000009
+commodity,KC,USX,Coffee,KC=F,ZZYFKC000003
+commodity,SB,USX,Sugar,SB=F,ZZYFSB000006
+commodity,CC,USD,Cocoa,CC=F,ZZYFCC000003
+commodity,CT,USX,Cotton,CT=F,ZZYFCT000004
+commodity,OJ,USX,Orange Juice,OJ=F,ZZYFOJ000002
+commodity,LBR,USD,Lumber,LBR=F,ZZYFLBR00005
+commodity,LE,USX,Live Cattle,LE=F,ZZYFLE000000
+commodity,GF,USX,Feeder Cattle,GF=F,ZZYFGF000006
+commodity,HE,USX,Lean Hogs,HE=F,ZZYFHE000006
+commodity,DC,USD,Class III Milk,DC=F,ZZYFDC000002

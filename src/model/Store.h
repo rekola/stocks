@@ -20,11 +20,17 @@ class Snapshot {
   std::optional<Instrument> instrument(InstrumentId) const;
   // By a symbol said of the instrument itself (a currency's code).
   std::optional<Instrument> findInstrument(const std::string & symbol) const;
-  // The edges that say something at a market: the first made that says `predicate` is `value` there, so that one finds
-  // the instrument a market calls "NOKIA", whoever said it. Attributes of one edge.
-  std::optional<EdgeKey> findEdge(const std::string & predicate, const std::string & value, MarketId) const;
-  std::vector<Attribute> attributes(const EdgeKey &) const;
-  std::string symbol(const EdgeKey &) const;  // what the market calls the base instrument, else its own symbol
+  // The fat edge's listing: what a dataset says of the instrument on the market. Only an edge that has data has one.
+  std::optional<Listing> listing(const EdgeKey &) const;
+  // What the market calls the base instrument there, else the instrument's own symbol.
+  std::string symbol(const EdgeKey &) const;
+  // The first edge made that a market's `symbol` is for: the instrument a market calls "NOKIA", whoever said it.
+  std::optional<EdgeKey> findEdge(const std::string & symbol, MarketId) const;
+  // The thin edges: facts about an instrument from a dataset, of each type.
+  std::optional<InstrumentFacts> instrumentFacts(const FactKey &) const;
+  std::optional<CompanyFacts> companyFacts(const FactKey &) const;
+  std::optional<FundFacts> fundFacts(const FactKey &) const;
+  std::optional<CertificateFacts> certificateFacts(const FactKey &) const;
   std::optional<Instrument> findInstrumentByIsin(const std::string & isin) const;
   std::optional<Market> market(MarketId) const;
   std::optional<Market> findMarket(const std::string & name) const;  // by its name attribute
@@ -33,7 +39,6 @@ class Snapshot {
   // `value` (the one made first, if several do).
   std::vector<Attribute> attributes(NodeRef) const;
   std::optional<NodeRef> findByAttribute(NodeType, const std::string & predicate, const std::string & value) const;
-  std::optional<NodeRef> findByAttribute(NodeType, const std::string & predicate, const std::string & value, MarketId) const;
   std::optional<Dataset> dataset(DatasetId) const;
   std::optional<Dataset> findDataset(const std::string & name) const;
   const Seq<Instrument> & instruments() const { return instruments_; }
@@ -68,7 +73,11 @@ class Snapshot {
   // can call them, because it holds it const. Each one that changes something bumps the version.
   Instrument add(Instrument);
   Instrument resolveInstrument(const std::vector<Attribute> & identifying, const std::vector<Attribute> & rest);
-  void setAttribute(const EdgeKey &, Attribute);
+  void setListing(const EdgeKey &, const Listing &);
+  void setFacts(const FactKey &, const InstrumentFacts &);
+  void setFacts(const FactKey &, const CompanyFacts &);
+  void setFacts(const FactKey &, const FundFacts &);
+  void setFacts(const FactKey &, const CertificateFacts &);
   Market resolve(const std::vector<Attribute> &);
   void setAttribute(NodeRef, const Attribute &);
   Dataset add(Dataset);
@@ -83,9 +92,12 @@ class Snapshot {
   Seq<Instrument> instruments_;
   Seq<Market> markets_;
   Seq<Dataset> datasets_;
-  immer::map<EdgeKey, uint32_t> edgeIds_;
-  Seq<EdgeKey> edgeKeys_;
-  NodeRef edgeNode(const EdgeKey &);  // the edge's node, made when it has data
+  immer::map<EdgeKey, Listing> listings_;
+  immer::map<std::string, EdgeKey> edgeBySymbol_;  // "market \0 symbol" to the first edge there that has it
+  immer::map<FactKey, InstrumentFacts> instrumentFacts_;
+  immer::map<FactKey, CompanyFacts> companyFacts_;
+  immer::map<FactKey, FundFacts> fundFacts_;
+  immer::map<FactKey, CertificateFacts> certificateFacts_;
   immer::map<NodeRef, std::vector<Attribute>> attributes_;
   immer::map<std::string, immer::set<uint32_t>> byAttribute_;  // "type predicate \0 value" to the ids that say it
   immer::map<SeriesKey, Seq<Candle>> series_;
@@ -115,8 +127,8 @@ class Store {
   // instrument. One without an ISIN (a currency, whose symbol is its code) is found by its symbol. Its symbol, name,
   // ISIN, type and kind (unless Other) are then set. The returned record carries the assigned id.
   virtual Instrument addInstrument(Instrument) = 0;
-  // An instrument by the first of the identifying attributes that finds one, made if none does (an ISIN, else the id a
-  // provider gives it); then all the attributes, the identifying ones too, are set. For an instrument that has no ISIN.
+  // An instrument by the first of the identifying attributes that finds one, made if none does; then all the
+  // attributes, the identifying ones too, are set.
   virtual Instrument resolveInstrument(const std::vector<Attribute> & identifying, const std::vector<Attribute> & rest) = 0;
   // The market that has any of these attributes, tried in the order given; where none has, a market is made. The
   // attributes are then set on it, so a market first seen by its Nordnet id is given its name when it is learned.
@@ -125,8 +137,14 @@ class Store {
   Market addMarket(Market m) { return resolveMarket({{predicate::name, m.name}}); }
   // Sets one attribute of any node: the same for all of them.
   virtual void setAttribute(NodeRef, const Attribute &) = 0;
-  // Sets one attribute of an edge. An edge exists once it has data, so one that has none yet takes nothing.
-  virtual void setEdgeAttribute(const EdgeKey &, const Attribute &) = 0;
+  // The listing of an edge, replacing the one it had. An edge exists once it has data, so one that has none yet takes
+  // nothing.
+  virtual void setListing(const EdgeKey &, const Listing &) = 0;
+  // Facts about an instrument from a dataset, one record of each type, replacing the one it had.
+  virtual void setFacts(const FactKey &, const InstrumentFacts &) = 0;
+  virtual void setFacts(const FactKey &, const CompanyFacts &) = 0;
+  virtual void setFacts(const FactKey &, const FundFacts &) = 0;
+  virtual void setFacts(const FactKey &, const CertificateFacts &) = 0;
   virtual Dataset addDataset(Dataset) = 0;
 
   // Candles. An edge has a series for each resolution it has data in, as the provider gives it: nothing is derived from

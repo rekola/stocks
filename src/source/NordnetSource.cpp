@@ -1,6 +1,7 @@
 #include "source/NordnetSource.h"
 
 #include "model/Dates.h"
+#include "model/Isin.h"
 #include "source/InstrumentLists.h"
 #include "source/InstrumentTypes.h"
 
@@ -34,6 +35,29 @@ std::string text(const json & o, const char * key) {
 int64_t integer(const json & o, const char * key) {
   auto it = o.find(key);
   return it != o.end() && it->is_number_integer() ? it->get<int64_t>() : 0;
+}
+
+std::optional<double> number(const json & o, const char * key) {
+  auto it = o.find(key);
+  return it != o.end() && it->is_number() ? std::optional<double>(it->get<double>()) : std::nullopt;
+}
+
+double numberOrUndefined(const json & o, const char * key) { return number(o, key).value_or(kUndefined); }
+
+std::optional<int> optionalInt(const json & o, const char * key) {
+  auto it = o.find(key);
+  return it != o.end() && it->is_number_integer() ? std::optional<int>(it->get<int>()) : std::nullopt;
+}
+
+std::optional<bool> optionalBool(const json & o, const char * key) {
+  auto it = o.find(key);
+  return it != o.end() && it->is_boolean() ? std::optional<bool>(it->get<bool>()) : std::nullopt;
+}
+
+// A date the answer gives as milliseconds: a day number, 0 if there is none.
+int64_t dayOf(const json & o, const char * key) {
+  const int64_t ms = integer(o, key);
+  return ms > 0 ? dayNumberOfInstant(ms / 1000) : 0;
 }
 
 // A price in the price block: {"price": 65.03, "decimals": 2}.
@@ -107,6 +131,88 @@ bool NordnetSource::parsePage(const std::string & body, Page & page, std::string
       l.type = text(i, "instrument_type");
       l.issuer = text(i, "issuer_name");
       l.clearingPlace = text(i, "clearing_place");
+      l.facts.issuer = l.issuer;
+      l.facts.issuerId = integer(i, "issuer_id");
+      l.facts.iconUrl = text(i, "instrument_icon_url");
+      l.facts.tradable = optionalBool(i, "is_tradable");
+      l.facts.shortable = optionalBool(i, "is_shortable");
+      l.facts.pawnPercent = optionalInt(i, "instrument_pawn_percentage");
+    }
+    if (row.is_object() && row.contains("statistical_info") && row["statistical_info"].is_object())
+      l.facts.owners = optionalInt(row["statistical_info"], "number_of_owners");
+    // Stocks: the figures and the calendar.
+    if (row.is_object()) {
+      const json empty = json::object();
+      const json & c = row.contains("company_info") && row["company_info"].is_object() ? row["company_info"] : empty;
+      const json & k = row.contains("key_ratios_info") && row["key_ratios_info"].is_object() ? row["key_ratios_info"] : empty;
+      if (!c.empty() || (!k.empty() && !row.contains("fund_info"))) {
+        CompanyFacts f;
+        f.marketCap = numberOrUndefined(c, "market_cap");
+        f.reportDay = dayOf(c, "report_date");
+        f.reportType = text(c, "report_type");
+        f.reportDescription = text(c, "report_description");
+        f.exDay = dayOf(c, "excluding_date");
+        f.payDay = dayOf(c, "dividend_date");
+        f.dividendAmount = numberOrUndefined(c, "dividend_amount");
+        f.dividendCurrency = text(c, "dividend_currency");
+        f.meetingDay = dayOf(c, "general_meeting_date");
+        f.eps = numberOrUndefined(k, "eps");
+        f.pe = numberOrUndefined(k, "pe");
+        f.pb = numberOrUndefined(k, "pb");
+        f.ps = numberOrUndefined(k, "ps");
+        f.dividendPerShare = numberOrUndefined(k, "dividend_per_share");
+        f.dividendYield = numberOrUndefined(k, "dividend_yield");
+        l.company = f;
+      }
+      // Funds and ETFs.
+      if (row.contains("fund_info") && row["fund_info"].is_object()) {
+        const json & f = row["fund_info"];
+        FundFacts x;
+        x.adminCompany = text(f, "fund_admin_company");
+        x.brandingCompany = text(f, "fund_branding_company");
+        x.category = text(f, "fund_category");
+        x.type = text(f, "fund_type");
+        x.dividendStrategy = text(f, "fund_dividend_strategy");
+        x.tradingFrequency = text(f, "fund_trading_frequency");
+        x.sfdrArticle = text(f, "fund_sfdr_article");
+        x.riskGroup = text(f, "fund_risk_group");
+        x.universeCountry = text(f, "fund_universe_country");
+        x.universeCurrency = text(f, "fund_universe_currency");
+        x.esgScore = optionalInt(f, "fund_esg_score");
+        x.msRating = optionalInt(f, "fund_ms_rating");
+        x.rawRisk = optionalInt(f, "fund_raw_risk");
+        x.rawSfdr = optionalInt(f, "fund_raw_sfdr");
+        x.lowCarbon = optionalBool(f, "fund_low_carbon");
+        x.nordnetSelection = optionalBool(f, "fund_nordnet_selection");
+        x.startDay = dayOf(f, "fund_start_date");
+        x.totalFee = numberOrUndefined(f, "fund_total_fee");
+        x.calculatedFee = numberOrUndefined(f, "fund_calculated_fee");
+        x.yearlyFee = numberOrUndefined(f, "fund_yearly_fee");
+        x.totalMarketValue = numberOrUndefined(f, "fund_total_market_value");
+        x.minInvestment = numberOrUndefined(f, "fund_min_investment");
+        x.dividendYield = numberOrUndefined(k, "dividend_yield");
+        l.fund = x;
+      }
+      // Certificates and other exchange-traded products.
+      const bool hasCertificate = row.contains("certificate_info") && row["certificate_info"].is_object();
+      const bool hasEtp = row.contains("etp_info") && row["etp_info"].is_object();
+      if (hasCertificate || hasEtp) {
+        CertificateFacts x;
+        if (hasCertificate) {
+          x.leverage = optionalInt(row["certificate_info"], "static_leverage");
+          x.highRisk = optionalBool(row["certificate_info"], "static_high_risk");
+        }
+        if (hasEtp) {
+          const json & e = row["etp_info"];
+          x.direction = text(e, "direction");
+          x.marketView = text(e, "market_view");
+          x.managementFee = numberOrUndefined(e, "management_fee");
+          x.firstTradingDay = dayOf(e, "first_trading_date");
+          x.underlyingId = integer(e, "underlying_instrument_id");
+          x.underlyingName = text(e, "underlying_name");
+        }
+        l.certificate = x;
+      }
     }
     if (row.is_object() && row.contains("market_info") && row["market_info"].is_object()) {
       const json & m = row["market_info"];
@@ -211,26 +317,27 @@ size_t NordnetSource::loadIndicators(const List & list, Store & store, Http & ht
       base = currencyNode(store, row.name.substr(0, slash));
       quote = currencyNode(store, row.name.substr(slash + 1));
     } else {
-      // An index or a commodity is its ISIN where Nordnet has one, else the id Nordnet gives it.
-      std::vector<Attribute> identifying;
-      if (!row.isin.empty()) identifying.push_back({predicate::isin, row.isin});
-      if (!row.instrumentId.empty()) identifying.push_back({predicate::nordnetInstrument, row.instrumentId});
-      if (identifying.empty()) continue;
+      // An index or a commodity is its ISIN; where Nordnet has none it gets one of ours (Zinc, Lead, ...).
+      const std::string isin = row.isin.empty() ? privateIsin("NN", row.symbol) : row.isin;
+      if (isin.empty()) continue;
+      std::vector<Attribute> identifying = {{predicate::isin, isin}};
       const InstrumentKind kind = row.type == "INDEX" ? InstrumentKind::Index
                                   : row.type == "COMMODITY" ? InstrumentKind::Commodity
                                                             : InstrumentKind::Other;
-      std::vector<Attribute> rest = {{predicate::name, row.name}, {predicate::type, row.type}};
+      std::vector<Attribute> rest = {{predicate::name, row.name}, {predicate::type, row.type},
+                                     {predicate::nordnetInstrument, row.instrumentId}};
       if (kind != InstrumentKind::Other) rest.push_back({predicate::kind, kindName(kind)});
       base = store.resolveInstrument(identifying, rest);
+      InstrumentFacts facts;
+      facts.country = row.country;
+      store.setFacts(FactKey{base.id, dataset.id}, facts);
       // An index is in points. The answer gives a commodity no currency; the owner's table has them all in dollars.
       quote = row.type == "INDEX" ? quoteNode(store, "pts") : currencyNode(store, "USD");
     }
     if (row.hasBar) {
       const EdgeKey edge{base.id, quote.id, market.id, dataset.id};
       store.appendCandles(edge, Resolution::Day, {row.bar});
-      store.setEdgeAttribute(edge, {predicate::symbol, row.symbol});
-      store.setEdgeAttribute(edge, {predicate::orderBook, row.orderBookId});
-      store.setEdgeAttribute(edge, {predicate::type, row.type});
+      store.setListing(edge, {row.symbol, "", row.orderBookId, row.type});
     }
     written++;
   }
@@ -291,16 +398,21 @@ void NordnetSource::load(Store & store, Http & http, SourceListener & listener) 
         if (const char * mic = knownMarketMic(l.marketId)) says.push_back({predicate::mic, mic});
         if (const char * name = knownMarketName(l.marketId)) says.push_back({predicate::name, name});
         Market market = store.resolveMarket(says);
+        store.setAttribute(market.id, {predicate::country, l.country});
         Instrument base = store.addInstrument({{}, "", l.name, kindOfNordnetType(l.type), l.isin, l.type});
         Instrument quote = currencyNode(store, l.currency);
+        // What Nordnet says of the instrument itself: thin edges, of the types it has.
+        const FactKey facts{base.id, dataset.id};
+        store.setFacts(facts, l.facts);
+        if (l.company) store.setFacts(facts, *l.company);
+        if (l.fund) store.setFacts(facts, *l.fund);
+        if (l.certificate) store.setFacts(facts, *l.certificate);
         // Today's bar makes the edge; a listing with none stays a node nothing selects.
         if (l.hasBar) {
           const EdgeKey edge{base.id, quote.id, market.id, dataset.id};
           store.appendCandles(edge, Resolution::Day, {l.bar});
-          // What the market says of the instrument is said on the edge: what it calls it and the ids it is asked for by.
-          store.setEdgeAttribute(edge, {predicate::symbol, l.symbol});
-          store.setEdgeAttribute(edge, {predicate::identifier, l.identifier});
-          store.setEdgeAttribute(edge, {predicate::orderBook, l.bookId});
+          // What the market says of it: what it calls it, its own id for it and the order book its history is asked for by.
+          store.setListing(edge, {l.symbol, l.identifier, l.bookId, l.type});
         }
       }
       found += page.listings.size();

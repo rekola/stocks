@@ -227,9 +227,9 @@ TEST(a_preset_whose_market_has_no_data_shows_no_rows_and_a_book_alone_is_not_a_r
 
 TEST(the_made_up_data_fills_every_preset_with_what_the_lists_hold) {
   Fixture f;
-  const char * markets[] = {"Nasdaq Helsinki", "Currencies", "Indices"};  // the commodities come from Nordnet, not the lists
+  const char * markets[] = {"Commodities", "Nasdaq Helsinki", "Currencies", "Indices"};
   int i = 0;
-  for (const char * command : {"show-nasdaq-helsinki", "show-currencies", "show-indices"}) {
+  for (const char * command : {"show-commodities", "show-nasdaq-helsinki", "show-currencies", "show-indices"}) {
     f.app->execute(command);
     CHECK(f.browser->table().model()->rowCount() > 0);
     CHECK(static_cast<size_t>(f.browser->table().model()->rowCount()) == countInMarket(markets[i++]));

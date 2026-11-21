@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Builds data/yahoo/nasdaq-helsinki.csv and currencies.csv: the instruments Yahoo is asked for (it has no discovery), each checked
+"""Builds data/yahoo/nasdaq-helsinki.csv, commodities.csv and currencies.csv: the instruments Yahoo is asked for (it has no discovery), each checked
 against its chart endpoint. The stocks carry their ISIN from Nordnet's stock list. indices.csv is kept by hand.
 
 usage: build_lists.py [OUTPUT_DIR]      (default: data/yahoo in this script's repository)
@@ -29,6 +29,47 @@ EEZY ELEAV ENENTO ETTE FODELIA GLA1V HARVIA HONBS MUSTI OMASP ORTHEX PIHLIS QPR1
 TOKMAN TRH1V TULAV ATRAV AIFORIA APETIT CTH1V LUMI MARAS NANOFH SAGCV SUY1V TEM1V TTALO VINCIT
 HIAB PNA1V VERK TNOM NXTMH SIILI KREATE AFAGR SOLTQ INVEST LOIHDE ALISA
 """.split()
+
+# ---- Commodities: Yahoo futures, with the symbol and name shown ----
+COMMODITIES = [
+    ("XAU", "Gold", "GC=F"), ("XAG", "Silver", "SI=F"), ("XPT", "Platinum", "PL=F"), ("XPD", "Palladium", "PA=F"),
+    ("HG", "Copper", "HG=F"), ("ALI", "Aluminum", "ALI=F"),
+    ("WTI", "WTI Crude", "CL=F"), ("BRENT", "Brent Crude", "BZ=F"), ("NG", "Natural Gas", "NG=F"),
+    ("HO", "Heating Oil", "HO=F"), ("RB", "RBOB Gasoline", "RB=F"), ("TTF", "Dutch TTF Gas", "TTF=F"),
+    ("EH", "Ethanol", "EH=F"),
+    ("ZC", "Corn", "ZC=F"), ("ZW", "Wheat", "ZW=F"), ("KE", "KC HRW Wheat", "KE=F"), ("ZS", "Soybeans", "ZS=F"),
+    ("ZM", "Soybean Meal", "ZM=F"), ("ZL", "Soybean Oil", "ZL=F"), ("ZO", "Oats", "ZO=F"), ("ZR", "Rough Rice", "ZR=F"),
+    ("KC", "Coffee", "KC=F"), ("SB", "Sugar", "SB=F"), ("CC", "Cocoa", "CC=F"), ("CT", "Cotton", "CT=F"),
+    ("OJ", "Orange Juice", "OJ=F"), ("LBR", "Lumber", "LBR=F"),
+    ("LE", "Live Cattle", "LE=F"), ("GF", "Feeder Cattle", "GF=F"), ("HE", "Lean Hogs", "HE=F"), ("DC", "Class III Milk", "DC=F"),
+]
+
+# These continuous futures are the same instrument as the ISIN in the data of Nordnet's (and the legacy platform's)
+# commodities, by the owner's choice: the edge's dataset says whose prices they are. The others get an ISIN of our own.
+MATCHED_ISINS = {
+    "GC=F": "XC0009655157", "SI=F": "XC0009653103", "HG=F": "XC0009656965", "ALI=F": "XC0009677839",
+    "CL=F": "US12573F1084", "BZ=F": "XC0009677409",
+}
+
+
+def isin_check_digit(first11):
+    digits = "".join(str(int(c) if c.isdigit() else ord(c) - 55) for c in first11)
+    total, doubled = 0, True
+    for ch in reversed(digits):
+        d = int(ch)
+        if doubled:
+            d = d * 2 - 9 if d * 2 > 9 else d * 2
+        total += d
+        doubled = not doubled
+    return str((10 - total % 10) % 10)
+
+
+def private_isin(source, symbol):
+    """An ISIN of our own: ZZ (user-assigned in ISO 3166, nobody issues ISINs under it), a two-letter source and the symbol, padded with
+    zeros to nine characters, and the check digit. The same as privateIsin() in src/model/Isin.cpp."""
+    code = (source + "".join(c for c in symbol if c.isalnum()).upper())[:9].ljust(9, "0")
+    return "ZZ" + code + isin_check_digit("ZZ" + code)
+
 
 # ---- Currencies: the pairs, base first, in market convention ----
 CURRENCY_NAMES = {
@@ -135,6 +176,18 @@ def main():
     print("Nasdaq Helsinki: %d of %d" % (len(rows), len(seen)), flush=True)
 
     rows = []
+    rows = []
+    for symbol, name, ticker in COMMODITIES:
+        meta = chart(ticker)
+        time.sleep(PAUSE)
+        if not meta or not fresh(meta):
+            missing.append(ticker)
+            continue
+        rows.append(["commodity", symbol, meta.get("currency", "USD"), name, ticker,
+                     MATCHED_ISINS.get(ticker) or private_isin("YF", symbol)])
+    write(os.path.join(out, "commodities.csv"), "Commodities", rows)
+    print("Commodities: %d of %d" % (len(rows), len(COMMODITIES)), flush=True)
+
     rows = []
     pairs = currency_pairs()
     for base, quote in pairs:

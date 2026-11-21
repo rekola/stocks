@@ -28,7 +28,6 @@ struct Id {
 using InstrumentId = Id<struct InstrumentTag>;
 using MarketId = Id<struct MarketTag>;
 using DatasetId = Id<struct DatasetTag>;
-using EdgeId = Id<struct EdgeTag>;  // an edge as a node, made when it first has data
 
 // An instant: whole seconds since the Unix epoch, UTC. Where whole seconds are not enough (order book snapshots) it is
 // floating-point seconds, never milliseconds. Sessions and time zones belong to the market, not here. A date is not an
@@ -41,14 +40,11 @@ struct TimeRange {
   bool contains(Timestamp t) const { return t >= from && t < to; }
 };
 
-// One thing said about a node: a predicate and its value. Every node (an instrument, a market, a dataset, an edge) keeps
-// what is known about it as attributes, all in the same way, one value per predicate; a value can change. What depends
-// on a market ("the Helsinki market calls this instrument NOKIA", "its order book there is ...") is an attribute of the
-// edge, which has the market, the currency and the dataset that says it: a fat edge. `market` is set for the attributes
-// of an edge, to the edge's market, so that one can be found by what it says at a market.
+// One thing said about a node: a predicate and its value. Instruments, markets and datasets keep what is known about them
+// as attributes, in the same way for all of them, one value per predicate; a value can change. Edges are not nodes: what
+// they say is typed (Listing, below), and so are the facts about an instrument.
 struct Attribute {
   std::string predicate, value;
-  MarketId market;
   friend bool operator==(const Attribute &, const Attribute &) = default;
 };
 
@@ -60,12 +56,12 @@ inline constexpr const char * kind = "kind";
 inline constexpr const char * type = "type";  // the provider's own type
 inline constexpr const char * nordnetId = "nordnet-id";  // a market's id at Nordnet
 inline constexpr const char * nordnetInstrument = "nordnet-instrument";  // an instrument's id at Nordnet
-inline constexpr const char * identifier = "identifier";  // the market's own id for the instrument
-inline constexpr const char * orderBook = "order-book";   // the id its history is asked for by
+inline constexpr const char * country = "country";  // a market's country (ISO 3166 alpha-2)
+inline constexpr const char * timezone = "timezone";  // a market's time zone (IANA name)
 inline constexpr const char * mic = "mic";  // a market's ISO 10383 code, the way an ISIN identifies an instrument
 }  // namespace predicate
 
-enum class NodeType : uint8_t { Instrument, Market, Dataset, Edge };
+enum class NodeType : uint8_t { Instrument, Market, Dataset };
 
 // Any node. The typed ids convert to it.
 struct NodeRef {
@@ -75,7 +71,6 @@ struct NodeRef {
   NodeRef(InstrumentId i) : type(NodeType::Instrument), id(i.value) {}
   NodeRef(MarketId i) : type(NodeType::Market), id(i.value) {}
   NodeRef(DatasetId i) : type(NodeType::Dataset), id(i.value) {}
-  NodeRef(EdgeId i) : type(NodeType::Edge), id(i.value) {}
   friend bool operator==(const NodeRef &, const NodeRef &) = default;
 };
 
@@ -149,6 +144,102 @@ struct EventKey {
   friend bool operator==(const EventKey &, const EventKey &) = default;
   friend bool operator<(const EventKey & a, const EventKey & b) {
     return std::tie(a.instrument, a.dataset) < std::tie(b.instrument, b.dataset);
+  }
+};
+
+// Edges are typed and their fields fixed: a new kind of edge is a new type here, not a new attribute. A **fat edge** is the
+// listing of an instrument on a market in a quote currency, as one dataset says it (EdgeKey): it is small, and carries the
+// price series; a **thin edge** is a fact about the instrument itself, from one dataset (FactKey), of one of the types below.
+// The fields are optional: a number a dataset does not give is undefined (NaN), a day or an id that it does not give is 0.
+
+// What a dataset says of an instrument on a market. The series (candles, books) are beside it, under the same key.
+struct Listing {
+  std::string symbol;      // what the market calls the instrument
+  std::string identifier;  // the market's own id for it (Nordnet's, on its market)
+  std::string orderBook;   // the id the price history is asked for by
+  std::string type;        // the provider's own type for it ("UETF", "EQUITY")
+  friend bool operator==(const Listing &, const Listing &) = default;
+};
+
+// The key of a thin edge: one record of each type per instrument and dataset.
+struct FactKey {
+  InstrumentId instrument;
+  DatasetId dataset;
+  friend bool operator==(const FactKey &, const FactKey &) = default;
+};
+
+inline bool sameNumber(double a, double b) { return a == b || (a != a && b != b); }  // undefined equals undefined
+
+// What a dataset says of any instrument.
+struct InstrumentFacts {
+  std::string issuer;
+  int64_t issuerId = 0;  // the provider's own id for the issuer
+  std::string country;   // of an index or a listing
+  std::string iconUrl;
+  std::optional<bool> tradable, shortable;  // at the provider
+  std::optional<int> pawnPercent;           // the provider's collateral value, per cent
+  std::optional<int> owners;                // how many of the provider's accounts hold it
+  int64_t firstTradeDay = 0;                // a day number: where the history begins
+  friend bool operator==(const InstrumentFacts &, const InstrumentFacts &) = default;
+};
+
+// A company's figures and calendar, as the provider gives them. Day numbers; amounts as given (the market cap in the
+// provider's unit).
+struct CompanyFacts {
+  double marketCap = kUndefined, eps = kUndefined, pe = kUndefined, pb = kUndefined, ps = kUndefined;
+  double dividendPerShare = kUndefined, dividendYield = kUndefined;
+  int64_t reportDay = 0;  // the next report
+  std::string reportType, reportDescription;
+  int64_t exDay = 0, payDay = 0;  // the next dividend
+  double dividendAmount = kUndefined;
+  std::string dividendCurrency;
+  int64_t meetingDay = 0;  // the next general meeting
+  friend bool operator==(const CompanyFacts & a, const CompanyFacts & b) {
+    return sameNumber(a.marketCap, b.marketCap) && sameNumber(a.eps, b.eps) && sameNumber(a.pe, b.pe) &&
+           sameNumber(a.pb, b.pb) && sameNumber(a.ps, b.ps) && sameNumber(a.dividendPerShare, b.dividendPerShare) &&
+           sameNumber(a.dividendYield, b.dividendYield) && a.reportDay == b.reportDay && a.reportType == b.reportType &&
+           a.reportDescription == b.reportDescription && a.exDay == b.exDay && a.payDay == b.payDay &&
+           sameNumber(a.dividendAmount, b.dividendAmount) && a.dividendCurrency == b.dividendCurrency &&
+           a.meetingDay == b.meetingDay;
+  }
+};
+
+// A fund's or an ETF's.
+struct FundFacts {
+  std::string adminCompany, brandingCompany, category, type, dividendStrategy, tradingFrequency, sfdrArticle, riskGroup;
+  std::string universeCountry, universeCurrency;
+  std::optional<int> esgScore, msRating, rawRisk, rawSfdr;
+  std::optional<bool> lowCarbon, nordnetSelection;
+  int64_t startDay = 0;
+  double totalFee = kUndefined, calculatedFee = kUndefined, yearlyFee = kUndefined;
+  double totalMarketValue = kUndefined, minInvestment = kUndefined, dividendYield = kUndefined;
+  friend bool operator==(const FundFacts & a, const FundFacts & b) {
+    return a.adminCompany == b.adminCompany && a.brandingCompany == b.brandingCompany && a.category == b.category &&
+           a.type == b.type && a.dividendStrategy == b.dividendStrategy && a.tradingFrequency == b.tradingFrequency &&
+           a.sfdrArticle == b.sfdrArticle && a.riskGroup == b.riskGroup && a.universeCountry == b.universeCountry &&
+           a.universeCurrency == b.universeCurrency && a.esgScore == b.esgScore && a.msRating == b.msRating &&
+           a.rawRisk == b.rawRisk && a.rawSfdr == b.rawSfdr && a.lowCarbon == b.lowCarbon &&
+           a.nordnetSelection == b.nordnetSelection && a.startDay == b.startDay && sameNumber(a.totalFee, b.totalFee) &&
+           sameNumber(a.calculatedFee, b.calculatedFee) && sameNumber(a.yearlyFee, b.yearlyFee) &&
+           sameNumber(a.totalMarketValue, b.totalMarketValue) && sameNumber(a.minInvestment, b.minInvestment) &&
+           sameNumber(a.dividendYield, b.dividendYield);
+  }
+};
+
+// A certificate's or other exchange-traded product's.
+struct CertificateFacts {
+  std::optional<int> leverage;
+  std::optional<bool> highRisk;
+  std::string direction, marketView;  // "Long" or "Short"; the provider's code for the view
+  double managementFee = kUndefined;
+  int64_t firstTradingDay = 0;
+  int64_t underlyingId = 0;  // the provider's own id for the underlying
+  std::string underlyingName;
+  friend bool operator==(const CertificateFacts & a, const CertificateFacts & b) {
+    return a.leverage == b.leverage && a.highRisk == b.highRisk && a.direction == b.direction &&
+           a.marketView == b.marketView && sameNumber(a.managementFee, b.managementFee) &&
+           a.firstTradingDay == b.firstTradingDay && a.underlyingId == b.underlyingId &&
+           a.underlyingName == b.underlyingName;
   }
 };
 
@@ -268,6 +359,12 @@ template <>
 struct std::hash<SeriesKey> {
   size_t operator()(const SeriesKey & k) const {
     return hashCombine(std::hash<EdgeKey>()(k.edge), std::hash<int>()(static_cast<int>(k.resolution)));
+  }
+};
+template <>
+struct std::hash<FactKey> {
+  size_t operator()(const FactKey & k) const {
+    return hashCombine(std::hash<InstrumentId>()(k.instrument), std::hash<DatasetId>()(k.dataset));
   }
 };
 template <>

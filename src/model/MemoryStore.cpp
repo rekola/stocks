@@ -66,20 +66,32 @@ std::optional<Instrument> Snapshot::findInstrument(const std::string & s) const 
   auto n = findByAttribute(NodeType::Instrument, predicate::symbol, s);
   return n ? instrument({n->id}) : std::nullopt;
 }
-std::optional<EdgeKey> Snapshot::findEdge(const std::string & p, const std::string & v, MarketId m) const {
-  auto n = findByAttribute(NodeType::Edge, p, v, m);
-  return n && n->id <= edgeKeys_.size() ? std::optional<EdgeKey>(edgeKeys_[n->id - 1]) : std::nullopt;
-}
-std::vector<Attribute> Snapshot::attributes(const EdgeKey & k) const {
-  const uint32_t * id = edgeIds_.find(k);
-  return id ? attributes(NodeRef(EdgeId{*id})) : std::vector<Attribute>{};
+std::optional<Listing> Snapshot::listing(const EdgeKey & k) const {
+  const Listing * l = listings_.find(k);
+  return l ? std::optional<Listing>(*l) : std::nullopt;
 }
 std::string Snapshot::symbol(const EdgeKey & k) const {
-  for (const Attribute & a : attributes(k))
-    if (a.predicate == predicate::symbol) return a.value;
+  if (const Listing * l = listings_.find(k); l && !l->symbol.empty()) return l->symbol;
   auto i = instrument(k.base);
   return i ? i->symbol : std::string();
 }
+namespace {
+std::string symbolKey(MarketId m, const std::string & symbol) { return std::to_string(m.value) + '\0' + symbol; }
+}  // namespace
+std::optional<EdgeKey> Snapshot::findEdge(const std::string & symbol, MarketId m) const {
+  const EdgeKey * k = edgeBySymbol_.find(symbolKey(m, symbol));
+  return k ? std::optional<EdgeKey>(*k) : std::nullopt;
+}
+#define STOCKS_FACTS(NAME, MEMBER, TYPE)                             \
+  std::optional<TYPE> Snapshot::NAME(const FactKey & k) const {      \
+    const TYPE * f = MEMBER.find(k);                                 \
+    return f ? std::optional<TYPE>(*f) : std::nullopt;               \
+  }
+STOCKS_FACTS(instrumentFacts, instrumentFacts_, InstrumentFacts)
+STOCKS_FACTS(companyFacts, companyFacts_, CompanyFacts)
+STOCKS_FACTS(fundFacts, fundFacts_, FundFacts)
+STOCKS_FACTS(certificateFacts, certificateFacts_, CertificateFacts)
+#undef STOCKS_FACTS
 std::optional<Instrument> Snapshot::findInstrumentByIsin(const std::string & isin) const {
   auto n = findByAttribute(NodeType::Instrument, predicate::isin, isin);
   return n ? instrument({n->id}) : std::nullopt;
@@ -99,9 +111,6 @@ namespace {
 std::string indexKey(NodeType t, const std::string & p, const std::string & v) {
   return std::string(1, static_cast<char>('0' + static_cast<int>(t))) + p + '\0' + v;
 }
-std::string indexKey(NodeType t, const std::string & p, const std::string & v, MarketId m) {
-  return indexKey(t, p, v) + '\0' + std::to_string(m.value);
-}
 std::optional<NodeRef> lowest(const immer::set<uint32_t> * ids, NodeType t) {
   if (!ids || ids->size() == 0) return std::nullopt;
   uint32_t first = std::numeric_limits<uint32_t>::max();
@@ -115,9 +124,6 @@ std::optional<NodeRef> lowest(const immer::set<uint32_t> * ids, NodeType t) {
 
 std::optional<NodeRef> Snapshot::findByAttribute(NodeType t, const std::string & p, const std::string & v) const {
   return lowest(byAttribute_.find(indexKey(t, p, v)), t);
-}
-std::optional<NodeRef> Snapshot::findByAttribute(NodeType t, const std::string & p, const std::string & v, MarketId m) const {
-  return lowest(byAttribute_.find(indexKey(t, p, v, m)), t);
 }
 std::optional<Dataset> Snapshot::findDataset(const std::string & s) const {
   auto n = findByAttribute(NodeType::Dataset, predicate::name, s);
@@ -177,11 +183,10 @@ Seq<CorporateAction> Snapshot::actions(const EventKey & k, TimeRange r) const {
 void Snapshot::setAttribute(NodeRef n, const Attribute & a) {
   const size_t count = n.type == NodeType::Instrument ? instruments_.size()
                        : n.type == NodeType::Market   ? markets_.size()
-                       : n.type == NodeType::Edge     ? edgeKeys_.size()
                                                       : datasets_.size();
   if (n.id == 0 || n.id > count || a.value.empty()) return;
   std::vector<Attribute> attrs = attributes(n);
-  auto at = std::find_if(attrs.begin(), attrs.end(), [&](const Attribute & x) { return x.predicate == a.predicate && x.market == a.market; });
+  auto at = std::find_if(attrs.begin(), attrs.end(), [&](const Attribute & x) { return x.predicate == a.predicate; });
   auto drop = [&](const std::string & key) {
     if (const auto * ids = byAttribute_.find(key)) {
       auto rest = ids->erase(n.id);
@@ -192,28 +197,22 @@ void Snapshot::setAttribute(NodeRef n, const Attribute & a) {
     if (at->value == a.value) return;
     const std::string old = at->value;
     at->value = a.value;
-    // The old value no longer says it of this node, unless another market still says it.
-    drop(indexKey(n.type, a.predicate, old, a.market));
-    const bool still = std::any_of(attrs.begin(), attrs.end(), [&](const Attribute & x) { return x.predicate == a.predicate && x.value == old; });
-    if (!still) drop(indexKey(n.type, a.predicate, old));
+    drop(indexKey(n.type, a.predicate, old));  // the old value no longer says it of this node
   } else {
     attrs.push_back(a);
   }
   attributes_ = attributes_.set(n, attrs);
-  for (const std::string & key : {indexKey(n.type, a.predicate, a.value), indexKey(n.type, a.predicate, a.value, a.market)}) {
+  {
+    const std::string key = indexKey(n.type, a.predicate, a.value);
     const auto * ids = byAttribute_.find(key);
     byAttribute_ = byAttribute_.set(key, (ids ? *ids : immer::set<uint32_t>{}).insert(n.id));
   }
 
-  // The view the app reads is made from the attributes: what is said of the node itself, else the first said of a market.
+  // The view the app reads is made from the attributes.
   auto value = [&](const char * p) {
-    std::string first;
     for (const Attribute & x : attrs)
-      if (x.predicate == p) {
-        if (!x.market.valid()) return x.value;
-        if (first.empty()) first = x.value;
-      }
-    return first;
+      if (x.predicate == p) return x.value;
+    return std::string();
   };
   if (n.type == NodeType::Instrument) {
     instruments_ = instruments_.set(n.id - 1, Instrument{{n.id}, value(predicate::symbol), value(predicate::name),
@@ -285,24 +284,41 @@ Dataset Snapshot::add(Dataset d) {
   return *dataset({n.id});
 }
 
-NodeRef Snapshot::edgeNode(const EdgeKey & k) {
-  NodeRef n;
-  n.type = NodeType::Edge;
-  if (const uint32_t * id = edgeIds_.find(k)) {
-    n.id = *id;
-  } else {
-    n.id = static_cast<uint32_t>(edgeKeys_.size() + 1);
-    edgeKeys_ = edgeKeys_.push_back(k);
-    edgeIds_ = edgeIds_.set(k, n.id);
+namespace {
+bool hasData(const immer::map<MarketId, immer::set<EdgeKey>> & byMarket, const EdgeKey & k) {
+  const auto * set = byMarket.find(k.market);
+  return set && set->count(k) > 0;
+}
+}  // namespace
+
+void Snapshot::setListing(const EdgeKey & k, const Listing & l) {
+  if (!hasData(edgesByMarket_, k)) return;  // no data yet: no edge
+  const Listing * old = listings_.find(k);
+  if (old && *old == l) return;
+  if (old && old->symbol != l.symbol) {
+    const std::string key = symbolKey(k.market, old->symbol);
+    if (const EdgeKey * holder = edgeBySymbol_.find(key); holder && *holder == k) edgeBySymbol_ = edgeBySymbol_.erase(key);
   }
-  return n;
+  listings_ = listings_.set(k, l);
+  if (!l.symbol.empty() && !edgeBySymbol_.find(symbolKey(k.market, l.symbol)))
+    edgeBySymbol_ = edgeBySymbol_.set(symbolKey(k.market, l.symbol), k);
+  version_++;
 }
-void Snapshot::setAttribute(const EdgeKey & k, Attribute a) {
-  const uint32_t * id = edgeIds_.find(k);
-  if (!id) return;  // no data yet: no edge
-  a.market = k.market;
-  setAttribute(NodeRef(EdgeId{*id}), a);
+
+namespace {
+template <class T>
+bool setFact(immer::map<FactKey, T> & map, const FactKey & k, const T & v) {
+  const T * old = map.find(k);
+  if (old && *old == v) return false;
+  map = map.set(k, v);
+  return true;
 }
+}  // namespace
+
+void Snapshot::setFacts(const FactKey & k, const InstrumentFacts & f) { version_ += setFact(instrumentFacts_, k, f); }
+void Snapshot::setFacts(const FactKey & k, const CompanyFacts & f) { version_ += setFact(companyFacts_, k, f); }
+void Snapshot::setFacts(const FactKey & k, const FundFacts & f) { version_ += setFact(fundFacts_, k, f); }
+void Snapshot::setFacts(const FactKey & k, const CertificateFacts & f) { version_ += setFact(certificateFacts_, k, f); }
 
 void Snapshot::appendCandles(const EdgeKey & k, Resolution r, const std::vector<Candle> & in) {
   if (in.empty()) return;
@@ -311,7 +327,6 @@ void Snapshot::appendCandles(const EdgeKey & k, Resolution r, const std::vector<
   Seq<Candle> bars = old ? *old : Seq<Candle>{};
   for (const Candle & c : in) bars = upsert(bars, c, [](const Candle &, const Candle &) { return true; });
   series_ = series_.set(key, bars);
-  edgeNode(k);
   const auto * known = resolutions_.find(k);
   resolutions_ = resolutions_.set(k, (known ? *known : immer::set<int>{}).insert(static_cast<int>(r)));
   const auto * set = edgesByMarket_.find(k.market);
@@ -322,7 +337,6 @@ void Snapshot::appendCandles(const EdgeKey & k, Resolution r, const std::vector<
 void Snapshot::appendBooks(const EdgeKey & k, const std::vector<BookSnapshot> & in) {
   if (in.empty()) return;
   appendTo(books_, k, in, [](const BookSnapshot &, const BookSnapshot &) { return true; });
-  edgeNode(k);
   const auto * set = edgesByMarket_.find(k.market);
   edgesByMarket_ = edgesByMarket_.set(k.market, (set ? *set : immer::set<EdgeKey>{}).insert(k));
   version_++;
@@ -391,8 +405,20 @@ class MemoryStore : public Store {
   Market resolveMarket(const std::vector<Attribute> & a) override {
     return write([&](Snapshot & s) { return s.resolve(a); });
   }
-  void setEdgeAttribute(const EdgeKey & k, const Attribute & a) override {
-    write([&](Snapshot & s) { s.setAttribute(k, a); });
+  void setListing(const EdgeKey & k, const Listing & l) override {
+    write([&](Snapshot & s) { s.setListing(k, l); });
+  }
+  void setFacts(const FactKey & k, const InstrumentFacts & f) override {
+    write([&](Snapshot & s) { s.setFacts(k, f); });
+  }
+  void setFacts(const FactKey & k, const CompanyFacts & f) override {
+    write([&](Snapshot & s) { s.setFacts(k, f); });
+  }
+  void setFacts(const FactKey & k, const FundFacts & f) override {
+    write([&](Snapshot & s) { s.setFacts(k, f); });
+  }
+  void setFacts(const FactKey & k, const CertificateFacts & f) override {
+    write([&](Snapshot & s) { s.setFacts(k, f); });
   }
   void setAttribute(NodeRef n, const Attribute & a) override {
     write([&](Snapshot & s) { s.setAttribute(n, a); });

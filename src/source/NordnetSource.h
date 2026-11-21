@@ -18,6 +18,11 @@ struct NordnetListing {
   // has not traded (no last price or no tick time). A daily bar is keyed by its date (a day number), not by an instant.
   bool hasBar = false;
   Candle bar;
+  // What else the row says about the instrument, as typed facts: for every row, and the ones its kind has.
+  InstrumentFacts facts;
+  std::optional<CompanyFacts> company;          // a stock's figures and calendar
+  std::optional<FundFacts> fund;                // a fund's or an ETF's
+  std::optional<CertificateFacts> certificate;  // a certificate's
 };
 
 // One row of Nordnet's indicator lists (indices, currency pairs, commodities): not an exchange listing, so no market of its
