@@ -166,8 +166,9 @@ break) plus the holiday overrides, expanded into the same session rows as the ot
 
 ## For the regime embeddings
 
-Not the mathematics, which is being worked on elsewhere. What the calendars can give,
-and what to watch for.
+The embeddings have a plan of their own, [embeddings.md](embeddings.md). This is only what
+the calendars can give them, and what to watch for; the mathematics is being worked on
+elsewhere.
 
 - **A global UTC grid.** If the embeddings use slots of, say, 15 minutes on one UTC
   grid, then at every slot each market is either open or not, so there is always a
