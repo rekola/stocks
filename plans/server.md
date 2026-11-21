@@ -603,15 +603,29 @@ and they decide how history has to be collected):
    82 Spain, 83 Switzerland, and so on, by the country the rows give), which waits for the metadata
    endpoints. The stocks have minute bars in the history endpoint, which the history
    loader will use through the per-resolution store.
-   **Funds** are priced once a day (a NAV), so the discovery gives them no open, high or low and
-   therefore no bar: they are instruments without an edge, invisible, until the history
-   loader reads their NAV (the history url takes `&fundType=FUND_NAV`; the same order book id
-   is believed to serve all the history queries). Each provider prices at its own time of day.
+   **Funds** are priced once a day (a NAV), at a time that differs by provider. As in the legacy
+   system a fund's bar is of one price, the close, which is also the last price while the slot is
+   still in progress (open, high and low are that price too), dated by its tick; volume, where the
+   answer has it, is written to the bar, and is used for weighting. The history url takes
+   `&fundType=FUND_NAV`; the same order book id is believed to serve all the history queries.
+   **When a NAV is calculated and when Nordnet gets it is not known**, so the fund list is reloaded
+   hourly, not on a schedule; learning the times is a measurement (see the suggestions: the
+   first reload that shows a new tick time is when Nordnet had it, to within the interval).
    **Idea of the owner: nowcast the NAV** shortly before the order cut-off and buy or sell
    fund shares without transaction fees, where a small edge might be usable. It needs
    the cut-off and NAV times per fund (the `fund_info` block has the trading frequency, the
    admin company and the category), and the market's close on that day: a calendar question
    (calendars.md), and a model one (a fund tracks its holdings: the nowcast is of the underlying).
+   **Each list has its own reload interval** (`List::interval`; the source's refresh is the tick
+   that asks): now the funds hourly and the rest at every load. A stock list per market, loaded
+   only while the market is open, waits for the calendars.
+   **Markets are found by what is said about them** (the first use of the statements below): a
+   market with Nordnet's id or with the name is that market; if neither is there, a new one is made
+   with a surrogate id and the attributes, so the name of one Nordnet gives no name for can be filled
+   in later (`setMarketAttribute`) without becoming another market. A market found gets the
+   attributes it lacks (Yahoo's "Nasdaq Helsinki" gets Nordnet's id 24); the first value of a
+   predicate stays, and an attribute another market has is not taken from it (merging two markets
+   that say one thing is not done here).
 2. **Currencies and commodities added by hand.** They are not in the discovery lists, so
    there is a list kept by hand of the Nordnet instruments for them (name, Nordnet's ids,
    market, quote currency), in a data file as `data/yahoo` is, loaded by the same adapter and
