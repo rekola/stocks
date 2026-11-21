@@ -50,7 +50,7 @@ and about 6 MB: `--market NAME` (repeatable) loads one list, and
 `--source synthetic` loads none. `tools/universe/build_universe.py` rebuilds the
 files from its candidate lists, keeping the tickers Yahoo answers for.
 
-The data model is planned in [plans/data-model.md](plans/data-model.md).
+The data model is planned in [plans/data-model.md](plans/data-model.md), and the market regime embeddings in [plans/embeddings.md](plans/embeddings.md).
 
 ## Tests
 
