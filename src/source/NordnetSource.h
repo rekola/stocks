@@ -3,6 +3,7 @@
 #include "source/Source.h"
 
 #include <chrono>
+#include <map>
 
 // One listing of an instrument on a market, as Nordnet's instrument search gives it. The ids are what the history
 // requests need.
@@ -33,8 +34,10 @@ class NordnetSource : public Source {
   struct List {
     std::string name, url;
     int pageSize;
+    // How long to leave the list alone after it was loaded; a load that comes sooner skips it. Zero: at every load.
+    std::chrono::milliseconds interval{0};
   };
-  // The lists loaded: the ETFs, and the certificates of type PTC.
+  // The lists loaded: the ETFs, the certificates of type PTC, the funds and the stocks.
   static std::vector<List> defaultLists();
 
   // `pause` is the wait between requests; they are made one at a time.
@@ -44,7 +47,7 @@ class NordnetSource : public Source {
       : lists_(std::move(lists)), pause_(pause), refresh_(refresh) {}
 
   std::string name() const override { return "nordnet"; }
-  std::string description() const override { return "Nordnet: instrument discovery (ETFs, certificates), no key"; }
+  std::string description() const override { return "Nordnet: instrument discovery (ETFs, certificates, funds, stocks), no key"; }
   void load(Store &, Http &, SourceListener &) override;
   std::chrono::milliseconds refreshInterval() const override { return refresh_; }
 
@@ -61,15 +64,13 @@ class NordnetSource : public Source {
   // False, with `error` set, when `json` is not a page.
   static bool parsePage(const std::string & json, Page & page, std::string & error);
 
-  // The market's name: from its Nordnet id where that is known, else "Nordnet market <id>". (The slug's exchange code
-  // is not used: a listing can carry the code of its home exchange while it trades on another market.)
-  // The name of a market Nordnet's id of which is known, else null; marketName falls back to "Nordnet market N".
+  // The name of a market by Nordnet's id where it is known, else null (the market is then found by the id alone).
   static const char * knownMarketName(int id);
-  static std::string marketName(const NordnetListing &);
 
  private:
   std::vector<List> lists_;
   std::chrono::milliseconds pause_;
   std::chrono::milliseconds refresh_;
   std::vector<NordnetListing> listings_;
+  std::map<std::string, std::chrono::steady_clock::time_point> loaded_;  // when each list was last loaded
 };

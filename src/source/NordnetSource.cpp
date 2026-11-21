@@ -47,7 +47,8 @@ std::vector<NordnetSource::List> NordnetSource::defaultLists() {
   const std::string sorted = "sort_order=asc&sort_attribute=symbol";  // a key that does not move between pages
   return {{"etflist", base + "etflist?" + sorted, 500},
           {"certificatelist", base + "certificatelist?apply_filters=instrument_type%3DPTC&" + sorted, 1000},
-          {"fundlist", base + "fundlist?" + sorted, 1000},    // priced once a day (a NAV): no bar in the discovery
+          // Priced once a day (a NAV), at a time that differs by provider and is not known: so, hourly.
+          {"fundlist", base + "fundlist?" + sorted, 1000, std::chrono::hours(1)},
           {"stocklist", base + "stocklist?" + sorted, 1000}};  // about 12,000 rows: a dozen pages
 }
 
@@ -62,11 +63,6 @@ const char * NordnetSource::knownMarketName(int id) {
   for (const auto & [k, name] : known)
     if (k == id) return name;
   return nullptr;
-}
-
-std::string NordnetSource::marketName(const NordnetListing & l) {
-  const char * known = knownMarketName(l.marketId);
-  return known ? known : "Nordnet market " + std::to_string(l.marketId);
 }
 
 bool NordnetSource::parsePage(const std::string & body, Page & page, std::string & error) {
@@ -105,8 +101,12 @@ bool NordnetSource::parsePage(const std::string & body, Page & page, std::string
       const json & p = row["price_info"];
       auto open = price(p, "open"), high = price(p, "high"), low = price(p, "low"), last = price(p, "last");
       const int64_t tick = integer(p, "tick_timestamp") / 1000;  // the answer is in milliseconds; seconds from here on
+      // A fund has only its NAV: a bar of one price, the close, which is also the last price while the slot is still in
+      // progress (the NAV of the day is dated by its tick).
+      const bool fund = kindOfNordnetType(l.type) == InstrumentKind::Fund;
+      if (fund && last) open = high = low = last;
       if (open && high && low && last && tick > 0) {
-        auto volume = p.find("turnover_volume");
+        auto volume = p.find("turnover_volume");  // written to the bar when the answer has it; volume weights the bars
         l.hasBar = true;
         // Keyed by the trading date, not by the instant: the date of the last tick in UTC (a market east of UTC+9 around
         // its open would need its own time zone).
@@ -126,12 +126,16 @@ bool NordnetSource::parsePage(const std::string & body, Page & page, std::string
 }
 
 void NordnetSource::load(Store & store, Http & http, SourceListener & listener) {
-  listings_.clear();
-  std::string counts;  // "etflist 2304, certificatelist 1097"
+  std::string counts;  // "etflist 2304, certificatelist 1097": the lists loaded now
   int skipped = 0;
   bool stop = false;
   for (const List & list : lists_) {
     if (stop) break;
+    const auto now = std::chrono::steady_clock::now();
+    auto last = loaded_.find(list.name);
+    if (last != loaded_.end() && now - last->second < list.interval) continue;  // not due: what it gave stays
+    loaded_[list.name] = now;
+    std::erase_if(listings_, [&](const NordnetListing & l) { return l.list == list.name; });
     size_t found = 0, offset = 0;
     for (int request = 0; request < 10000; request++) {  // a bound, in case total_hits is wrong
       if (listener.cancelled()) return;
@@ -158,10 +162,11 @@ void NordnetSource::load(Store & store, Http & http, SourceListener & listener) 
       Dataset dataset = store.addDataset({{}, "nordnet"});
       for (NordnetListing & l : page.listings) {
         l.list = list.name;
-        // A market with a name already known (shared with other providers) is that name; any other is Nordnet's id, to be
-        // named later without becoming another market.
-        const std::string name = marketName(l);
-        Market market = store.addMarket({{}, name, knownMarketName(l.marketId) ? name : "nordnet:" + std::to_string(l.marketId)});
+        // The market with Nordnet's id, or the one with the name where that is known (one a provider with that name
+        // found first); else a new one, to be named later.
+        std::vector<Attribute> says = {{predicate::nordnetId, std::to_string(l.marketId)}};
+        if (const char * name = knownMarketName(l.marketId)) says.push_back({predicate::name, name});
+        Market market = store.resolveMarket(says);
         Instrument base = store.addInstrument({{}, l.symbol, l.name, kindOfNordnetType(l.type), l.isin, l.type});
         const char * label = currencyName(l.currency);
         Instrument quote = store.addInstrument({{}, l.currency, *label ? label : l.currency, InstrumentKind::Currency});
@@ -179,7 +184,7 @@ void NordnetSource::load(Store & store, Http & http, SourceListener & listener) 
     if (found) counts += (counts.empty() ? "" : ", ") + list.name + " " + std::to_string(found);
     if (!stop && pause_.count() > 0) std::this_thread::sleep_for(pause_);
   }
-  if (!listings_.empty())
+  if (!counts.empty())
     listener.message("nordnet: " + std::to_string(listings_.size()) + " listings (" + counts + ")" +
                      (skipped ? ", " + std::to_string(skipped) + " rows left out" : std::string()));
 }

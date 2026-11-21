@@ -57,13 +57,25 @@ struct Instrument {
 };
 
 // A place where an instrument is listed and priced. Currency, calendar and time zone join later.
+// One thing said about a node: a predicate and its value. The first of the statements the catalog will hold (a dataset
+// joins them later); markets are the first nodes to have them.
+struct Attribute {
+  std::string predicate, value;
+  friend bool operator==(const Attribute &, const Attribute &) = default;
+};
+
+// The predicates a market has, and what an adapter finds one by.
+namespace predicate {
+inline constexpr const char * name = "name";
+inline constexpr const char * nordnetId = "nordnet-id";
+}  // namespace predicate
+
+// The id is a surrogate: a market is found by what is said about it, not by its id. The name is the value of its
+// `name` attribute (empty until one is known), so a market needs no name to exist and gets one later.
 struct Market {
   MarketId id;
-  std::string name;  // may change (renameMarket)
-  // What the market is known by in the store: a provider's own id ("nordnet:61") or, where a name is shared by several
-  // providers, the name. Empty means the name. It never changes, so a name can be filled in after the market is first
-  // seen.
-  std::string key;
+  std::string name;
+  std::vector<Attribute> attributes;  // one value per predicate, the name among them
 };
 
 // Where a fact came from: a provider, a file, a prediction model. Two datasets that disagree both stay.

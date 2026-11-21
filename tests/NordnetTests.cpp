@@ -34,7 +34,7 @@ bool hasHeader(const HttpHeaders & headers, const std::string & name, const std:
 std::vector<NordnetSource::List> etfAndCertificateLists() {
   auto lists = NordnetSource::defaultLists();
   lists.resize(2);
-  return lists;
+  return lists;  // loaded at every load, as the lists have no interval
 }
 
 NordnetSource quick() { return NordnetSource(etfAndCertificateLists(), std::chrono::milliseconds(0)); }
@@ -55,22 +55,12 @@ TEST(a_page_of_the_etf_list_becomes_listings_with_the_ids_the_history_needs) {
 }
 
 TEST(a_market_is_named_by_its_nordnet_id_where_that_is_known) {
-  NordnetListing l;
-  l.slug = "franklin-ftse-korea-ucits-flxk-xeta";
-  l.marketId = 4;
-  CHECK(NordnetSource::marketName(l) == "Xetra");
-  l.marketId = 11;
-  CHECK(NordnetSource::marketName(l) == "Nasdaq Stockholm");
-  l.marketId = 14;
-  CHECK(NordnetSource::marketName(l) == "Nasdaq Copenhagen");
-  l.marketId = 24;
-  CHECK(NordnetSource::marketName(l) == "Nasdaq Helsinki");  // the same market as the Yahoo lists name
-  l.marketId = 53;
-  CHECK(NordnetSource::marketName(l) == "First North Sweden");
-  l.slug = "bull-omxs30-x1-nn-onse";  // the code of its home exchange, on a market that is another
-  CHECK(NordnetSource::marketName(l) == "First North Sweden");
-  l.marketId = 61;
-  CHECK(NordnetSource::marketName(l) == "Nordnet market 61");  // not known: the id
+  CHECK(std::string(NordnetSource::knownMarketName(4)) == "Xetra");
+  CHECK(std::string(NordnetSource::knownMarketName(11)) == "Nasdaq Stockholm");
+  CHECK(std::string(NordnetSource::knownMarketName(14)) == "Nasdaq Copenhagen");
+  CHECK(std::string(NordnetSource::knownMarketName(24)) == "Nasdaq Helsinki");  // the same market as the Yahoo lists name
+  CHECK(std::string(NordnetSource::knownMarketName(53)) == "First North Sweden");
+  CHECK(NordnetSource::knownMarketName(61) == nullptr);  // not known
 }
 
 TEST(a_page_of_certificates_has_the_same_shape) {
@@ -138,7 +128,7 @@ TEST(loading_pages_through_every_list_and_stores_instruments_markets_and_edges) 
   CHECK(s->markets().size() == 6);
   MarketId xetra = s->findMarket("Xetra")->id, stockholm = s->findMarket("Nasdaq Stockholm")->id;
   CHECK(s->findMarket("Nasdaq Copenhagen") && s->findMarket("First North Sweden") && s->findMarket("First North Finland"));
-  CHECK(s->findMarket("Nordnet market 61"));
+  CHECK(s->findMarketByAttribute(predicate::nordnetId, "61") && s->findMarketByAttribute(predicate::nordnetId, "61")->name.empty());
   CHECK(s->edges(xetra).size() == 3 && s->edges(stockholm).size() == 2);  // FLXK, XAIX, 4GLD; XACT BULL, XAIX
   // The certificate on First North Sweden has no tick time, so no bar and no edge: a node nothing selects.
   CHECK(s->findInstrument("BULL OMXS30 X1 NN") && s->edges(s->findMarket("First North Sweden")->id).empty());
@@ -347,16 +337,28 @@ TEST(a_page_of_stocks_has_the_same_shape_and_a_bar_from_the_day_so_far) {
   CHECK(kindOfNordnetType(first.type) == InstrumentKind::Company);
 }
 
-TEST(a_fund_is_priced_once_a_day_so_the_discovery_gives_it_no_bar) {
+TEST(a_fund_is_a_bar_of_one_price_its_nav) {
   NordnetSource::Page page;
   std::string error;
   CHECK(NordnetSource::parsePage(fixture("fundlist-1.json"), page, error));
   CHECK(page.listings.size() == 3);
   const NordnetListing & fund = page.listings[0];
   CHECK(fund.type == "FUCITS" && fund.currency == "USD" && fund.marketId == 78 && !fund.isin.empty());
-  CHECK(!fund.hasBar);  // only a last price (the NAV): no open, high or low
+  // Only a last price (the NAV) and its tick: the bar's open, high, low and close are that price, no volume.
+  CHECK(fund.hasBar && fund.bar.open == 22.76 && fund.bar.high == 22.76 && fund.bar.low == 22.76 && fund.bar.close == 22.76);
+  CHECK(fund.bar.volume == 0);
+  CHECK(fund.bar.time == dayNumberOfInstant(1795132800));  // dated by its tick
   CHECK(!fund.bookId.empty());  // the id the history is asked for by, with the NAV parameter
   CHECK(kindOfNordnetType(fund.type) == InstrumentKind::Fund);
+}
+
+TEST(a_stock_bar_carries_the_volume_when_the_answer_has_it) {
+  NordnetSource::Page page;
+  std::string error;
+  CHECK(NordnetSource::parsePage(fixture("certificatelist-1.json"), page, error));
+  CHECK(page.listings[0].bar.volume == 825020);
+  CHECK(NordnetSource::parsePage(fixture("stocklist-1.json"), page, error));
+  CHECK(page.listings.back().hasBar);
 }
 
 TEST(the_default_lists_are_the_etfs_the_certificates_the_funds_and_the_stocks) {
@@ -366,27 +368,85 @@ TEST(the_default_lists_are_the_etfs_the_certificates_the_funds_and_the_stocks) {
   CHECK(lists[3].url.find("/stocklist?") != std::string::npos && lists[3].pageSize == 1000);
 }
 
-TEST(a_market_with_no_name_yet_is_keyed_by_its_nordnet_id_so_it_can_be_named_later) {
+TEST(a_market_is_found_by_its_nordnet_id_or_its_name_and_made_when_neither_is_there) {
   auto store = makeMemoryStore();
+  // Another provider saw Helsinki first, by its name.
+  Market helsinki = store->addMarket({{}, "Nasdaq Helsinki"});
+  CHECK(helsinki.attributes.size() == 1);
   FakeHttp http;
   http.answer = pages;
   Listener listener;
   quick().load(*store, http, listener);
   auto s = store->snapshot();
-  Market unnamed = *s->findMarket("Nordnet market 61");
-  CHECK(unnamed.key == "nordnet:61");
-  CHECK(s->findMarketByKey("Xetra") && s->findMarketByKey("Xetra")->name == "Xetra");  // a named one is shared by its name
+
+  // A Nordnet market with a known name is found by it: Xetra is one market with a name and Nordnet's id.
+  Market xetra = *s->findMarket("Xetra");
+  CHECK(s->findMarketByAttribute(predicate::nordnetId, "4")->id == xetra.id && xetra.attributes.size() == 2);
+
+  // One with no name is found by the id alone, and has no name yet.
+  Market unnamed = *s->findMarketByAttribute(predicate::nordnetId, "61");
+  CHECK(unnamed.name.empty() && unnamed.attributes.size() == 1);
   const size_t edges = s->edges(unnamed.id).size();
   CHECK(edges > 0);
 
-  store->renameMarket(unnamed.id, "Some Exchange");
+  // A name filled in later is the same market, with the same edges, found by the name from then on.
+  store->setMarketAttribute(unnamed.id, {predicate::name, "Some Exchange"});
   auto named = store->snapshot();
-  CHECK(named->market(unnamed.id)->name == "Some Exchange" && !named->findMarket("Nordnet market 61"));
-  CHECK(named->edges(unnamed.id).size() == edges);  // the same market, the same edges
+  CHECK(named->findMarket("Some Exchange")->id == unnamed.id && named->market(unnamed.id)->name == "Some Exchange");
+  CHECK(named->edges(unnamed.id).size() == edges);
+  CHECK(named->findMarketByAttribute(predicate::nordnetId, "61")->id == unnamed.id);
 
-  // Loading again does not bring the placeholder back or make another market.
+  // Loading again makes no other market and leaves the name.
   quick().load(*store, http, listener);
   auto again = store->snapshot();
-  CHECK(again->market(unnamed.id)->name == "Some Exchange" && !again->findMarket("Nordnet market 61"));
-  CHECK(again->markets().size() == named->markets().size());
+  CHECK(again->market(unnamed.id)->name == "Some Exchange" && again->markets().size() == named->markets().size());
+}
+
+TEST(a_market_a_provider_named_first_gets_the_nordnet_id_added) {
+  auto store = makeMemoryStore();
+  Market first = store->addMarket({{}, "Nasdaq Stockholm"});  // as another provider names it
+  Market found = store->resolveMarket({{predicate::nordnetId, "11"}, {predicate::name, "Nasdaq Stockholm"}});
+  CHECK(found.id == first.id && found.attributes.size() == 2);
+  CHECK(store->snapshot()->findMarketByAttribute(predicate::nordnetId, "11")->id == first.id);
+  CHECK(store->snapshot()->markets().size() == 1);
+  // The id is looked up first: a second market is not made when the name is spelled differently.
+  Market again = store->resolveMarket({{predicate::nordnetId, "11"}, {predicate::name, "OMX Stockholm"}});
+  CHECK(again.id == first.id && again.name == "Nasdaq Stockholm");  // the first value stays
+}
+
+TEST(an_attribute_another_market_has_is_not_taken_from_it) {
+  auto store = makeMemoryStore();
+  Market a = store->addMarket({{}, "A"}), b = store->addMarket({{}, "B"});
+  store->setMarketAttribute(a.id, {predicate::nordnetId, "7"});
+  const uint64_t version = store->snapshot()->version();
+  store->setMarketAttribute(b.id, {predicate::nordnetId, "7"});
+  CHECK(store->snapshot()->version() == version);
+  CHECK(store->snapshot()->findMarketByAttribute(predicate::nordnetId, "7")->id == a.id);
+  CHECK(store->snapshot()->market(b.id)->attributes.size() == 1);
+}
+
+TEST(a_list_with_an_interval_is_left_alone_until_it_is_due) {
+  auto lists = etfAndCertificateLists();
+  lists[1].interval = std::chrono::hours(1);  // the certificates
+  NordnetSource source(lists, std::chrono::milliseconds(0));
+  auto store = makeMemoryStore();
+  FakeHttp http;
+  http.answer = pages;
+  Listener listener;
+  source.load(*store, http, listener);
+  CHECK(http.urls.size() == 3 && source.listings().size() == 9);
+
+  FakeHttp again;
+  again.answer = pages;
+  Listener second;
+  source.load(*store, again, second);
+  CHECK(again.urls.size() == 2);                        // the two ETF pages; no request for the certificates
+  CHECK(source.listings().size() == 9);                 // what the certificates gave stays
+  CHECK(second.messages.size() == 1 && second.messages[0] == "nordnet: 9 listings (etflist 5)");
+}
+
+TEST(the_funds_are_loaded_hourly_and_the_rest_at_every_load) {
+  auto lists = NordnetSource::defaultLists();
+  CHECK(lists[0].interval.count() == 0 && lists[1].interval.count() == 0 && lists[3].interval.count() == 0);
+  CHECK(lists[2].name == "fundlist" && lists[2].interval == std::chrono::hours(1));
 }

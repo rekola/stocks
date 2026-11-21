@@ -21,8 +21,8 @@ class Snapshot {
   std::optional<Instrument> findInstrument(const std::string & symbol) const;
   std::optional<Instrument> findInstrumentByIsin(const std::string & isin) const;
   std::optional<Market> market(MarketId) const;
-  std::optional<Market> findMarket(const std::string & name) const;  // by its current name
-  std::optional<Market> findMarketByKey(const std::string & key) const;
+  std::optional<Market> findMarket(const std::string & name) const;  // by its name attribute
+  std::optional<Market> findMarketByAttribute(const std::string & predicate, const std::string & value) const;
   std::optional<Dataset> dataset(DatasetId) const;
   std::optional<Dataset> findDataset(const std::string & name) const;
   const Seq<Instrument> & instruments() const { return instruments_; }
@@ -56,8 +56,8 @@ class Snapshot {
   // Changes, for a store to make on its own copy before publishing it. Nothing that holds a published snapshot
   // can call them, because it holds it const. Each one that changes something bumps the version.
   Instrument add(Instrument);
-  Market add(Market);
-  void renameMarket(MarketId, const std::string & name);
+  Market resolve(const std::vector<Attribute> &);
+  void setAttribute(MarketId, const Attribute &);
   Dataset add(Dataset);
   void appendCandles(const EdgeKey &, Resolution, const std::vector<Candle> &);
   void appendBooks(const EdgeKey &, const std::vector<BookSnapshot> &);
@@ -72,7 +72,7 @@ class Snapshot {
   Seq<Dataset> datasets_;
   immer::map<std::string, InstrumentId> instrumentBySymbol_;
   immer::map<std::string, InstrumentId> instrumentByIsin_;
-  immer::map<std::string, MarketId> marketByKey_;
+  immer::map<std::string, MarketId> marketByAttribute_;  // "predicate\0value"
   immer::map<std::string, DatasetId> datasetByName_;
   immer::map<SeriesKey, Seq<Candle>> series_;
   immer::map<EdgeKey, immer::set<int>> resolutions_;
@@ -97,10 +97,16 @@ class Store {
   // keeps its first values. The returned record carries the assigned id. An instrument with an ISIN is found by it and
   // by nothing else, so two with the same symbol and different ISINs stay two (the symbol finds the first).
   virtual Instrument addInstrument(Instrument) = 0;
-  // A market is found by its key (the name when it has none), keeps its first values and its id.
-  virtual Market addMarket(Market) = 0;
-  // Gives a market another name, as when the name is learned after the market is first seen. Nothing else changes.
-  virtual void renameMarket(MarketId, const std::string & name) = 0;
+  // The market that has any of these attributes, tried in the order given; none has it, a market is created, with a
+  // new id, and the attributes. A market found gets the attributes whose predicate it has no value for (the first
+  // value stays). An attribute held by another market than the one found is left there: two markets saying one thing
+  // are not merged here.
+  virtual Market resolveMarket(const std::vector<Attribute> &) = 0;
+  // By name alone.
+  Market addMarket(Market m) { return resolveMarket({{predicate::name, m.name}}); }
+  // Sets the value of one predicate of a market, replacing the one it had, as when a name is learned later. The market
+  // keeps its id and its edges. A value that another market has is refused (nothing changes).
+  virtual void setMarketAttribute(MarketId, const Attribute &) = 0;
   virtual Dataset addDataset(Dataset) = 0;
 
   // Candles. An edge has a series for each resolution it has data in, as the provider gives it: nothing is derived from
