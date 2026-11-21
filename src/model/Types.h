@@ -33,7 +33,7 @@ using DatasetId = Id<struct DatasetTag>;
 // instant: it is a day number (Dates.h).
 using Timestamp = int64_t;
 
-// A half-open range [from, to), in whatever the thing it selects is keyed by: seconds, or day numbers.
+// A half-open range [from, to), in whatever the thing it selects is keyed by: seconds, slot numbers or day numbers.
 struct TimeRange {
   Timestamp from = std::numeric_limits<Timestamp>::min(), to = std::numeric_limits<Timestamp>::max();
   bool contains(Timestamp t) const { return t >= from && t < to; }
@@ -90,10 +90,11 @@ struct EventKey {
   }
 };
 
-// How big the bars of a series are, as a code. The intraday resolutions are fixed lengths and are keyed by an instant
-// (UTC seconds, the start of the bar). The date resolutions are not fixed lengths (daylight saving, calendars) and are
-// keyed by a date, as a day number (Dates.h): a day by its trading date, a week, a month and a quarter by their first
-// day. An edge has a series for each resolution it has data in. The order is shortest first.
+// How big the bars of a series are, as a code. The intraday resolutions are fixed lengths and are keyed by their slot
+// number: the UTC Unix seconds of the start of the bar divided by the length (the hour number is the seconds divided by
+// 3600). The date resolutions are not fixed lengths (daylight saving, calendars) and are keyed by a date, as a day number
+// (Dates.h): a day by its trading date, a week, a month and a quarter by their first day. An edge has a series for each
+// resolution it has data in. The order is shortest first.
 enum class Resolution : uint8_t { Min1, Min2, Min5, Min15, Min30, Hour1, Hour4, Day, Week, Month, Quarter };
 
 constexpr bool isDateResolution(Resolution r) { return r >= Resolution::Day; }
@@ -139,8 +140,8 @@ struct SeriesKey {
 
 // Prices are doubles: enough for display and models; nothing here settles.
 struct Candle {
-  // The start of the bar: UTC seconds for an intraday resolution, the day number of the first day for a date resolution.
-  Timestamp time = 0;
+  // The key of the bar: its slot number for an intraday resolution, the day number of its first day for a date resolution.
+  int64_t time = 0;
   double open = 0, high = 0, low = 0, close = 0, volume = 0;
 };
 

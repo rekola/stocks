@@ -70,3 +70,26 @@ TEST(a_daily_bar_stamped_at_the_start_of_the_trading_day_is_dated_by_the_nearest
   // A date marker at 00:00 UTC (dividends) keeps its date in every one of those zones.
   for (int offset : {7200, -18000, 0, 32400}) CHECK(tradingDateOfDailyStamp(at(2025, 2, 3, 0), offset) == dayNumber(2025, 2, 3));
 }
+
+TEST(an_intraday_bar_is_keyed_by_its_slot_number_in_utc) {
+  // 2026-11-20 16:00:00 UTC.
+  const Timestamp t = 1795190400;
+  CHECK(slotOfInstant(Resolution::Hour1, t) == t / 3600 && slotOfInstant(Resolution::Hour1, t) == 498664);  // the hour number
+  CHECK(slotOfInstant(Resolution::Min5, t) == t / 300 && slotOfInstant(Resolution::Min15, t) == t / 900);
+  CHECK(slotOfInstant(Resolution::Hour4, t) == t / 14400 && slotOfInstant(Resolution::Min1, t) == t / 60);
+  // Any instant in the slot is in the same slot; the next second is the next slot.
+  CHECK(slotOfInstant(Resolution::Hour1, t + 3599) == 498664 && slotOfInstant(Resolution::Hour1, t + 3600) == 498665);
+  CHECK(slotOfInstant(Resolution::Hour1, t - 1) == 498663);
+  CHECK(slotOfInstant(Resolution::Hour1, -1) == -1 && slotOfInstant(Resolution::Hour1, -3600) == -1 && slotOfInstant(Resolution::Hour1, -3601) == -2);
+  CHECK(instantOfSlot(Resolution::Hour1, 498664) == t && instantOfSlot(Resolution::Min5, slotOfInstant(Resolution::Min5, t)) == t);
+  for (Timestamp x : {Timestamp(0), t, t + 1234, Timestamp(-7777)})
+    CHECK(instantOfSlot(Resolution::Hour1, slotOfInstant(Resolution::Hour1, x)) <= x && x - instantOfSlot(Resolution::Hour1, slotOfInstant(Resolution::Hour1, x)) < 3600);
+}
+
+TEST(a_bar_that_does_not_start_on_a_slot_boundary_is_found_out) {
+  auto at = [](int y, unsigned m, unsigned d, int hour, int minute) { return daysSinceUnixEpoch(y, m, d) * 86400 + hour * 3600 + minute * 60; };
+  CHECK(onSlotBoundary(Resolution::Hour1, at(2026, 11, 20, 8, 0)));    // Helsinki and Nordnet: on the hour
+  CHECK(!onSlotBoundary(Resolution::Hour1, at(2026, 11, 20, 14, 30)));  // a US exchange's open, 09:30 in New York
+  CHECK(onSlotBoundary(Resolution::Min30, at(2026, 11, 20, 14, 30)));   // but on a 30-minute boundary
+  CHECK(onSlotBoundary(Resolution::Min5, at(2026, 11, 20, 14, 30)) && onSlotBoundary(Resolution::Min15, at(2026, 11, 20, 14, 30)));
+}

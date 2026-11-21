@@ -75,8 +75,9 @@ TEST(an_edge_has_a_series_for_each_resolution_it_has_data_in) {
 
   const int64_t today = dayNumber(2026, 11, 20);
   w.store->appendCandles(k, Resolution::Day, {bar(today - 1, 10), bar(today, 11)});  // keyed by date
-  w.store->appendCandles(k, Resolution::Hour1, {bar(1795000000, 1), bar(1795003600, 2), bar(1795007200, 3)});  // by instant
-  w.store->appendCandles(k, Resolution::Min5, {bar(1795000000, 5)});
+  const int64_t hour = slotOfInstant(Resolution::Hour1, 1795000000);  // hourly bars are keyed by their hour number
+  w.store->appendCandles(k, Resolution::Hour1, {bar(hour, 1), bar(hour + 1, 2), bar(hour + 2, 3)});
+  w.store->appendCandles(k, Resolution::Min5, {bar(slotOfInstant(Resolution::Min5, 1795000000), 5)});
   auto s = w.snap();
   CHECK((s->resolutions(k) == std::vector<Resolution>{Resolution::Min5, Resolution::Hour1, Resolution::Day}));  // shortest first
   CHECK(s->candles(k, Resolution::Day).candles.size() == 2 && s->candles(k, Resolution::Day).resolution == Resolution::Day);
@@ -86,7 +87,7 @@ TEST(an_edge_has_a_series_for_each_resolution_it_has_data_in) {
   CHECK(s->edges(w.hel.id).size() == 1);  // one edge, whatever the number of series
 
   // A correction in one series leaves the others alone.
-  w.store->appendCandles(k, Resolution::Hour1, {bar(1795003600, 20)});
+  w.store->appendCandles(k, Resolution::Hour1, {bar(hour + 1, 20)});
   s = w.snap();
   CHECK(s->candles(k, Resolution::Hour1).candles.size() == 3 && s->candles(k, Resolution::Hour1).candles[1].close == 20);
   CHECK(s->candles(k, Resolution::Day).candles[1].close == 11 && s->candles(k, Resolution::Min5).candles[0].close == 5);

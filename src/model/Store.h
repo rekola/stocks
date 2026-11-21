@@ -34,7 +34,7 @@ class Snapshot {
   // The same, only those whose base instrument `keep` accepts (by its kind, its type, ...).
   std::vector<EdgeKey> edges(MarketId, const std::function<bool(const Instrument &)> & keep) const;
 
-  // The bars of the edge at `resolution` in `range` (in seconds, or in day numbers for a date resolution), oldest first;
+  // The bars of the edge at `resolution` in `range` (in slot numbers, or day numbers for a date resolution), oldest first;
   // an empty series if there are none.
   CandleSeries candles(const EdgeKey &, Resolution resolution, TimeRange range = {}) const;
   // The newest `n` bars at `resolution`, oldest first: the table's latest price, change and trace.
@@ -100,7 +100,7 @@ class Store {
 
   // Candles. An edge has a series for each resolution it has data in, as the provider gives it: nothing is derived from
   // another. A bar at a time already in the series replaces it (a correction, or today's bar updated); the rest are
-  // inserted in order. The bars' times are seconds, or day numbers for a date resolution.
+  // inserted in order. The bars' times are slot numbers, or day numbers for a date resolution.
   virtual void appendCandles(const EdgeKey &, Resolution, const std::vector<Candle> &) = 0;
   // Order book snapshots, time-ordered; one at a time already in the series replaces it.
   virtual void appendBooks(const EdgeKey &, const std::vector<BookSnapshot> &) = 0;

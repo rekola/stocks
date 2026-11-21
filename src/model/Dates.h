@@ -76,3 +76,17 @@ constexpr int64_t quarterStart(int64_t number) {
 constexpr int64_t tradingDateOfDailyStamp(Timestamp utcSeconds, int utcOffsetSeconds) {
   return dayNumberOfInstant(utcSeconds, utcOffsetSeconds + 12 * 3600);
 }
+
+// Slot numbers of the intraday resolutions: the key of a bar is the number of its slot, the UTC Unix seconds of its start
+// divided by the length of the resolution, rounded down. The hour number is the UTC seconds divided by 3600, the
+// 5-minute slot number the seconds divided by 300, and so on, as in the legacy platform. (Day numbers are counted from
+// the year 1, see above; the origin of these is the Unix epoch.) In UTC, so no time zone and no daylight saving.
+constexpr int64_t slotOfInstant(Resolution r, Timestamp utcSeconds) {
+  const int64_t length = seconds(r);  // intraday only
+  return utcSeconds >= 0 ? utcSeconds / length : -((-utcSeconds + length - 1) / length);
+}
+constexpr Timestamp instantOfSlot(Resolution r, int64_t slot) { return slot * seconds(r); }
+
+// Whether a bar that starts at `utcSeconds` starts on a slot boundary. One that does not cannot be keyed by its slot
+// without losing its offset: Yahoo's hourly bars on US exchanges start at :30.
+constexpr bool onSlotBoundary(Resolution r, Timestamp utcSeconds) { return utcSeconds % seconds(r) == 0; }

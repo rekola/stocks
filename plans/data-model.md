@@ -52,12 +52,18 @@ On an edge key (a price of something):
   **Time.** An instant is whole Unix seconds, UTC (never milliseconds; where whole
   seconds are not enough, as for order books, floating-point seconds). A resolution is
   a code (`Resolution`: `Min1` to `Hour4`, `Day`, `Week`, `Month`, `Quarter`), not a
-  length: days, weeks and months are not fixed lengths. The intraday resolutions are
-  keyed by an instant; the **date resolutions are keyed by a date, as a day number**
-  (the absolute day number of the proleptic Gregorian calendar, 1 = 1 January of the year
-  1, as in Date::Calc's `Date_to_Days`; `Dates.h`): a daily bar by its trading date, a
-  week, month or quarter bar by its first day (a Monday for a week). A daily bar is not
-  an instant, and providers' midnight stamps on them are only markers of the date.
+  length: days, weeks and months are not fixed lengths. The key of a bar is a number, as
+  in the legacy platform. **Intraday bars are keyed by their slot number**: the UTC
+  seconds of the start divided by the length of the resolution, rounded down (the hour
+  number is the UTC seconds divided by 3600). The **date resolutions are keyed by a
+  date, as a day number** (the absolute day number of the proleptic Gregorian calendar,
+  1 = 1 January of the year 1, as in Date::Calc's `Date_to_Days`; `Dates.h`): a daily bar
+  by its trading date, a week, month or quarter bar by its first day (a Monday for a
+  week; absolute week numbers are to come from the day numbers, and months and quarters
+  have no numbering yet). A daily bar is not an instant, and providers' midnight stamps
+  on them are only markers of the date. A bar that does not start on a slot boundary
+  (Yahoo's hourly bars on US exchanges start at :30) cannot be keyed by its slot without
+  losing its offset: an open question, see server.md.
 - **Order book snapshots**: the bids and asks standing at a moment (price and
   size per level), time-ordered. Kept apart from candles because they are a
   different kind of fact, but under the same key. Quotes carry information even
