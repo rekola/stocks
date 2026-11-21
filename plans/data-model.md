@@ -44,12 +44,20 @@ of `base` costs this much `quote`" (NOKIA -> EUR, EUR -> USD).
 On an edge key (a price of something):
 
 - **Candles**: time-ordered series of OHLCV bars, one bar per start time. **The
-  interval is not part of the key**: an edge has a series for each interval it has
+  resolution is not part of the key**: an edge has a series for each resolution it has
   data in (5 minutes, 15 minutes, an hour, a day, ...), the same edge with its data in
   different forms, each as the provider gave it and none derived from another. A bar
   at a time already in the series replaces it, so corrections, and today's bar kept up
-  to date, need no special path. The intervals are `interval::min5`, `hour1`, `day`,
-  ...; calendar months and quarters are not fixed lengths and are not there yet.
+  to date, need no special path.
+  **Time.** An instant is whole Unix seconds, UTC (never milliseconds; where whole
+  seconds are not enough, as for order books, floating-point seconds). A resolution is
+  a code (`Resolution`: `Min1` to `Hour4`, `Day`, `Week`, `Month`, `Quarter`), not a
+  length: days, weeks and months are not fixed lengths. The intraday resolutions are
+  keyed by an instant; the **date resolutions are keyed by a date, as a day number**
+  (the absolute day number of the proleptic Gregorian calendar, 1 = 1 January of the year
+  1, as in Date::Calc's `Date_to_Days`; `Dates.h`): a daily bar by its trading date, a
+  week, month or quarter bar by its first day (a Monday for a week). A daily bar is not
+  an instant, and providers' midnight stamps on them are only markers of the date.
 - **Order book snapshots**: the bids and asks standing at a moment (price and
   size per level), time-ordered. Kept apart from candles because they are a
   different kind of fact, but under the same key. Quotes carry information even
@@ -100,8 +108,8 @@ the in-memory one, and a server-backed store would hand out snapshots too.
   write that changes nothing publishes nothing, and each one that does makes the
   next `version()`.
 - Reads on a snapshot: lookups by id and name, `edges(market)` (keys with
-  candles or a book in a market), `candles(key, interval, range)`,
-  `lastCandles(key, interval, n)`, `intervals(key)` (the intervals an edge has),
+  candles or a book in a market), `candles(key, resolution, range)`,
+  `lastCandles(key, resolution, n)`, `resolutions(key)` (the resolutions an edge has),
   `books(key, range)`, `bookAt(key, time)`, `announcements`, `actions`, and
   `events(instrument)` for the datasets that say anything about an instrument.
 - Series come back as `Seq<T>` (an immer `flex_vector`): slices share storage

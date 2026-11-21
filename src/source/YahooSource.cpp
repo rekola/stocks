@@ -1,5 +1,6 @@
 #include "source/YahooSource.h"
 
+#include "model/Dates.h"
 #include "source/InstrumentTypes.h"
 
 #include <nlohmann/json.hpp>
@@ -44,11 +45,18 @@ bool YahooSource::parse(const std::string & body, const ListEntry & e, Store & s
   const json & ts = result["timestamp"];
   const json & q = result["indicators"]["quote"][0];
 
+  // A daily bar is keyed by its trading date, not by the instant Yahoo stamps it with: the start of the trading day in the
+  // exchange's time zone, for which the chart's meta has today's offset from UTC (see tradingDateOfDailyStamp).
+  int utcOffset = 0;
+  if (auto meta = result.find("meta"); meta != result.end() && meta->is_object()) {
+    auto offset = meta->find("gmtoffset");
+    if (offset != meta->end() && offset->is_number_integer()) utcOffset = offset->get<int>();
+  }
   std::vector<Candle> bars;
   for (size_t i = 0; i < ts.size(); i++) {
     auto open = number(q["open"], i), high = number(q["high"], i), low = number(q["low"], i), close = number(q["close"], i);
     if (!ts[i].is_number_integer() || !open || !high || !low || !close) continue;  // a day without a price
-    bars.push_back({ts[i].get<int64_t>() * 1000, *open, *high, *low, *close, number(q["volume"], i).value_or(0)});
+    bars.push_back({tradingDateOfDailyStamp(ts[i].get<int64_t>(), utcOffset), *open, *high, *low, *close, number(q["volume"], i).value_or(0)});
   }
   if (bars.empty()) {
     error = "no candles";
@@ -64,10 +72,7 @@ bool YahooSource::parse(const std::string & body, const ListEntry & e, Store & s
   }
   Instrument base = store.addInstrument({{}, e.base, e.name, e.kind != InstrumentKind::Other ? e.kind : kindOfYahooType(type), "", type});
   Instrument quote = store.addInstrument({{}, e.quote, currencyName(e.quote), InstrumentKind::Currency});
-  if (!store.appendCandles({base.id, quote.id, market.id, dataset.id}, interval::day, bars)) {
-    error = "the interval of the series changed";
-    return false;
-  }
+  store.appendCandles({base.id, quote.id, market.id, dataset.id}, Resolution::Day, bars);
 
   if (result.contains("events") && result["events"].is_object()) {
     const json & events = result["events"];
@@ -75,12 +80,12 @@ bool YahooSource::parse(const std::string & body, const ListEntry & e, Store & s
     if (events.contains("dividends") && events["dividends"].is_object())
       for (const auto & [key, d] : events["dividends"].items())
         if (d.contains("date") && d.contains("amount") && d["date"].is_number_integer() && d["amount"].is_number())
-          actions.push_back({d["date"].get<int64_t>() * 1000, ActionKind::Dividend, d["amount"].get<double>(), quote.id, ""});
+          actions.push_back({tradingDateOfDailyStamp(d["date"].get<int64_t>(), utcOffset), ActionKind::Dividend, d["amount"].get<double>(), quote.id, ""});
     if (events.contains("splits") && events["splits"].is_object())
       for (const auto & [key, s] : events["splits"].items()) {
         double num = s.value("numerator", 0.0), den = s.value("denominator", 0.0);
         if (s.contains("date") && s["date"].is_number_integer() && num > 0 && den > 0)
-          actions.push_back({s["date"].get<int64_t>() * 1000, ActionKind::Split, num / den, {}, s.value("splitRatio", std::string())});
+          actions.push_back({tradingDateOfDailyStamp(s["date"].get<int64_t>(), utcOffset), ActionKind::Split, num / den, {}, s.value("splitRatio", std::string())});
       }
     store.appendActions({base.id, dataset.id}, actions);
   }

@@ -8,8 +8,10 @@
 
 namespace {
 
-size_t lowerIndex(const auto & v, Timestamp t) {
-  auto it = std::lower_bound(v.begin(), v.end(), t, [](const auto & a, Timestamp x) { return a.time < x; });
+// The index of the first element not before `t`: a Timestamp, a day number or a floating-point time, as the elements
+// are keyed.
+size_t lowerIndex(const auto & v, auto t) {
+  auto it = std::lower_bound(v.begin(), v.end(), t, [](const auto & a, auto x) { return a.time < x; });
   return static_cast<size_t>(it - v.begin());
 }
 
@@ -97,18 +99,20 @@ std::vector<EdgeKey> Snapshot::edges(MarketId m, const std::function<bool(const 
 }
 std::vector<EventKey> Snapshot::events(InstrumentId i) const { return sorted(eventsByInstrument_.find(i)); }
 
-CandleSeries Snapshot::candles(const EdgeKey & k, int64_t intervalMs, TimeRange r) const {
-  const auto * bars = series_.find({k, intervalMs});
-  return {intervalMs, bars ? slice(*bars, r) : Seq<Candle>{}};
+CandleSeries Snapshot::candles(const EdgeKey & k, Resolution r, TimeRange range) const {
+  const auto * bars = series_.find({k, r});
+  return {r, bars ? slice(*bars, range) : Seq<Candle>{}};
 }
-CandleSeries Snapshot::lastCandles(const EdgeKey & k, int64_t intervalMs, size_t n) const {
-  const auto * bars = series_.find({k, intervalMs});
-  return {intervalMs, bars ? bars->drop(bars->size() - std::min(n, bars->size())) : Seq<Candle>{}};
+CandleSeries Snapshot::lastCandles(const EdgeKey & k, Resolution r, size_t n) const {
+  const auto * bars = series_.find({k, r});
+  return {r, bars ? bars->drop(bars->size() - std::min(n, bars->size())) : Seq<Candle>{}};
 }
-std::vector<int64_t> Snapshot::intervals(const EdgeKey & k) const {
-  std::vector<int64_t> out;
-  if (const auto * set = intervals_.find(k)) out.assign(set->begin(), set->end());
-  std::sort(out.begin(), out.end());
+std::vector<Resolution> Snapshot::resolutions(const EdgeKey & k) const {
+  std::vector<int> codes;
+  if (const auto * set = resolutions_.find(k)) codes.assign(set->begin(), set->end());
+  std::sort(codes.begin(), codes.end());
+  std::vector<Resolution> out;
+  for (int c : codes) out.push_back(static_cast<Resolution>(c));
   return out;
 }
 
@@ -116,12 +120,13 @@ Seq<BookSnapshot> Snapshot::books(const EdgeKey & k, TimeRange r) const {
   const auto * s = books_.find(k);
   return s ? slice(*s, r) : Seq<BookSnapshot>{};
 }
-std::optional<BookSnapshot> Snapshot::bookAt(const EdgeKey & k, Timestamp t) const {
+std::optional<BookSnapshot> Snapshot::bookAt(const EdgeKey & k, double t) const {
   const auto * s = books_.find(k);
   if (!s) return std::nullopt;
-  size_t after = t == std::numeric_limits<Timestamp>::max() ? s->size() : lowerIndex(*s, t + 1);
-  if (after == 0) return std::nullopt;
-  return (*s)[after - 1];
+  // The first snapshot after `t`, and the one before it.
+  auto after = std::upper_bound(s->begin(), s->end(), t, [](double x, const BookSnapshot & b) { return x < b.time; });
+  if (after == s->begin()) return std::nullopt;
+  return *(after - 1);
 }
 
 Seq<Announcement> Snapshot::announcements(const EventKey & k, TimeRange r) const {
@@ -157,20 +162,18 @@ Dataset Snapshot::add(Dataset d) {
   return out;
 }
 
-bool Snapshot::appendCandles(const EdgeKey & k, int64_t intervalMs, const std::vector<Candle> & in) {
-  if (intervalMs <= 0) return false;
-  if (in.empty()) return true;
-  const SeriesKey key{k, intervalMs};
+void Snapshot::appendCandles(const EdgeKey & k, Resolution r, const std::vector<Candle> & in) {
+  if (in.empty()) return;
+  const SeriesKey key{k, r};
   const auto * old = series_.find(key);
   Seq<Candle> bars = old ? *old : Seq<Candle>{};
   for (const Candle & c : in) bars = upsert(bars, c, [](const Candle &, const Candle &) { return true; });
   series_ = series_.set(key, bars);
-  const auto * known = intervals_.find(k);
-  intervals_ = intervals_.set(k, (known ? *known : immer::set<int64_t>{}).insert(intervalMs));
+  const auto * known = resolutions_.find(k);
+  resolutions_ = resolutions_.set(k, (known ? *known : immer::set<int>{}).insert(static_cast<int>(r)));
   const auto * set = edgesByMarket_.find(k.market);
   edgesByMarket_ = edgesByMarket_.set(k.market, (set ? *set : immer::set<EdgeKey>{}).insert(k));
   version_++;
-  return true;
 }
 
 void Snapshot::appendBooks(const EdgeKey & k, const std::vector<BookSnapshot> & in) {
@@ -244,8 +247,8 @@ class MemoryStore : public Store {
   Dataset addDataset(Dataset d) override {
     return write([&](Snapshot & s) { return s.add(std::move(d)); });
   }
-  bool appendCandles(const EdgeKey & k, int64_t intervalMs, const std::vector<Candle> & c) override {
-    return write([&](Snapshot & s) { return s.appendCandles(k, intervalMs, c); });
+  void appendCandles(const EdgeKey & k, Resolution r, const std::vector<Candle> & c) override {
+    write([&](Snapshot & s) { s.appendCandles(k, r, c); });
   }
   void appendBooks(const EdgeKey & k, const std::vector<BookSnapshot> & b) override {
     write([&](Snapshot & s) { s.appendBooks(k, b); });

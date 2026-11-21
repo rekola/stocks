@@ -1,5 +1,6 @@
 #include "source/NordnetSource.h"
 
+#include "model/Dates.h"
 #include "source/InstrumentLists.h"
 #include "source/InstrumentTypes.h"
 
@@ -96,11 +97,13 @@ bool NordnetSource::parsePage(const std::string & body, Page & page, std::string
     if (row.is_object() && row.contains("price_info") && row["price_info"].is_object()) {
       const json & p = row["price_info"];
       auto open = price(p, "open"), high = price(p, "high"), low = price(p, "low"), last = price(p, "last");
-      const int64_t tick = integer(p, "tick_timestamp");
+      const int64_t tick = integer(p, "tick_timestamp") / 1000;  // the answer is in milliseconds; seconds from here on
       if (open && high && low && last && tick > 0) {
         auto volume = p.find("turnover_volume");
         l.hasBar = true;
-        l.bar = {tick - tick % interval::day, *open, *high, *low, *last,
+        // Keyed by the trading date, not by the instant: the date of the last tick in UTC (a market east of UTC+9 around
+        // its open would need its own time zone).
+        l.bar = {dayNumberOfInstant(tick), *open, *high, *low, *last,
                  volume != p.end() && volume->is_number() ? volume->get<double>() : 0.0};
       }
     }
@@ -153,7 +156,7 @@ void NordnetSource::load(Store & store, Http & http, SourceListener & listener) 
         const char * label = currencyName(l.currency);
         Instrument quote = store.addInstrument({{}, l.currency, *label ? label : l.currency, InstrumentKind::Currency});
         // Today's bar makes the edge; a listing with none stays a node nothing selects.
-        if (l.hasBar) store.appendCandles({base.id, quote.id, market.id, dataset.id}, interval::day, {l.bar});
+        if (l.hasBar) store.appendCandles({base.id, quote.id, market.id, dataset.id}, Resolution::Day, {l.bar});
       }
       found += page.listings.size();
       listings_.insert(listings_.end(), page.listings.begin(), page.listings.end());

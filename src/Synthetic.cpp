@@ -1,11 +1,12 @@
 #include "Synthetic.h"
 
+#include "model/Dates.h"
 #include "source/InstrumentLists.h"
 
 #include <random>
 
 void fillSyntheticData(Store & store, const InstrumentList & list) {
-  constexpr Timestamp kDay = interval::day, kStart = 1767225600000;  // 2026-01-01 00:00 UTC
+  const int64_t kStart = dayNumber(2026, 1, 1);  // the first trading date: a day number
   Dataset synthetic = store.addDataset({{}, "synthetic"});
   std::string market;
   unsigned preset = 0;
@@ -24,9 +25,9 @@ void fillSyntheticData(Store & store, const InstrumentList & list) {
     for (int d = 0; d < 60; d++) {
       double open = p;
       p *= 1.0 + step(rng);
-      bars.push_back({kStart + d * kDay, open, std::max(open, p) * (1 + wick(rng)), std::min(open, p) * (1 - wick(rng)), p,
+      bars.push_back({kStart + d, open, std::max(open, p) * (1 + wick(rng)), std::min(open, p) * (1 - wick(rng)), p,
                       volume(rng)});
     }
-    store.appendCandles({base.id, quote.id, m.id, synthetic.id}, kDay, bars);
+    store.appendCandles({base.id, quote.id, m.id, synthetic.id}, Resolution::Day, bars);
   }
 }

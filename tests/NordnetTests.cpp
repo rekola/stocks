@@ -1,6 +1,7 @@
 #include "TestFramework.h"
 
 #include "FakeHttp.h"
+#include "model/Dates.h"
 #include "source/NordnetSource.h"
 
 #include <fstream>
@@ -136,10 +137,10 @@ TEST(loading_pages_through_every_list_and_stores_instruments_markets_and_edges) 
   DatasetId nordnet = s->findDataset("nordnet")->id;
   EdgeKey onXetra{xaix.id, s->findInstrument("EUR")->id, xetra, nordnet};
   EdgeKey onStockholm{xaix.id, s->findInstrument("SEK")->id, stockholm, nordnet};
-  // Each listing's price block is today's bar, in the daily series; daily bars start at midnight UTC.
-  CandleSeries today = s->candles(onXetra, interval::day);
-  CHECK(today.intervalMs == 86400000 && today.candles.size() == 1);
-  CHECK(today.candles[0].time == 1795132800000 && today.candles[0].open == 188.94 && today.candles[0].high == 189.56);
+  // Each listing's price block is today's bar, in the daily series, keyed by its date (the tick was at 16:30 UTC on the 20th).
+  CandleSeries today = s->candles(onXetra, Resolution::Day);
+  CHECK(today.resolution == Resolution::Day && today.candles.size() == 1);
+  CHECK(today.candles[0].time == dayNumber(2026, 11, 20) && today.candles[0].open == 188.94 && today.candles[0].high == 189.56);
   CHECK(today.candles[0].low == 184.42 && today.candles[0].close == 184.42 && today.candles[0].volume == 75161);
   bool a = false, b = false;
   for (const EdgeKey & k : s->edges(xetra)) a = a || k == onXetra;
@@ -162,7 +163,7 @@ TEST(loading_again_replaces_todays_bars_and_a_new_day_adds_one) {
   CHECK(source.listings().size() == 9);
   MarketId xetra = second->findMarket("Xetra")->id;
   CHECK(second->edges(xetra) == first->edges(xetra));
-  for (const EdgeKey & k : second->edges(xetra)) CHECK(second->candles(k, interval::day).candles.size() == 1);
+  for (const EdgeKey & k : second->edges(xetra)) CHECK(second->candles(k, Resolution::Day).candles.size() == 1);
 }
 
 TEST(the_requests_look_like_a_browsers_and_carry_no_cookie) {
@@ -268,8 +269,8 @@ TEST(a_new_day_adds_a_bar_to_the_series) {
   auto s = store->snapshot();
   Instrument xaix = *s->findInstrumentByIsin("IE00BGV5VN51");
   EdgeKey onXetra{xaix.id, s->findInstrument("EUR")->id, s->findMarket("Xetra")->id, s->findDataset("nordnet")->id};
-  CandleSeries c = s->candles(onXetra, interval::day);
-  CHECK(c.candles.size() == 2 && c.candles[0].time == 1795132800000 && c.candles[1].time == 1795219200000);
+  CandleSeries c = s->candles(onXetra, Resolution::Day);
+  CHECK(c.candles.size() == 2 && c.candles[0].time == dayNumber(2026, 11, 20) && c.candles[1].time == dayNumber(2026, 11, 21));
 }
 
 TEST(a_listing_without_a_price_is_a_node_and_has_no_edge) {

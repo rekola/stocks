@@ -1,5 +1,6 @@
 #include "TestFramework.h"
 
+#include "model/Dates.h"
 #include "model/Store.h"
 
 #include <atomic>
@@ -45,10 +46,10 @@ TEST(records_are_found_by_id_and_by_name) {
 TEST(candles_stay_time_ordered_and_a_bar_at_a_known_time_replaces_it) {
   World w;
   EdgeKey k = w.key(w.hel.id, w.a.id);
-  CHECK(w.store->appendCandles(k, 60000, {bar(120000, 3), bar(0, 1)}));
-  CHECK(w.store->appendCandles(k, 60000, {bar(60000, 2), bar(120000, 30)}));
-  CandleSeries s = w.snap()->candles(k, 60000);
-  CHECK(s.intervalMs == 60000 && s.candles.size() == 3);
+  w.store->appendCandles(k, Resolution::Min5, {bar(120000, 3), bar(0, 1)});
+  w.store->appendCandles(k, Resolution::Min5, {bar(60000, 2), bar(120000, 30)});
+  CandleSeries s = w.snap()->candles(k, Resolution::Min5);
+  CHECK(s.resolution == Resolution::Min5 && s.candles.size() == 3);
   CHECK(s.candles[0].time == 0 && s.candles[1].time == 60000 && s.candles[2].time == 120000);
   CHECK_NEAR(s.candles[2].close, 30, 1e-9);
 }
@@ -56,61 +57,70 @@ TEST(candles_stay_time_ordered_and_a_bar_at_a_known_time_replaces_it) {
 TEST(candle_ranges_are_half_open_and_last_candles_takes_the_tail) {
   World w;
   EdgeKey k = w.key(w.hel.id, w.a.id);
-  w.store->appendCandles(k, 1000, {bar(0, 1), bar(1000, 2), bar(2000, 3), bar(3000, 4)});
-  CandleSeries r = w.snap()->candles(k, 1000, {1000, 3000});
+  w.store->appendCandles(k, Resolution::Min1, {bar(0, 1), bar(1000, 2), bar(2000, 3), bar(3000, 4)});
+  CandleSeries r = w.snap()->candles(k, Resolution::Min1, {1000, 3000});
   CHECK(r.candles.size() == 2 && r.candles[0].time == 1000 && r.candles[1].time == 2000);
-  CandleSeries t = w.snap()->lastCandles(k, 1000, 2);
+  CandleSeries t = w.snap()->lastCandles(k, Resolution::Min1, 2);
   CHECK(t.candles.size() == 2 && t.candles[0].time == 2000 && t.candles[1].time == 3000);
-  CHECK(w.snap()->lastCandles(k, 1000, 99).candles.size() == 4);
-  CHECK(w.snap()->candles(w.key(w.hel.id, w.b.id), 1000).candles.empty());
-  CHECK(w.snap()->lastCandles(w.key(w.hel.id, w.b.id), 1000, 3).candles.empty());
+  CHECK(w.snap()->lastCandles(k, Resolution::Min1, 99).candles.size() == 4);
+  CHECK(w.snap()->candles(w.key(w.hel.id, w.b.id), Resolution::Min1).candles.empty());
+  CHECK(w.snap()->lastCandles(w.key(w.hel.id, w.b.id), Resolution::Min1, 3).candles.empty());
 }
 
-TEST(an_edge_has_a_series_for_each_interval_it_has_data_in) {
+TEST(an_edge_has_a_series_for_each_resolution_it_has_data_in) {
   World w;
   EdgeKey k = w.key(w.hel.id, w.a.id);
-  CHECK(!w.store->appendCandles(k, 0, {bar(0, 1)}) && !w.store->appendCandles(k, -5, {bar(0, 1)}));
-  CHECK(w.snap()->intervals(k).empty() && w.snap()->edges(w.hel.id).empty());  // nothing was made
+  w.store->appendCandles(k, Resolution::Day, {});  // nothing to add makes nothing
+  CHECK(w.snap()->resolutions(k).empty() && w.snap()->edges(w.hel.id).empty());
 
-  CHECK(w.store->appendCandles(k, interval::day, {bar(0, 10), bar(interval::day, 11)}));
-  CHECK(w.store->appendCandles(k, interval::hour1, {bar(0, 1), bar(interval::hour1, 2), bar(2 * interval::hour1, 3)}));
-  CHECK(w.store->appendCandles(k, interval::min5, {bar(0, 5)}));
+  const int64_t today = dayNumber(2026, 11, 20);
+  w.store->appendCandles(k, Resolution::Day, {bar(today - 1, 10), bar(today, 11)});  // keyed by date
+  w.store->appendCandles(k, Resolution::Hour1, {bar(1795000000, 1), bar(1795003600, 2), bar(1795007200, 3)});  // by instant
+  w.store->appendCandles(k, Resolution::Min5, {bar(1795000000, 5)});
   auto s = w.snap();
-  CHECK((s->intervals(k) == std::vector<int64_t>{interval::min5, interval::hour1, interval::day}));  // shortest first
-  CHECK(s->candles(k, interval::day).candles.size() == 2 && s->candles(k, interval::day).intervalMs == interval::day);
-  CHECK(s->candles(k, interval::hour1).candles.size() == 3 && s->candles(k, interval::min5).candles.size() == 1);
-  CHECK(s->candles(k, interval::week).candles.empty());  // an interval it has no data in
-  CHECK(s->lastCandles(k, interval::hour1, 1).candles[0].close == 3);
+  CHECK((s->resolutions(k) == std::vector<Resolution>{Resolution::Min5, Resolution::Hour1, Resolution::Day}));  // shortest first
+  CHECK(s->candles(k, Resolution::Day).candles.size() == 2 && s->candles(k, Resolution::Day).resolution == Resolution::Day);
+  CHECK(s->candles(k, Resolution::Hour1).candles.size() == 3 && s->candles(k, Resolution::Min5).candles.size() == 1);
+  CHECK(s->candles(k, Resolution::Week).candles.empty());  // a resolution it has no data in
+  CHECK(s->lastCandles(k, Resolution::Hour1, 1).candles[0].close == 3);
   CHECK(s->edges(w.hel.id).size() == 1);  // one edge, whatever the number of series
 
   // A correction in one series leaves the others alone.
-  w.store->appendCandles(k, interval::hour1, {bar(interval::hour1, 20)});
+  w.store->appendCandles(k, Resolution::Hour1, {bar(1795003600, 20)});
   s = w.snap();
-  CHECK(s->candles(k, interval::hour1).candles.size() == 3 && s->candles(k, interval::hour1).candles[1].close == 20);
-  CHECK(s->candles(k, interval::day).candles[1].close == 11 && s->candles(k, interval::min5).candles[0].close == 5);
+  CHECK(s->candles(k, Resolution::Hour1).candles.size() == 3 && s->candles(k, Resolution::Hour1).candles[1].close == 20);
+  CHECK(s->candles(k, Resolution::Day).candles[1].close == 11 && s->candles(k, Resolution::Min5).candles[0].close == 5);
 }
 
-TEST(the_intervals_are_the_lengths_the_providers_use) {
-  CHECK(interval::min1 == 60000 && interval::min5 == 300000 && interval::min15 == 900000 && interval::min30 == 1800000);
-  CHECK(interval::hour1 == 3600000 && interval::hour4 == 14400000 && interval::day == 86400000 && interval::week == 604800000);
+TEST(resolutions_are_codes_with_a_name_and_the_intraday_ones_a_length) {
+  CHECK(seconds(Resolution::Min1) == 60 && seconds(Resolution::Min5) == 300 && seconds(Resolution::Min15) == 900);
+  CHECK(seconds(Resolution::Min30) == 1800 && seconds(Resolution::Hour1) == 3600 && seconds(Resolution::Hour4) == 14400);
+  for (Resolution r : {Resolution::Day, Resolution::Week, Resolution::Month, Resolution::Quarter}) {
+    CHECK(isDateResolution(r) && seconds(r) == 0);  // no fixed length: daylight saving, calendars
+  }
+  for (Resolution r : {Resolution::Min1, Resolution::Min2, Resolution::Min5, Resolution::Hour1, Resolution::Hour4}) CHECK(!isDateResolution(r));
+  CHECK(std::string(name(Resolution::Min5)) == "5m" && std::string(name(Resolution::Hour1)) == "1h");
+  CHECK(std::string(name(Resolution::Day)) == "1d" && std::string(name(Resolution::Week)) == "1w");
+  CHECK(std::string(name(Resolution::Month)) == "1M" && std::string(name(Resolution::Quarter)) == "1Q");
+  CHECK(Resolution::Min1 < Resolution::Hour1 && Resolution::Hour1 < Resolution::Day && Resolution::Day < Resolution::Quarter);
 }
 
 TEST(sources_that_disagree_about_one_pair_on_one_market_both_stay) {
   World w;
-  w.store->appendCandles(w.key(w.hel.id, w.a.id), 1000, {bar(0, 5.0)});
-  w.store->appendCandles(w.key(w.hel.id, w.b.id), 1000, {bar(0, 5.1)});
-  CHECK_NEAR(w.snap()->candles(w.key(w.hel.id, w.a.id), 1000).candles[0].close, 5.0, 1e-9);
-  CHECK_NEAR(w.snap()->candles(w.key(w.hel.id, w.b.id), 1000).candles[0].close, 5.1, 1e-9);
+  w.store->appendCandles(w.key(w.hel.id, w.a.id), Resolution::Min1, {bar(0, 5.0)});
+  w.store->appendCandles(w.key(w.hel.id, w.b.id), Resolution::Min1, {bar(0, 5.1)});
+  CHECK_NEAR(w.snap()->candles(w.key(w.hel.id, w.a.id), Resolution::Min1).candles[0].close, 5.0, 1e-9);
+  CHECK_NEAR(w.snap()->candles(w.key(w.hel.id, w.b.id), Resolution::Min1).candles[0].close, 5.1, 1e-9);
   CHECK(w.snap()->edges(w.hel.id).size() == 2);
 }
 
 TEST(edges_lists_the_keys_with_data_in_a_market) {
   World w;
   CHECK(w.snap()->edges(w.hel.id).empty());
-  w.store->appendCandles(w.key(w.hel.id, w.a.id), 1000, {bar(0, 1)});
-  w.store->appendCandles(w.key(w.sto.id, w.a.id), 1000, {bar(0, 1)});
-  w.store->appendCandles(w.key(w.hel.id, w.a.id), 1000, {});  // nothing to add creates nothing
-  w.store->appendCandles(w.key(w.sto.id, w.b.id), 1000, {});
+  w.store->appendCandles(w.key(w.hel.id, w.a.id), Resolution::Min1, {bar(0, 1)});
+  w.store->appendCandles(w.key(w.sto.id, w.a.id), Resolution::Min1, {bar(0, 1)});
+  w.store->appendCandles(w.key(w.hel.id, w.a.id), Resolution::Min1, {});  // nothing to add creates nothing
+  w.store->appendCandles(w.key(w.sto.id, w.b.id), Resolution::Min1, {});
   w.store->appendBooks(w.key(w.hel.id, w.b.id), {{0, {{1, 1}}, {{2, 1}}}});  // a book alone makes an edge too
   std::vector<EdgeKey> hel = w.snap()->edges(w.hel.id);
   CHECK(hel.size() == 2);
@@ -132,6 +142,19 @@ TEST(a_book_at_a_time_is_the_latest_snapshot_at_or_before_it) {
   CHECK(w.snap()->books(k, {1500, 3000}).size() == 1);
   w.store->appendBooks(k, {{2000, {}, {}}});  // same time: replaced
   CHECK(w.snap()->books(k).size() == 2 && w.snap()->bookAt(k, 2000)->asks.empty());
+}
+
+TEST(order_book_snapshots_are_keyed_by_floating_point_seconds) {
+  World w;
+  EdgeKey k = w.key(w.hel.id, w.a.id);
+  w.store->appendBooks(k, {{1000.75, {{1, 1}}, {{2, 1}}}, {1000.25, {{1, 2}}, {{2, 2}}}, {1000.5, {{1, 3}}, {{2, 3}}}});
+  auto s = w.snap();
+  auto all = s->books(k);
+  CHECK(all.size() == 3 && all[0].time == 1000.25 && all[1].time == 1000.5 && all[2].time == 1000.75);  // ordered by the fraction
+  CHECK(s->bookAt(k, 1000.6)->time == 1000.5 && s->bookAt(k, 1000.75)->time == 1000.75);
+  CHECK(!s->bookAt(k, 1000.2) && s->bookAt(k, 5000)->time == 1000.75);
+  w.store->appendBooks(k, {{1000.5, {{9, 9}}, {{10, 9}}}});  // the same instant replaces
+  CHECK(w.snap()->books(k).size() == 3 && w.snap()->bookAt(k, 1000.5)->bids[0].size == 9);
 }
 
 TEST(announcements_are_kept_per_instrument_and_dataset_in_time_order) {
@@ -175,15 +198,15 @@ TEST(events_lists_the_datasets_that_say_something_about_an_instrument) {
 TEST(a_snapshot_never_changes_and_a_write_makes_a_new_one_that_shares_the_old) {
   World w;
   EdgeKey k = w.key(w.hel.id, w.a.id);
-  w.store->appendCandles(k, 1000, {bar(0, 1), bar(1000, 2)});
+  w.store->appendCandles(k, Resolution::Min1, {bar(0, 1), bar(1000, 2)});
   auto before = w.snap();
   uint64_t v = before->version();
-  w.store->appendCandles(k, 1000, {bar(2000, 3), bar(0, 10)});
+  w.store->appendCandles(k, Resolution::Min1, {bar(2000, 3), bar(0, 10)});
   w.store->appendBooks(k, {{0, {{1, 1}}, {{2, 1}}}});
   auto after = w.snap();
-  CHECK(before->candles(k, 1000).candles.size() == 2 && before->candles(k, 1000).candles[0].close == 1);
+  CHECK(before->candles(k, Resolution::Min1).candles.size() == 2 && before->candles(k, Resolution::Min1).candles[0].close == 1);
   CHECK(before->books(k).empty() && before->version() == v);
-  CHECK(after->candles(k, 1000).candles.size() == 3 && after->candles(k, 1000).candles[0].close == 10);
+  CHECK(after->candles(k, Resolution::Min1).candles.size() == 3 && after->candles(k, Resolution::Min1).candles[0].close == 10);
   CHECK(after->version() > v);
 }
 
@@ -191,11 +214,10 @@ TEST(only_a_write_that_changes_something_makes_a_new_version) {
   World w;
   uint64_t v = w.snap()->version();
   w.store->addInstrument({{}, "NOKIA", "again", InstrumentKind::Company});
-  w.store->appendCandles(w.key(w.hel.id, w.a.id), 1000, {});
-  w.store->appendCandles(w.key(w.hel.id, w.a.id), 0, {bar(0, 1)});
+  w.store->appendCandles(w.key(w.hel.id, w.a.id), Resolution::Min1, {});
   w.store->appendBooks(w.key(w.hel.id, w.a.id), {});
   CHECK(w.snap()->version() == v);
-  w.store->appendCandles(w.key(w.hel.id, w.a.id), 1000, {bar(0, 1)});
+  w.store->appendCandles(w.key(w.hel.id, w.a.id), Resolution::Min1, {bar(0, 1)});
   CHECK(w.snap()->version() == v + 1);
 }
 
@@ -209,7 +231,7 @@ TEST(readers_see_whole_consistent_snapshots_while_a_writer_appends) {
     uint64_t last = 0;
     while (!done) {
       auto s = w.snap();
-      CandleSeries c = s->candles(k, 1000);
+      CandleSeries c = s->candles(k, Resolution::Min1);
       // Each bar's close is its index, so a torn or reordered series shows up.
       for (size_t i = 0; i < c.candles.size(); i++)
         if (c.candles[i].time != static_cast<Timestamp>(i) * 1000 || c.candles[i].close != static_cast<double>(i)) bad++;
@@ -218,24 +240,24 @@ TEST(readers_see_whole_consistent_snapshots_while_a_writer_appends) {
     }
   };
   std::thread r1(reader), r2(reader);
-  for (int i = 0; i < kBars; i++) w.store->appendCandles(k, 1000, {bar(static_cast<Timestamp>(i) * 1000, i)});
+  for (int i = 0; i < kBars; i++) w.store->appendCandles(k, Resolution::Min1, {bar(static_cast<Timestamp>(i) * 1000, i)});
   done = true;
   r1.join();
   r2.join();
   CHECK(bad == 0);
-  CHECK(w.snap()->candles(k, 1000).candles.size() == static_cast<size_t>(kBars));
+  CHECK(w.snap()->candles(k, Resolution::Min1).candles.size() == static_cast<size_t>(kBars));
 }
 
 TEST(two_writers_do_not_lose_each_others_bars) {
   World w;
   EdgeKey ka = w.key(w.hel.id, w.a.id), kb = w.key(w.hel.id, w.b.id);
   auto write = [&](EdgeKey k) {
-    for (int i = 0; i < 500; i++) w.store->appendCandles(k, 1000, {bar(static_cast<Timestamp>(i) * 1000, i)});
+    for (int i = 0; i < 500; i++) w.store->appendCandles(k, Resolution::Min1, {bar(static_cast<Timestamp>(i) * 1000, i)});
   };
   std::thread t1(write, ka), t2(write, kb);
   t1.join();
   t2.join();
-  CHECK(w.snap()->candles(ka, 1000).candles.size() == 500 && w.snap()->candles(kb, 1000).candles.size() == 500);
+  CHECK(w.snap()->candles(ka, Resolution::Min1).candles.size() == 500 && w.snap()->candles(kb, Resolution::Min1).candles.size() == 500);
 }
 
 TEST(an_instrument_with_an_isin_is_that_isin_whatever_its_symbol_or_market) {
@@ -261,7 +283,7 @@ TEST(edges_can_be_selected_by_the_type_of_their_base_instrument) {
   Instrument etf = w.store->addInstrument({{}, "FLXK", "A fund", InstrumentKind::Etf, "IE00BHZRR030", "UETF"});
   Instrument cert = w.store->addInstrument({{}, "4GLD", "A certificate", InstrumentKind::Other, "DE000A0S9GB0", "PTC"});
   EdgeKey a{etf.id, w.eur.id, w.hel.id, w.a.id}, b{cert.id, w.eur.id, w.hel.id, w.a.id}, c{w.nokia.id, w.eur.id, w.hel.id, w.a.id};
-  for (const EdgeKey & k : {a, b, c}) w.store->appendCandles(k, 1000, {bar(0, 1)});
+  for (const EdgeKey & k : {a, b, c}) w.store->appendCandles(k, Resolution::Min1, {bar(0, 1)});
   CHECK(w.snap()->findInstrument("FLXK")->type == "UETF" && w.snap()->findInstrument("NOKIA")->type.empty());
   CHECK(w.snap()->edges(w.hel.id).size() == 3);
   auto isType = [](const char * t) { return [t](const Instrument & i) { return i.type == t; }; };

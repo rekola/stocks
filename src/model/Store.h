@@ -34,17 +34,18 @@ class Snapshot {
   // The same, only those whose base instrument `keep` accepts (by its kind, its type, ...).
   std::vector<EdgeKey> edges(MarketId, const std::function<bool(const Instrument &)> & keep) const;
 
-  // The bars of the edge at `intervalMs` in `range`, oldest first; an empty series if there are none.
-  CandleSeries candles(const EdgeKey &, int64_t intervalMs, TimeRange range = {}) const;
-  // The newest `n` bars at `intervalMs`, oldest first: the table's latest price, change and trace.
-  CandleSeries lastCandles(const EdgeKey &, int64_t intervalMs, size_t n) const;
-  // The intervals the edge has bars in, shortest first.
-  std::vector<int64_t> intervals(const EdgeKey &) const;
+  // The bars of the edge at `resolution` in `range` (in seconds, or in day numbers for a date resolution), oldest first;
+  // an empty series if there are none.
+  CandleSeries candles(const EdgeKey &, Resolution resolution, TimeRange range = {}) const;
+  // The newest `n` bars at `resolution`, oldest first: the table's latest price, change and trace.
+  CandleSeries lastCandles(const EdgeKey &, Resolution resolution, size_t n) const;
+  // The resolutions the edge has bars in, shortest first.
+  std::vector<Resolution> resolutions(const EdgeKey &) const;
 
   // The snapshots in `range`, oldest first.
   Seq<BookSnapshot> books(const EdgeKey &, TimeRange range = {}) const;
   // The snapshot standing at `time`: the latest at or before it.
-  std::optional<BookSnapshot> bookAt(const EdgeKey &, Timestamp time) const;
+  std::optional<BookSnapshot> bookAt(const EdgeKey &, double time) const;
 
   Seq<Announcement> announcements(const EventKey &, TimeRange range = {}) const;
   Seq<CorporateAction> actions(const EventKey &, TimeRange range = {}) const;
@@ -56,7 +57,7 @@ class Snapshot {
   Instrument add(Instrument);
   Market add(Market);
   Dataset add(Dataset);
-  bool appendCandles(const EdgeKey &, int64_t intervalMs, const std::vector<Candle> &);
+  void appendCandles(const EdgeKey &, Resolution, const std::vector<Candle> &);
   void appendBooks(const EdgeKey &, const std::vector<BookSnapshot> &);
   void appendAnnouncements(const EventKey &, const std::vector<Announcement> &);
   void appendActions(const EventKey &, const std::vector<CorporateAction> &);
@@ -72,7 +73,7 @@ class Snapshot {
   immer::map<std::string, MarketId> marketByName_;
   immer::map<std::string, DatasetId> datasetByName_;
   immer::map<SeriesKey, Seq<Candle>> series_;
-  immer::map<EdgeKey, immer::set<int64_t>> intervals_;
+  immer::map<EdgeKey, immer::set<int>> resolutions_;
   immer::map<EdgeKey, Seq<BookSnapshot>> books_;
   immer::map<MarketId, immer::set<EdgeKey>> edgesByMarket_;
   immer::map<EventKey, Seq<Announcement>> announcements_;
@@ -97,10 +98,10 @@ class Store {
   virtual Market addMarket(Market) = 0;
   virtual Dataset addDataset(Dataset) = 0;
 
-  // Candles. An edge has a series for each interval it has data in, as the provider gives it: nothing is derived from
+  // Candles. An edge has a series for each resolution it has data in, as the provider gives it: nothing is derived from
   // another. A bar at a time already in the series replaces it (a correction, or today's bar updated); the rest are
-  // inserted in order. False, and nothing changes, for an interval of no length.
-  virtual bool appendCandles(const EdgeKey &, int64_t intervalMs, const std::vector<Candle> &) = 0;
+  // inserted in order. The bars' times are seconds, or day numbers for a date resolution.
+  virtual void appendCandles(const EdgeKey &, Resolution, const std::vector<Candle> &) = 0;
   // Order book snapshots, time-ordered; one at a time already in the series replaces it.
   virtual void appendBooks(const EdgeKey &, const std::vector<BookSnapshot> &) = 0;
   // Announcements and corporate actions of an instrument, per dataset, time-ordered. An announcement at the same time

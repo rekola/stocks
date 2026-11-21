@@ -14,7 +14,7 @@ struct NordnetListing {
   std::string list;    // the list it was found in
   std::string bookId;  // market_data_order_book_id: what the price history is asked for by
   // Today's bar from the listing's price block: what discovery gives besides the instrument. Absent where the listing
-  // has not traded (no last price or no tick time). Daily bars start at midnight UTC of their date, as the history's do.
+  // has not traded (no last price or no tick time). A daily bar is keyed by its date (a day number), not by an instant.
   bool hasBar = false;
   Candle bar;
 };

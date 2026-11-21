@@ -28,10 +28,12 @@ using InstrumentId = Id<struct InstrumentTag>;
 using MarketId = Id<struct MarketTag>;
 using DatasetId = Id<struct DatasetTag>;
 
-// UTC, milliseconds since the Unix epoch. Sessions and time zones belong to the market, not here.
+// An instant: whole seconds since the Unix epoch, UTC. Where whole seconds are not enough (order book snapshots) it is
+// floating-point seconds, never milliseconds. Sessions and time zones belong to the market, not here. A date is not an
+// instant: it is a day number (Dates.h).
 using Timestamp = int64_t;
 
-// A half-open range [from, to).
+// A half-open range [from, to), in whatever the thing it selects is keyed by: seconds, or day numbers.
 struct TimeRange {
   Timestamp from = std::numeric_limits<Timestamp>::min(), to = std::numeric_limits<Timestamp>::max();
   bool contains(Timestamp t) const { return t >= from && t < to; }
@@ -88,29 +90,63 @@ struct EventKey {
   }
 };
 
-// One series: an edge at an interval.
+// How big the bars of a series are, as a code. The intraday resolutions are fixed lengths and are keyed by an instant
+// (UTC seconds, the start of the bar). The date resolutions are not fixed lengths (daylight saving, calendars) and are
+// keyed by a date, as a day number (Dates.h): a day by its trading date, a week, a month and a quarter by their first
+// day. An edge has a series for each resolution it has data in. The order is shortest first.
+enum class Resolution : uint8_t { Min1, Min2, Min5, Min15, Min30, Hour1, Hour4, Day, Week, Month, Quarter };
+
+constexpr bool isDateResolution(Resolution r) { return r >= Resolution::Day; }
+
+// The length in seconds of an intraday resolution; 0 for a date resolution, which has none.
+constexpr int64_t seconds(Resolution r) {
+  switch (r) {
+    case Resolution::Min1: return 60;
+    case Resolution::Min2: return 120;
+    case Resolution::Min5: return 300;
+    case Resolution::Min15: return 900;
+    case Resolution::Min30: return 1800;
+    case Resolution::Hour1: return 3600;
+    case Resolution::Hour4: return 14400;
+    default: return 0;
+  }
+}
+
+// A short name: 1m 2m 5m 15m 30m 1h 4h 1d 1w 1M 1Q.
+constexpr const char * name(Resolution r) {
+  switch (r) {
+    case Resolution::Min1: return "1m";
+    case Resolution::Min2: return "2m";
+    case Resolution::Min5: return "5m";
+    case Resolution::Min15: return "15m";
+    case Resolution::Min30: return "30m";
+    case Resolution::Hour1: return "1h";
+    case Resolution::Hour4: return "4h";
+    case Resolution::Day: return "1d";
+    case Resolution::Week: return "1w";
+    case Resolution::Month: return "1M";
+    case Resolution::Quarter: return "1Q";
+  }
+  return "";
+}
+
+// One series: an edge at a resolution.
 struct SeriesKey {
   EdgeKey edge;
-  int64_t interval = 0;
+  Resolution resolution = Resolution::Day;
   friend bool operator==(const SeriesKey &, const SeriesKey &) = default;
 };
 
 // Prices are doubles: enough for display and models; nothing here settles.
 struct Candle {
-  Timestamp time = 0;  // start of the bar
+  // The start of the bar: UTC seconds for an intraday resolution, the day number of the first day for a date resolution.
+  Timestamp time = 0;
   double open = 0, high = 0, low = 0, close = 0, volume = 0;
 };
 
-// The lengths of the intervals a series can have, in milliseconds. An edge has a series of bars for each interval it has
-// data in. (Calendar months and quarters are not fixed lengths and are not here yet.)
-namespace interval {
-constexpr int64_t min1 = 60000, min5 = 5 * min1, min15 = 15 * min1, min30 = 30 * min1, hour1 = 60 * min1,
-                  hour4 = 4 * hour1, day = 24 * hour1, week = 7 * day;
-}
-
-// The bars of one edge at one interval, time-ordered, one bar per time, all `intervalMs` long.
+// The bars of one edge at one resolution, time-ordered, one bar per time.
 struct CandleSeries {
-  int64_t intervalMs = 0;
+  Resolution resolution = Resolution::Day;
   Seq<Candle> candles;
 };
 
@@ -120,13 +156,13 @@ struct BookLevel {
 
 // What stood in the book at a moment: bids best (highest) first, asks best (lowest) first.
 struct BookSnapshot {
-  Timestamp time = 0;
+  double time = 0;  // UTC seconds, with a fraction
   std::vector<BookLevel> bids, asks;
 };
 
 // Something a company said: a press release, a filing, a profit warning.
 struct Announcement {
-  Timestamp time = 0;  // when it was published
+  Timestamp time = 0;  // when it was published: UTC seconds
   std::string category, headline, body, url;
 };
 
@@ -138,7 +174,7 @@ enum class ActionKind {
 
 // A change to the shares themselves that moves the price without the company being worth more or less.
 struct CorporateAction {
-  Timestamp time = 0;  // the ex-date: the first moment the price no longer carries it
+  Timestamp time = 0;  // the ex-date, as a day number: the first day the price no longer carries it
   ActionKind kind = ActionKind::Other;
   double value = 0;
   InstrumentId currency;  // dividends only
@@ -164,7 +200,7 @@ struct std::hash<EdgeKey> {
 template <>
 struct std::hash<SeriesKey> {
   size_t operator()(const SeriesKey & k) const {
-    return hashCombine(std::hash<EdgeKey>()(k.edge), std::hash<int64_t>()(k.interval));
+    return hashCombine(std::hash<EdgeKey>()(k.edge), std::hash<int>()(static_cast<int>(k.resolution)));
   }
 };
 template <>

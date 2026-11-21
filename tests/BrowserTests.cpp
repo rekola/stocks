@@ -200,8 +200,8 @@ TEST(a_preset_shows_one_row_per_edge_with_its_dataset) {
   Instrument usd = f.store->addInstrument({{}, "USD", "US dollar", InstrumentKind::Currency});
   Market currencies = f.store->addMarket({{}, "Currencies"});
   Dataset a = f.store->addDataset({{}, "provider-a"}), b = f.store->addDataset({{}, "provider-b"});
-  f.store->appendCandles({eur.id, usd.id, currencies.id, a.id}, interval::day, {{0, 1, 1, 1, 1.00, 1}, {1000, 1, 1, 1, 1.10, 1}});
-  f.store->appendCandles({eur.id, usd.id, currencies.id, b.id}, interval::day, {{0, 1, 1, 1, 2.00, 1}, {1000, 1, 1, 1, 1.00, 1}});
+  f.store->appendCandles({eur.id, usd.id, currencies.id, a.id}, Resolution::Day, {{0, 1, 1, 1, 1.00, 1}, {1000, 1, 1, 1, 1.10, 1}});
+  f.store->appendCandles({eur.id, usd.id, currencies.id, b.id}, Resolution::Day, {{0, 1, 1, 1, 2.00, 1}, {1000, 1, 1, 1, 1.00, 1}});
   f.app->execute("show-currencies");
   Table & t = f.browser->table();
   CHECK(t.model()->rowCount() == 2);  // the same pair on the same market from two datasets: two rows
@@ -245,20 +245,20 @@ TEST(the_table_follows_the_store_when_told_it_changed_and_keeps_the_sort_and_the
   Market currencies = f.store->addMarket({{}, "Currencies"});
   Dataset a = f.store->addDataset({{}, "provider-a"});
   EdgeKey eurusd{eur.id, usd.id, currencies.id, a.id}, gbpusd{gbp.id, usd.id, currencies.id, a.id};
-  f.store->appendCandles(eurusd, interval::day, {{0, 1, 1, 1, 1.0, 1}, {1000, 1, 1, 1, 1.1, 1}});
+  f.store->appendCandles(eurusd, Resolution::Day, {{0, 1, 1, 1, 1.0, 1}, {1000, 1, 1, 1, 1.1, 1}});
   f.app->execute("show-currencies");
   Table & t = f.browser->table();
   CHECK(t.model()->rowCount() == 1);
   t.sortBy(Quotes::PRICE, SortOrder::ASCENDING);
 
-  f.store->appendCandles(gbpusd, interval::day, {{0, 1, 1, 1, 1.2, 1}, {1000, 1, 1, 1, 1.3, 1}});
+  f.store->appendCandles(gbpusd, Resolution::Day, {{0, 1, 1, 1, 1.2, 1}, {1000, 1, 1, 1, 1.3, 1}});
   f.app->widgets().postToRoot(StoreChanged{});  // what the source thread's post turns into
   CHECK(t.model()->rowCount() == 2);
   CHECK(t.sortColumn() == Quotes::PRICE);
   CHECK(t.model()->text(t.rowAt(0), Quotes::BASE) == "EUR" && t.model()->text(t.rowAt(1), Quotes::BASE) == "GBP");
 
   t.select(t.rowAt(1));  // GBP; new data for EUR must not move the selection
-  f.store->appendCandles(eurusd, interval::day, {{2000, 1, 1, 1, 1.5, 1}});
+  f.store->appendCandles(eurusd, Resolution::Day, {{2000, 1, 1, 1, 1.5, 1}});
   f.app->widgets().postToRoot(StoreChanged{});
   CHECK(t.model()->text(t.selectedRow(), Quotes::BASE) == "GBP");
   CHECK(t.model()->text(t.rowAt(1), Quotes::BASE) == "EUR");  // 1.5 sorts after 1.3
