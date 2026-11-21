@@ -65,9 +65,6 @@ class NordnetSource : public Source {
   // is not used: a listing can carry the code of its home exchange while it trades on another market.)
   static std::string marketName(const NordnetListing &);
 
-  // The instrument's kind from its own type: the ETF types are ETFs, anything else is Other.
-  static InstrumentKind kindOf(const std::string & type);
-
  private:
   std::vector<List> lists_;
   std::chrono::milliseconds pause_;

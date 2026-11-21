@@ -19,7 +19,7 @@ using InstrumentList = std::vector<ListEntry>;
 //   # market: Nasdaq Helsinki          the market's name (required; other # lines are comments)
 //   kind,base,quote,name,yahoo         the header (optional)
 //   company,NOKIA,EUR,Nokia Oyj,NOKIA.HE
-// `kind` is company, currency, commodity, index or other; a field with a comma is in double quotes. Returns nothing,
+// `kind` is company, currency, commodity, index, etf, certificate or other; a field with a comma is in double quotes. Returns nothing,
 // with `error` set, if the directory or a file is wrong.
 InstrumentList loadInstrumentLists(const std::filesystem::path & directory, std::string & error);
 

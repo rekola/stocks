@@ -53,7 +53,7 @@ TEST(a_yahoo_chart_becomes_candles_on_the_edge_of_its_market) {
   CHECK(YahooSource::parse(fixture("nokia.json"), entry("NOKIA.HE"), *store, error));
   auto s = store->snapshot();
   EdgeKey k = edgeOf(*s, "NOKIA", "EUR", "Nasdaq Helsinki", "yahoo");
-  CandleSeries c = s->candles(k);
+  CandleSeries c = s->candles(k, interval::day);
   CHECK(c.intervalMs == 86400000 && c.candles.size() > 400);
   bool ordered = true, sane = true;
   for (size_t i = 0; i < c.candles.size(); i++) {
@@ -99,7 +99,7 @@ TEST(days_yahoo_has_no_price_for_are_skipped) {
   std::string error;
   CHECK(YahooSource::parse(fixture("gold.json"), entry("GC=F"), *store, error));
   auto s = store->snapshot();
-  CandleSeries c = s->candles(edgeOf(*s, "XAU", "USD", "Commodities", "yahoo"));
+  CandleSeries c = s->candles(edgeOf(*s, "XAU", "USD", "Commodities", "yahoo"), interval::day);
   CHECK(c.candles.size() == 504);  // 506 days, two of them null
   CHECK(s->instrument(s->findInstrument("XAU")->id)->kind == InstrumentKind::Commodity);
 }
@@ -110,7 +110,7 @@ TEST(a_currency_pair_is_an_edge_between_two_currencies) {
   CHECK(YahooSource::parse(fixture("eurusd.json"), entry("EURUSD=X"), *store, error));
   auto s = store->snapshot();
   EdgeKey k = edgeOf(*s, "EUR", "USD", "Currencies", "yahoo");
-  CHECK(s->lastCandles(k, 1).candles.size() == 1);
+  CHECK(s->lastCandles(k, interval::day, 1).candles.size() == 1);
   CHECK(s->instrument(k.base)->kind == InstrumentKind::Currency && s->instrument(k.quote)->name == "US dollar");
 }
 
@@ -282,4 +282,20 @@ TEST(a_runner_with_no_refreshing_source_finishes_by_itself) {
   SourceRunner runner(store, std::move(sources), [] {}, [](std::string) {});
   runner.wait();  // returns: nothing refreshes
   CHECK(a == 1 && b == 1);
+}
+
+TEST(yahoo_keeps_its_own_type_and_names_the_kind_from_it_where_the_list_does_not) {
+  auto store = makeMemoryStore();
+  std::string error;
+  CHECK(YahooSource::parse(fixture("nokia.json"), entry("NOKIA.HE"), *store, error));
+  CHECK(YahooSource::parse(fixture("gold.json"), entry("GC=F"), *store, error));
+  ListEntry unsure = entry("EURUSD=X");
+  unsure.kind = InstrumentKind::Other;  // a list that does not say what it is
+  auto fx = makeMemoryStore();  // apart: EUR is NOKIA's quote currency in the other one, added with no type
+  CHECK(YahooSource::parse(fixture("eurusd.json"), unsure, *fx, error));
+  auto s = store->snapshot();
+  CHECK(s->findInstrument("NOKIA")->type == "EQUITY" && s->findInstrument("NOKIA")->kind == InstrumentKind::Company);
+  CHECK(s->findInstrument("XAU")->type == "FUTURE" && s->findInstrument("XAU")->kind == InstrumentKind::Commodity);
+  auto f = fx->snapshot();
+  CHECK(f->findInstrument("EUR")->type == "CURRENCY" && f->findInstrument("EUR")->kind == InstrumentKind::Currency);  // from the type
 }

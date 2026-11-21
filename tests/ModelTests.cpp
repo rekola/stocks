@@ -47,7 +47,7 @@ TEST(candles_stay_time_ordered_and_a_bar_at_a_known_time_replaces_it) {
   EdgeKey k = w.key(w.hel.id, w.a.id);
   CHECK(w.store->appendCandles(k, 60000, {bar(120000, 3), bar(0, 1)}));
   CHECK(w.store->appendCandles(k, 60000, {bar(60000, 2), bar(120000, 30)}));
-  CandleSeries s = w.snap()->candles(k);
+  CandleSeries s = w.snap()->candles(k, 60000);
   CHECK(s.intervalMs == 60000 && s.candles.size() == 3);
   CHECK(s.candles[0].time == 0 && s.candles[1].time == 60000 && s.candles[2].time == 120000);
   CHECK_NEAR(s.candles[2].close, 30, 1e-9);
@@ -57,30 +57,50 @@ TEST(candle_ranges_are_half_open_and_last_candles_takes_the_tail) {
   World w;
   EdgeKey k = w.key(w.hel.id, w.a.id);
   w.store->appendCandles(k, 1000, {bar(0, 1), bar(1000, 2), bar(2000, 3), bar(3000, 4)});
-  CandleSeries r = w.snap()->candles(k, {1000, 3000});
+  CandleSeries r = w.snap()->candles(k, 1000, {1000, 3000});
   CHECK(r.candles.size() == 2 && r.candles[0].time == 1000 && r.candles[1].time == 2000);
-  CandleSeries t = w.snap()->lastCandles(k, 2);
+  CandleSeries t = w.snap()->lastCandles(k, 1000, 2);
   CHECK(t.candles.size() == 2 && t.candles[0].time == 2000 && t.candles[1].time == 3000);
-  CHECK(w.snap()->lastCandles(k, 99).candles.size() == 4);
-  CHECK(w.snap()->candles(w.key(w.hel.id, w.b.id)).candles.empty());
-  CHECK(w.snap()->lastCandles(w.key(w.hel.id, w.b.id), 3).candles.empty());
+  CHECK(w.snap()->lastCandles(k, 1000, 99).candles.size() == 4);
+  CHECK(w.snap()->candles(w.key(w.hel.id, w.b.id), 1000).candles.empty());
+  CHECK(w.snap()->lastCandles(w.key(w.hel.id, w.b.id), 1000, 3).candles.empty());
 }
 
-TEST(a_series_keeps_its_interval_and_refuses_another) {
+TEST(an_edge_has_a_series_for_each_interval_it_has_data_in) {
   World w;
   EdgeKey k = w.key(w.hel.id, w.a.id);
-  CHECK(!w.store->appendCandles(k, 0, {bar(0, 1)}));
-  CHECK(w.store->appendCandles(k, 1000, {bar(0, 1)}));
-  CHECK(!w.store->appendCandles(k, 2000, {bar(5000, 9)}));
-  CHECK(w.snap()->candles(k).candles.size() == 1 && w.snap()->candles(k).intervalMs == 1000);
+  CHECK(!w.store->appendCandles(k, 0, {bar(0, 1)}) && !w.store->appendCandles(k, -5, {bar(0, 1)}));
+  CHECK(w.snap()->intervals(k).empty() && w.snap()->edges(w.hel.id).empty());  // nothing was made
+
+  CHECK(w.store->appendCandles(k, interval::day, {bar(0, 10), bar(interval::day, 11)}));
+  CHECK(w.store->appendCandles(k, interval::hour1, {bar(0, 1), bar(interval::hour1, 2), bar(2 * interval::hour1, 3)}));
+  CHECK(w.store->appendCandles(k, interval::min5, {bar(0, 5)}));
+  auto s = w.snap();
+  CHECK((s->intervals(k) == std::vector<int64_t>{interval::min5, interval::hour1, interval::day}));  // shortest first
+  CHECK(s->candles(k, interval::day).candles.size() == 2 && s->candles(k, interval::day).intervalMs == interval::day);
+  CHECK(s->candles(k, interval::hour1).candles.size() == 3 && s->candles(k, interval::min5).candles.size() == 1);
+  CHECK(s->candles(k, interval::week).candles.empty());  // an interval it has no data in
+  CHECK(s->lastCandles(k, interval::hour1, 1).candles[0].close == 3);
+  CHECK(s->edges(w.hel.id).size() == 1);  // one edge, whatever the number of series
+
+  // A correction in one series leaves the others alone.
+  w.store->appendCandles(k, interval::hour1, {bar(interval::hour1, 20)});
+  s = w.snap();
+  CHECK(s->candles(k, interval::hour1).candles.size() == 3 && s->candles(k, interval::hour1).candles[1].close == 20);
+  CHECK(s->candles(k, interval::day).candles[1].close == 11 && s->candles(k, interval::min5).candles[0].close == 5);
+}
+
+TEST(the_intervals_are_the_lengths_the_providers_use) {
+  CHECK(interval::min1 == 60000 && interval::min5 == 300000 && interval::min15 == 900000 && interval::min30 == 1800000);
+  CHECK(interval::hour1 == 3600000 && interval::hour4 == 14400000 && interval::day == 86400000 && interval::week == 604800000);
 }
 
 TEST(sources_that_disagree_about_one_pair_on_one_market_both_stay) {
   World w;
   w.store->appendCandles(w.key(w.hel.id, w.a.id), 1000, {bar(0, 5.0)});
   w.store->appendCandles(w.key(w.hel.id, w.b.id), 1000, {bar(0, 5.1)});
-  CHECK_NEAR(w.snap()->candles(w.key(w.hel.id, w.a.id)).candles[0].close, 5.0, 1e-9);
-  CHECK_NEAR(w.snap()->candles(w.key(w.hel.id, w.b.id)).candles[0].close, 5.1, 1e-9);
+  CHECK_NEAR(w.snap()->candles(w.key(w.hel.id, w.a.id), 1000).candles[0].close, 5.0, 1e-9);
+  CHECK_NEAR(w.snap()->candles(w.key(w.hel.id, w.b.id), 1000).candles[0].close, 5.1, 1e-9);
   CHECK(w.snap()->edges(w.hel.id).size() == 2);
 }
 
@@ -161,9 +181,9 @@ TEST(a_snapshot_never_changes_and_a_write_makes_a_new_one_that_shares_the_old) {
   w.store->appendCandles(k, 1000, {bar(2000, 3), bar(0, 10)});
   w.store->appendBooks(k, {{0, {{1, 1}}, {{2, 1}}}});
   auto after = w.snap();
-  CHECK(before->candles(k).candles.size() == 2 && before->candles(k).candles[0].close == 1);
+  CHECK(before->candles(k, 1000).candles.size() == 2 && before->candles(k, 1000).candles[0].close == 1);
   CHECK(before->books(k).empty() && before->version() == v);
-  CHECK(after->candles(k).candles.size() == 3 && after->candles(k).candles[0].close == 10);
+  CHECK(after->candles(k, 1000).candles.size() == 3 && after->candles(k, 1000).candles[0].close == 10);
   CHECK(after->version() > v);
 }
 
@@ -189,7 +209,7 @@ TEST(readers_see_whole_consistent_snapshots_while_a_writer_appends) {
     uint64_t last = 0;
     while (!done) {
       auto s = w.snap();
-      CandleSeries c = s->candles(k);
+      CandleSeries c = s->candles(k, 1000);
       // Each bar's close is its index, so a torn or reordered series shows up.
       for (size_t i = 0; i < c.candles.size(); i++)
         if (c.candles[i].time != static_cast<Timestamp>(i) * 1000 || c.candles[i].close != static_cast<double>(i)) bad++;
@@ -203,7 +223,7 @@ TEST(readers_see_whole_consistent_snapshots_while_a_writer_appends) {
   r1.join();
   r2.join();
   CHECK(bad == 0);
-  CHECK(w.snap()->candles(k).candles.size() == static_cast<size_t>(kBars));
+  CHECK(w.snap()->candles(k, 1000).candles.size() == static_cast<size_t>(kBars));
 }
 
 TEST(two_writers_do_not_lose_each_others_bars) {
@@ -215,7 +235,7 @@ TEST(two_writers_do_not_lose_each_others_bars) {
   std::thread t1(write, ka), t2(write, kb);
   t1.join();
   t2.join();
-  CHECK(w.snap()->candles(ka).candles.size() == 500 && w.snap()->candles(kb).candles.size() == 500);
+  CHECK(w.snap()->candles(ka, 1000).candles.size() == 500 && w.snap()->candles(kb, 1000).candles.size() == 500);
 }
 
 TEST(an_instrument_with_an_isin_is_that_isin_whatever_its_symbol_or_market) {

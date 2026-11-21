@@ -97,13 +97,19 @@ std::vector<EdgeKey> Snapshot::edges(MarketId m, const std::function<bool(const 
 }
 std::vector<EventKey> Snapshot::events(InstrumentId i) const { return sorted(eventsByInstrument_.find(i)); }
 
-CandleSeries Snapshot::candles(const EdgeKey & k, TimeRange r) const {
-  const Series * s = candles_.find(k);
-  return s ? CandleSeries{s->intervalMs, slice(s->bars, r)} : CandleSeries{};
+CandleSeries Snapshot::candles(const EdgeKey & k, int64_t intervalMs, TimeRange r) const {
+  const auto * bars = series_.find({k, intervalMs});
+  return {intervalMs, bars ? slice(*bars, r) : Seq<Candle>{}};
 }
-CandleSeries Snapshot::lastCandles(const EdgeKey & k, size_t n) const {
-  const Series * s = candles_.find(k);
-  return s ? CandleSeries{s->intervalMs, s->bars.drop(s->bars.size() - std::min(n, s->bars.size()))} : CandleSeries{};
+CandleSeries Snapshot::lastCandles(const EdgeKey & k, int64_t intervalMs, size_t n) const {
+  const auto * bars = series_.find({k, intervalMs});
+  return {intervalMs, bars ? bars->drop(bars->size() - std::min(n, bars->size())) : Seq<Candle>{}};
+}
+std::vector<int64_t> Snapshot::intervals(const EdgeKey & k) const {
+  std::vector<int64_t> out;
+  if (const auto * set = intervals_.find(k)) out.assign(set->begin(), set->end());
+  std::sort(out.begin(), out.end());
+  return out;
 }
 
 Seq<BookSnapshot> Snapshot::books(const EdgeKey & k, TimeRange r) const {
@@ -154,11 +160,13 @@ Dataset Snapshot::add(Dataset d) {
 bool Snapshot::appendCandles(const EdgeKey & k, int64_t intervalMs, const std::vector<Candle> & in) {
   if (intervalMs <= 0) return false;
   if (in.empty()) return true;
-  const Series * old = candles_.find(k);
-  if (old && old->intervalMs != intervalMs) return false;
-  Series s = old ? *old : Series{intervalMs, {}};
-  for (const Candle & c : in) s.bars = upsert(s.bars, c, [](const Candle &, const Candle &) { return true; });
-  candles_ = candles_.set(k, s);
+  const SeriesKey key{k, intervalMs};
+  const auto * old = series_.find(key);
+  Seq<Candle> bars = old ? *old : Seq<Candle>{};
+  for (const Candle & c : in) bars = upsert(bars, c, [](const Candle &, const Candle &) { return true; });
+  series_ = series_.set(key, bars);
+  const auto * known = intervals_.find(k);
+  intervals_ = intervals_.set(k, (known ? *known : immer::set<int64_t>{}).insert(intervalMs));
   const auto * set = edgesByMarket_.find(k.market);
   edgesByMarket_ = edgesByMarket_.set(k.market, (set ? *set : immer::set<EdgeKey>{}).insert(k));
   version_++;

@@ -5,7 +5,7 @@
 #include <random>
 
 void fillSyntheticData(Store & store, const InstrumentList & list) {
-  constexpr Timestamp kDay = 86400000, kStart = 1767225600000;  // 2026-01-01 00:00 UTC
+  constexpr Timestamp kDay = interval::day, kStart = 1767225600000;  // 2026-01-01 00:00 UTC
   Dataset synthetic = store.addDataset({{}, "synthetic"});
   std::string market;
   unsigned preset = 0;

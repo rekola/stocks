@@ -34,10 +34,12 @@ class Snapshot {
   // The same, only those whose base instrument `keep` accepts (by its kind, its type, ...).
   std::vector<EdgeKey> edges(MarketId, const std::function<bool(const Instrument &)> & keep) const;
 
-  // The bars in `range`, oldest first; an empty series for an unknown edge.
-  CandleSeries candles(const EdgeKey &, TimeRange range = {}) const;
-  // The newest `n` bars, oldest first: the table's latest price, change and trace.
-  CandleSeries lastCandles(const EdgeKey &, size_t n) const;
+  // The bars of the edge at `intervalMs` in `range`, oldest first; an empty series if there are none.
+  CandleSeries candles(const EdgeKey &, int64_t intervalMs, TimeRange range = {}) const;
+  // The newest `n` bars at `intervalMs`, oldest first: the table's latest price, change and trace.
+  CandleSeries lastCandles(const EdgeKey &, int64_t intervalMs, size_t n) const;
+  // The intervals the edge has bars in, shortest first.
+  std::vector<int64_t> intervals(const EdgeKey &) const;
 
   // The snapshots in `range`, oldest first.
   Seq<BookSnapshot> books(const EdgeKey &, TimeRange range = {}) const;
@@ -60,10 +62,6 @@ class Snapshot {
   void appendActions(const EventKey &, const std::vector<CorporateAction> &);
 
  private:
-  struct Series {
-    int64_t intervalMs = 0;
-    Seq<Candle> bars;
-  };
 
   uint64_t version_ = 0;
   Seq<Instrument> instruments_;
@@ -73,7 +71,8 @@ class Snapshot {
   immer::map<std::string, InstrumentId> instrumentByIsin_;
   immer::map<std::string, MarketId> marketByName_;
   immer::map<std::string, DatasetId> datasetByName_;
-  immer::map<EdgeKey, Series> candles_;
+  immer::map<SeriesKey, Seq<Candle>> series_;
+  immer::map<EdgeKey, immer::set<int64_t>> intervals_;
   immer::map<EdgeKey, Seq<BookSnapshot>> books_;
   immer::map<MarketId, immer::set<EdgeKey>> edgesByMarket_;
   immer::map<EventKey, Seq<Announcement>> announcements_;
@@ -98,8 +97,9 @@ class Store {
   virtual Market addMarket(Market) = 0;
   virtual Dataset addDataset(Dataset) = 0;
 
-  // Candles. A bar at a time already in the series replaces it (a correction); the rest are inserted in order. The
-  // first append fixes the series' interval, and an append with another interval changes nothing and returns false.
+  // Candles. An edge has a series for each interval it has data in, as the provider gives it: nothing is derived from
+  // another. A bar at a time already in the series replaces it (a correction, or today's bar updated); the rest are
+  // inserted in order. False, and nothing changes, for an interval of no length.
   virtual bool appendCandles(const EdgeKey &, int64_t intervalMs, const std::vector<Candle> &) = 0;
   // Order book snapshots, time-ordered; one at a time already in the series replaces it.
   virtual void appendBooks(const EdgeKey &, const std::vector<BookSnapshot> &) = 0;

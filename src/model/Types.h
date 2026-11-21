@@ -38,7 +38,9 @@ struct TimeRange {
 };
 
 // Anything that can be priced or that prices something: a share, a currency, a commodity, an index.
-enum class InstrumentKind { Company, Currency, Commodity, Index, Etf, Other };
+// What an instrument is, in one vocabulary for all providers: each adapter maps its own types onto these (Nordnet's UETF
+// and PTC, Yahoo's EQUITY and FUTURE, ...). The provider's own type is kept beside it, in `Instrument::type`.
+enum class InstrumentKind { Company, Currency, Commodity, Index, Etf, Certificate, Other };
 
 struct Instrument {
   InstrumentId id;
@@ -86,14 +88,27 @@ struct EventKey {
   }
 };
 
+// One series: an edge at an interval.
+struct SeriesKey {
+  EdgeKey edge;
+  int64_t interval = 0;
+  friend bool operator==(const SeriesKey &, const SeriesKey &) = default;
+};
+
 // Prices are doubles: enough for display and models; nothing here settles.
 struct Candle {
   Timestamp time = 0;  // start of the bar
   double open = 0, high = 0, low = 0, close = 0, volume = 0;
 };
 
-// The bars of one edge, time-ordered, one bar per time, all `intervalMs` long. A different interval is a different
-// dataset.
+// The lengths of the intervals a series can have, in milliseconds. An edge has a series of bars for each interval it has
+// data in. (Calendar months and quarters are not fixed lengths and are not here yet.)
+namespace interval {
+constexpr int64_t min1 = 60000, min5 = 5 * min1, min15 = 15 * min1, min30 = 30 * min1, hour1 = 60 * min1,
+                  hour4 = 4 * hour1, day = 24 * hour1, week = 7 * day;
+}
+
+// The bars of one edge at one interval, time-ordered, one bar per time, all `intervalMs` long.
 struct CandleSeries {
   int64_t intervalMs = 0;
   Seq<Candle> candles;
@@ -144,6 +159,12 @@ struct std::hash<EdgeKey> {
     h = hashCombine(h, std::hash<InstrumentId>()(k.quote));
     h = hashCombine(h, std::hash<MarketId>()(k.market));
     return hashCombine(h, std::hash<DatasetId>()(k.dataset));
+  }
+};
+template <>
+struct std::hash<SeriesKey> {
+  size_t operator()(const SeriesKey & k) const {
+    return hashCombine(std::hash<EdgeKey>()(k.edge), std::hash<int64_t>()(k.interval));
   }
 };
 template <>

@@ -43,10 +43,13 @@ of `base` costs this much `quote`" (NOKIA -> EUR, EUR -> USD).
 
 On an edge key (a price of something):
 
-- **Candles**: a time-ordered series of OHLCV bars, one bar per start time, all
-  the same interval. The interval belongs to the series; a dataset with two
-  intervals (1 minute and 1 day) is two datasets. A bar at a time already in the
-  series replaces it, so corrections need no special path.
+- **Candles**: time-ordered series of OHLCV bars, one bar per start time. **The
+  interval is not part of the key**: an edge has a series for each interval it has
+  data in (5 minutes, 15 minutes, an hour, a day, ...), the same edge with its data in
+  different forms, each as the provider gave it and none derived from another. A bar
+  at a time already in the series replaces it, so corrections, and today's bar kept up
+  to date, need no special path. The intervals are `interval::min5`, `hour1`, `day`,
+  ...; calendar months and quarters are not fixed lengths and are not there yet.
 - **Order book snapshots**: the bids and asks standing at a moment (price and
   size per level), time-ordered. Kept apart from candles because they are a
   different kind of fact, but under the same key. Quotes carry information even
@@ -77,8 +80,8 @@ for the same instrument on the selected market, they are two rows. Merging such
 rows is later work.
 
 A row needs the instrument's symbol and name, the dataset, the latest price and
-the change over the last interval (from `lastCandles`), and the trace of recent
-closes. So the table gets a Dataset column. The row's identity is the edge key.
+the change over the last day (from `lastCandles` of the daily series; an edge with
+only intraday bars has no row yet), and the trace of recent closes. So the table gets a Dataset column. The row's identity is the edge key.
 
 ## Store and snapshots
 
@@ -97,7 +100,8 @@ the in-memory one, and a server-backed store would hand out snapshots too.
   write that changes nothing publishes nothing, and each one that does makes the
   next `version()`.
 - Reads on a snapshot: lookups by id and name, `edges(market)` (keys with
-  candles or a book in a market), `candles(key, range)`, `lastCandles(key, n)`,
+  candles or a book in a market), `candles(key, interval, range)`,
+  `lastCandles(key, interval, n)`, `intervals(key)` (the intervals an edge has),
   `books(key, range)`, `bookAt(key, time)`, `announcements`, `actions`, and
   `events(instrument)` for the datasets that say anything about an instrument.
 - Series come back as `Seq<T>` (an immer `flex_vector`): slices share storage
@@ -182,6 +186,14 @@ Not done:
   exchanges are the free ones).
 
 ## Decided
+
+- **One vocabulary of instrument types.** `InstrumentKind` (company, currency,
+  commodity, index, ETF, certificate, other) is the combined vocabulary: each adapter
+  maps its provider's types onto it (`src/source/InstrumentTypes.cpp`: Nordnet's UETF
+  and KETF are ETFs and PTC are certificates; Yahoo's EQUITY, ETF, INDEX, FUTURE and
+  CURRENCY), and keeps the provider's own type beside it (`Instrument::type`) as what
+  the mapping came from. A certificate is a certificate whoever lists it. Selecting
+  edges by type is not used yet (see server.md for what is hard about it).
 
 - Prices are `double`. Nothing here settles trades.
 - The model has a slot for corporate actions and announcements, kept as their

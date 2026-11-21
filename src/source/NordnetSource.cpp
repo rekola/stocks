@@ -1,6 +1,7 @@
 #include "source/NordnetSource.h"
 
 #include "source/InstrumentLists.h"
+#include "source/InstrumentTypes.h"
 
 #include <nlohmann/json.hpp>
 
@@ -36,7 +37,7 @@ std::optional<double> price(const json & block, const char * key) {
   return p != it->end() && p->is_number() ? std::optional<double>(p->get<double>()) : std::nullopt;
 }
 
-constexpr int64_t kDayMs = 86400000;
+
 
 }  // namespace
 
@@ -58,10 +59,6 @@ std::string NordnetSource::marketName(const NordnetListing & l) {
   for (const auto & [id, name] : known)
     if (l.marketId == id) return name;
   return "Nordnet market " + std::to_string(l.marketId);
-}
-
-InstrumentKind NordnetSource::kindOf(const std::string & type) {
-  return type == "UETF" || type == "KETF" ? InstrumentKind::Etf : InstrumentKind::Other;
 }
 
 bool NordnetSource::parsePage(const std::string & body, Page & page, std::string & error) {
@@ -103,7 +100,7 @@ bool NordnetSource::parsePage(const std::string & body, Page & page, std::string
       if (open && high && low && last && tick > 0) {
         auto volume = p.find("turnover_volume");
         l.hasBar = true;
-        l.bar = {tick - tick % kDayMs, *open, *high, *low, *last,
+        l.bar = {tick - tick % interval::day, *open, *high, *low, *last,
                  volume != p.end() && volume->is_number() ? volume->get<double>() : 0.0};
       }
     }
@@ -152,11 +149,11 @@ void NordnetSource::load(Store & store, Http & http, SourceListener & listener) 
       for (NordnetListing & l : page.listings) {
         l.list = list.name;
         Market market = store.addMarket({{}, marketName(l)});
-        Instrument base = store.addInstrument({{}, l.symbol, l.name, kindOf(l.type), l.isin, l.type});
+        Instrument base = store.addInstrument({{}, l.symbol, l.name, kindOfNordnetType(l.type), l.isin, l.type});
         const char * label = currencyName(l.currency);
         Instrument quote = store.addInstrument({{}, l.currency, *label ? label : l.currency, InstrumentKind::Currency});
         // Today's bar makes the edge; a listing with none stays a node nothing selects.
-        if (l.hasBar) store.appendCandles({base.id, quote.id, market.id, dataset.id}, kDayMs, {l.bar});
+        if (l.hasBar) store.appendCandles({base.id, quote.id, market.id, dataset.id}, interval::day, {l.bar});
       }
       found += page.listings.size();
       listings_.insert(listings_.end(), page.listings.begin(), page.listings.end());

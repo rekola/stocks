@@ -64,11 +64,6 @@ TEST(a_market_is_named_by_its_nordnet_id_where_that_is_known) {
   CHECK(NordnetSource::marketName(l) == "Nordnet market 61");  // not known: the id
 }
 
-TEST(an_instrument_is_an_etf_by_its_own_type_and_anything_else_is_other) {
-  CHECK(NordnetSource::kindOf("UETF") == InstrumentKind::Etf && NordnetSource::kindOf("KETF") == InstrumentKind::Etf);
-  CHECK(NordnetSource::kindOf("PTC") == InstrumentKind::Other && NordnetSource::kindOf("") == InstrumentKind::Other);
-}
-
 TEST(a_page_of_certificates_has_the_same_shape) {
   NordnetSource::Page page;
   std::string error;
@@ -128,7 +123,7 @@ TEST(loading_pages_through_every_list_and_stores_instruments_markets_and_edges) 
   CHECK(s->instruments().size() == 12);
   Instrument xaix = *s->findInstrumentByIsin("IE00BGV5VN51");
   CHECK(xaix.symbol == "XAIX" && xaix.kind == InstrumentKind::Etf && xaix.isin == "IE00BGV5VN51");
-  CHECK(s->findInstrument("4GLD")->kind == InstrumentKind::Other);  // a certificate: no category of its own
+  CHECK(s->findInstrument("4GLD")->kind == InstrumentKind::Certificate);  // a certificate, whoever lists it
   CHECK(s->findInstrument("EUR")->kind == InstrumentKind::Currency && s->findInstrument("EUR")->name == "Euro");
   CHECK(s->findInstrument("NOK")->name == "Norwegian krone");
   CHECK(s->markets().size() == 6);
@@ -142,7 +137,7 @@ TEST(loading_pages_through_every_list_and_stores_instruments_markets_and_edges) 
   EdgeKey onXetra{xaix.id, s->findInstrument("EUR")->id, xetra, nordnet};
   EdgeKey onStockholm{xaix.id, s->findInstrument("SEK")->id, stockholm, nordnet};
   // Each listing's price block is today's bar, in the daily series; daily bars start at midnight UTC.
-  CandleSeries today = s->candles(onXetra);
+  CandleSeries today = s->candles(onXetra, interval::day);
   CHECK(today.intervalMs == 86400000 && today.candles.size() == 1);
   CHECK(today.candles[0].time == 1795132800000 && today.candles[0].open == 188.94 && today.candles[0].high == 189.56);
   CHECK(today.candles[0].low == 184.42 && today.candles[0].close == 184.42 && today.candles[0].volume == 75161);
@@ -167,7 +162,7 @@ TEST(loading_again_replaces_todays_bars_and_a_new_day_adds_one) {
   CHECK(source.listings().size() == 9);
   MarketId xetra = second->findMarket("Xetra")->id;
   CHECK(second->edges(xetra) == first->edges(xetra));
-  for (const EdgeKey & k : second->edges(xetra)) CHECK(second->candles(k).candles.size() == 1);
+  for (const EdgeKey & k : second->edges(xetra)) CHECK(second->candles(k, interval::day).candles.size() == 1);
 }
 
 TEST(the_requests_look_like_a_browsers_and_carry_no_cookie) {
@@ -273,7 +268,7 @@ TEST(a_new_day_adds_a_bar_to_the_series) {
   auto s = store->snapshot();
   Instrument xaix = *s->findInstrumentByIsin("IE00BGV5VN51");
   EdgeKey onXetra{xaix.id, s->findInstrument("EUR")->id, s->findMarket("Xetra")->id, s->findDataset("nordnet")->id};
-  CandleSeries c = s->candles(onXetra);
+  CandleSeries c = s->candles(onXetra, interval::day);
   CHECK(c.candles.size() == 2 && c.candles[0].time == 1795132800000 && c.candles[1].time == 1795219200000);
 }
 
@@ -312,6 +307,8 @@ TEST(an_instrument_keeps_the_type_nordnet_gives_it_and_edges_can_be_selected_by_
   MarketId xetra = s->findMarket("Xetra")->id;
   auto certificates = s->edges(xetra, [](const Instrument & i) { return i.type == "PTC"; });
   auto funds = s->edges(xetra, [](const Instrument & i) { return i.kind == InstrumentKind::Etf; });
+  auto byKind = s->edges(xetra, [](const Instrument & i) { return i.kind == InstrumentKind::Certificate; });
+  CHECK(byKind == certificates);  // the type and the combined kind agree here
   CHECK(certificates.size() == 1 && certificates[0].base == s->findInstrument("4GLD")->id);
   CHECK(funds.size() == 2);  // FLXK and XAIX
 }

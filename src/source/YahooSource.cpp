@@ -1,5 +1,7 @@
 #include "source/YahooSource.h"
 
+#include "source/InstrumentTypes.h"
+
 #include <nlohmann/json.hpp>
 
 #include <cmath>
@@ -8,8 +10,6 @@
 using nlohmann::json;
 
 namespace {
-
-constexpr int64_t kDayMs = 86400000;
 
 // Element i of a column of numbers, or nothing where Yahoo has a null (a day it has no price for).
 std::optional<double> number(const json & column, size_t i) {
@@ -57,9 +57,14 @@ bool YahooSource::parse(const std::string & body, const ListEntry & e, Store & s
 
   Dataset dataset = store.addDataset({{}, "yahoo"});
   Market market = store.addMarket({{}, e.market});
-  Instrument base = store.addInstrument({{}, e.base, e.name, e.kind});
+  std::string type;  // Yahoo's own type for it, if the chart says
+  if (auto meta = result.find("meta"); meta != result.end() && meta->is_object()) {
+    auto t = meta->find("instrumentType");
+    if (t != meta->end() && t->is_string()) type = t->get<std::string>();
+  }
+  Instrument base = store.addInstrument({{}, e.base, e.name, e.kind != InstrumentKind::Other ? e.kind : kindOfYahooType(type), "", type});
   Instrument quote = store.addInstrument({{}, e.quote, currencyName(e.quote), InstrumentKind::Currency});
-  if (!store.appendCandles({base.id, quote.id, market.id, dataset.id}, kDayMs, bars)) {
+  if (!store.appendCandles({base.id, quote.id, market.id, dataset.id}, interval::day, bars)) {
     error = "the interval of the series changed";
     return false;
   }
