@@ -43,7 +43,7 @@ bool parseKind(const std::string & s, InstrumentKind & kind) {
   static const std::pair<const char *, InstrumentKind> kinds[] = {
     {"company", InstrumentKind::Company}, {"currency", InstrumentKind::Currency},
     {"commodity", InstrumentKind::Commodity}, {"index", InstrumentKind::Index}, {"etf", InstrumentKind::Etf},
-    {"certificate", InstrumentKind::Certificate}, {"other", InstrumentKind::Other}};
+    {"certificate", InstrumentKind::Certificate}, {"fund", InstrumentKind::Fund}, {"other", InstrumentKind::Other}};
   for (const auto & [name, k] : kinds)
     if (s == name) {
       kind = k;

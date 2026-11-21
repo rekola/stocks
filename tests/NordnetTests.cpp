@@ -2,6 +2,7 @@
 
 #include "FakeHttp.h"
 #include "model/Dates.h"
+#include "source/InstrumentTypes.h"
 #include "source/NordnetSource.h"
 
 #include <fstream>
@@ -29,7 +30,14 @@ bool hasHeader(const HttpHeaders & headers, const std::string & name, const std:
   return false;
 }
 
-NordnetSource quick() { return NordnetSource(NordnetSource::defaultLists(), std::chrono::milliseconds(0)); }
+// The ETFs and the certificates, which the fixtures above answer.
+std::vector<NordnetSource::List> etfAndCertificateLists() {
+  auto lists = NordnetSource::defaultLists();
+  lists.resize(2);
+  return lists;
+}
+
+NordnetSource quick() { return NordnetSource(etfAndCertificateLists(), std::chrono::milliseconds(0)); }
 
 }  // namespace
 
@@ -326,4 +334,34 @@ TEST(the_listings_keep_the_book_id_the_history_is_asked_for_by) {
 TEST(discovery_asks_to_be_repeated_every_five_minutes) {
   CHECK(NordnetSource().refreshInterval() == std::chrono::minutes(5));
   CHECK(NordnetSource(NordnetSource::defaultLists(), std::chrono::milliseconds(0), std::chrono::seconds(30)).refreshInterval() == std::chrono::seconds(30));
+}
+
+TEST(a_page_of_stocks_has_the_same_shape_and_a_bar_from_the_day_so_far) {
+  NordnetSource::Page page;
+  std::string error;
+  CHECK(NordnetSource::parsePage(fixture("stocklist-1.json"), page, error));
+  CHECK(page.rows == 3 && page.total > 3 && page.skipped == 0 && page.listings.size() == 3);
+  const NordnetListing & first = page.listings[0];
+  CHECK(first.symbol == "0M0" && first.isin == "DE000A3ESL51" && first.currency == "EUR" && first.type == "ESH");
+  CHECK(first.marketId == 4 && first.hasBar && first.bar.close == 1.55);
+  CHECK(kindOfNordnetType(first.type) == InstrumentKind::Company);
+}
+
+TEST(a_fund_is_priced_once_a_day_so_the_discovery_gives_it_no_bar) {
+  NordnetSource::Page page;
+  std::string error;
+  CHECK(NordnetSource::parsePage(fixture("fundlist-1.json"), page, error));
+  CHECK(page.listings.size() == 3);
+  const NordnetListing & fund = page.listings[0];
+  CHECK(fund.type == "FUCITS" && fund.currency == "USD" && fund.marketId == 78 && !fund.isin.empty());
+  CHECK(!fund.hasBar);  // only a last price (the NAV): no open, high or low
+  CHECK(!fund.bookId.empty());  // the id the history is asked for by, with the NAV parameter
+  CHECK(kindOfNordnetType(fund.type) == InstrumentKind::Fund);
+}
+
+TEST(the_default_lists_are_the_etfs_the_certificates_the_funds_and_the_stocks) {
+  auto lists = NordnetSource::defaultLists();
+  CHECK(lists.size() == 4);
+  CHECK(lists[2].name == "fundlist" && lists[3].name == "stocklist");
+  CHECK(lists[3].url.find("/stocklist?") != std::string::npos && lists[3].pageSize == 1000);
 }

@@ -5,6 +5,9 @@
 TEST(nordnet_types_are_mapped_onto_the_one_vocabulary_and_certificates_are_named) {
   CHECK(kindOfNordnetType("UETF") == InstrumentKind::Etf && kindOfNordnetType("KETF") == InstrumentKind::Etf);
   CHECK(kindOfNordnetType("PTC") == InstrumentKind::Certificate);
+  CHECK(kindOfNordnetType("ESH") == InstrumentKind::Company && kindOfNordnetType("PESH") == InstrumentKind::Company);
+  CHECK(kindOfNordnetType("ESHMTF") == InstrumentKind::Company && kindOfNordnetType("ESHOTC") == InstrumentKind::Company);
+  CHECK(kindOfNordnetType("FUCITS") == InstrumentKind::Fund && kindOfNordnetType("FOTH") == InstrumentKind::Fund);
   CHECK(kindOfNordnetType("") == InstrumentKind::Other && kindOfNordnetType("SOMETHING_NEW") == InstrumentKind::Other);
 }
 

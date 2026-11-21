@@ -46,7 +46,9 @@ std::vector<NordnetSource::List> NordnetSource::defaultLists() {
   const std::string base = "https://www.nordnet.fi/api/2/instrument_search/query/";
   const std::string sorted = "sort_order=asc&sort_attribute=symbol";  // a key that does not move between pages
   return {{"etflist", base + "etflist?" + sorted, 500},
-          {"certificatelist", base + "certificatelist?apply_filters=instrument_type%3DPTC&" + sorted, 1000}};
+          {"certificatelist", base + "certificatelist?apply_filters=instrument_type%3DPTC&" + sorted, 1000},
+          {"fundlist", base + "fundlist?" + sorted, 1000},    // priced once a day (a NAV): no bar in the discovery
+          {"stocklist", base + "stocklist?" + sorted, 1000}};  // about 12,000 rows: a dozen pages
 }
 
 std::string NordnetSource::marketName(const NordnetListing & l) {

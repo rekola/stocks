@@ -42,7 +42,7 @@ struct TimeRange {
 // Anything that can be priced or that prices something: a share, a currency, a commodity, an index.
 // What an instrument is, in one vocabulary for all providers: each adapter maps its own types onto these (Nordnet's UETF
 // and PTC, Yahoo's EQUITY and FUTURE, ...). The provider's own type is kept beside it, in `Instrument::type`.
-enum class InstrumentKind { Company, Currency, Commodity, Index, Etf, Certificate, Other };
+enum class InstrumentKind { Company, Currency, Commodity, Index, Etf, Certificate, Fund, Other };
 
 struct Instrument {
   InstrumentId id;
