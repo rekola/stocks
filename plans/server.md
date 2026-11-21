@@ -194,6 +194,28 @@ the exchange's calendar.
     what is stored; storing 00:00 UTC would invent a time and a time zone. With dates,
     daylight saving and time zones do not enter at all, and bars of different markets
     line up by date, which is what comparing instruments needs.
+- **Slot numbers, for compatibility with the legacy platform (decided direction).** The
+  legacy platform keys its bars by numbers, not by instants: a day number for days, and
+  the same idea for the others: an **hour number**, an **absolute week number**, a
+  **10-minute slot number**, and so on. This system does the same, so that the legacy
+  data and the new need no conversion: the key of a bar is the number of its slot, an
+  integer that counts slots of that resolution from a fixed origin, and a resolution
+  code says which kind of number it is. Weeks start on Monday (confirmed), and day
+  numbers are Date::Calc's (confirmed). The resolution codes are the legacy platform's,
+  which the owner will supply; they include resolutions the providers do not have
+  (10 minutes), and the providers' own (5 and 15 minutes, 4 hours) are added to them.
+  What is still needed from the owner, because compatibility depends on it exactly:
+  - the origin and the base of each number (is hour 0 the first hour of 1 January of
+    the year 1, and are the numbers 0-based or 1-based, as the day number is 1-based);
+  - the time of the intraday numbers: UTC, or the exchange's local time. UTC is
+    unambiguous; local time repeats or skips an hour at daylight saving;
+  - the numbers for months and quarters, if the legacy platform has them.
+  A provider's bar (an instant) is turned into a slot number by counting slots in UTC.
+  This **cannot represent a bar that does not start on a slot boundary**: Yahoo's hourly
+  bars on US exchanges start at :30 (the open is 09:30), so they fall between hour
+  numbers. Such bars need an offset in the resolution (an hourly series starting at :30,
+  with its own code) or must be kept as provided and marked; to be decided with the
+  first US data.
 - **Coarser date levels follow from day bars by date arithmetic alone**: the week of a
   date, its month and its quarter need no calendar of the market, so the pyramid of
   weekly, monthly and quarterly bars (see the question above) can be made from daily
@@ -577,8 +599,9 @@ when it outgrows the disk.
 
 - A graph of statements for the catalog: adopt it, and which predicates first.
 - Calendars: where they come from, and how weeks and months are cut for 24-hour markets.
-- Day numbers for date resolutions (the owner's convention, proposed), and whether the
-  legacy tables already use it.
+- Slot numbers (hour, 10-minute, absolute week, ...) in the legacy platform's convention:
+  the origin, the base and the time zone of each; and what to do with bars that do not
+  start on a slot boundary (US hourly bars at :30).
 
 - How many instruments in all, and how far back each intraday interval goes.
 - A pyramid of coarser bars, and whether derived levels are stored or made on demand.
