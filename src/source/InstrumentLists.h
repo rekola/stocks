@@ -12,13 +12,16 @@
 struct ListEntry {
   std::string market, base, quote, name, yahoo;
   InstrumentKind kind = InstrumentKind::Other;  // of the base
+  std::string isin;  // of the base: what the instrument is (empty only for a currency, which is its code)
 };
 using InstrumentList = std::vector<ListEntry>;
 
 // Reads every *.csv in `directory`, in file name order. A file is one market:
 //   # market: Nasdaq Helsinki          the market's name (required; other # lines are comments)
-//   kind,base,quote,name,yahoo         the header (optional)
-//   company,NOKIA,EUR,Nokia Oyj,NOKIA.HE
+//   kind,base,quote,name,yahoo,isin   the header (optional)
+//   company,NOKIA,EUR,Nokia Oyj,NOKIA.HE,FI0009000681
+// A currency has no ISIN and is its code; anything else must have one (Yahoo gives none, so the data does). An
+// index is quoted in `pts`, index points.
 // `kind` is company, currency, commodity, index, etf, certificate or other; a field with a comma is in double quotes. Returns nothing,
 // with `error` set, if the directory or a file is wrong.
 InstrumentList loadInstrumentLists(const std::filesystem::path & directory, std::string & error);
@@ -35,6 +38,8 @@ const char * currencyName(const std::string & symbol);
 // The node for a currency's symbol: the one already in the store, whoever made it, else a new currency named as it is
 // usually called. A provider that has a currency gets the node this way and does not describe it.
 Instrument currencyNode(Store &, const std::string & symbol);
+// What a price is in: a currency's node, or the unit node for `pts`, index points.
+Instrument quoteNode(Store &, const std::string & code);
 
 // Which lists a source loads: a directory (empty for the default) and the markets to keep (empty for all of them).
 struct ListSpec {

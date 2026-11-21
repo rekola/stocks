@@ -16,7 +16,8 @@ struct Preset {
   const char * tag;
   const char * command;
 };
-constexpr Preset kPresets[] = {{"Commodities", "show-commodities"}, {"Nasdaq Helsinki", "show-nasdaq-helsinki"}, {"Currencies", "show-currencies"}};
+constexpr Preset kPresets[] = {{"Commodities", "show-commodities"}, {"Nasdaq Helsinki", "show-nasdaq-helsinki"}, {"Currencies", "show-currencies"},
+                              {"Indices", "show-indices"}};
 
 }  // namespace
 

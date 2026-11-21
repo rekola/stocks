@@ -67,6 +67,7 @@ class Snapshot {
   // Changes, for a store to make on its own copy before publishing it. Nothing that holds a published snapshot
   // can call them, because it holds it const. Each one that changes something bumps the version.
   Instrument add(Instrument);
+  Instrument resolveInstrument(const std::vector<Attribute> & identifying, const std::vector<Attribute> & rest);
   void setAttribute(const EdgeKey &, Attribute);
   Market resolve(const std::vector<Attribute> &);
   void setAttribute(NodeRef, const Attribute &);
@@ -114,6 +115,9 @@ class Store {
   // instrument. One without an ISIN (a currency, whose symbol is its code) is found by its symbol. Its symbol, name,
   // ISIN, type and kind (unless Other) are then set. The returned record carries the assigned id.
   virtual Instrument addInstrument(Instrument) = 0;
+  // An instrument by the first of the identifying attributes that finds one, made if none does (an ISIN, else the id a
+  // provider gives it); then all the attributes, the identifying ones too, are set. For an instrument that has no ISIN.
+  virtual Instrument resolveInstrument(const std::vector<Attribute> & identifying, const std::vector<Attribute> & rest) = 0;
   // The market that has any of these attributes, tried in the order given; where none has, a market is made. The
   // attributes are then set on it, so a market first seen by its Nordnet id is given its name when it is learned.
   virtual Market resolveMarket(const std::vector<Attribute> &) = 0;

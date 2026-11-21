@@ -33,18 +33,18 @@ struct TempDirectory {
 TEST(a_list_file_is_one_market_of_comma_separated_rows) {
   TempDirectory dir;
   dir.write("b.csv",
-            "# market: Second\n# a comment\n\nkind,base,quote,name,yahoo\ncommodity,XAU,USD,Gold,GC=F\n");
+            "# market: Second\n# a comment\n\nkind,base,quote,name,yahoo,isin\ncommodity,XAU,USD,Gold,GC=F,XC0009655157\n");
   dir.write("a.csv",
             "# market: First\r\n"
-            "company,NOKIA,EUR,\"Nokia, Oyj\",NOKIA.HE\r\n"
-            "currency , EUR , USD , \"The \"\"euro\"\"\" , EURUSD=X\n"
-            "index,OMXH,EUR,OMX Helsinki,^OMXH25\n");
+            "company,NOKIA,EUR,\"Nokia, Oyj\",NOKIA.HE,FI0009000681\r\n"
+            "currency , EUR , USD , \"The \"\"euro\"\"\" , EURUSD=X,\n"
+            "index,OMXH,pts,OMX Helsinki,^OMXH25,FI0008900006\n");
   std::string error;
   InstrumentList u = loadInstrumentLists(dir.path, error);
   CHECK(error.empty() && u.size() == 4);
   CHECK(u[0].market == "First" && u[0].kind == InstrumentKind::Company && u[0].base == "NOKIA" && u[0].quote == "EUR");
-  CHECK(u[0].name == "Nokia, Oyj" && u[0].yahoo == "NOKIA.HE");  // a quoted field keeps its comma
-  CHECK(u[1].kind == InstrumentKind::Currency && u[1].base == "EUR" && u[1].name == "The \"euro\"" && u[1].yahoo == "EURUSD=X");
+  CHECK(u[0].name == "Nokia, Oyj" && u[0].yahoo == "NOKIA.HE" && u[0].isin == "FI0009000681");  // a quoted field keeps its comma
+  CHECK(u[1].kind == InstrumentKind::Currency && u[1].base == "EUR" && u[1].name == "The \"euro\"" && u[1].yahoo == "EURUSD=X" && u[1].isin.empty());
   CHECK(u[2].kind == InstrumentKind::Index && u[2].yahoo == "^OMXH25");
   CHECK(u[3].market == "Second" && u[3].kind == InstrumentKind::Commodity);  // files in name order
 }
@@ -59,11 +59,12 @@ TEST(a_wrong_list_is_refused_with_where_it_is_wrong) {
     CHECK(error.find(message_part) != std::string::npos);
     if (error.find(message_part) == std::string::npos) std::fprintf(stderr, "  error was: %s\n", error.c_str());
   };
-  refused("company,NOKIA,EUR,Nokia,NOKIA.HE\n", "before the '# market:'");
-  refused("kind,base,quote,name,yahoo\n", "no '# market:' line");
-  refused("# market: M\ncompany,NOKIA,EUR,Nokia\n", "x.csv:2: expected 5 fields");
-  refused("# market: M\nshare,NOKIA,EUR,Nokia,NOKIA.HE\n", "unknown kind 'share'");
-  refused("# market: M\ncompany,,EUR,Nokia,NOKIA.HE\n", "cannot be empty");
+  refused("company,NOKIA,EUR,Nokia,NOKIA.HE,FI0009000681\n", "before the '# market:'");
+  refused("kind,base,quote,name,yahoo,isin\n", "no '# market:' line");
+  refused("# market: M\ncompany,NOKIA,EUR,Nokia\n", "x.csv:2: expected 6 fields");
+  refused("# market: M\nshare,NOKIA,EUR,Nokia,NOKIA.HE,FI0009000681\n", "unknown kind 'share'");
+  refused("# market: M\ncompany,,EUR,Nokia,NOKIA.HE,FI0009000681\n", "cannot be empty");
+  refused("# market: M\ncompany,NOKIA,EUR,Nokia,NOKIA.HE,\n", "has no ISIN");  // only a currency is without
   refused("# market: M\n", "");  // a market without rows is no instruments at all
 
   std::string error;
@@ -89,8 +90,8 @@ TEST(the_list_directory_is_the_one_given_else_the_default_ones) {
 // The lists that ship: the checks that keep a hand-edited or regenerated file usable.
 TEST(a_spec_names_the_lists_to_load_and_the_markets_to_keep) {
   TempDirectory dir;
-  dir.write("a.csv", "# market: First\ncompany,A,EUR,A,A.HE\ncompany,B,EUR,B,B.HE\n");
-  dir.write("b.csv", "# market: Second\ncommodity,XAU,USD,Gold,GC=F\n");
+  dir.write("a.csv", "# market: First\ncompany,A,EUR,A,A.HE,I1\ncompany,B,EUR,B,B.HE,I2\n");
+  dir.write("b.csv", "# market: Second\ncommodity,XAU,USD,Gold,GC=F,XC0009655157\n");
   std::string error;
   InstrumentList all = resolveList({dir.path.string(), {}}, error);
   CHECK(error.empty() && all.size() == 3);
@@ -107,7 +108,7 @@ TEST(the_lists_on_disk_are_consistent) {
   CHECK(error.empty());
 
   std::map<std::string, size_t> perMarket;
-  std::set<std::string> tickers, pairs;
+  std::set<std::string> tickers, pairs, isins;
   std::map<std::string, std::pair<InstrumentKind, std::string>> bySymbol;  // a symbol is one instrument
   for (const ListEntry & e : u) {
     perMarket[e.market]++;
@@ -123,11 +124,13 @@ TEST(the_lists_on_disk_are_consistent) {
         if (c == ' ') c = '-';
       CHECK(e.kind == InstrumentKind::Company && e.yahoo == stem + ".HE");
     }
-    if (e.market == "Commodities") CHECK(e.kind == InstrumentKind::Commodity && e.yahoo.size() > 2 && e.yahoo.substr(e.yahoo.size() - 2) == "=F");
+    // Only a currency is without an ISIN, and an ISIN is one instrument.
+    CHECK(e.kind == InstrumentKind::Currency ? e.isin.empty() : !e.isin.empty());
+    if (!e.isin.empty()) CHECK(isins.insert(e.market + "|" + e.isin).second);
+    if (e.market == "Indices") CHECK(e.kind == InstrumentKind::Index && e.quote == "pts");
   }
-  CHECK(perMarket.size() == 3);
-  CHECK(perMarket["Nasdaq Helsinki"] >= 90);
-  CHECK(perMarket["Commodities"] >= 28);
+  CHECK(perMarket.size() == 3);  // no commodities: Yahoo's are futures contracts, and Nordnet has the metals themselves
+  CHECK(perMarket["Nasdaq Helsinki"] >= 90 && perMarket["Indices"] >= 4);
   CHECK(perMarket["Currencies"] >= 80);
   // Every currency that is a quote has a name, shown beside the pair.
   for (const ListEntry & e : u) CHECK(std::string(currencyName(e.quote)) != "" || e.kind != InstrumentKind::Currency);

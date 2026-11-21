@@ -58,7 +58,8 @@ inline constexpr const char * symbol = "symbol";
 inline constexpr const char * isin = "isin";
 inline constexpr const char * kind = "kind";
 inline constexpr const char * type = "type";  // the provider's own type
-inline constexpr const char * nordnetId = "nordnet-id";
+inline constexpr const char * nordnetId = "nordnet-id";  // a market's id at Nordnet
+inline constexpr const char * nordnetInstrument = "nordnet-instrument";  // an instrument's id at Nordnet
 inline constexpr const char * identifier = "identifier";  // the market's own id for the instrument
 inline constexpr const char * orderBook = "order-book";   // the id its history is asked for by
 inline constexpr const char * mic = "mic";  // a market's ISO 10383 code, the way an ISIN identifies an instrument
@@ -84,7 +85,7 @@ inline bool isDefined(double v) { return v == v; }
 
 // What an instrument is, in one vocabulary for all providers: each adapter maps its own types onto these (Nordnet's UETF
 // and PTC, Yahoo's EQUITY and FUTURE, ...). The provider's own type is kept beside it, in `Instrument::type`.
-enum class InstrumentKind { Company, Currency, Commodity, Index, Etf, Certificate, Fund, Other };
+enum class InstrumentKind { Company, Currency, Commodity, Index, Etf, Certificate, Fund, Unit, Other };  // a unit: what an index is quoted in
 
 inline const char * kindName(InstrumentKind k) {
   switch (k) {
@@ -95,13 +96,14 @@ inline const char * kindName(InstrumentKind k) {
     case InstrumentKind::Etf: return "etf";
     case InstrumentKind::Certificate: return "certificate";
     case InstrumentKind::Fund: return "fund";
+    case InstrumentKind::Unit: return "unit";
     case InstrumentKind::Other: break;
   }
   return "other";
 }
 inline InstrumentKind kindOfName(const std::string & s) {
   for (InstrumentKind k : {InstrumentKind::Company, InstrumentKind::Currency, InstrumentKind::Commodity, InstrumentKind::Index,
-                           InstrumentKind::Etf, InstrumentKind::Certificate, InstrumentKind::Fund})
+                           InstrumentKind::Etf, InstrumentKind::Certificate, InstrumentKind::Fund, InstrumentKind::Unit})
     if (s == kindName(k)) return k;
   return InstrumentKind::Other;
 }

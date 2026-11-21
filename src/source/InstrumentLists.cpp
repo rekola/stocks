@@ -71,13 +71,13 @@ bool loadFile(const std::filesystem::path & path, InstrumentList & out, std::str
       continue;
     }
     std::vector<std::string> f = fields(line);
-    if (f.size() == 5 && f[0] == "kind" && f[1] == "base") continue;  // the header
+    if (f.size() == 6 && f[0] == "kind" && f[1] == "base") continue;  // the header
     if (market.empty()) {
       error = where + "a row before the '# market:' line";
       return false;
     }
-    if (f.size() != 5) {
-      error = where + "expected 5 fields (kind,base,quote,name,yahoo), found " + std::to_string(f.size());
+    if (f.size() != 6) {
+      error = where + "expected 6 fields (kind,base,quote,name,yahoo,isin), found " + std::to_string(f.size());
       return false;
     }
     ListEntry e;
@@ -95,6 +95,11 @@ bool loadFile(const std::filesystem::path & path, InstrumentList & out, std::str
     e.quote = f[2];
     e.name = f[3];
     e.yahoo = f[4];
+    e.isin = f[5];
+    if (e.isin.empty() && e.kind != InstrumentKind::Currency) {
+      error = where + "'" + e.base + "' has no ISIN (only a currency is without)";
+      return false;
+    }
     out.push_back(std::move(e));
   }
   if (market.empty()) {
@@ -175,4 +180,10 @@ Instrument currencyNode(Store & store, const std::string & symbol) {
   if (auto known = store.snapshot()->findInstrument(symbol)) return *known;
   const char * label = currencyName(symbol);
   return store.addInstrument({{}, symbol, *label ? label : symbol, InstrumentKind::Currency});
+}
+
+Instrument quoteNode(Store & store, const std::string & code) {
+  if (code != "pts") return currencyNode(store, code);
+  if (auto known = store.snapshot()->findInstrument(code)) return *known;
+  return store.addInstrument({{}, code, "Index points", InstrumentKind::Unit});
 }

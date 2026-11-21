@@ -227,25 +227,31 @@ void Snapshot::setAttribute(NodeRef n, const Attribute & a) {
   version_++;
 }
 
-Instrument Snapshot::add(Instrument i) {
-  // An instrument is its ISIN; one without (a currency) is its symbol.
-  std::optional<NodeRef> found = i.isin.empty() ? findByAttribute(NodeType::Instrument, predicate::symbol, i.symbol)
-                                                : findByAttribute(NodeType::Instrument, predicate::isin, i.isin);
+Instrument Snapshot::resolveInstrument(const std::vector<Attribute> & identifying, const std::vector<Attribute> & rest) {
   NodeRef n;
-  if (found) {
-    n = *found;
-  } else {
-    n.type = NodeType::Instrument;
+  n.type = NodeType::Instrument;
+  bool found = false;
+  for (const Attribute & a : identifying)
+    if (auto f = findByAttribute(NodeType::Instrument, a.predicate, a.value)) {
+      n = *f;
+      found = true;
+      break;
+    }
+  if (!found) {
     n.id = static_cast<uint32_t>(instruments_.size() + 1);
     instruments_ = instruments_.push_back(Instrument{{n.id}, {}, {}, InstrumentKind::Other, {}, {}});
     version_++;
   }
-  setAttribute(n, {predicate::symbol, i.symbol});
-  setAttribute(n, {predicate::name, i.name});
-  setAttribute(n, {predicate::isin, i.isin});
-  setAttribute(n, {predicate::type, i.type});
-  if (i.kind != InstrumentKind::Other) setAttribute(n, {predicate::kind, kindName(i.kind)});
+  for (const Attribute & a : identifying) setAttribute(n, a);
+  for (const Attribute & a : rest) setAttribute(n, a);
   return *instrument({n.id});
+}
+Instrument Snapshot::add(Instrument i) {
+  // An instrument is its ISIN; one without (a currency) is its symbol.
+  std::vector<Attribute> rest = {{predicate::name, i.name}, {predicate::type, i.type}};
+  if (!i.isin.empty()) rest.push_back({predicate::symbol, i.symbol});
+  if (i.kind != InstrumentKind::Other) rest.push_back({predicate::kind, kindName(i.kind)});
+  return resolveInstrument({i.isin.empty() ? Attribute{predicate::symbol, i.symbol} : Attribute{predicate::isin, i.isin}}, rest);
 }
 Market Snapshot::resolve(const std::vector<Attribute> & attributes) {
   NodeRef n;
@@ -376,6 +382,9 @@ class MemoryStore : public Store {
 
   std::shared_ptr<const Snapshot> snapshot() const override { return current_.load(); }
 
+  Instrument resolveInstrument(const std::vector<Attribute> & identifying, const std::vector<Attribute> & rest) override {
+    return write([&](Snapshot & s) { return s.resolveInstrument(identifying, rest); });
+  }
   Instrument addInstrument(Instrument i) override {
     return write([&](Snapshot & s) { return s.add(std::move(i)); });
   }
