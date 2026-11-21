@@ -114,7 +114,7 @@ the in-memory one, and a server-backed store would hand out snapshots too.
   `events(instrument)` for the datasets that say anything about an instrument.
 - Series come back as `Seq<T>` (an immer `flex_vector`): slices share storage
   with the snapshot, and a reference into one is valid as long as it is held.
-  Time ranges are half-open `[from, to)`; time is UTC milliseconds.
+  Time ranges are half-open `[from, to)`, in seconds or in day numbers as the series is keyed.
 - Appending at the end of a series is effectively constant time; a correction or
   late item in the middle is logarithmic. Tested with readers and writers on
   several threads, and clean under ThreadSanitizer.
