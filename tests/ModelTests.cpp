@@ -261,38 +261,54 @@ TEST(two_writers_do_not_lose_each_others_bars) {
   CHECK(w.snap()->candles(ka, Resolution::Min1).candles.size() == 500 && w.snap()->candles(kb, Resolution::Min1).candles.size() == 500);
 }
 
-TEST(an_instrument_with_an_isin_is_that_isin_whatever_its_symbol_or_market) {
+TEST(an_instrument_is_its_isin_whatever_its_symbol_or_market) {
   World w;
-  Instrument a = w.store->addInstrument({{}, "XAIX", "Xtrackers AI", InstrumentKind::Etf, "IE00BGV5VN51"}, w.hel.id);
-  // The same ISIN on another market, called something else there: the same instrument, and each market's own symbol.
-  Instrument again = w.store->addInstrument({{}, "XAIX-OTHER", "Other name", InstrumentKind::Etf, "IE00BGV5VN51"}, w.sto.id);
+  Instrument a = w.store->addInstrument({{}, "", "Xtrackers AI", InstrumentKind::Etf, "IE00BGV5VN51"});
+  Instrument again = w.store->addInstrument({{}, "", "Other name", InstrumentKind::Etf, "IE00BGV5VN51"});  // another listing
   CHECK(a.id.valid() && again.id == a.id);
-  CHECK(w.snap()->symbolOn(a.id, w.hel.id) == "XAIX" && w.snap()->symbolOn(a.id, w.sto.id) == "XAIX-OTHER");
-  CHECK(w.snap()->findInstrument("XAIX")->id == a.id && w.snap()->findInstrument("XAIX-OTHER")->id == a.id);
-  CHECK(w.snap()->findInstrument("XAIX", w.hel.id)->id == a.id && !w.snap()->findInstrument("XAIX", w.sto.id));
-  CHECK(w.snap()->instrument(a.id)->symbol == "XAIX");  // the first a market gave it
   CHECK(w.snap()->findInstrumentByIsin("IE00BGV5VN51")->id == a.id);
   CHECK(!w.snap()->findInstrumentByIsin("IE0000000000"));
-
-  // The same symbol with another ISIN is another instrument; the symbol finds the first.
-  Instrument b = w.store->addInstrument({{}, "XAIX", "A different fund", InstrumentKind::Etf, "LU0000000001"}, w.hel.id);
+  Instrument b = w.store->addInstrument({{}, "", "A different fund", InstrumentKind::Etf, "LU0000000001"});
   CHECK(b.id.valid() && b.id != a.id);
-  CHECK(w.snap()->findInstrument("XAIX")->id == a.id && w.snap()->findInstrumentByIsin("LU0000000001")->id == b.id);
-
-  // Without an ISIN it is the symbol its market calls it, even one that an instrument with an ISIN has there.
-  CHECK(w.store->addInstrument({{}, "XAIX", "no isin", InstrumentKind::Other}, w.hel.id).id == a.id);
-  // A market's symbol changing replaces it, and the old one finds nothing there.
-  w.store->addInstrument({{}, "XAIX2", "Xtrackers AI", InstrumentKind::Etf, "IE00BGV5VN51"}, w.hel.id);
-  CHECK(w.snap()->symbolOn(a.id, w.hel.id) == "XAIX2" && w.snap()->findInstrument("XAIX2", w.hel.id)->id == a.id);
-  CHECK(w.snap()->findInstrument("XAIX", w.hel.id)->id == b.id);  // the other fund still has that one there
+  // A currency has no ISIN, and is its code.
+  CHECK(w.store->addInstrument({{}, "EUR", "Euro", InstrumentKind::Currency}).id == w.eur.id);
 }
 
-TEST(a_currency_symbol_is_its_code_whichever_market_has_it) {
+TEST(what_a_market_calls_an_instrument_is_on_its_edge_there) {
   World w;
-  Instrument usd = w.store->addInstrument({{}, "USD", "US dollar", InstrumentKind::Currency}, w.hel.id);
-  CHECK(w.store->addInstrument({{}, "USD", "US dollar", InstrumentKind::Currency}, w.sto.id).id == usd.id);
-  CHECK(w.snap()->findInstrument("USD", MarketId{})->id == usd.id);
-  CHECK(w.snap()->symbolOn(usd.id, w.hel.id) == "USD");  // no market's own: the code
+  Instrument fund = w.store->addInstrument({{}, "", "Xtrackers AI", InstrumentKind::Etf, "IE00BGV5VN51"});
+  const EdgeKey onHel{fund.id, w.eur.id, w.hel.id, w.a.id}, onSto{fund.id, w.eur.id, w.sto.id, w.a.id};
+
+  // An edge exists once it has data: before that it takes nothing.
+  w.store->setEdgeAttribute(onHel, {predicate::symbol, "XAIX"});
+  CHECK(w.snap()->attributes(onHel).empty() && !w.snap()->findEdge(predicate::symbol, "XAIX", w.hel.id));
+
+  w.store->appendCandles(onHel, Resolution::Day, {bar(1, 10)});
+  w.store->appendCandles(onSto, Resolution::Day, {bar(1, 11)});
+  w.store->setEdgeAttribute(onHel, {predicate::symbol, "XAIX"});
+  w.store->setEdgeAttribute(onSto, {predicate::symbol, "XAIX-S"});
+  w.store->setEdgeAttribute(onSto, {predicate::identifier, "419021"});
+
+  // One instrument, a symbol for each market's edge, found by the market.
+  CHECK(w.snap()->symbol(onHel) == "XAIX" && w.snap()->symbol(onSto) == "XAIX-S");
+  CHECK(*w.snap()->findEdge(predicate::symbol, "XAIX", w.hel.id) == onHel);
+  CHECK(!w.snap()->findEdge(predicate::symbol, "XAIX", w.sto.id));  // that market calls it something else
+  CHECK(*w.snap()->findEdge(predicate::symbol, "XAIX-S", w.sto.id) == onSto);
+  CHECK(w.snap()->findEdge(predicate::symbol, "XAIX", w.hel.id)->base == fund.id);
+  CHECK(w.snap()->attributes(onSto).size() == 2 && w.snap()->attributes(onHel).size() == 1);
+
+  // A symbol changing replaces the old, and the old finds nothing; an unchanged write makes no new version.
+  w.store->setEdgeAttribute(onHel, {predicate::symbol, "XAIX2"});
+  CHECK(!w.snap()->findEdge(predicate::symbol, "XAIX", w.hel.id) && *w.snap()->findEdge(predicate::symbol, "XAIX2", w.hel.id) == onHel);
+  const uint64_t version = w.snap()->version();
+  w.store->setEdgeAttribute(onHel, {predicate::symbol, "XAIX2"});
+  CHECK(w.snap()->version() == version);
+
+  // The same data from another dataset is another edge, with its own say.
+  const EdgeKey other{fund.id, w.eur.id, w.hel.id, w.b.id};
+  w.store->appendCandles(other, Resolution::Day, {bar(1, 10)});
+  w.store->setEdgeAttribute(other, {predicate::symbol, "XAIX.HE"});
+  CHECK(w.snap()->symbol(other) == "XAIX.HE" && *w.snap()->findEdge(predicate::symbol, "XAIX2", w.hel.id) == onHel);
 }
 
 TEST(edges_can_be_selected_by_the_type_of_their_base_instrument) {

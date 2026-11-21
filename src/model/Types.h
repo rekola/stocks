@@ -28,6 +28,7 @@ struct Id {
 using InstrumentId = Id<struct InstrumentTag>;
 using MarketId = Id<struct MarketTag>;
 using DatasetId = Id<struct DatasetTag>;
+using EdgeId = Id<struct EdgeTag>;  // an edge as a node, made when it first has data
 
 // An instant: whole seconds since the Unix epoch, UTC. Where whole seconds are not enough (order book snapshots) it is
 // floating-point seconds, never milliseconds. Sessions and time zones belong to the market, not here. A date is not an
@@ -40,13 +41,14 @@ struct TimeRange {
   bool contains(Timestamp t) const { return t >= from && t < to; }
 };
 
-// One thing said about a node: a predicate and its value, and, where it is said by a market, which one ("the Helsinki
-// market calls this instrument NOKIA"). Every node (an instrument, a market, a dataset) keeps what is known about it as
-// attributes, all in the same way, one value per predicate and market; a value can change. A dataset will join the
-// statement later, to say who says it.
+// One thing said about a node: a predicate and its value. Every node (an instrument, a market, a dataset, an edge) keeps
+// what is known about it as attributes, all in the same way, one value per predicate; a value can change. What depends
+// on a market ("the Helsinki market calls this instrument NOKIA", "its order book there is ...") is an attribute of the
+// edge, which has the market, the currency and the dataset that says it: a fat edge. `market` is set for the attributes
+// of an edge, to the edge's market, so that one can be found by what it says at a market.
 struct Attribute {
   std::string predicate, value;
-  MarketId market;  // none: said of the node itself
+  MarketId market;
   friend bool operator==(const Attribute &, const Attribute &) = default;
 };
 
@@ -57,10 +59,12 @@ inline constexpr const char * isin = "isin";
 inline constexpr const char * kind = "kind";
 inline constexpr const char * type = "type";  // the provider's own type
 inline constexpr const char * nordnetId = "nordnet-id";
+inline constexpr const char * identifier = "identifier";  // the market's own id for the instrument
+inline constexpr const char * orderBook = "order-book";   // the id its history is asked for by
 inline constexpr const char * mic = "mic";  // a market's ISO 10383 code, the way an ISIN identifies an instrument
 }  // namespace predicate
 
-enum class NodeType : uint8_t { Instrument, Market, Dataset };
+enum class NodeType : uint8_t { Instrument, Market, Dataset, Edge };
 
 // Any node. The typed ids convert to it.
 struct NodeRef {
@@ -70,6 +74,7 @@ struct NodeRef {
   NodeRef(InstrumentId i) : type(NodeType::Instrument), id(i.value) {}
   NodeRef(MarketId i) : type(NodeType::Market), id(i.value) {}
   NodeRef(DatasetId i) : type(NodeType::Dataset), id(i.value) {}
+  NodeRef(EdgeId i) : type(NodeType::Edge), id(i.value) {}
   friend bool operator==(const NodeRef &, const NodeRef &) = default;
 };
 
@@ -104,7 +109,7 @@ inline InstrumentKind kindOfName(const std::string & s) {
 // The resolved view of an instrument's attributes, for the app.
 struct Instrument {
   InstrumentId id;
-  std::string symbol, name;  // the symbol: the one said of the instrument itself, else the first a market gave it
+  std::string symbol, name;  // a symbol said of the instrument itself (a currency's code); the ones markets give are on edges
   InstrumentKind kind = InstrumentKind::Other;
   std::string isin;  // an instrument with an ISIN is that ISIN: one listed on two markets is one instrument
   std::string type;  // the provider's own type ("UETF", "EQUITY"), beside the combined kind

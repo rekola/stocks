@@ -1,8 +1,9 @@
 // The stock browser: cellui's Table, TagBar and trace chart over a store of
 // candles that data sources fill on a thread of their own.
-//   stocks                 on the display cellui picks, with prices from Yahoo
+//   stocks                 on the display cellui picks, with Nordnet's instruments and prices from Yahoo for them
 //   stocks --ui terminal   in the terminal;  --ui window  in a window
-//   stocks --source NAME   pick the data source (yahoo, nordnet, synthetic); more than one may be given
+//   stocks --source NAME   pick the data source (yahoo, nordnet, synthetic); more than one may be given, run in that order
+//                          (default: nordnet, yahoo; yahoo only loads the instruments nordnet has made)
 //   stocks --lists DIR     the instrument lists of the yahoo and synthetic sources (default: data/yahoo)
 //   stocks --market NAME   of those lists, load only that market, e.g. "Nasdaq Helsinki" (repeatable)
 // Keys: arrows, PgUp/PgDn, Home/End move; Tab moves between the tags and the
@@ -66,7 +67,8 @@ int main(int argc, char ** argv) {
                          kSourceNames + "]... [--lists DIR] [--market NAME]...");
     }
   }
-  if (source_names.empty()) source_names.push_back("yahoo");
+  // Yahoo makes no instruments (it has no ISIN): it waits for the ones Nordnet's discovery makes, so Nordnet goes first.
+  if (source_names.empty()) source_names = {"nordnet", "yahoo"};
 
   // The instrument lists are the yahoo source's own (and the synthetic one follows them); each reads them when it loads.
   ListSpec lists{list_directory, market_names};

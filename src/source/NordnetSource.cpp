@@ -178,10 +178,17 @@ void NordnetSource::load(Store & store, Http & http, SourceListener & listener) 
         if (const char * mic = knownMarketMic(l.marketId)) says.push_back({predicate::mic, mic});
         if (const char * name = knownMarketName(l.marketId)) says.push_back({predicate::name, name});
         Market market = store.resolveMarket(says);
-        Instrument base = store.addInstrument({{}, l.symbol, l.name, kindOfNordnetType(l.type), l.isin, l.type}, market.id);
+        Instrument base = store.addInstrument({{}, "", l.name, kindOfNordnetType(l.type), l.isin, l.type});
         Instrument quote = currencyNode(store, l.currency);
         // Today's bar makes the edge; a listing with none stays a node nothing selects.
-        if (l.hasBar) store.appendCandles({base.id, quote.id, market.id, dataset.id}, Resolution::Day, {l.bar});
+        if (l.hasBar) {
+          const EdgeKey edge{base.id, quote.id, market.id, dataset.id};
+          store.appendCandles(edge, Resolution::Day, {l.bar});
+          // What the market says of the instrument is said on the edge: what it calls it and the ids it is asked for by.
+          store.setEdgeAttribute(edge, {predicate::symbol, l.symbol});
+          store.setEdgeAttribute(edge, {predicate::identifier, l.identifier});
+          store.setEdgeAttribute(edge, {predicate::orderBook, l.bookId});
+        }
       }
       found += page.listings.size();
       listings_.insert(listings_.end(), page.listings.begin(), page.listings.end());

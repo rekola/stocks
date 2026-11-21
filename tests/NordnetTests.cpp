@@ -123,8 +123,8 @@ TEST(loading_pages_through_every_list_and_stores_instruments_markets_and_edges) 
   // Eight instruments (one ETF is listed on two markets) and the four quote currencies.
   CHECK(s->instruments().size() == 12);
   Instrument xaix = *s->findInstrumentByIsin("IE00BGV5VN51");
-  CHECK(xaix.symbol == "XAIX" && xaix.kind == InstrumentKind::Etf && xaix.isin == "IE00BGV5VN51");
-  CHECK(s->findInstrument("4GLD")->kind == InstrumentKind::Certificate);  // a certificate, whoever lists it
+  CHECK(xaix.kind == InstrumentKind::Etf && xaix.isin == "IE00BGV5VN51");
+  CHECK(s->findInstrumentByIsin("DE000A0S9GB0")->kind == InstrumentKind::Certificate);  // a certificate, whoever lists it
   CHECK(s->findInstrument("EUR")->kind == InstrumentKind::Currency && s->findInstrument("EUR")->name == "Euro");
   CHECK(s->findInstrument("NOK")->name == "Norwegian krone");
   CHECK(s->markets().size() == 6);
@@ -133,7 +133,7 @@ TEST(loading_pages_through_every_list_and_stores_instruments_markets_and_edges) 
   CHECK(s->findMarketByAttribute(predicate::nordnetId, "61") && s->findMarketByAttribute(predicate::nordnetId, "61")->name.empty());
   CHECK(s->edges(xetra).size() == 3 && s->edges(stockholm).size() == 2);  // FLXK, XAIX, 4GLD; XACT BULL, XAIX
   // The certificate on First North Sweden has no tick time, so no bar and no edge: a node nothing selects.
-  CHECK(s->findInstrument("BULL OMXS30 X1 NN") && s->edges(s->findMarket("First North Sweden")->id).empty());
+  CHECK(s->findInstrumentByIsin("NO0010903685") && s->edges(s->findMarket("First North Sweden")->id).empty());
   DatasetId nordnet = s->findDataset("nordnet")->id;
   EdgeKey onXetra{xaix.id, s->findInstrument("EUR")->id, xetra, nordnet};
   EdgeKey onStockholm{xaix.id, s->findInstrument("SEK")->id, stockholm, nordnet};
@@ -291,9 +291,9 @@ TEST(a_listing_without_a_price_is_a_node_and_has_no_edge) {
   Listener listener;
   quick().load(*store, http, listener);
   auto s = store->snapshot();
-  CHECK(s->findInstrument("A") && s->findInstrument("B") && s->findInstrument("C"));  // all three are nodes
+  CHECK(s->findInstrumentByIsin("X1") && s->findInstrumentByIsin("X2") && s->findInstrumentByIsin("X3"));  // all three are nodes
   CHECK(s->edges(s->findMarket("Xetra")->id).size() == 1);                             // only the traded one is seen
-  CHECK(s->edges(s->findMarket("Xetra")->id)[0].base == s->findInstrument("A")->id);
+  CHECK(s->edges(s->findMarket("Xetra")->id)[0].base == s->findInstrumentByIsin("X1")->id);
 }
 
 TEST(an_instrument_keeps_the_type_nordnet_gives_it_and_edges_can_be_selected_by_it) {
@@ -303,14 +303,14 @@ TEST(an_instrument_keeps_the_type_nordnet_gives_it_and_edges_can_be_selected_by_
   Listener listener;
   quick().load(*store, http, listener);
   auto s = store->snapshot();
-  CHECK(s->findInstrument("FLXK")->type == "UETF" && s->findInstrument("XACT BULL")->type == "KETF");
-  CHECK(s->findInstrument("4GLD")->type == "PTC" && s->findInstrument("EUR")->type.empty());
+  CHECK(s->findInstrumentByIsin("IE00BHZRR030")->type == "UETF" && s->findInstrumentByIsin("SE0001342395")->type == "KETF");
+  CHECK(s->findInstrumentByIsin("DE000A0S9GB0")->type == "PTC" && s->findInstrument("EUR")->type.empty());
   MarketId xetra = s->findMarket("Xetra")->id;
   auto certificates = s->edges(xetra, [](const Instrument & i) { return i.type == "PTC"; });
   auto funds = s->edges(xetra, [](const Instrument & i) { return i.kind == InstrumentKind::Etf; });
   auto byKind = s->edges(xetra, [](const Instrument & i) { return i.kind == InstrumentKind::Certificate; });
   CHECK(byKind == certificates);  // the type and the combined kind agree here
-  CHECK(certificates.size() == 1 && certificates[0].base == s->findInstrument("4GLD")->id);
+  CHECK(certificates.size() == 1 && certificates[0].base == s->findInstrumentByIsin("DE000A0S9GB0")->id);
   CHECK(funds.size() == 2);  // FLXK and XAIX
 }
 
@@ -462,7 +462,7 @@ TEST(a_market_is_found_by_its_code_before_its_name) {
   CHECK(store->snapshot()->markets().size() == 1);
 }
 
-TEST(each_market_has_its_own_symbol_for_an_instrument_listed_on_two) {
+TEST(an_instrument_listed_on_two_markets_is_one_node_with_an_edge_and_a_say_for_each) {
   auto store = makeMemoryStore();
   FakeHttp http;
   http.answer = pages;
@@ -471,6 +471,17 @@ TEST(each_market_has_its_own_symbol_for_an_instrument_listed_on_two) {
   auto s = store->snapshot();
   Instrument xaix = *s->findInstrumentByIsin("IE00BGV5VN51");
   Market xetra = *s->findMarket("Xetra"), stockholm = *s->findMarket("Nasdaq Stockholm");
-  CHECK(s->symbolOn(xaix.id, xetra.id) == "XAIX" && !s->symbolOn(xaix.id, stockholm.id).empty());
-  CHECK(s->findInstrument("XAIX", xetra.id)->id == xaix.id);
+  DatasetId nordnet = s->findDataset("nordnet")->id;
+  const EdgeKey onXetra{xaix.id, s->findInstrument("EUR")->id, xetra.id, nordnet};
+  const EdgeKey onStockholm{xaix.id, s->findInstrument("SEK")->id, stockholm.id, nordnet};
+  CHECK(s->symbol(onXetra) == "XAIX" && s->symbol(onStockholm) == "XAIX");
+  CHECK(*s->findEdge(predicate::symbol, "XAIX", xetra.id) == onXetra && *s->findEdge(predicate::symbol, "XAIX", stockholm.id) == onStockholm);
+  // Each market's own id for it, and the order book its history is asked for by.
+  auto identifier = [&](const EdgeKey & k) {
+    for (const Attribute & a : s->attributes(k))
+      if (a.predicate == predicate::identifier) return a.value;
+    return std::string();
+  };
+  CHECK(identifier(onXetra) == "XAIX" && identifier(onStockholm) == "419021");
+  CHECK(s->instrument(xaix.id)->symbol.empty());  // the instrument itself has none: a market gives it
 }

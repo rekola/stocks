@@ -17,6 +17,8 @@ import urllib.request
 HOSTS = ["query1.finance.yahoo.com", "query2.finance.yahoo.com"]
 PAUSE = 0.25
 
+NORDNET_SYMBOL = {"NDA-FI": "NDA FI"}
+
 # ---- Nasdaq Helsinki: Yahoo tickers (the Helsinki exchange suffix is .HE) ----
 HELSINKI = """
 NOKIA FORTUM SAMPO KNEBV UPM NESTE STERV WRT1V ELISA ORNBV ORNAV NDA-FI METSO OUT1V KESKOB KESKOA KCR TIETO TYRES
@@ -115,7 +117,9 @@ def main():
             missing.append(ticker)
             continue
         name = (meta.get("longName") or meta.get("shortName") or t).strip()
-        rows.append(["company", t, meta.get("currency", "EUR"), name, ticker])
+        # The base is the symbol Nordnet calls it on this market (the Yahoo adapter finds the instrument by it): the same,
+        # but for the few that Yahoo spells with a hyphen where Nordnet has a space.
+        rows.append(["company", NORDNET_SYMBOL.get(t, t), meta.get("currency", "EUR"), name, ticker])
     rows.sort(key=lambda r: r[1])
     write(os.path.join(out, "nasdaq-helsinki.csv"), "Nasdaq Helsinki", rows)
     print("Nasdaq Helsinki: %d of %d" % (len(rows), len(seen)), flush=True)

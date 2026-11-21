@@ -19,6 +19,25 @@ std::optional<double> number(const json & column, size_t i) {
   return std::isfinite(v) ? std::optional<double>(v) : std::nullopt;
 }
 
+// The instrument an entry is about. Yahoo gives no ISIN, so it cannot make a security: it uses the one another source
+// made, found by the symbol that the entry's market calls it. A currency is its code, which is enough to make.
+bool findBase(Store & store, const ListEntry & e, Instrument & base, std::string & error) {
+  if (e.kind == InstrumentKind::Currency) {
+    base = currencyNode(store, e.base);
+    return true;
+  }
+  auto snapshot = store.snapshot();
+  auto market = snapshot->findMarket(e.market);
+  auto edge = market ? snapshot->findEdge(predicate::symbol, e.base, market->id) : std::nullopt;
+  auto found = edge ? snapshot->instrument(edge->base) : std::nullopt;
+  if (!found) {
+    error = "no instrument called " + e.base + " on " + e.market + " yet";
+    return false;
+  }
+  base = *found;
+  return true;
+}
+
 }  // namespace
 
 bool YahooSource::parse(const std::string & body, const ListEntry & e, Store & store, std::string & error) {
@@ -63,16 +82,18 @@ bool YahooSource::parse(const std::string & body, const ListEntry & e, Store & s
     return false;
   }
 
+  Instrument base;
+  if (!findBase(store, e, base, error)) return false;
   Dataset dataset = store.addDataset({{}, "yahoo"});
   Market market = store.addMarket({{}, e.market});
-  std::string type;  // Yahoo's own type for it, if the chart says
+  Instrument quote = currencyNode(store, e.quote);
+  const EdgeKey edge{base.id, quote.id, market.id, dataset.id};
+  store.appendCandles(edge, Resolution::Day, bars);
+  store.setEdgeAttribute(edge, {predicate::symbol, e.yahoo});  // what Yahoo calls it
   if (auto meta = result.find("meta"); meta != result.end() && meta->is_object()) {
     auto t = meta->find("instrumentType");
-    if (t != meta->end() && t->is_string()) type = t->get<std::string>();
+    if (t != meta->end() && t->is_string()) store.setEdgeAttribute(edge, {predicate::type, t->get<std::string>()});
   }
-  Instrument base = store.addInstrument({{}, e.base, e.name, e.kind != InstrumentKind::Other ? e.kind : kindOfYahooType(type), "", type}, market.id);
-  Instrument quote = currencyNode(store, e.quote);
-  store.appendCandles({base.id, quote.id, market.id, dataset.id}, Resolution::Day, bars);
 
   if (result.contains("events") && result["events"].is_object()) {
     const json & events = result["events"];
@@ -103,9 +124,17 @@ void YahooSource::load(Store & store, Http & http, SourceListener & listener) {
       return;
     }
   }
+  size_t waiting = 0;  // entries with no instrument yet: no request is made for them
   for (const ListEntry & e : list) {
     if (listener.cancelled()) return;
     std::string error;
+    {
+      Instrument base;
+      if (!findBase(store, e, base, error)) {
+        waiting++;
+        continue;
+      }
+    }
     bool done = false;
     for (const char * host : kHosts) {  // the second host answers when the first does not
       HttpResult r = http.get(std::string("https://") + host + "/v8/finance/chart/" + e.yahoo + "?range=" + range_ +
@@ -125,4 +154,7 @@ void YahooSource::load(Store & store, Http & http, SourceListener & listener) {
     else listener.message(std::string("yahoo: ") + e.yahoo + ": " + error);
     if (pause_.count() > 0) std::this_thread::sleep_for(pause_);
   }
+  if (waiting)
+    listener.message("yahoo: " + std::to_string(waiting) + " of " + std::to_string(list.size()) +
+                     " entries wait for an instrument that another source makes (Yahoo makes none)");
 }

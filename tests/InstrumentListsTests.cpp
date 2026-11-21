@@ -118,7 +118,10 @@ TEST(the_lists_on_disk_are_consistent) {
     CHECK(inserted || (it->second.first == e.kind && it->second.second == e.name));  // the same symbol, the same thing
     if (e.kind == InstrumentKind::Currency) CHECK(e.yahoo == e.base + e.quote + "=X");
     if (e.market == "Nasdaq Helsinki") {
-      CHECK(e.kind == InstrumentKind::Company && e.yahoo == e.base + ".HE");
+      std::string stem = e.base;  // Nordnet's symbol, which has a space where Yahoo's has a hyphen
+      for (char & c : stem)
+        if (c == ' ') c = '-';
+      CHECK(e.kind == InstrumentKind::Company && e.yahoo == stem + ".HE");
     }
     if (e.market == "Commodities") CHECK(e.kind == InstrumentKind::Commodity && e.yahoo.size() > 2 && e.yahoo.substr(e.yahoo.size() - 2) == "=F");
   }
