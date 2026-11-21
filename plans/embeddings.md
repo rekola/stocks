@@ -50,15 +50,45 @@ For each slot, each market, and each instrument that traded in it:
   and must not be filled in alike.
 - **where the slot is in the session** (calendars.md): minutes since the open, to the
   close, the fraction of the session, the weekday and the local time.
-- the instrument's **kind and type** (company, ETF, certificate, currency, commodity, index)
-  and its currency, market and calendar. A certificate or an inverse or leveraged ETF is
-  not a market-state signal; selecting by type is what lets a model leave them out.
+- the instrument's **kind and type**, its currency, market and calendar, and what the
+  provider says about its **leverage and direction**. The last matters for which instruments
+  describe the market, see the next section.
 - corporate actions (splits, dividends) as events, and adjusted prices where adjustment is
   needed (below).
 - later: order book snapshots (not collected yet).
 
 Derived inputs the data side can compute on the grid: returns, ranges, realized
 volatility from finer bars, volume relative to the instrument's own recent history.
+
+## Which instruments describe the market
+
+The state of the market is read from instruments that carry **independent information**.
+A product that is a mechanical function of another instrument adds nothing new, and
+distorts what it is added to:
+
+- **Leveraged, inverse and knock-out products** (a "bear" certificate at 20 times) are
+  functions of their underlying: they move with it, multiplied, flipped in sign, reset
+  daily or wiped out when a barrier is hit. In an aggregate or a correlation matrix they
+  count the underlying again, with the wrong sign or a fat tail, and they have finite
+  lives. Nordnet's unfiltered certificate list has 64,861 of them (in a sample of 300,
+  all short, leverage 2 to 22, many flagged high-risk). The adapter loads only the `PTC`
+  type, so they are not in the data.
+- **Plain trackers are another matter.** Of the first 1,000 `PTC` certificates, 993 have
+  leverage 1 and 933 are long (64 are inverse), mostly ETCs and ETNs that follow a commodity or
+  an index. They also duplicate an underlying (a gold ETC follows gold), but are real
+  instruments on another venue, in another currency and at other hours, and can stand in
+  for an underlying we have no series of. So they are not "not a signal"; they are **not
+  independent of what they track**, and including both counts the underlying twice.
+- **Selection must use the structured facts, not names**: the certificate list has
+  `static_leverage` and `etp_info.direction`, and filtering by words in the name gives
+  false positives ("Gold Bullion Securities" contains "bull"; "Daily Hedged" is a currency
+  hedge). So leverage and direction are kept as facts about the instrument (statements in
+  the graph of server.md), not just its type, and a selection reads them: for example "kind
+  ETF or tracker, leverage 1, direction long".
+- **ETFs** need the same care for leveraged and inverse funds; the type alone does not say.
+- The default proposed: exclude leveraged, inverse and knock-out products from the
+  estimation of the state; keep plain trackers where they add coverage, and never together
+  with what they track in the same aggregate.
 
 ## Data issues the embeddings must live with
 
@@ -74,11 +104,10 @@ volatility from finer bars, volume relative to the instrument's own recent histo
   and the legacy data may hold delisted instruments. Until then, the 1987-to-now
   embeddings are conditioned on survival, and should say so.
 - **A changing set of instruments.** Far fewer instruments have bars in 1987 than today
-  (Yahoo's Helsinki history for NOKIA.HE, for one, starts in 2000). A model that takes one input per instrument cannot have a fixed width.
-  Either the input is **aggregates** (indices, asset-class and market composites built from
-  whatever exists in each slot) or the model takes a **set** of instruments with a mask.
-  Which one is a mathematical choice with a data consequence: aggregates need the
-  composites to be defined consistently over time.
+  (Yahoo's Helsinki history for NOKIA.HE, for one, starts in 2000). A model needs the same
+  shape of input at every slot, so how to describe "the market" at a slot when the number of
+  instruments goes from a few dozen to thousands is a real choice (see "Input: aggregates
+  or a set").
 - **Different quote currencies.** Returns in local currency or in one common currency; the
   currency pairs are themselves instruments. A choice to make and to record.
 - **Different day windows and grids** (calendars.md): a daily family built from markets with
@@ -118,6 +147,35 @@ To be replaced by the other agent. What I would want decided, with the options I
 - **Many families.** Daily (1987 to now), hourly, 15 minute, 5 minute: how they relate, and
   whether the hourly state can be compared with the daily one.
 
+### Input: aggregates or a set
+
+The question, put plainly. At each slot the model is given numbers that describe the
+market. Two ways to build them:
+
+- **Aggregates.** We decide in advance a handful of summary series and feed their values:
+  for example the return of a Nordic equity composite, of a US one, of the euro against the
+  dollar, of gold and oil, the average return of everything that traded, the dispersion
+  between instruments, the fraction that rose. Every slot has the same few dozen numbers,
+  the early years work as long as the composites can be built from what existed, and each
+  number means something. The cost: **we** decide what the market is made of, and what is
+  not in a summary is lost; and a composite must be defined consistently over 40 years
+  (which instruments, which weights, when one enters or leaves).
+- **A set with a mask.** We feed the model every instrument that traded in the slot (a few
+  dozen in the early years, thousands now), as a set whose size varies, or as a fixed vector
+  with a mask marking the instruments that did not trade, and the model learns what matters.
+  Nothing is thrown away by hand. The cost: more compute and a model built for sets
+  (a transformer or a deep-sets network), sparse and not comparable inputs in the early years,
+  harder to interpret, and every instrument must be well identified in time (when it existed).
+
+The correlation structure is the regime (the owner's point), and it lives in the set, not in
+a few composites: how instruments move together is a matrix over *all* the instruments of a
+window. So a **hybrid** is natural, and is what I propose for the first version: compute the
+correlation matrix from the set that exists at each slot, and summarize it into a fixed
+number of features that do not depend on how many instruments there are: the average
+correlation, the share of the variance in the largest eigenvalue (how much the market moves
+as one), the spectrum of eigenvalues, the dispersion, the breadth. These are aggregates
+computed from the set. A learned set model can come later and be compared with them.
+
 ## Evaluating an embedding (my thoughts)
 
 Without a target, "good" has to be defined by checks:
@@ -150,6 +208,56 @@ Proposed, from the server plan.
 - Recomputation when inputs change (a split makes a new version of the old bars): which
   embeddings it invalidates.
 
+## The map first, and where "now" is
+
+The first product is a **map**, before any prediction (the owner's plan):
+
+- a **UMAP of the embeddings of the whole history**, annotated (the crises, the rate
+  shocks, the dates of known events), and a **cursor** that shows where the current slot
+  is positioned in it.
+- **One map per market where the markets cannot be compared**, as at the day level, where
+  the days are different windows (calendars.md); the slots on the UTC grid of the intraday
+  family are comparable across markets and can share one map.
+- **The map must be stable and extendable.** UMAP does not give a new point a position by
+  itself. A new slot is placed in the fitted map by transforming it (approximate), and the map
+  is refitted rarely, with the old map as the reference so that its orientation does not
+  change. A map that is redrawn when a day is added is of no use for a cursor, and the
+  embedding must be the same function for every slot, past and present.
+
+### A sketch of the present
+
+The current slot is the hard one. The embeddings are built from windows of history,
+including correlations, and for the current day only the beginning of the window exists.
+
+- **What the discovery endpoints give now.** Every five minutes the Nordnet discovery
+  reloads about 3,400 instruments, each with its last price and the day's open, high and low,
+  the previous close, the day's change and volume, the tick time, and its returns over a
+  day, a week, a month, three months, the year to date, a year, three, five years and since
+  the start. That is a **cross-section**: breadth (how many are up), the dispersion of the
+  returns, the average return, a range-based volatility proxy, the volume against normal.
+  A cross-section needs no history of its own, so a *sketch embedding* from those features
+  is possible. What it **cannot** give is correlations, which need a time series. (The prices
+  are marked as not real-time, so they are probably delayed; to measure.)
+- **The collector we already have.** If each five-minute reload is kept, instead of
+  replacing today's bar, we collect for free an **intraday series of last prices for every
+  instrument**, sampled every five minutes: by the afternoon there are dozens of samples per
+  instrument, and correlations can be estimated from their changes. Caveats: samples are not
+  bars (no high or low between them), prices of thin instruments are stale, instruments of
+  different markets are asynchronous, and only the open markets move. This would need the
+  reloads to store each snapshot as a series of its own (a 5-minute sample series per edge).
+- **True intraday bars for a reference basket.** For a set of liquid instruments (say 50 to
+  100) the history endpoint gives 5-minute bars for the day (`DAY_1` or `WEEK_1`, server.md);
+  a few requests per update. The current correlations would come from the basket, not from all
+  3,400 instruments.
+- **Uncertainty.** Early in a session the window is short and the estimate noisy; the
+  cursor should say so (a halo, or a trail of how its position moved during the day) and not
+  jump around.
+- **What the sketch is compared against.** The embedding of the history must be defined
+  with the features available at the time, or the sketch is a different function from the
+  embeddings it is placed among: either history is embedded with the same reduced features
+  as the sketch, or the sketch is mapped into the full space by a learned regression, and
+  its error is known. The choice belongs to the mathematics.
+
 ## Visualizations
 
 What a client needs from the server, and what it shows:
@@ -167,8 +275,11 @@ What a client needs from the server, and what it shows:
 
 - What a slot is for the daily family: one trading date per market, or one date on a common
   definition; and the intraday grid (5, 15 minutes or an hour).
-- Aggregates or a set of instruments as the input, and how the aggregates are defined over
-  40 years.
+- The input: the hybrid (correlation features computed from the set) first, aggregates and a
+  learned set model to compare; and how any aggregates are defined over 40 years.
+- Which leverage and direction facts select the instruments, and where they are kept.
+- A sketch of the present: from the cross-section only, with a collected series of the
+  five-minute snapshots, or with a reference basket of intraday bars; and how its error is known.
 - Local or common currency for returns.
 - How survivorship is handled until delisted instruments are in the data.
 - Which instruments are in or out (types, leverage, thin trading), selected by type.
