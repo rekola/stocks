@@ -15,8 +15,10 @@ std::string fixture(const std::string & name) {
   return s.str();
 }
 
-// The endpoint as the fixtures hold it: five rows, three then two, with a total of five.
+// The endpoints as the fixtures hold them: the ETFs are five rows, three then two, with a total of five; the
+// certificates are four rows in one page.
 HttpResult pages(const std::string & url) {
+  if (url.find("certificatelist") != std::string::npos) return ok(fixture("certificatelist-1.json"));
   return ok(fixture(url.find("offset=3") != std::string::npos ? "etflist-2.json" : "etflist-1.json"));
 }
 
@@ -26,7 +28,7 @@ bool hasHeader(const HttpHeaders & headers, const std::string & name, const std:
   return false;
 }
 
-NordnetSource quick() { return NordnetSource(500, std::chrono::milliseconds(0)); }
+NordnetSource quick() { return NordnetSource(NordnetSource::defaultLists(), std::chrono::milliseconds(0)); }
 
 }  // namespace
 
@@ -43,21 +45,39 @@ TEST(a_page_of_the_etf_list_becomes_listings_with_the_ids_the_history_needs) {
   CHECK(page.listings[2].marketId == 14 && page.listings[2].currency == "DKK");
 }
 
-TEST(a_market_is_named_by_the_exchange_code_in_the_slug) {
+TEST(a_market_is_named_by_its_nordnet_id_where_that_is_known) {
   NordnetListing l;
-  l.marketId = 4;
   l.slug = "franklin-ftse-korea-ucits-flxk-xeta";
+  l.marketId = 4;
   CHECK(NordnetSource::marketName(l) == "Xetra");
-  l.slug = "x-xsto";
+  l.marketId = 11;
   CHECK(NordnetSource::marketName(l) == "Nasdaq Stockholm");
-  l.slug = "x-xcse";
+  l.marketId = 14;
   CHECK(NordnetSource::marketName(l) == "Nasdaq Copenhagen");
-  l.slug = "x-xhel";
+  l.marketId = 24;
   CHECK(NordnetSource::marketName(l) == "Nasdaq Helsinki");  // the same market as the Yahoo lists name
-  l.slug = "x-xzzz";
-  CHECK(NordnetSource::marketName(l) == "Nordnet market 4");  // an unknown code: the id
-  l.slug = "";
-  CHECK(NordnetSource::marketName(l) == "Nordnet market 4");
+  l.marketId = 53;
+  CHECK(NordnetSource::marketName(l) == "First North Sweden");
+  l.slug = "bull-omxs30-x1-nn-onse";  // the code of its home exchange, on a market that is another
+  CHECK(NordnetSource::marketName(l) == "First North Sweden");
+  l.marketId = 61;
+  CHECK(NordnetSource::marketName(l) == "Nordnet market 61");  // not known: the id
+}
+
+TEST(an_instrument_is_an_etf_by_its_own_type_and_anything_else_is_other) {
+  CHECK(NordnetSource::kindOf("UETF") == InstrumentKind::Etf && NordnetSource::kindOf("KETF") == InstrumentKind::Etf);
+  CHECK(NordnetSource::kindOf("PTC") == InstrumentKind::Other && NordnetSource::kindOf("") == InstrumentKind::Other);
+}
+
+TEST(a_page_of_certificates_has_the_same_shape) {
+  NordnetSource::Page page;
+  std::string error;
+  CHECK(NordnetSource::parsePage(fixture("certificatelist-1.json"), page, error));
+  CHECK(page.rows == 4 && page.total == 4 && page.skipped == 0 && page.listings.size() == 4);
+  const NordnetListing & gold = page.listings[0];
+  CHECK(gold.symbol == "4GLD" && gold.isin == "DE000A0S9GB0" && gold.currency == "EUR" && gold.type == "PTC");
+  CHECK(gold.name == "Xetra-Gold ETC" && gold.marketId == 4 && gold.instrumentId == 16127916);
+  CHECK(page.listings[1].currency == "NOK" && page.listings[1].marketId == 53);  // a Norwegian certificate on a Swedish market
 }
 
 TEST(rows_without_what_a_listing_needs_are_counted_and_left_out) {
@@ -81,7 +101,7 @@ TEST(what_is_not_a_page_is_refused_with_the_reason) {
         error == "Invalid parameter: N/A");
 }
 
-TEST(loading_pages_through_the_list_and_stores_instruments_markets_and_edges) {
+TEST(loading_pages_through_every_list_and_stores_instruments_markets_and_edges) {
   auto store = makeMemoryStore();
   FakeHttp http;
   http.answer = pages;
@@ -89,27 +109,35 @@ TEST(loading_pages_through_the_list_and_stores_instruments_markets_and_edges) {
   NordnetSource source = quick();
   source.load(*store, http, listener);
 
-  // Two requests: the first with no offset, the second where the first ended.
-  CHECK(http.urls.size() == 2);
+  // Three requests: the ETFs with no offset and then where the first page ended, then the certificates.
+  CHECK(http.urls.size() == 3);
   CHECK(http.urls[0].find("https://www.nordnet.fi/api/2/instrument_search/query/etflist?") == 0);
   CHECK(http.urls[0].find("limit=500") != std::string::npos && http.urls[0].find("offset") == std::string::npos);
   CHECK(http.urls[0].find("sort_attribute=symbol") != std::string::npos);  // a key that does not move between pages
   CHECK(http.urls[1].find("offset=3") != std::string::npos);
-  CHECK(listener.changes == 2);
-  CHECK(listener.messages.size() == 1 && listener.messages[0] == "nordnet: 5 ETFs");
-  CHECK(source.listings().size() == 5);
+  CHECK(http.urls[2].find("https://www.nordnet.fi/api/2/instrument_search/query/certificatelist?apply_filters=instrument_type%3DPTC&") == 0);
+  CHECK(http.urls[2].find("limit=1000") != std::string::npos && http.urls[2].find("offset") == std::string::npos);
+
+  // The store is told after each page, not once at the end.
+  CHECK(listener.changes == 3);
+  CHECK(listener.messages.size() == 1 && listener.messages[0] == "nordnet: 9 listings (etflist 5, certificatelist 4)");
+  CHECK(source.listings().size() == 9 && source.listings()[0].list == "etflist" && source.listings()[8].list == "certificatelist");
 
   auto s = store->snapshot();
-  // Four ETFs (one of them listed on two markets) and the three quote currencies.
-  CHECK(s->instruments().size() == 7);
+  // Eight instruments (one ETF is listed on two markets) and the four quote currencies.
+  CHECK(s->instruments().size() == 12);
   Instrument xaix = *s->findInstrumentByIsin("IE00BGV5VN51");
   CHECK(xaix.symbol == "XAIX" && xaix.kind == InstrumentKind::Etf && xaix.isin == "IE00BGV5VN51");
+  CHECK(s->findInstrument("4GLD")->kind == InstrumentKind::Other);  // a certificate: no category of its own
   CHECK(s->findInstrument("EUR")->kind == InstrumentKind::Currency && s->findInstrument("EUR")->name == "Euro");
-  CHECK(s->markets().size() == 3);
+  CHECK(s->findInstrument("NOK")->name == "Norwegian krone");
+  CHECK(s->markets().size() == 6);
   MarketId xetra = s->findMarket("Xetra")->id, stockholm = s->findMarket("Nasdaq Stockholm")->id;
-  CHECK(s->findMarket("Nasdaq Copenhagen"));
-  CHECK(s->edges(xetra).size() == 2 && s->edges(stockholm).size() == 2);  // FLXK and XAIX; XACT BULL and XAIX
-  DatasetId nordnet = s->findDataset("nordnet-1d")->id;
+  CHECK(s->findMarket("Nasdaq Copenhagen") && s->findMarket("First North Sweden") && s->findMarket("First North Finland"));
+  CHECK(s->findMarket("Nordnet market 61"));
+  CHECK(s->edges(xetra).size() == 3 && s->edges(stockholm).size() == 2);  // FLXK, XAIX, 4GLD; XACT BULL, XAIX
+  CHECK(s->edges(s->findMarket("First North Sweden")->id).size() == 1);   // the certificate whose slug says Oslo
+  DatasetId nordnet = s->findDataset("nordnet")->id;
   EdgeKey onXetra{xaix.id, s->findInstrument("EUR")->id, xetra, nordnet};
   EdgeKey onStockholm{xaix.id, s->findInstrument("SEK")->id, stockholm, nordnet};
   CHECK(s->candles(onXetra).candles.empty());  // discovery only: no bars yet
@@ -129,7 +157,7 @@ TEST(loading_twice_changes_nothing_but_the_first_time) {
   uint64_t version = store->snapshot()->version();
   source.load(*store, http, listener);
   CHECK(store->snapshot()->version() == version);
-  CHECK(store->snapshot()->instruments().size() == 7 && source.listings().size() == 5);
+  CHECK(store->snapshot()->instruments().size() == 12 && source.listings().size() == 9);
 }
 
 TEST(the_requests_look_like_a_browsers_and_carry_no_cookie) {
@@ -147,48 +175,64 @@ TEST(the_requests_look_like_a_browsers_and_carry_no_cookie) {
   }
 }
 
-TEST(a_refusal_stops_the_load_and_says_why) {
+TEST(a_refusal_stops_every_list_and_says_why) {
   for (int status : {403, 429}) {
     auto store = makeMemoryStore();
     FakeHttp http;
     http.answer = [status](const std::string &) { return failed(status); };
     Listener listener;
     quick().load(*store, http, listener);
-    CHECK(http.urls.size() == 1);
-    CHECK(listener.messages.size() == 1 && listener.messages[0] == "nordnet: HTTP " + std::to_string(status) + ", stopping");
+    CHECK(http.urls.size() == 1);  // the certificates are not tried after the ETFs were refused
+    CHECK(listener.messages.size() == 1 && listener.messages[0] == "nordnet: etflist: HTTP " + std::to_string(status) + ", stopping");
     CHECK(store->snapshot()->version() == 0);
   }
-  auto store = makeMemoryStore();
-  FakeHttp http;
-  http.answer = [](const std::string &) { return failed(0); };
-  Listener listener;
-  quick().load(*store, http, listener);
-  CHECK(listener.messages.size() == 1 && listener.messages[0] == "nordnet: no answer");
 }
 
-TEST(an_answer_that_is_not_a_list_stops_the_load_and_keeps_what_came_before) {
+TEST(another_failure_ends_only_that_list) {
+  auto store = makeMemoryStore();
+  FakeHttp http;
+  http.answer = [](const std::string & url) { return url.find("etflist") != std::string::npos ? failed(500) : pages(url); };
+  Listener listener;
+  NordnetSource source = quick();
+  source.load(*store, http, listener);
+  CHECK(http.urls.size() == 2);  // the ETFs once, then the certificates
+  CHECK(listener.messages.size() == 2 && listener.messages[0] == "nordnet: etflist: HTTP 500");
+  CHECK(listener.messages[1] == "nordnet: 4 listings (certificatelist 4)");
+  CHECK(source.listings().size() == 4);
+
+  FakeHttp none;
+  none.answer = [](const std::string &) { return failed(0); };
+  Listener l2;
+  quick().load(*store, none, l2);
+  CHECK(none.urls.size() == 2 && l2.messages.size() == 2 && l2.messages[0] == "nordnet: etflist: no answer");
+}
+
+TEST(an_answer_that_is_not_a_list_ends_that_list_and_keeps_what_came_before) {
   auto store = makeMemoryStore();
   FakeHttp http;
   http.answer = [](const std::string & url) {
-    return url.find("offset=3") != std::string::npos ? ok("<html>") : ok(fixture("etflist-1.json"));
+    if (url.find("offset=3") != std::string::npos) return ok("<html>");
+    return pages(url);
   };
   Listener listener;
   NordnetSource source = quick();
   source.load(*store, http, listener);
-  CHECK(http.urls.size() == 2);
-  CHECK(listener.messages.size() == 2 && listener.messages[0] == "nordnet: not an instrument list" && listener.messages[1] == "nordnet: 3 ETFs");
-  CHECK(store->snapshot()->instruments().size() == 6);  // three ETFs and three currencies
+  CHECK(http.urls.size() == 3);  // the second ETF page, then the certificates
+  CHECK(listener.messages.size() == 2 && listener.messages[0] == "nordnet: etflist: not an instrument list");
+  CHECK(listener.messages[1] == "nordnet: 7 listings (etflist 3, certificatelist 4)");
+  CHECK(store->snapshot()->instruments().size() == 3 + 3 + 4 + 1);  // three ETFs, four certificates and their currencies
 }
 
 TEST(an_empty_page_ends_the_load_even_if_the_total_says_more) {
   auto store = makeMemoryStore();
   FakeHttp http;
   http.answer = [](const std::string & url) {
-    return url.find("offset") != std::string::npos ? ok(R"({"rows":0,"total_hits":999,"results":[]})") : ok(fixture("etflist-1.json"));
+    if (url.find("offset") != std::string::npos) return ok(R"({"rows":0,"total_hits":999,"results":[]})");
+    return pages(url);
   };
   Listener listener;
   quick().load(*store, http, listener);
-  CHECK(http.urls.size() == 2);
+  CHECK(http.urls.size() == 3);  // the empty page ends the ETFs; the certificates follow
 }
 
 TEST(a_cancelled_load_stops_before_the_next_request) {

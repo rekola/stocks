@@ -50,7 +50,7 @@ TEST(a_yahoo_chart_becomes_candles_on_the_edge_of_its_market) {
   std::string error;
   CHECK(YahooSource::parse(fixture("nokia.json"), entry("NOKIA.HE"), *store, error));
   auto s = store->snapshot();
-  EdgeKey k = edgeOf(*s, "NOKIA", "EUR", "Nasdaq Helsinki", "yahoo-1d");
+  EdgeKey k = edgeOf(*s, "NOKIA", "EUR", "Nasdaq Helsinki", "yahoo");
   CandleSeries c = s->candles(k);
   CHECK(c.intervalMs == 86400000 && c.candles.size() > 400);
   bool ordered = true, sane = true;
@@ -69,7 +69,7 @@ TEST(yahoo_dividends_become_corporate_actions_in_the_quote_currency) {
   std::string error;
   CHECK(YahooSource::parse(fixture("nokia.json"), entry("NOKIA.HE"), *store, error));
   auto s = store->snapshot();
-  EventKey k{s->findInstrument("NOKIA")->id, s->findDataset("yahoo-1d")->id};
+  EventKey k{s->findInstrument("NOKIA")->id, s->findDataset("yahoo")->id};
   auto actions = s->actions(k);
   CHECK(actions.size() >= 2);
   for (const CorporateAction & a : actions) {
@@ -87,7 +87,7 @@ TEST(a_yahoo_split_is_new_shares_per_old) {
   std::string error;
   CHECK(YahooSource::parse(body, entry("NOKIA.HE"), *store, error));
   auto s = store->snapshot();
-  auto actions = s->actions({s->findInstrument("NOKIA")->id, s->findDataset("yahoo-1d")->id});
+  auto actions = s->actions({s->findInstrument("NOKIA")->id, s->findDataset("yahoo")->id});
   CHECK(actions.size() == 1 && actions[0].kind == ActionKind::Split && actions[0].value == 2.0 && actions[0].note == "2:1");
   CHECK(actions[0].time == 1700086400000);
 }
@@ -97,7 +97,7 @@ TEST(days_yahoo_has_no_price_for_are_skipped) {
   std::string error;
   CHECK(YahooSource::parse(fixture("gold.json"), entry("GC=F"), *store, error));
   auto s = store->snapshot();
-  CandleSeries c = s->candles(edgeOf(*s, "XAU", "USD", "Commodities", "yahoo-1d"));
+  CandleSeries c = s->candles(edgeOf(*s, "XAU", "USD", "Commodities", "yahoo"));
   CHECK(c.candles.size() == 504);  // 506 days, two of them null
   CHECK(s->instrument(s->findInstrument("XAU")->id)->kind == InstrumentKind::Commodity);
 }
@@ -107,7 +107,7 @@ TEST(a_currency_pair_is_an_edge_between_two_currencies) {
   std::string error;
   CHECK(YahooSource::parse(fixture("eurusd.json"), entry("EURUSD=X"), *store, error));
   auto s = store->snapshot();
-  EdgeKey k = edgeOf(*s, "EUR", "USD", "Currencies", "yahoo-1d");
+  EdgeKey k = edgeOf(*s, "EUR", "USD", "Currencies", "yahoo");
   CHECK(s->lastCandles(k, 1).candles.size() == 1);
   CHECK(s->instrument(k.base)->kind == InstrumentKind::Currency && s->instrument(k.quote)->name == "US dollar");
 }

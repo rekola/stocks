@@ -55,7 +55,7 @@ bool YahooSource::parse(const std::string & body, const UniverseEntry & e, Store
     return false;
   }
 
-  Dataset dataset = store.addDataset({{}, "yahoo-1d"});
+  Dataset dataset = store.addDataset({{}, "yahoo"});
   Market market = store.addMarket({{}, e.market});
   Instrument base = store.addInstrument({{}, e.base, e.name, e.kind});
   Instrument quote = store.addInstrument({{}, e.quote, currencyName(e.quote), InstrumentKind::Currency});

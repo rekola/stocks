@@ -6,7 +6,7 @@
 #include <chrono>
 
 // Yahoo Finance's chart endpoint: daily candles, dividends and splits for every instrument of the universe. Unofficial
-// and without a key, so it can change or throttle without notice; for personal use. The dataset is "yahoo-1d".
+// and without a key, so it can change or throttle without notice; for personal use. The dataset is "yahoo".
 class YahooSource : public Source {
  public:
   // Loads `universe`: one request per entry. `range` is how far back to ask (1y, 5y, max, ...); `pause` is the wait

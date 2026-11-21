@@ -144,20 +144,23 @@ for a frame. The UI never waits on a source.
   checked against Yahoo by `tools/universe/build_universe.py`, and are not
   complete: about 100 Helsinki shares, 30 commodity futures, 88 currency pairs.
   This is the simple form of the "identity across sources" question below.
-- **Yahoo** (`YahooSource`, dataset `yahoo-1d`): one chart request per
+- **Yahoo** (`YahooSource`, dataset `yahoo`): one chart request per
   instrument (`range`, daily bars, `events=div|split`), second host as a
   fallback, a pause between requests, a stop on rate limiting. Days without a
   price are skipped; dividends and splits become corporate actions (a split is
   new shares per old). Unofficial, no key, for personal use. Yahoo's history is
   already adjusted for splits, so the series does not show a split's jump; the
   action is stored beside it.
-- **Nordnet** (`NordnetSource`, no key, no login): discovery of the ETFs for now, from
-  Nordnet's unofficial instrument search, five requests for about 2300 of them. An
-  ETF is an instrument of kind ETF with its ISIN; one listed on two markets is one
-  instrument and two edges (an instrument with an ISIN is found by it, and by
-  nothing else). The edges are known before they have data (`Store::addEdge`), under
-  the dataset `nordnet-1d`; the history step loads their bars. Its endpoints are
-  described in [server.md](server.md).
+- **Nordnet** (`NordnetSource`, no key, no login): discovery from Nordnet's
+  unofficial instrument search. It loads every list it knows in the same way, with
+  no category of its own for each: the ETFs (about 2300) and the certificates of
+  type PTC (about 1100), as 7 requests, a page at a time into the store. An
+  instrument is whatever its list holds, with its ISIN; one listed on two markets is
+  one instrument and two edges (an instrument with an ISIN is found by it, and by
+  nothing else). The edges are known before they have data (`Store::addEdge`: a
+  listing is found before its bars are loaded), under the dataset `nordnet`; the
+  history step loads their bars. A market is named from Nordnet's market id where
+  that is known. Its endpoints are described in [server.md](server.md).
 - **Synthetic**: made-up prices, for runs without a network.
 
 Not done:

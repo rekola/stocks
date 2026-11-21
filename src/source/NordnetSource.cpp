@@ -29,14 +29,28 @@ int64_t integer(const json & o, const char * key) {
 
 }  // namespace
 
+std::vector<NordnetSource::List> NordnetSource::defaultLists() {
+  const std::string base = "https://www.nordnet.fi/api/2/instrument_search/query/";
+  const std::string sorted = "sort_order=asc&sort_attribute=symbol";  // a key that does not move between pages
+  return {{"etflist", base + "etflist?" + sorted, 500},
+          {"certificatelist", base + "certificatelist?apply_filters=instrument_type%3DPTC&" + sorted, 1000}};
+}
+
 std::string NordnetSource::marketName(const NordnetListing & l) {
-  static const std::pair<const char *, const char *> known[] = {
-    {"xeta", "Xetra"}, {"xsto", "Nasdaq Stockholm"}, {"xcse", "Nasdaq Copenhagen"}, {"xhel", "Nasdaq Helsinki"},
-    {"xosl", "Oslo Bors"}};
-  std::string code = l.slug.substr(l.slug.rfind('-') == std::string::npos ? 0 : l.slug.rfind('-') + 1);
-  for (const auto & [c, n] : known)
-    if (code == c) return n;
+  static const std::pair<int, const char *> known[] = {{4, "Xetra"},
+                                                       {11, "Nasdaq Stockholm"},
+                                                       {14, "Nasdaq Copenhagen"},
+                                                       {24, "Nasdaq Helsinki"},
+                                                       {53, "First North Sweden"},
+                                                       {54, "First North Finland"},
+                                                       {55, "First North Denmark"}};
+  for (const auto & [id, name] : known)
+    if (l.marketId == id) return name;
   return "Nordnet market " + std::to_string(l.marketId);
+}
+
+InstrumentKind NordnetSource::kindOf(const std::string & type) {
+  return type == "UETF" || type == "KETF" ? InstrumentKind::Etf : InstrumentKind::Other;
 }
 
 bool NordnetSource::parsePage(const std::string & body, Page & page, std::string & error) {
@@ -82,44 +96,55 @@ bool NordnetSource::parsePage(const std::string & body, Page & page, std::string
 
 void NordnetSource::load(Store & store, Http & http, SourceListener & listener) {
   listings_.clear();
-  const std::string base =
-      "https://www.nordnet.fi/api/2/instrument_search/query/etflist?sort_order=asc&sort_attribute=symbol&limit=" +
-      std::to_string(pageSize_);
+  std::string counts;  // "etflist 2304, certificatelist 1097"
   int skipped = 0;
-  size_t offset = 0;
-  for (int request = 0; request < 1000; request++) {  // a bound, in case total_hits is wrong
-    if (listener.cancelled()) return;
-    HttpResult r = http.get(offset ? base + "&offset=" + std::to_string(offset) : base, kHeaders);
-    if (!r.ok()) {
-      listener.message("nordnet: " +
-                       (r.status == 0 ? (r.error.empty() ? std::string("no answer") : r.error) : "HTTP " + std::to_string(r.status)) +
-                       (r.status == 429 || r.status == 403 ? ", stopping" : ""));
-      break;
-    }
-    Page page;
-    std::string error;
-    if (!parsePage(r.body, page, error)) {
-      listener.message("nordnet: " + error);
-      break;
-    }
-    skipped += page.skipped;
+  bool stop = false;
+  for (const List & list : lists_) {
+    if (stop) break;
+    size_t found = 0, offset = 0;
+    for (int request = 0; request < 10000; request++) {  // a bound, in case total_hits is wrong
+      if (listener.cancelled()) return;
+      std::string url = list.url + "&limit=" + std::to_string(list.pageSize);
+      if (offset) url += "&offset=" + std::to_string(offset);
+      HttpResult r = http.get(url, kHeaders);
+      if (!r.ok()) {
+        const bool refused = r.status == 429 || r.status == 403;
+        listener.message("nordnet: " + list.name + ": " +
+                         (r.status == 0 ? (r.error.empty() ? std::string("no answer") : r.error) : "HTTP " + std::to_string(r.status)) +
+                         (refused ? ", stopping" : ""));
+        stop = refused;  // a refusal is for all the lists; another failure only ends this one
+        break;
+      }
+      Page page;
+      std::string error;
+      if (!parsePage(r.body, page, error)) {
+        listener.message("nordnet: " + list.name + ": " + error);
+        break;
+      }
+      skipped += page.skipped;
 
-    Dataset dataset = store.addDataset({{}, "nordnet-1d"});
-    for (const NordnetListing & l : page.listings) {
-      Market market = store.addMarket({{}, marketName(l)});
-      Instrument base = store.addInstrument({{}, l.symbol, l.name, InstrumentKind::Etf, l.isin});
-      const char * label = currencyName(l.currency);
-      Instrument quote = store.addInstrument({{}, l.currency, *label ? label : l.currency, InstrumentKind::Currency});
-      store.addEdge({base.id, quote.id, market.id, dataset.id});
-    }
-    listings_.insert(listings_.end(), page.listings.begin(), page.listings.end());
-    if (!page.listings.empty()) listener.changed();
+      // To the store as each page arrives, not all at the end.
+      Dataset dataset = store.addDataset({{}, "nordnet"});
+      for (NordnetListing & l : page.listings) {
+        l.list = list.name;
+        Market market = store.addMarket({{}, marketName(l)});
+        Instrument base = store.addInstrument({{}, l.symbol, l.name, kindOf(l.type), l.isin});
+        const char * label = currencyName(l.currency);
+        Instrument quote = store.addInstrument({{}, l.currency, *label ? label : l.currency, InstrumentKind::Currency});
+        store.addEdge({base.id, quote.id, market.id, dataset.id});
+      }
+      found += page.listings.size();
+      listings_.insert(listings_.end(), page.listings.begin(), page.listings.end());
+      if (!page.listings.empty()) listener.changed();
 
-    offset += static_cast<size_t>(page.rows);
-    if (page.rows == 0 || offset >= static_cast<size_t>(page.total)) break;
-    if (pause_.count() > 0) std::this_thread::sleep_for(pause_);
+      offset += static_cast<size_t>(page.rows);
+      if (page.rows == 0 || offset >= static_cast<size_t>(page.total)) break;
+      if (pause_.count() > 0) std::this_thread::sleep_for(pause_);
+    }
+    if (found) counts += (counts.empty() ? "" : ", ") + list.name + " " + std::to_string(found);
+    if (!stop && pause_.count() > 0) std::this_thread::sleep_for(pause_);
   }
   if (!listings_.empty())
-    listener.message("nordnet: " + std::to_string(listings_.size()) + " ETFs" +
+    listener.message("nordnet: " + std::to_string(listings_.size()) + " listings (" + counts + ")" +
                      (skipped ? ", " + std::to_string(skipped) + " rows left out" : std::string()));
 }
