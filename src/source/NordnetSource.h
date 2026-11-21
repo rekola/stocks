@@ -63,6 +63,8 @@ class NordnetSource : public Source {
 
   // The market's name: from its Nordnet id where that is known, else "Nordnet market <id>". (The slug's exchange code
   // is not used: a listing can carry the code of its home exchange while it trades on another market.)
+  // The name of a market Nordnet's id of which is known, else null; marketName falls back to "Nordnet market N".
+  static const char * knownMarketName(int id);
   static std::string marketName(const NordnetListing &);
 
  private:

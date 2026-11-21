@@ -51,7 +51,7 @@ std::vector<NordnetSource::List> NordnetSource::defaultLists() {
           {"stocklist", base + "stocklist?" + sorted, 1000}};  // about 12,000 rows: a dozen pages
 }
 
-std::string NordnetSource::marketName(const NordnetListing & l) {
+const char * NordnetSource::knownMarketName(int id) {
   static const std::pair<int, const char *> known[] = {{4, "Xetra"},
                                                        {11, "Nasdaq Stockholm"},
                                                        {14, "Nasdaq Copenhagen"},
@@ -59,9 +59,14 @@ std::string NordnetSource::marketName(const NordnetListing & l) {
                                                        {53, "First North Sweden"},
                                                        {54, "First North Finland"},
                                                        {55, "First North Denmark"}};
-  for (const auto & [id, name] : known)
-    if (l.marketId == id) return name;
-  return "Nordnet market " + std::to_string(l.marketId);
+  for (const auto & [k, name] : known)
+    if (k == id) return name;
+  return nullptr;
+}
+
+std::string NordnetSource::marketName(const NordnetListing & l) {
+  const char * known = knownMarketName(l.marketId);
+  return known ? known : "Nordnet market " + std::to_string(l.marketId);
 }
 
 bool NordnetSource::parsePage(const std::string & body, Page & page, std::string & error) {
@@ -153,7 +158,10 @@ void NordnetSource::load(Store & store, Http & http, SourceListener & listener) 
       Dataset dataset = store.addDataset({{}, "nordnet"});
       for (NordnetListing & l : page.listings) {
         l.list = list.name;
-        Market market = store.addMarket({{}, marketName(l)});
+        // A market with a name already known (shared with other providers) is that name; any other is Nordnet's id, to be
+        // named later without becoming another market.
+        const std::string name = marketName(l);
+        Market market = store.addMarket({{}, name, knownMarketName(l.marketId) ? name : "nordnet:" + std::to_string(l.marketId)});
         Instrument base = store.addInstrument({{}, l.symbol, l.name, kindOfNordnetType(l.type), l.isin, l.type});
         const char * label = currencyName(l.currency);
         Instrument quote = store.addInstrument({{}, l.currency, *label ? label : l.currency, InstrumentKind::Currency});

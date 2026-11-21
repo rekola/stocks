@@ -365,3 +365,28 @@ TEST(the_default_lists_are_the_etfs_the_certificates_the_funds_and_the_stocks) {
   CHECK(lists[2].name == "fundlist" && lists[3].name == "stocklist");
   CHECK(lists[3].url.find("/stocklist?") != std::string::npos && lists[3].pageSize == 1000);
 }
+
+TEST(a_market_with_no_name_yet_is_keyed_by_its_nordnet_id_so_it_can_be_named_later) {
+  auto store = makeMemoryStore();
+  FakeHttp http;
+  http.answer = pages;
+  Listener listener;
+  quick().load(*store, http, listener);
+  auto s = store->snapshot();
+  Market unnamed = *s->findMarket("Nordnet market 61");
+  CHECK(unnamed.key == "nordnet:61");
+  CHECK(s->findMarketByKey("Xetra") && s->findMarketByKey("Xetra")->name == "Xetra");  // a named one is shared by its name
+  const size_t edges = s->edges(unnamed.id).size();
+  CHECK(edges > 0);
+
+  store->renameMarket(unnamed.id, "Some Exchange");
+  auto named = store->snapshot();
+  CHECK(named->market(unnamed.id)->name == "Some Exchange" && !named->findMarket("Nordnet market 61"));
+  CHECK(named->edges(unnamed.id).size() == edges);  // the same market, the same edges
+
+  // Loading again does not bring the placeholder back or make another market.
+  quick().load(*store, http, listener);
+  auto again = store->snapshot();
+  CHECK(again->market(unnamed.id)->name == "Some Exchange" && !again->findMarket("Nordnet market 61"));
+  CHECK(again->markets().size() == named->markets().size());
+}

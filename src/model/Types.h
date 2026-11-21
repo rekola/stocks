@@ -59,7 +59,11 @@ struct Instrument {
 // A place where an instrument is listed and priced. Currency, calendar and time zone join later.
 struct Market {
   MarketId id;
-  std::string name;
+  std::string name;  // may change (renameMarket)
+  // What the market is known by in the store: a provider's own id ("nordnet:61") or, where a name is shared by several
+  // providers, the name. Empty means the name. It never changes, so a name can be filled in after the market is first
+  // seen.
+  std::string key;
 };
 
 // Where a fact came from: a provider, a file, a prediction model. Two datasets that disagree both stay.

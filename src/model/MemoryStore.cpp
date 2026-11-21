@@ -83,7 +83,12 @@ std::optional<Instrument> Snapshot::findInstrument(const std::string & s) const 
 std::optional<Instrument> Snapshot::findInstrumentByIsin(const std::string & isin) const {
   return byName(instruments_, instrumentByIsin_, isin);
 }
-std::optional<Market> Snapshot::findMarket(const std::string & s) const { return byName(markets_, marketByName_, s); }
+std::optional<Market> Snapshot::findMarket(const std::string & s) const {
+  for (const Market & m : markets_)
+    if (m.name == s) return m;
+  return std::nullopt;
+}
+std::optional<Market> Snapshot::findMarketByKey(const std::string & s) const { return byName(markets_, marketByKey_, s); }
 std::optional<Dataset> Snapshot::findDataset(const std::string & s) const {
   return byName(datasets_, datasetByName_, s);
 }
@@ -151,9 +156,17 @@ Instrument Snapshot::add(Instrument i) {
 }
 Market Snapshot::add(Market m) {
   size_t before = markets_.size();
-  Market out = addNamed(markets_, marketByName_, m, m.name);
+  if (m.key.empty()) m.key = m.name;
+  Market out = addNamed(markets_, marketByKey_, m, m.key);
   if (markets_.size() != before) version_++;
   return out;
+}
+void Snapshot::renameMarket(MarketId id, const std::string & name) {
+  if (!id.valid() || id.value > markets_.size() || markets_[id.value - 1].name == name) return;
+  Market m = markets_[id.value - 1];
+  m.name = name;
+  markets_ = markets_.set(id.value - 1, m);
+  version_++;
 }
 Dataset Snapshot::add(Dataset d) {
   size_t before = datasets_.size();
@@ -243,6 +256,9 @@ class MemoryStore : public Store {
   }
   Market addMarket(Market m) override {
     return write([&](Snapshot & s) { return s.add(std::move(m)); });
+  }
+  void renameMarket(MarketId id, const std::string & name) override {
+    write([&](Snapshot & s) { s.renameMarket(id, name); });
   }
   Dataset addDataset(Dataset d) override {
     return write([&](Snapshot & s) { return s.add(std::move(d)); });
