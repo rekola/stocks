@@ -629,10 +629,25 @@ and they decide how history has to be collected):
    and `Dataset` are the resolved views the app reads, made from the attributes. A node is found
    by an attribute: a market by Nordnet's id or by its name, tried in that order, and made
    with a surrogate id if neither is there, so one Nordnet gives no name for is found by the id
-   and named later, keeping its edges; an instrument by its ISIN, else its symbol. A symbol
-   belongs to a listing (the same ISIN has another symbol on another market), so an instrument
-   keeps the first it was given until listings carry their own. Nodes that several say the same of
-   are not merged.
+   and named later, keeping its edges; an instrument by its ISIN, else by the symbol its market
+   calls it. **A symbol is not an exception**: an instrument is its ISIN, and a symbol is a
+   statement qualified by a market ("the Helsinki market calls this instrument NOKIA"); an
+   attribute is one value per predicate and market. `findInstrument(symbol)` finds by any
+   market's symbol and `findInstrument(symbol, market)` by one's; a table row shows the
+   symbol of its edge's market. A currency's symbol is its code, said of the node itself.
+   **A market has identifiers too**: its ISO 10383 code (the MIC: XHEL, XSTO, XCSE, XETR; an
+   operating MIC and a segment MIC per exchange), which does for markets what the ISIN does for
+   instruments, and each provider's own code (Nordnet's market id; Yahoo's `exchangeName`, for
+   example "CMX", and its `fullExchangeName`, "COMEX"). A market is found by its code before its
+   name. Nordnet gives no MIC in the discovery rows (the slug ends in an exchange code that is
+   not reliable); the three main Nordic ones are set, and the rest come with the metadata
+   endpoints or the registry.
+   **Which source names things is decided, not left to the last writer**: where providers say
+   different things the name comes from an authoritative source per predicate and kind (a market's
+   from the MIC registry, a currency's from ISO 4217, an instrument's from the provider that
+   knows it best, Nordnet for what it lists, and the others only where it has none). Until
+   statements carry their dataset the last said stands, which can swap the name between
+   two providers.
    **A currency is the node the store has for its symbol**: a provider that has a currency gets
    that node (made, named as usually called, if none is there) and describes nothing.
 2. **Currency pairs and commodities.** The currencies are not added by hand: a currency is
