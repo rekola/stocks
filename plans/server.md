@@ -630,22 +630,41 @@ and they decide how history has to be collected):
    by an attribute: a market by Nordnet's id or by its name, tried in that order, and made
    with a surrogate id if neither is there, so one Nordnet gives no name for is found by the id
    and named later, keeping its edges; an instrument by its ISIN.
-   **Fat edges**: an instrument is its ISIN, and everything that depends on a market is an
-   attribute of the edge (instrument, currency, market, dataset), which is itself a node, made
-   when it first has data, so one dataset's say at one market is one thing: what the market calls
-   it (the symbol), the market's own id for it (Nordnet's identifier: "XAIX" on Xetra and
-   "419021" on Stockholm for one ETF), the order book its history is asked for by, the
-   provider's own type. An edge takes nothing before it has data. `findEdge(predicate, value,
-   market)` finds the edge by what the market says, whoever said it. A currency has no ISIN and
-   is its code, said of the node itself. **Nothing but a currency is without an ISIN**: the
-   adapters that have none (Yahoo) make no instruments.
+   **Edges are typed, not bags of attributes** (the owner's decision: their fields are static, so
+   they are plain C++ types, fast, and kept apart from the nodes; a new kind of edge is a new type).
+   Nodes (instruments, markets, datasets) keep attributes, as above; edges do not.
+   A **fat edge** is the listing of an instrument on a market in a quote currency from one dataset
+   (instrument, currency, market, dataset), small, with the price series beside it. Its `Listing` is
+   what the market says: the symbol it calls the instrument, its own id for it (Nordnet's identifier:
+   "XAIX" on Xetra and "419021" on Stockholm for one ETF), the order book its history is asked for
+   by, the provider's own type. An edge takes nothing before it has data. `findEdge(symbol,
+   market)` finds the edge by what a market calls it, whoever said it. A **thin edge** is a fact about
+   the instrument itself from one dataset, a typed record of one of four types so far
+   (`InstrumentFacts`, `CompanyFacts`, `FundFacts`, `CertificateFacts`), kept as the latest values and
+   replaced when they change. **The instruments need data**, so the adapters keep what a row says of
+   them (see the census below), and the fat edge stays light. A currency has no ISIN and is its
+   code; **nothing else is without an ISIN**.
+   **Private ISINs**: an instrument that has none gets one of our own: `ZZ` (ISO 3166-1's
+   user-assigned code element; no numbering agency issues ISINs under it), then a two-letter
+   source ("NN" Nordnet, "YF" Yahoo's continuous futures) and the provider's symbol, upper case, in
+   nine characters padded with zeros, and the check digit (`privateIsin()`, tested against real
+   ISINs; the Python that writes the data files has the same function). Zinc at Nordnet is
+   `ZZNNZINC0002`. The mapping is in code for the Nordnet indicator rows with no ISIN (Lead, Zinc,
+   BRIC 50 India, Shanghai) and in the data file for Yahoo's.
    **Yahoo has no discovery, so its data files carry the ISIN** next to the ticker
    (`kind,base,quote,name,yahoo,isin`): Yahoo makes its instrument from the file, by its ISIN, which
    is the same node another source made, and its own edge has its ticker as the symbol. Nothing
    waits on the load order. A currency has no ISIN and is its code; any other row without
-   an ISIN is refused by the list loader. The Helsinki file's ISINs come from Nordnet's stock list
-   (`tools/yahoo/build_lists.py` fetches it; 100 of 100 matched, Nordea being "NDA FI" at
-   Nordnet). **Yahoo's commodities are dropped**: they are futures contracts (see below).
+   an ISIN is refused by the list loader, and a test checks every ISIN in the files. The Helsinki
+   file's ISINs come from Nordnet's stock list (`tools/yahoo/build_lists.py` fetches it; 100 of 100
+   matched, Nordea being "NDA FI" at Nordnet).
+   **Yahoo's commodities are back, with ISINs** (Nordnet's commodity prices are not very
+   good): the six that Nordnet or the legacy data has an ISIN for (gold, silver, copper,
+   aluminium, WTI, Brent) take that ISIN, so one instrument has two edges, Nordnet's and Yahoo's,
+   and the dataset says whose prices they are; the other 24 get private ISINs (`YF`).
+   Yahoo's are futures contracts, rolled from one contract to the next, not the metal itself (see
+   below): the difference between the two edges is the cost of carry and the roll, and is visible.
+   Edit the ISIN column to change a match.
    **Indices**: Yahoo has them (`^GSPC` S&P 500 from 1927, `^IXIC`, `^DJI`, `^FTSE`, `^GDAXI`,
    `^N225`, `^VIX`, `^OMXH25`, `^OMXSPI`, `^STOXX50E`), each with its own pseudo-exchange (SNP, NIM,
    DJI, FGI, GER, OSA, STO, CXI, ZRH), which is the index's calculator, not a place where it
@@ -654,16 +673,33 @@ and they decide how history has to be collected):
    `Currencies` and the commodities on `Commodities`) and is quoted in points**, a unit node
    (kind Unit, symbol `pts`), not a currency: no price conversion applies to it, and the
    currency an index is calculated in is a fact about the instrument, where Yahoo gives it.
-   `data/yahoo/indices.csv` holds the four whose ISINs Nordnet gives (DJIA, Nasdaq Composite,
-   DAX, OMX Stockholm PI); S&P 500, FTSE 100, Nikkei 225, VIX, EURO STOXX 50 and OMX Helsinki 25
-   wait for their ISINs (the legacy data has them).
-   **Fat edges have arbitrary attributes**, one string value per predicate, set the same way
-   as on any node; the price series (bars, books) are not attributes but typed columns of the
-   edge. Latest values for display (change in per cent) are computed from the bars, not
-   stored; numbers that change at every reload (Nordnet's yield figures, the previous close) are
-   not attributes either: they are samples, a series (the snapshot series of the suggestions). A
-   registry of predicates (name, type of value, one per dataset or not) is the guardrail, not yet
-   built.
+   `data/yahoo/indices.csv` holds the five with ISINs: DJIA, Nasdaq Composite, DAX and OMX
+   Stockholm PI (Nordnet's) and S&P 500 (`US78378X1072`, the owner's); FTSE 100, Nikkei 225, VIX,
+   EURO STOXX 50 and OMX Helsinki 25 wait for theirs. The MOEX Russia Index
+   (`RU000A0JP7K5`) is not on Yahoo (`IMOEX.ME` is not found; `MOEX.ME` is the exchange's own
+   share, frozen in 2022), so it needs another source.
+   **Census of what Nordnet's rows say** (stocks 12,246, ETFs 2,304, funds 675, certificates 1,097),
+   and where it goes. Kept as thin edges: the issuer (and its id), the icon URL, whether it is
+   tradable or shortable, the collateral value, **how many Nordnet accounts hold it** (a retail
+   signal: worth sampling as a series, now only the latest), for stocks the market cap, P/E, P/B,
+   P/S, EPS, dividend per share and yield, **the next report (date and type), the next dividend
+   (ex-date, payment date, amount, currency) and the next general meeting** (scheduled events:
+   they belong in the corporate-action and announcement model for prediction, once that is
+   wired); for funds and ETFs the administrator, brand, category, type, dividend strategy, trading
+   frequency, SFDR article, risk class (1-7), Morningstar rating, ESG score, low-carbon flag, fees
+   (yearly, calculated, total), assets under management, minimum investment, start date and the
+   universe country and currency; for certificates the leverage, direction (long or short),
+   the high-risk flag, the market view, management fee, first trading date and the underlying
+   (Nordnet's id and name; 706 of 1,097). On the fat edge: symbol, the market's id for it,
+   the order book, the type. On the market: the country, from the rows. Not kept, and why: the
+   yields over 1 day to 10 years and the annual growth (derived from prices we will hold), the
+   tick-size id (a number that means nothing without a table), the order book of trading
+   (the same as the data one for 12,245 of 12,246 stocks), the slug, the clearing place and
+   the `exchanges` list. That list is worth a note: it names the real venue of a row ("First
+   North Stockholm", "Spotlight Stockholm") on Nordnet's market 11 and 52, which a market id
+   alone does not, so a market's sub id is a market of its own (a segment) with a name there.
+   Yahoo's chart meta gives the first trade date (kept, as where the history begins) and the
+   exchange's time zone (kept on the market); the rest is the day's quote.
    **Edges are undirected**: the legacy platform wrote a pair in both directions (`invert`: the
    price of USD in gold beside gold in USD). One edge is stored, in one direction, and the
    other is read from it: the reciprocal of the close, and a bar's high and low swap (the high
