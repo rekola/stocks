@@ -604,10 +604,12 @@ and they decide how history has to be collected):
    endpoints. The stocks have minute bars in the history endpoint, which the history
    loader will use through the per-resolution store.
    **Funds** are priced once a day (a NAV), at a time that differs by provider. As in the legacy
-   system a fund's bar is of one price, the close, which is also the last price while the slot is
-   still in progress (open, high and low are that price too), dated by its tick; volume, where the
-   answer has it, is written to the bar, and is used for weighting. The history url takes
-   `&fundType=FUND_NAV`; the same order book id is believed to serve all the history queries.
+   system a fund's bar has only the close, the NAV, which is also the last price while the slot
+   is still in progress; its open, high, low and volume are **undefined** (NaN in the store: a
+   number a provider does not give is undefined, never zero, so volume, which will weight the
+   bars, is written when there is one and is not a zero otherwise). The bar is dated by the
+   tick. The history url takes `&fundType=FUND_NAV`; the same order book id is believed to
+   serve all the history queries.
    **When a NAV is calculated and when Nordnet gets it is not known**, so the fund list is reloaded
    hourly, not on a schedule; learning the times is a measurement (see the suggestions: the
    first reload that shows a new tick time is when Nordnet had it, to within the interval).
@@ -619,18 +621,25 @@ and they decide how history has to be collected):
    **Each list has its own reload interval** (`List::interval`; the source's refresh is the tick
    that asks): now the funds hourly and the rest at every load. A stock list per market, loaded
    only while the market is open, waits for the calendars.
-   **Markets are found by what is said about them** (the first use of the statements below): a
-   market with Nordnet's id or with the name is that market; if neither is there, a new one is made
-   with a surrogate id and the attributes, so the name of one Nordnet gives no name for can be filled
-   in later (`setMarketAttribute`) without becoming another market. A market found gets the
-   attributes it lacks (Yahoo's "Nasdaq Helsinki" gets Nordnet's id 24); the first value of a
-   predicate stays, and an attribute another market has is not taken from it (merging two markets
-   that say one thing is not done here).
-2. **Currencies and commodities added by hand.** They are not in the discovery lists, so
-   there is a list kept by hand of the Nordnet instruments for them (name, Nordnet's ids,
-   market, quote currency), in a data file as `data/yahoo` is, loaded by the same adapter and
-   history endpoints. To settle: which ids they have (the order book id the history is
-   asked for by), and their calendar (24 hours, see calendars.md).
+   **Every node keeps what is known about it as attributes, in the same way** (instruments,
+   markets and datasets alike; the first use of the statements below, without the dataset yet):
+   one value per predicate, `setAttribute(node, predicate, value)`, and a value can change: the
+   last said stands (with two providers saying different things it is whichever wrote last,
+   until statements say who says them), and an empty value says nothing. `Instrument`, `Market`
+   and `Dataset` are the resolved views the app reads, made from the attributes. A node is found
+   by an attribute: a market by Nordnet's id or by its name, tried in that order, and made
+   with a surrogate id if neither is there, so one Nordnet gives no name for is found by the id
+   and named later, keeping its edges; an instrument by its ISIN, else its symbol. A symbol
+   belongs to a listing (the same ISIN has another symbol on another market), so an instrument
+   keeps the first it was given until listings carry their own. Nodes that several say the same of
+   are not merged.
+   **A currency is the node the store has for its symbol**: a provider that has a currency gets
+   that node (made, named as usually called, if none is there) and describes nothing.
+2. **Currency pairs and commodities.** The currencies are not added by hand: a currency is
+   found in the store by its symbol (above). What is listed by hand is the **edges**, the
+   Nordnet pairs and commodities with the order book ids their history is asked for by
+   (a pair is an edge between two currency nodes, not an instrument of its own), in a data
+   file as `data/yahoo` is. To settle: the ids, and the calendar (24 hours, see calendars.md).
 3. **Metadata endpoints**, for getting ids and the like. The first use is the market list
    (a market is a number in the discovery answers, and the names in the adapter are
    inferred from the data: 4 Xetra, 11 Nasdaq Stockholm, 24 Nasdaq Helsinki, ...), and the
