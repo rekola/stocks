@@ -111,12 +111,12 @@ Sketch, to be argued with (ClickHouse):
     bars(
       edge_id   UInt64,            -- (base, quote, market, dataset), as in the app
       resolution UInt8,            -- a code: min1 ... day, week, month, quarter (see Calendars and resolutions)
-      ts        Int64,             -- UTC milliseconds, the start of the bar
+      t         Int64,             -- the start of the bar: UTC seconds, or a day number for a date resolution
       o, h, l, c Float64,
       volume    Float64,
       version   UInt64             -- the ingest batch that wrote this row
     ) ENGINE = ReplacingMergeTree(version)
-      ORDER BY (edge_id, resolution, ts)
+      ORDER BY (edge_id, resolution, t)
 
 - One row per bar: the column store makes that cheap (delta-coded timestamps,
   float codecs, compression), unlike a row store. Prices are doubles, as in the
@@ -155,9 +155,13 @@ Open:
   instead of stored. A provider's own coarse bars and ours made from finer ones are
   different data and would be different series. Proposed: derive on demand first,
   store a level only when a read is too slow.
-- **Time.** UTC milliseconds everywhere. A provider's intraday bars follow its own
-  session times, so the bar's start is what the provider says, converted. Sessions, holidays and time zones belong
-  to the market record and are not designed yet.
+- **Time, decided.** An instant is **whole Unix seconds, UTC; never milliseconds** (the
+  Unix habit: whole seconds when they are enough, floating-point seconds otherwise, as
+  for order book snapshots and any ticks). A provider that gives milliseconds (Nordnet)
+  is converted where it comes in. A date is a day number (see Calendars and resolutions).
+  A provider's intraday bars follow its own session times, so the bar's start is what
+  the provider says, converted. Sessions, holidays and time zones belong to the market
+  record and are not designed yet.
 - **Corporate actions and adjustment.** Prices are stored as reported and the
   actions are stored beside them. Adjusting for splits and dividends (needed for
   1987 to be usable) as a query-time view, or as a derived dataset? A provider's
@@ -173,12 +177,11 @@ the exchange's calendar.
 - A series' **resolution** says how big its bars are: `min1`, `min2`, `min5`, `min15`,
   `min30`, `hour1`, `hour4`, `day`, `week`, `month`, `quarter` (Nordnet's vocabulary;
   Yahoo's maps onto it). It is a symbolic **code** (a small number or an enum naming
-  one of these), not a number of milliseconds: a day is not `86 400 000` ms. The app's
-  `interval::day` and `interval::week` are only nominal labels today, and they and the
-  `interval` argument of the app's `Store` should become this code.
+  one of these), not a number of seconds: a day is not `86 400` s. The app's
+  `Store` already takes this code (`Resolution`), not a length.
 - **Two kinds of time axis** (proposed, after the owner's earlier system):
   - **Intraday resolutions** (`min1` to `hour4`) are keyed by an **instant**: UTC
-    milliseconds, the start of the bar. These are fixed lengths, and a bar's end is its
+    seconds, the start of the bar. These are fixed lengths, and a bar's end is its
     start plus the resolution.
   - **Date resolutions** (`day`, `week`, `month`, `quarter`) are keyed by a **date**, as a
     **day number**: the absolute number of the day in the proleptic Gregorian calendar,
@@ -223,6 +226,50 @@ the exchange's calendar.
 - Open: the source of the calendars (the IANA time zone database, plus per-exchange
   session and holiday rules), how weeks and months are cut for 24-hour markets, and
   which day starts a week (Monday, as in ISO 8601, is the proposal).
+
+**Built** (in the app's `Store`, `Dates.h`): `Resolution` codes; seconds for instants and
+floating-point seconds for order book snapshots; day numbers for the date resolutions
+with weekday, week, month and quarter starts and the date of an instant in a time zone;
+Nordnet's millisecond tick times converted on the way in. Two provider facts found on the
+way:
+
+- **Yahoo stamps a daily bar at the start of the trading day in the exchange's time
+  zone**: the open for Helsinki (07:00 or 08:00 UTC), local midnight for gold futures in
+  New York (04:00 UTC in summer, 05:00 in winter) and for currencies in London (23:00 UTC
+  of the day before in summer, 00:00 in winter; so a Yahoo FX day runs from London
+  midnight, not from UTC midnight). Its meta gives only today's offset from UTC
+  (`gmtoffset`), which is an hour off for half the year, so reading the stamp in that
+  offset puts summer bars on the day before (330 of the 500 gold bars). The date taken
+  is the one of the **nearest** local midnight, which absorbs the hour.
+- Nordnet's discovery gives an instant (the last tick), so its bar's date is the UTC date
+  of that tick, which is right for the European markets seen so far.
+
+### Comparing across markets: the day is not the same window
+
+The market regime embeddings are calculated for **time slots**, and what a slot means
+must be explicit, because bars of different markets are not always comparable:
+
+- A **day** is a window defined by its market's calendar. A Nasdaq Helsinki day is the
+  trading session of that date (about 09:00 to 18:30 Helsinki time). A day of a 24-hour
+  market is 24 hours, cut by a convention (London midnight for Yahoo's currencies,
+  17:00 New York or Chicago for some futures, UTC midnight for others). So **a 24-hour
+  market's day is not directly comparable to a Nasdaq Helsinki day**: they cover
+  different hours.
+- **The matching hours are comparable**: the intraday bars (5 minute, 15 minute, hourly)
+  of both markets over the same UTC hours, for example those of Helsinki's session.
+  This is the way to compare a 24-hour market with an exchange: by the slots they share.
+- **Different 24-hour market days might be comparable** to each other, when they are cut
+  the same way; if they are cut at different hours (London midnight against 17:00 New
+  York), they are shifted windows and are not, though their hours can be matched too.
+- So a slot is not "a date" alone: it is (the window's definition, the window's start).
+  The **window definition** (the calendar: time zone and rule, session hours or 24 hours,
+  where the day rolls) must be recorded for every date series, on the market and on the
+  dataset whose daily convention it is, and a comparison must check it: two date bars
+  are comparable if their definitions are the same; otherwise they are compared through
+  the intraday bars of the hours they have in common. In the graph of statements the
+  calendar is a node, and "market has calendar" a statement.
+- For the embeddings this means building the slots from intraday bars aligned by UTC
+  time where the markets differ, and from date bars where the definitions match.
 
 ### Rough size (to be measured)
 
