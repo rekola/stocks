@@ -139,9 +139,8 @@ Decided:
 - **The interval is not part of the edge key.** An edge (an instrument on a market in
   a currency, as a dataset gives it) has its data in different forms: a series per
   interval. So datasets are named for the provider (`nordnet`, `yahoo`), not for an
-  interval, and `bars` is keyed by edge, then interval. The app's `Store` keeps one
-  interval per edge today and refuses a second; holding several is the change to
-  make with the history step.
+  interval, and `bars` is keyed by edge, then interval. The app's `Store` does this
+  now: `candles(edge, interval, range)` and `intervals(edge)`.
 
 Open:
 
@@ -210,17 +209,21 @@ see data-model.md).
   can, data that makes edges (see Nordnet). Nodes are instruments today and may be
   other kinds later (the model's `EdgeKey` has instruments at both ends, which would
   then widen).
-- **Selecting edges by the type of a node is where the trouble is.** A preset must be
-  able to say "the ETFs on this market", but: Nordnet's types (`UETF`, `KETF`, `PTC`)
-  and Yahoo's (`EQUITY`, `FUTURE`, `CURRENCY`) are different vocabularies, and the
-  same instrument can have a type from each; our coarse `kind` is the same across
-  providers but too coarse (a certificate is just `Other`); a type belongs to the
-  node but the preset selects edges, so each selection looks the node up (fine in
-  memory, an index in the database); and a node that is not an instrument may have no
-  type of the kind. Today an instrument keeps the first provider's own type
-  (`Instrument::type`) and its `kind`, and `Snapshot::edges(market, filter)` selects
-  by either. Open: a type table that maps provider types to a common taxonomy, and
-  what a preset's selection looks like (market, type, kind, ...).
+- **One vocabulary of instrument types, decided.** Nordnet's types (`UETF`, `KETF`,
+  `PTC`) and Yahoo's (`EQUITY`, `FUTURE`, `CURRENCY`, ...) are combined into one
+  vocabulary, which names certificates: company, ETF, certificate, currency, commodity,
+  index, other (`InstrumentKind`). Each adapter maps its provider's types onto it and
+  keeps the provider's own type beside it (`Instrument::type`), which is what the
+  mapping came from; the mapping table is in `src/source/InstrumentTypes.cpp` and in
+  the server's catalog it becomes a table. New provider types start as "other" until
+  mapped.
+- **Selecting edges by type is not used yet**, and it has its difficulties: the same
+  instrument can be typed by several providers (which wins? today the first); the
+  vocabulary will need to grow (bull and bear certificates, funds, ...); a type belongs
+  to the node while a preset selects edges, so each selection looks the node up (fine
+  in memory, an index in the database); and nodes that are not instruments may not
+  have the same types. `Snapshot::edges(market, filter)` selects by kind or type
+  today. Open: what a preset's selection looks like (market, kind, ...).
 - **Events**: announcements and corporate actions, per instrument and dataset, as
   in the model; stored like bars (rows, versioned).
 - **Identity across providers**: an internal instrument id, plus the **ISIN** where
@@ -309,6 +312,28 @@ The ETF list:
   what the history requests need: the adapter keeps them for the history step, and
   on the server they become aliases in the catalog.
 
+**Intraday depth, as measured** (not as documented; these are the limits per request,
+and they decide how history has to be collected):
+
+| | 1 min | 5 min, 15 min | 1 hour | 1 day and coarser |
+|---|---|---|---|---|
+| **Yahoo** (chart, NOKIA.HE) | last 8 days | last 60 days (2, 5, 15, 30 min) | last 2 years (3 years is refused) | from the first trade (2000 for this one) |
+| **Nordnet** (price-time-series, the ETC and a liquid ETF) | `MIN_1` for periods up to `WEEK_1` | `MIN_5` and `MIN_15` for periods up to `WEEK_1` (about a week) | `HOUR_1` up to `YEAR_1` | `DAY` back to the instrument's start (2019 for the ETC) |
+
+- So both providers give only a window of fine bars: minute-level history is built by
+  **collecting regularly**, not by one deep request. A collector that asks often
+  enough (the window is days or weeks) and stores what it gets accumulates a history
+  longer than any request can return.
+- My first notes said Nordnet's 5 and 15 minute bars never came back; that was wrong.
+  They came back as hourly only because I asked for periods of a month and more. For
+  `DAY_1` and `WEEK_1` the valid resolutions are `MIN_1 MIN_2 MIN_5 MIN_15 MIN_30`
+  (and, for a week, also `HOUR_1 HOUR_4 DAY`). A second Nordnet endpoint, for stocks,
+  also has minute bars; the owner will supply it.
+- **Yahoo's `range=max` is a trap**: it returns monthly bars whatever the interval
+  asked for. Full daily history needs `period1=0&period2=<now>` (6825 daily bars for
+  NOKIA.HE); the same works for `1wk`, `1mo`, `5d` and `3mo`. Yahoo has its own weekly
+  and monthly bars, like Nordnet.
+
 **Nordnet history** (`api.prod.nntech.io`), as observed, not built yet:
 
 - `GET https://api.prod.nntech.io/market-data/v3/price-time-series/period/<PERIOD>/identifier/<ID>?resolution=<RESOLUTION>`
@@ -321,15 +346,15 @@ The ETF list:
   `validResolutionsForPeriod`, `availablePeriods`, `returnedPeriod`,
   `returnedResolution`.
 - Periods: `DAY_1 WEEK_1 MONTH_1 MONTH_3 MONTH_6 YTD YEAR_1 YEAR_3 YEAR_5 ALL`.
-  Resolutions seen: `WEEK`, `DAY`, `HOUR_4`, `HOUR_1`, `MIN_15`, `MIN_5` (the codes
-  from the original script), `MONTH` and `QUARTER` as well.
+  Resolutions: `QUARTER`, `MONTH`, `WEEK`, `DAY`, `HOUR_4`, `HOUR_1`, `MIN_30`, `MIN_15`,
+  `MIN_5`, `MIN_2`, `MIN_1`; which are valid depends on the period.
 - **The endpoint substitutes a resolution that is not valid for the period, and says
   so only in `returnedResolution`.** The loader must read that field, never trust the
   one it asked for. For the BNPP ETC: `YEAR_1` gives `HOUR_1`, `HOUR_4`, `DAY`,
   `WEEK` and `MONTH`; `YEAR_3` and `YEAR_5` give `DAY` and coarser; `ALL` gives `DAY`,
   `WEEK`, `MONTH` and `QUARTER` (1543 daily bars back to 2019-07-29, 139 KB, 1.1 s);
-  hourly goes back one year. `MIN_5` and `MIN_15` always came back as `HOUR_1` for
-  this instrument; liquid instruments may differ, to be tried.
+  hourly goes back one year; minute bars only for `DAY_1` and `WEEK_1` (see the table
+  above).
 - Daily bars are stamped 00:00 UTC of the trading date, hourly bars on the hour in UTC
   (the session hours differ between summer and winter time); `volume` was 0 for most
   bars of the ETC, so it is not to be trusted yet.
