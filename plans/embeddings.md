@@ -90,6 +90,54 @@ distorts what it is added to:
   estimation of the state; keep plain trackers where they add coverage, and never together
   with what they track in the same aggregate.
 
+## What else defines a regime (feature catalogue)
+
+Correlation is one description of a market state. Others, grouped by what the data we hold can compute.
+The groups stay separate features with their own time scales (fast ones move in minutes, slow ones in
+months), so the map can show the present at several speeds.
+
+**From prices alone (every instrument has them)**
+- *Volatility level and term structure*: realised volatility over 5 minutes, 1 hour and 1 day, and
+  their ratios.
+- *Return distribution shape*: skew, kurtosis, frequency of large moves.
+- *Dispersion*: the cross-sectional spread of returns. High correlation with low dispersion is one
+  block moving; high dispersion is stock picking. Related to correlation but not the same.
+- *Breadth*: share of instruments up, new highs against new lows.
+- *Trend and autocorrelation* at each time scale (momentum against mean reversion).
+- *Intraday shape*: where the range is made (open, lunch, close) and the gap from the previous close.
+- *Spectral structure*: variance explained by the first principal component of the correlation
+  matrix, the effective number of independent bets.
+
+**From volume and activity**
+- Turnover against the instrument's own history for that time of day.
+- Concentration of volume in few names against spread out.
+- The time-of-day volume profile, which shifts under stress.
+
+**From the instrument types already discovered**
+- *Leverage and direction*: relative turnover and price of long against short leveraged
+  certificates, a direct sentiment gauge (hence keeping `static_leverage` and direction as facts,
+  server.md).
+- *Safe haven against risk assets*: gold, the yen and the franc against the equity indices; the sign
+  pattern across assets is a classic marker (hence currencies and commodities).
+- ETF premium or discount to its underlying where both are present.
+
+**From the order book (later)**: spread, depth, imbalance, quote update rate. Liquidity regimes often
+turn before price regimes.
+
+**From outside prices**
+- Announcement and corporate-action density (earnings season, profit warnings, ex-dividend days);
+  the data model has a place for them.
+- Calendar effects: weekday, month end, expiries, holidays, half days. Known in advance, so they are
+  features of the regime, not something to discover (calendars.md).
+- The macro schedule (central bank decisions, data releases) and, if ever added as instruments,
+  interest rates and the yield curve.
+
+**Cautions.** Volatility, dispersion and correlation all rise in a sell-off, so several of these
+will be strongly correlated. Whether they separate or collapse onto one axis is something the map
+shows: colour the map by each feature in turn as a cheap test. Which groups the data we hold can
+compute today: all of "prices alone", volume, and leverage/direction (once kept); the rest wait for
+the order book, announcements, calendars or other instruments.
+
 ## Data issues the embeddings must live with
 
 - **Adjusted history.** A return across a split is wrong unless the prices are adjusted, and
