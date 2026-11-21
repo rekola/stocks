@@ -594,10 +594,24 @@ and they decide how history has to be collected):
 
 **Decided by the owner**, in this order of work:
 
-1. **The stocks endpoint.** Another of Nordnet's lists, loaded the same way as the ETFs and
-   certificates (no category of its own, the instrument keeps its own type), and, as
-   the owner says, it has minute bars. The owner will supply it. It builds on the
-   per-resolution store, so its intraday bars go into the series of their resolutions.
+1. **The stocks endpoint (built, with the fund list).** `stocklist` and `fundlist`, loaded the
+   same way as the ETFs and certificates, without the cookie; the instrument keeps its own
+   type (`ESH`, `PESH`, `ESHMTF`, `ESHOTC` are shares, kind Company; `FUCITS`, `FOTH` are
+   funds, a new kind Fund). Measured: 12,246 stocks on 27 markets (about 2 MB per 1,000
+   rows, so about 25 MB a reload) and 675 funds, all on market 78. Most of the markets
+   are not named yet (17, 18, 19 and 21 are US, 25 and 26 Canada, 70 UK, 72 France,
+   82 Spain, 83 Switzerland, and so on, by the country the rows give), which waits for the metadata
+   endpoints. The stocks have minute bars in the history endpoint, which the history
+   loader will use through the per-resolution store.
+   **Funds** are priced once a day (a NAV), so the discovery gives them no open, high or low and
+   therefore no bar: they are instruments without an edge, invisible, until the history
+   loader reads their NAV (the history url takes `&fundType=FUND_NAV`; the same order book id
+   is believed to serve all the history queries). Each provider prices at its own time of day.
+   **Idea of the owner: nowcast the NAV** shortly before the order cut-off and buy or sell
+   fund shares without transaction fees, where a small edge might be usable. It needs
+   the cut-off and NAV times per fund (the `fund_info` block has the trading frequency, the
+   admin company and the category), and the market's close on that day: a calendar question
+   (calendars.md), and a model one (a fund tracks its holdings: the nowcast is of the underlying).
 2. **Currencies and commodities added by hand.** They are not in the discovery lists, so
    there is a list kept by hand of the Nordnet instruments for them (name, Nordnet's ids,
    market, quote currency), in a data file as `data/yahoo` is, loaded by the same adapter and
@@ -644,8 +658,11 @@ and they decide how history has to be collected):
 - **Calendars for Nordnet's markets**: the generator and the reader for Xetra, Stockholm,
   Copenhagen and Helsinki first (calendars.md), which gives the trading date of a tick
   (now the UTC date) and the expected bars of a session for finding gaps in the history.
-- **Look at the traffic before adding the stocks list.** One reload is now about 7
-  requests and 20 MB of JSON every five minutes; the stocks list will add to it. The prices are
+- **Look at the traffic now that the stocks list is added.** A reload was about 7 requests and
+  20 MB of JSON every five minutes; the stocks list adds about 13 requests and 25 MB, so every five
+  minutes is now about 45 MB. Unlike the ETFs, most of the stocks are not open at the same time,
+  and the funds change once a day, so the lists could be reloaded at their own intervals (the
+  funds once a day, a market's stocks while it is open); not done yet. The prices are
   in the same answers as the instruments, so reloading the lists is how prices are
   refreshed. If the metadata endpoints include one that gives prices for many ids at once,
   the lists could be reloaded rarely (daily) and the prices often and cheaply; to ask the
