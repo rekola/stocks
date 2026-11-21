@@ -310,10 +310,11 @@ calls hourly. What it brings and what to decide:
   session, and the last slot holds the close. The first and last hour of the session are
   half-filled; a rule is needed (keep them as partial, or mark them).
 - The US session moves by an hour in UTC with daylight saving (the open is 14:30 UTC in
-  winter and 13:30 in summer, while Helsinki's open moves with its own daylight saving
-  on other dates, so for some weeks of the year the two are shifted by one more hour
-  than usual). Slots by UTC hour therefore mean different parts of the session over the
-  year: the calendar question again.
+  winter and 13:30 in summer). Helsinki is 7 hours ahead of New York on most days (337
+  of the 365 days of 2026) but only 6 on the other 28, in the weeks between the two
+  changing their clocks on different dates (mid to end of March, and the last week of
+  October). Slots by UTC hour therefore mean different parts of the session over the
+  year: the calendar question again (see [calendars.md](calendars.md)).
 - Whether a provider's own coarse bars and bars reconstructed from finer ones are
   different series (they are different data, as noted for the pyramid).
 
