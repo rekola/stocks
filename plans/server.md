@@ -110,13 +110,13 @@ Sketch, to be argued with (ClickHouse):
 
     bars(
       edge_id   UInt64,            -- (base, quote, market, dataset), as in the app
-      interval  UInt32,            -- seconds; 86400 is a day
+      resolution UInt8,            -- a code: min1 ... day, week, month, quarter (see Calendars and resolutions)
       ts        Int64,             -- UTC milliseconds, the start of the bar
       o, h, l, c Float64,
       volume    Float64,
       version   UInt64             -- the ingest batch that wrote this row
     ) ENGINE = ReplacingMergeTree(version)
-      ORDER BY (edge_id, interval, ts)
+      ORDER BY (edge_id, resolution, ts)
 
 - One row per bar: the column store makes that cheap (delta-coded timestamps,
   float codecs, compression), unlike a row store. Prices are doubles, as in the
@@ -139,7 +139,7 @@ Decided:
 - **The interval is not part of the edge key.** An edge (an instrument on a market in
   a currency, as a dataset gives it) has its data in different forms: a series per
   interval. So datasets are named for the provider (`nordnet`, `yahoo`), not for an
-  interval, and `bars` is keyed by edge, then interval. The app's `Store` does this
+  interval, and `bars` is keyed by edge, then resolution. The app's `Store` does this
   now: `candles(edge, interval, range)` and `intervals(edge)`.
 
 Open:
@@ -163,6 +163,38 @@ Open:
   1987 to be usable) as a query-time view, or as a derived dataset? A provider's
   history may already be adjusted, and that has to be recorded per dataset.
 - **Partitioning and codecs**, measured, not guessed.
+
+### Calendars and resolutions
+
+Decided: **days and weeks are not fixed lengths**, any more than months and quarters.
+Daylight saving gives days of 23 and 25 hours, and sessions, weeks and holidays follow
+the exchange's calendar.
+
+- A series' resolution is a **symbolic code**, not a number of milliseconds: `min1`,
+  `min2`, `min5`, `min15`, `min30`, `hour1`, `hour4`, `day`, `week`, `month`,
+  `quarter` (Nordnet's vocabulary; Yahoo's maps onto it). The app's `interval::day`
+  (86,400,000 ms) and `interval::week` are only nominal labels today, and they and the
+  `interval` argument of the app's `Store` should become a resolution code. Minutes and
+  hours as UTC buckets are fixed lengths, the rest are not.
+- A bar's timestamp is its start as an instant in UTC. A **daily bar is really a
+  trading date**: Nordnet stamps it 00:00 UTC of the date, and its end is not
+  `start + 24 hours`. Hourly bars on a market with daylight saving start at a different
+  UTC hour in summer and winter (07:00 and 08:00 UTC session starts were seen for one
+  exchange over a year); that is fine, an instant is an instant.
+- **24-hour markets** (currencies, many commodity futures): the owner recalls that
+  daylight saving may not apply to them. What "a day" is there is a convention that
+  differs: a cut at UTC midnight has no daylight saving; a cut at a fixed local time in
+  a financial centre (from memory FX is often cut at 17:00 New York, CME futures at
+  17:00 Chicago) moves with that centre's daylight saving. To be checked per dataset,
+  not assumed.
+- So a **calendar is a property of the market** (time zone, session hours or 24 hours,
+  where the day rolls, holidays), and a dataset says which day convention its daily and
+  weekly bars use. It is needed to compare instruments across markets, to align series,
+  and to make coarser bars from finer ones: which is why "derive on demand" in the
+  pyramid question needs the calendar, and why a provider's own daily bars can differ
+  from daily bars made from its hourly ones.
+- Open: the source of the calendars (the IANA time zone database, plus per-exchange
+  session and holiday rules), and how weeks and months are cut for 24-hour markets.
 
 ### Rough size (to be measured)
 
@@ -231,6 +263,53 @@ see data-model.md).
   such pairs among Nordnet's ETFs), plus aliases (each provider's ids and symbol,
   FIGI). Open: how aliases are matched when a new provider is added, and what
   identifies instruments with no ISIN (currency pairs, futures).
+
+## A graph of statements (proposed by the owner)
+
+The idea: the catalog is a **semantic graph**, like Wikidata's. A node is universal (an
+instrument, a currency, a market, an issuer, an index, ...), and what is known about it
+is a set of **statements** that say who says them, such as "this node has the type PTC,
+according to Nordnet" and "its ticker is NOKIA.HE, according to Yahoo".
+
+- **A statement** is (subject node, predicate, value or object node, dataset, optional
+  qualifiers: valid from and to, market, rank). The dataset is the reference: who says
+  it. Statements from different datasets about the same predicate sit side by side,
+  never merged, as the bars of two providers do.
+- **What goes in**: the provider-specific type, the provider's identifiers (Nordnet's
+  instrument id and the order book id its history is asked for by, Yahoo's ticker),
+  labels and descriptions (per language and per dataset: Yahoo and Nordnet name the same
+  instrument differently), the ISIN, the issuer, a fund's category and fees.
+- **Edges** are the statements whose value is another node. The price-history edge
+  (base, quote, market, dataset) is the special case whose payload is a series of bars
+  per resolution. Others come with the same machinery: issued by, tracks (an ETF
+  tracks an index), underlying of (a certificate's asset), listed on, same as.
+- **What it replaces.** Today an instrument keeps the first writer's name, type and
+  ISIN, so the first provider to mention it wins (`Instrument` is a record of
+  first-writer values). With statements these become resolved values: a rule picks what
+  to show (a preferred dataset per predicate, as Wikidata's ranks do), and the others
+  remain. `Instrument` stays as that resolved view for the app and the API.
+- **Types become classes with a hierarchy** (bull certificate, certificate, ETF, fund,
+  ...), so a vocabulary that has to grow does so by adding a subclass, selecting by a
+  class includes its subclasses, and the mapping from a provider's type to ours is
+  itself a statement ("Nordnet's PTC is a certificate").
+- **Currencies need no provider's opinion.** A currency is identified by its ISO 4217
+  code, and being the quote of an edge makes it a currency; its class is asserted by the
+  system, not by a dataset. (Today the quote currencies are added by the adapters, and
+  a provider's type shows on one only if it happened to be the first to add it: the kind
+  of accident a statement model removes.)
+- **What stays out**: bars, order books and anything else numeric and long. They stay
+  in the column store; the graph holds the identity and metadata of the edge, not its
+  points.
+- **Guardrails**, so that it does not become free-form: a registry of predicates (name,
+  type of value, whether it is one per dataset, whether it is an identifier); indexes on
+  (subject, predicate) and (predicate, value); about 100,000 nodes times 20 statements is
+  2 million rows, which MariaDB handles without trouble; and no general triple-store or
+  query-language engine, only these tables and the few queries the presets need.
+- **Open**: which predicates first (provider type, provider ids, labels, descriptions,
+  ISIN are the candidates, since they are what the adapters already collect and
+  discard); the resolution rules; how nodes that are not instruments (issuers, indexes,
+  markets) get ids; whether the API exposes statements or only the resolved view; and
+  how the app's `Store` holds them.
 
 ## Ingest
 
@@ -420,6 +499,9 @@ when it outgrows the disk.
 7. Exports for research (Parquet), and the regime embeddings.
 
 ## Open questions
+
+- A graph of statements for the catalog: adopt it, and which predicates first.
+- Calendars: where they come from, and how weeks and months are cut for 24-hour markets.
 
 - How many instruments in all, and how far back each intraday interval goes.
 - A pyramid of coarser bars, and whether derived levels are stored or made on demand.
