@@ -170,17 +170,44 @@ Decided: **days and weeks are not fixed lengths**, any more than months and quar
 Daylight saving gives days of 23 and 25 hours, and sessions, weeks and holidays follow
 the exchange's calendar.
 
-- A series' resolution is a **symbolic code**, not a number of milliseconds: `min1`,
-  `min2`, `min5`, `min15`, `min30`, `hour1`, `hour4`, `day`, `week`, `month`,
-  `quarter` (Nordnet's vocabulary; Yahoo's maps onto it). The app's `interval::day`
-  (86,400,000 ms) and `interval::week` are only nominal labels today, and they and the
-  `interval` argument of the app's `Store` should become a resolution code. Minutes and
-  hours as UTC buckets are fixed lengths, the rest are not.
-- A bar's timestamp is its start as an instant in UTC. A **daily bar is really a
-  trading date**: Nordnet stamps it 00:00 UTC of the date, and its end is not
-  `start + 24 hours`. Hourly bars on a market with daylight saving start at a different
-  UTC hour in summer and winter (07:00 and 08:00 UTC session starts were seen for one
-  exchange over a year); that is fine, an instant is an instant.
+- A series' **resolution** says how big its bars are: `min1`, `min2`, `min5`, `min15`,
+  `min30`, `hour1`, `hour4`, `day`, `week`, `month`, `quarter` (Nordnet's vocabulary;
+  Yahoo's maps onto it). It is a symbolic **code** (a small number or an enum naming
+  one of these), not a number of milliseconds: a day is not `86 400 000` ms. The app's
+  `interval::day` and `interval::week` are only nominal labels today, and they and the
+  `interval` argument of the app's `Store` should become this code.
+- **Two kinds of time axis** (proposed, after the owner's earlier system):
+  - **Intraday resolutions** (`min1` to `hour4`) are keyed by an **instant**: UTC
+    milliseconds, the start of the bar. These are fixed lengths, and a bar's end is its
+    start plus the resolution.
+  - **Date resolutions** (`day`, `week`, `month`, `quarter`) are keyed by a **date**, as a
+    **day number**: the absolute number of the day in the proleptic Gregorian calendar,
+    1 being 1 January of the year 1 (`Date_to_Days` of Date::Calc, Python's
+    `date.toordinal()`): 1998-05-01 is 729510, 2026-11-20 is 739940, and the Unix epoch
+    1970-01-01 is 719163 (so a Unix day number is this minus 719163). A day bar is keyed
+    by its trading date; a week, month or quarter bar by the day number of its first day.
+  - A daily bar is not an instant. Trading does not start at midnight, and the 00:00
+    UTC that Nordnet puts on its daily bars is only a marker for the date, so the date is
+    what is stored; storing 00:00 UTC would invent a time and a time zone. With dates,
+    daylight saving and time zones do not enter at all, and bars of different markets
+    line up by date, which is what comparing instruments needs.
+- **Coarser date levels follow from day bars by date arithmetic alone**: the week of a
+  date, its month and its quarter need no calendar of the market, so the pyramid of
+  weekly, monthly and quarterly bars (see the question above) can be made from daily
+  bars without the market's hours or time zone. Only making daily bars from intraday
+  ones needs the market's calendar (which instants belong to which trading date).
+- Conversion is pure arithmetic (no time zone database): a day number to year, month and
+  day and back, and the weekday from the number modulo 7. In ClickHouse a day number
+  fits 32 bits and consecutive trading days differ by 1, which compresses better than
+  timestamps do.
+- **The legacy data**: if the existing MariaDB tables already hold day numbers in this
+  convention, using the same convention here means no conversion when they are served
+  or migrated. To be checked against its schema.
+- **From an instant to a trading date** (where a provider gives only instants, such as
+  Nordnet's discovery tick time) needs the market's time zone: the date of the instant
+  there. Yahoo's chart meta carries the exchange's UTC offset (`gmtoffset`). Until a
+  market has a calendar, the app takes the UTC date, which is right for the European
+  markets seen so far and wrong for markets east of UTC+9 around their open.
 - **24-hour markets** (currencies, many commodity futures): the owner recalls that
   daylight saving may not apply to them. What "a day" is there is a convention that
   differs: a cut at UTC midnight has no daylight saving; a cut at a fixed local time in
@@ -194,7 +221,8 @@ the exchange's calendar.
   pyramid question needs the calendar, and why a provider's own daily bars can differ
   from daily bars made from its hourly ones.
 - Open: the source of the calendars (the IANA time zone database, plus per-exchange
-  session and holiday rules), and how weeks and months are cut for 24-hour markets.
+  session and holiday rules), how weeks and months are cut for 24-hour markets, and
+  which day starts a week (Monday, as in ISO 8601, is the proposal).
 
 ### Rough size (to be measured)
 
@@ -502,6 +530,8 @@ when it outgrows the disk.
 
 - A graph of statements for the catalog: adopt it, and which predicates first.
 - Calendars: where they come from, and how weeks and months are cut for 24-hour markets.
+- Day numbers for date resolutions (the owner's convention, proposed), and whether the
+  legacy tables already use it.
 
 - How many instruments in all, and how far back each intraday interval goes.
 - A pyramid of coarser bars, and whether derived levels are stored or made on demand.
