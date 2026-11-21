@@ -151,6 +151,13 @@ for a frame. The UI never waits on a source.
   new shares per old). Unofficial, no key, for personal use. Yahoo's history is
   already adjusted for splits, so the series does not show a split's jump; the
   action is stored beside it.
+- **Nordnet** (`NordnetSource`, no key, no login): discovery of the ETFs for now, from
+  Nordnet's unofficial instrument search, five requests for about 2300 of them. An
+  ETF is an instrument of kind ETF with its ISIN; one listed on two markets is one
+  instrument and two edges (an instrument with an ISIN is found by it, and by
+  nothing else). The edges are known before they have data (`Store::addEdge`), under
+  the dataset `nordnet-1d`; the history step loads their bars. Its endpoints are
+  described in [server.md](server.md).
 - **Synthetic**: made-up prices, for runs without a network.
 
 Not done:

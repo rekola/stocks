@@ -2,7 +2,7 @@
 // candles that data sources fill on a thread of their own.
 //   stocks                 on the display cellui picks, with prices from Yahoo
 //   stocks --ui terminal   in the terminal;  --ui window  in a window
-//   stocks --source NAME   pick the data source (yahoo, synthetic); more than one may be given
+//   stocks --source NAME   pick the data source (yahoo, nordnet, synthetic); more than one may be given
 //   stocks --universe DIR  the instrument lists (default: data/universe)
 //   stocks --market NAME   load only the instruments of that market, e.g. "Nasdaq Helsinki" (repeatable)
 // Keys: arrows, PgUp/PgDn, Home/End move; Tab moves between the tags and the
@@ -12,6 +12,7 @@
 #include "Browser.h"
 #include "Synthetic.h"
 #include "source/SourceRunner.h"
+#include "source/NordnetSource.h"
 #include "source/YahooSource.h"
 
 #include <cellui/Application.h>
@@ -27,11 +28,12 @@ namespace {
 // The adapters there are, by the name the user picks them with.
 std::unique_ptr<Source> makeSource(const std::string & name, const Universe & universe) {
   if (name == "yahoo") return std::make_unique<YahooSource>(universe);
+  if (name == "nordnet") return std::make_unique<NordnetSource>();
   if (name == "synthetic") return std::make_unique<SyntheticSource>(universe);
   return nullptr;
 }
 
-constexpr const char * kSourceNames = "yahoo, synthetic";
+constexpr const char * kSourceNames = "yahoo, nordnet, synthetic";
 
 }  // namespace
 

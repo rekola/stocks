@@ -21,6 +21,7 @@ own; the table follows as the data arrives. The default source is Yahoo Finance
     build/stocks --ui window     # in a window, when cellui is built with GTK
     build/stocks --source synthetic   # made-up prices, no network
     build/stocks --market "Nasdaq Helsinki"   # load only that list
+    build/stocks --source nordnet     # discover Nordnet's ETFs (about 2300; no prices yet)
 
 Keys: arrows, PgUp/PgDn, Home/End move; Tab moves between the tags and the table; `M-x` (`Ctrl+Shift+P` on
 the desktop keymap) opens the command palette, where every command is listed with

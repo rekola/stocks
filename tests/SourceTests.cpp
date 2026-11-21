@@ -1,5 +1,6 @@
 #include "TestFramework.h"
 
+#include "FakeHttp.h"
 #include "Synthetic.h"
 #include "source/SourceRunner.h"
 #include "source/YahooSource.h"
@@ -37,35 +38,6 @@ const UniverseEntry & entry(const std::string & yahoo) {
   static const UniverseEntry none{};
   return none;
 }
-
-class FakeHttp : public Http {
- public:
-  std::function<HttpResult(const std::string &)> answer;
-  std::vector<std::string> urls;
-  HttpResult get(const std::string & url) override {
-    urls.push_back(url);
-    return answer(url);
-  }
-};
-
-HttpResult ok(std::string body) {
-  HttpResult r;
-  r.status = 200;
-  r.body = std::move(body);
-  return r;
-}
-HttpResult failed(int status) {
-  HttpResult r;
-  r.status = status;
-  return r;
-}
-
-struct Listener : SourceListener {
-  int changes = 0;
-  std::vector<std::string> messages;
-  void changed() override { changes++; }
-  void message(const std::string & m) override { messages.push_back(m); }
-};
 
 EdgeKey edgeOf(const Snapshot & s, const char * base, const char * quote, const char * market, const char * dataset) {
   return {s.findInstrument(base)->id, s.findInstrument(quote)->id, s.findMarket(market)->id, s.findDataset(dataset)->id};

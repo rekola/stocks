@@ -217,3 +217,36 @@ TEST(two_writers_do_not_lose_each_others_bars) {
   t2.join();
   CHECK(w.snap()->candles(ka).candles.size() == 500 && w.snap()->candles(kb).candles.size() == 500);
 }
+
+TEST(an_instrument_with_an_isin_is_that_isin_whatever_its_symbol_or_market) {
+  World w;
+  Instrument a = w.store->addInstrument({{}, "XAIX", "Xtrackers AI", InstrumentKind::Etf, "IE00BGV5VN51"});
+  Instrument again = w.store->addInstrument({{}, "XAIX-OTHER", "Other name", InstrumentKind::Etf, "IE00BGV5VN51"});
+  CHECK(a.id.valid() && again.id == a.id && again.symbol == "XAIX");  // the second listing finds the first
+  CHECK(w.snap()->findInstrumentByIsin("IE00BGV5VN51")->id == a.id);
+  CHECK(w.snap()->findInstrument("XAIX")->isin == "IE00BGV5VN51");
+  CHECK(!w.snap()->findInstrumentByIsin("IE0000000000"));
+
+  // The same symbol with another ISIN is another instrument; the symbol finds the first.
+  Instrument b = w.store->addInstrument({{}, "XAIX", "A different fund", InstrumentKind::Etf, "LU0000000001"});
+  CHECK(b.id.valid() && b.id != a.id);
+  CHECK(w.snap()->findInstrument("XAIX")->id == a.id && w.snap()->findInstrumentByIsin("LU0000000001")->id == b.id);
+
+  // Without an ISIN it is the symbol, as before: even a symbol that an instrument with an ISIN has.
+  CHECK(w.store->addInstrument({{}, "XAIX", "no isin", InstrumentKind::Other}).id == a.id);
+}
+
+TEST(an_edge_can_be_known_before_it_has_data) {
+  World w;
+  EdgeKey k = w.key(w.hel.id, w.a.id);
+  uint64_t v = w.snap()->version();
+  CHECK(w.snap()->edges(w.hel.id).empty());
+  CHECK(w.store->addEdge(k));
+  CHECK(w.snap()->version() == v + 1);
+  CHECK(w.snap()->edges(w.hel.id).size() == 1 && w.snap()->edges(w.hel.id)[0] == k);
+  CHECK(w.snap()->candles(k).candles.empty());
+  CHECK(!w.store->addEdge(k) && w.snap()->version() == v + 1);  // known already: nothing changes
+  w.store->appendCandles(k, 1000, {bar(0, 1)});
+  CHECK(w.snap()->edges(w.hel.id).size() == 1);  // data does not make it a second edge
+  CHECK(w.snap()->edges(w.sto.id).empty());
+}

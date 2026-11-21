@@ -38,12 +38,15 @@ struct TimeRange {
 };
 
 // Anything that can be priced or that prices something: a share, a currency, a commodity, an index.
-enum class InstrumentKind { Company, Currency, Commodity, Index, Other };
+enum class InstrumentKind { Company, Currency, Commodity, Index, Etf, Other };
 
 struct Instrument {
   InstrumentId id;
   std::string symbol, name;
   InstrumentKind kind = InstrumentKind::Other;
+  // The ISIN, where there is one. It identifies the instrument across markets: an ETF listed on two markets is one
+  // instrument (and two edges), whatever its symbol on each.
+  std::string isin;
 };
 
 // A place where an instrument is listed and priced. Currency, calendar and time zone join later.

@@ -18,6 +18,7 @@ class Snapshot {
 
   std::optional<Instrument> instrument(InstrumentId) const;
   std::optional<Instrument> findInstrument(const std::string & symbol) const;
+  std::optional<Instrument> findInstrumentByIsin(const std::string & isin) const;
   std::optional<Market> market(MarketId) const;
   std::optional<Market> findMarket(const std::string & name) const;
   std::optional<Dataset> dataset(DatasetId) const;
@@ -26,7 +27,8 @@ class Snapshot {
   const Seq<Market> & markets() const { return markets_; }
   const Seq<Dataset> & datasets() const { return datasets_; }
 
-  // The edges that have any data (candles or books) in a market: what a preset needs. Sorted.
+  // The edges known in a market: those that have data (candles or books), and those a source has only added (a listing
+  // found by discovery, whose history is not loaded yet). What a preset needs. Sorted.
   std::vector<EdgeKey> edges(MarketId) const;
 
   // The bars in `range`, oldest first; an empty series for an unknown edge.
@@ -49,6 +51,7 @@ class Snapshot {
   Instrument add(Instrument);
   Market add(Market);
   Dataset add(Dataset);
+  bool addEdge(const EdgeKey &);  // false if it is known already
   bool appendCandles(const EdgeKey &, int64_t intervalMs, const std::vector<Candle> &);
   void appendBooks(const EdgeKey &, const std::vector<BookSnapshot> &);
   void appendAnnouncements(const EventKey &, const std::vector<Announcement> &);
@@ -65,6 +68,7 @@ class Snapshot {
   Seq<Market> markets_;
   Seq<Dataset> datasets_;
   immer::map<std::string, InstrumentId> instrumentBySymbol_;
+  immer::map<std::string, InstrumentId> instrumentByIsin_;
   immer::map<std::string, MarketId> marketByName_;
   immer::map<std::string, DatasetId> datasetByName_;
   immer::map<EdgeKey, Series> candles_;
@@ -86,10 +90,13 @@ class Store {
   virtual std::shared_ptr<const Snapshot> snapshot() const = 0;
 
   // Add by name: the same symbol (instruments) or name (markets, datasets) again returns the one already there and
-  // keeps its first values. The returned record carries the assigned id.
+  // keeps its first values. The returned record carries the assigned id. An instrument with an ISIN is found by it and
+  // by nothing else, so two with the same symbol and different ISINs stay two (the symbol finds the first).
   virtual Instrument addInstrument(Instrument) = 0;
   virtual Market addMarket(Market) = 0;
   virtual Dataset addDataset(Dataset) = 0;
+  // An edge that is known before it has data: what discovery finds. False if it was known.
+  virtual bool addEdge(const EdgeKey &) = 0;
 
   // Candles. A bar at a time already in the series replaces it (a correction); the rest are inserted in order. The
   // first append fixes the series' interval, and an append with another interval changes nothing and returns false.

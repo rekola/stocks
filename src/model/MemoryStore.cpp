@@ -78,6 +78,9 @@ std::optional<Dataset> Snapshot::dataset(DatasetId id) const { return byId(datas
 std::optional<Instrument> Snapshot::findInstrument(const std::string & s) const {
   return byName(instruments_, instrumentBySymbol_, s);
 }
+std::optional<Instrument> Snapshot::findInstrumentByIsin(const std::string & isin) const {
+  return byName(instruments_, instrumentByIsin_, isin);
+}
 std::optional<Market> Snapshot::findMarket(const std::string & s) const { return byName(markets_, marketByName_, s); }
 std::optional<Dataset> Snapshot::findDataset(const std::string & s) const {
   return byName(datasets_, datasetByName_, s);
@@ -117,10 +120,15 @@ Seq<CorporateAction> Snapshot::actions(const EventKey & k, TimeRange r) const {
 }
 
 Instrument Snapshot::add(Instrument i) {
-  size_t before = instruments_.size();
-  Instrument out = addNamed(instruments_, instrumentBySymbol_, i, i.symbol);
-  if (instruments_.size() != before) version_++;
-  return out;
+  // An instrument with an ISIN is that ISIN; one without is its symbol.
+  const InstrumentId * known = i.isin.empty() ? instrumentBySymbol_.find(i.symbol) : instrumentByIsin_.find(i.isin);
+  if (known) return instruments_[known->value - 1];
+  i.id.value = static_cast<uint32_t>(instruments_.size() + 1);
+  instruments_ = instruments_.push_back(i);
+  if (!instrumentBySymbol_.find(i.symbol)) instrumentBySymbol_ = instrumentBySymbol_.set(i.symbol, i.id);
+  if (!i.isin.empty()) instrumentByIsin_ = instrumentByIsin_.set(i.isin, i.id);
+  version_++;
+  return i;
 }
 Market Snapshot::add(Market m) {
   size_t before = markets_.size();
@@ -133,6 +141,14 @@ Dataset Snapshot::add(Dataset d) {
   Dataset out = addNamed(datasets_, datasetByName_, d, d.name);
   if (datasets_.size() != before) version_++;
   return out;
+}
+
+bool Snapshot::addEdge(const EdgeKey & k) {
+  const auto * set = edgesByMarket_.find(k.market);
+  if (set && set->count(k)) return false;
+  edgesByMarket_ = edgesByMarket_.set(k.market, (set ? *set : immer::set<EdgeKey>{}).insert(k));
+  version_++;
+  return true;
 }
 
 bool Snapshot::appendCandles(const EdgeKey & k, int64_t intervalMs, const std::vector<Candle> & in) {
@@ -219,6 +235,9 @@ class MemoryStore : public Store {
   }
   Dataset addDataset(Dataset d) override {
     return write([&](Snapshot & s) { return s.add(std::move(d)); });
+  }
+  bool addEdge(const EdgeKey & k) override {
+    return write([&](Snapshot & s) { return s.addEdge(k); });
   }
   bool appendCandles(const EdgeKey & k, int64_t intervalMs, const std::vector<Candle> & c) override {
     return write([&](Snapshot & s) { return s.appendCandles(k, intervalMs, c); });
