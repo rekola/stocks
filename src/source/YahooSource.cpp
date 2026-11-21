@@ -70,7 +70,7 @@ bool YahooSource::parse(const std::string & body, const ListEntry & e, Store & s
     auto t = meta->find("instrumentType");
     if (t != meta->end() && t->is_string()) type = t->get<std::string>();
   }
-  Instrument base = store.addInstrument({{}, e.base, e.name, e.kind != InstrumentKind::Other ? e.kind : kindOfYahooType(type), "", type});
+  Instrument base = store.addInstrument({{}, e.base, e.name, e.kind != InstrumentKind::Other ? e.kind : kindOfYahooType(type), "", type}, market.id);
   Instrument quote = currencyNode(store, e.quote);
   store.appendCandles({base.id, quote.id, market.id, dataset.id}, Resolution::Day, bars);
 

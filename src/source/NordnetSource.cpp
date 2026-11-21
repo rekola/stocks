@@ -65,6 +65,15 @@ const char * NordnetSource::knownMarketName(int id) {
   return nullptr;
 }
 
+const char * NordnetSource::knownMarketMic(int id) {
+  switch (id) {
+    case 11: return "XSTO";
+    case 14: return "XCSE";
+    case 24: return "XHEL";
+    default: return nullptr;
+  }
+}
+
 bool NordnetSource::parsePage(const std::string & body, Page & page, std::string & error) {
   json doc = json::parse(body, nullptr, /*allow_exceptions=*/false);
   if (doc.is_discarded() || !doc.is_object() || !doc.contains("results") || !doc["results"].is_array()) {
@@ -165,9 +174,11 @@ void NordnetSource::load(Store & store, Http & http, SourceListener & listener) 
         // The market with Nordnet's id, or the one with the name where that is known (one a provider with that name
         // found first); else a new one, to be named later.
         std::vector<Attribute> says = {{predicate::nordnetId, std::to_string(l.marketId)}};
+        // The code is looked for before the name: it is what identifies a market, the way an ISIN does an instrument.
+        if (const char * mic = knownMarketMic(l.marketId)) says.push_back({predicate::mic, mic});
         if (const char * name = knownMarketName(l.marketId)) says.push_back({predicate::name, name});
         Market market = store.resolveMarket(says);
-        Instrument base = store.addInstrument({{}, l.symbol, l.name, kindOfNordnetType(l.type), l.isin, l.type});
+        Instrument base = store.addInstrument({{}, l.symbol, l.name, kindOfNordnetType(l.type), l.isin, l.type}, market.id);
         Instrument quote = currencyNode(store, l.currency);
         // Today's bar makes the edge; a listing with none stays a node nothing selects.
         if (l.hasBar) store.appendCandles({base.id, quote.id, market.id, dataset.id}, Resolution::Day, {l.bar});

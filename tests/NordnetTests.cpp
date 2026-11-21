@@ -62,6 +62,7 @@ TEST(a_market_is_named_by_its_nordnet_id_where_that_is_known) {
   CHECK(std::string(NordnetSource::knownMarketName(24)) == "Nasdaq Helsinki");  // the same market as the Yahoo lists name
   CHECK(std::string(NordnetSource::knownMarketName(53)) == "First North Sweden");
   CHECK(NordnetSource::knownMarketName(61) == nullptr);  // not known
+  CHECK(std::string(NordnetSource::knownMarketMic(24)) == "XHEL" && NordnetSource::knownMarketMic(53) == nullptr);
 }
 
 TEST(a_page_of_certificates_has_the_same_shape) {
@@ -451,4 +452,25 @@ TEST(a_currency_is_the_node_the_store_has_for_its_symbol) {
   // A node already there under the symbol, made by anyone, is the one it gets.
   Instrument other = store->addInstrument({{}, "XYZ", "Xyz", InstrumentKind::Other});
   CHECK(currencyNode(*store, "XYZ").id == other.id && currencyNode(*store, "XYZ").kind == InstrumentKind::Other);
+}
+
+TEST(a_market_is_found_by_its_code_before_its_name) {
+  auto store = makeMemoryStore();
+  Market first = store->resolveMarket({{predicate::mic, "XHEL"}, {predicate::name, "Helsingin pörssi"}});  // a provider that names it so
+  Market found = store->resolveMarket({{predicate::nordnetId, "24"}, {predicate::mic, "XHEL"}, {predicate::name, "Nasdaq Helsinki"}});
+  CHECK(found.id == first.id && found.name == "Nasdaq Helsinki");  // the code found it; the name said now stands
+  CHECK(store->snapshot()->markets().size() == 1);
+}
+
+TEST(each_market_has_its_own_symbol_for_an_instrument_listed_on_two) {
+  auto store = makeMemoryStore();
+  FakeHttp http;
+  http.answer = pages;
+  Listener listener;
+  quick().load(*store, http, listener);
+  auto s = store->snapshot();
+  Instrument xaix = *s->findInstrumentByIsin("IE00BGV5VN51");
+  Market xetra = *s->findMarket("Xetra"), stockholm = *s->findMarket("Nasdaq Stockholm");
+  CHECK(s->symbolOn(xaix.id, xetra.id) == "XAIX" && !s->symbolOn(xaix.id, stockholm.id).empty());
+  CHECK(s->findInstrument("XAIX", xetra.id)->id == xaix.id);
 }

@@ -11,7 +11,7 @@ std::vector<QuoteRow> makeRows(const Snapshot & snapshot, MarketId market, size_
     QuoteRow r;
     r.key = key;
     if (auto base = snapshot.instrument(key.base)) {
-      r.base = base->symbol;
+      r.base = snapshot.symbolOn(key.base, key.market);
       r.name = base->name;
     }
     if (auto quote = snapshot.instrument(key.quote)) r.quote = quote->symbol;

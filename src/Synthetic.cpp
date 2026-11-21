@@ -18,7 +18,7 @@ void fillSyntheticData(Store & store, const InstrumentList & list) {
       rng.seed(preset++ * 7919u + 1u);
     }
     Market m = store.addMarket({{}, e.market});
-    Instrument base = store.addInstrument({{}, e.base, e.name, e.kind});
+    Instrument base = store.addInstrument({{}, e.base, e.name, e.kind}, m.id);
     Instrument quote = currencyNode(store, e.quote);
     std::vector<Candle> bars;
     double p = start(rng);

@@ -18,7 +18,12 @@ class Snapshot {
   uint64_t version() const { return version_; }
 
   std::optional<Instrument> instrument(InstrumentId) const;
+  // By a symbol a market calls it (any market, the first made if several), or by the one a given market calls it; none
+  // as the market is a symbol said of the instrument itself.
   std::optional<Instrument> findInstrument(const std::string & symbol) const;
+  std::optional<Instrument> findInstrument(const std::string & symbol, MarketId) const;
+  // What `market` calls the instrument, else its own symbol.
+  std::string symbolOn(InstrumentId, MarketId) const;
   std::optional<Instrument> findInstrumentByIsin(const std::string & isin) const;
   std::optional<Market> market(MarketId) const;
   std::optional<Market> findMarket(const std::string & name) const;  // by its name attribute
@@ -27,6 +32,7 @@ class Snapshot {
   // `value` (the one made first, if several do).
   std::vector<Attribute> attributes(NodeRef) const;
   std::optional<NodeRef> findByAttribute(NodeType, const std::string & predicate, const std::string & value) const;
+  std::optional<NodeRef> findByAttribute(NodeType, const std::string & predicate, const std::string & value, MarketId) const;
   std::optional<Dataset> dataset(DatasetId) const;
   std::optional<Dataset> findDataset(const std::string & name) const;
   const Seq<Instrument> & instruments() const { return instruments_; }
@@ -59,7 +65,7 @@ class Snapshot {
 
   // Changes, for a store to make on its own copy before publishing it. Nothing that holds a published snapshot
   // can call them, because it holds it const. Each one that changes something bumps the version.
-  Instrument add(Instrument);
+  Instrument add(Instrument, MarketId);
   Market resolve(const std::vector<Attribute> &);
   void setAttribute(NodeRef, const Attribute &);
   Dataset add(Dataset);
@@ -99,10 +105,13 @@ class Store {
   // had (the last said stands; with two providers saying different things it is whichever wrote last, until the
   // statements say who says them), and an empty value says nothing. Nothing is made twice.
   //
-  // An instrument with an ISIN is found by it and by nothing else (two with the same symbol and different ISINs stay
-  // two, the symbol finds the first); one without is found by its symbol. Its symbol, name, ISIN, type and kind (unless
-  // Other) are then set. The returned record carries the assigned id.
-  virtual Instrument addInstrument(Instrument) = 0;
+  // An instrument with an ISIN is found by it and by nothing else: the symbol is not what it is, only what a market calls
+  // it, and is said of that market (two with the same symbol and different ISINs stay two); one without an ISIN is found
+  // by the symbol that market calls it. Its symbol (of the market), name, ISIN, type and kind (unless Other) are then
+  // set. A currency's symbol is its code, said of the currency itself, whichever market has it. The returned record
+  // carries the assigned id.
+  virtual Instrument addInstrument(Instrument, MarketId market) = 0;
+  Instrument addInstrument(Instrument i) { return addInstrument(std::move(i), MarketId{}); }
   // The market that has any of these attributes, tried in the order given; where none has, a market is made. The
   // attributes are then set on it, so a market first seen by its Nordnet id is given its name when it is learned.
   virtual Market resolveMarket(const std::vector<Attribute> &) = 0;

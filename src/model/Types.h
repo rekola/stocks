@@ -40,11 +40,13 @@ struct TimeRange {
   bool contains(Timestamp t) const { return t >= from && t < to; }
 };
 
-// One thing said about a node: a predicate and its value. Every node (an instrument, a market, a dataset) keeps what
-// is known about it as attributes, one value per predicate, all in the same way; a value can change. A dataset will join
-// the statement later, to say who says it.
+// One thing said about a node: a predicate and its value, and, where it is said by a market, which one ("the Helsinki
+// market calls this instrument NOKIA"). Every node (an instrument, a market, a dataset) keeps what is known about it as
+// attributes, all in the same way, one value per predicate and market; a value can change. A dataset will join the
+// statement later, to say who says it.
 struct Attribute {
   std::string predicate, value;
+  MarketId market;  // none: said of the node itself
   friend bool operator==(const Attribute &, const Attribute &) = default;
 };
 
@@ -55,6 +57,7 @@ inline constexpr const char * isin = "isin";
 inline constexpr const char * kind = "kind";
 inline constexpr const char * type = "type";  // the provider's own type
 inline constexpr const char * nordnetId = "nordnet-id";
+inline constexpr const char * mic = "mic";  // a market's ISO 10383 code, the way an ISIN identifies an instrument
 }  // namespace predicate
 
 enum class NodeType : uint8_t { Instrument, Market, Dataset };
@@ -101,7 +104,7 @@ inline InstrumentKind kindOfName(const std::string & s) {
 // The resolved view of an instrument's attributes, for the app.
 struct Instrument {
   InstrumentId id;
-  std::string symbol, name;
+  std::string symbol, name;  // the symbol: the one said of the instrument itself, else the first a market gave it
   InstrumentKind kind = InstrumentKind::Other;
   std::string isin;  // an instrument with an ISIN is that ISIN: one listed on two markets is one instrument
   std::string type;  // the provider's own type ("UETF", "EQUITY"), beside the combined kind

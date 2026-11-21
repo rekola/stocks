@@ -66,6 +66,8 @@ class NordnetSource : public Source {
 
   // The name of a market by Nordnet's id where it is known, else null (the market is then found by the id alone).
   static const char * knownMarketName(int id);
+  // Its ISO 10383 code where that is known exactly (only the main Nordic markets), else null.
+  static const char * knownMarketMic(int id);
 
  private:
   std::vector<List> lists_;

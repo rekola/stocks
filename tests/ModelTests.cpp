@@ -263,20 +263,36 @@ TEST(two_writers_do_not_lose_each_others_bars) {
 
 TEST(an_instrument_with_an_isin_is_that_isin_whatever_its_symbol_or_market) {
   World w;
-  Instrument a = w.store->addInstrument({{}, "XAIX", "Xtrackers AI", InstrumentKind::Etf, "IE00BGV5VN51"});
-  Instrument again = w.store->addInstrument({{}, "XAIX-OTHER", "Other name", InstrumentKind::Etf, "IE00BGV5VN51"});
-  CHECK(a.id.valid() && again.id == a.id && again.symbol == "XAIX");  // the second listing finds the first
+  Instrument a = w.store->addInstrument({{}, "XAIX", "Xtrackers AI", InstrumentKind::Etf, "IE00BGV5VN51"}, w.hel.id);
+  // The same ISIN on another market, called something else there: the same instrument, and each market's own symbol.
+  Instrument again = w.store->addInstrument({{}, "XAIX-OTHER", "Other name", InstrumentKind::Etf, "IE00BGV5VN51"}, w.sto.id);
+  CHECK(a.id.valid() && again.id == a.id);
+  CHECK(w.snap()->symbolOn(a.id, w.hel.id) == "XAIX" && w.snap()->symbolOn(a.id, w.sto.id) == "XAIX-OTHER");
+  CHECK(w.snap()->findInstrument("XAIX")->id == a.id && w.snap()->findInstrument("XAIX-OTHER")->id == a.id);
+  CHECK(w.snap()->findInstrument("XAIX", w.hel.id)->id == a.id && !w.snap()->findInstrument("XAIX", w.sto.id));
+  CHECK(w.snap()->instrument(a.id)->symbol == "XAIX");  // the first a market gave it
   CHECK(w.snap()->findInstrumentByIsin("IE00BGV5VN51")->id == a.id);
-  CHECK(w.snap()->findInstrument("XAIX")->isin == "IE00BGV5VN51");
   CHECK(!w.snap()->findInstrumentByIsin("IE0000000000"));
 
   // The same symbol with another ISIN is another instrument; the symbol finds the first.
-  Instrument b = w.store->addInstrument({{}, "XAIX", "A different fund", InstrumentKind::Etf, "LU0000000001"});
+  Instrument b = w.store->addInstrument({{}, "XAIX", "A different fund", InstrumentKind::Etf, "LU0000000001"}, w.hel.id);
   CHECK(b.id.valid() && b.id != a.id);
   CHECK(w.snap()->findInstrument("XAIX")->id == a.id && w.snap()->findInstrumentByIsin("LU0000000001")->id == b.id);
 
-  // Without an ISIN it is the symbol, as before: even a symbol that an instrument with an ISIN has.
-  CHECK(w.store->addInstrument({{}, "XAIX", "no isin", InstrumentKind::Other}).id == a.id);
+  // Without an ISIN it is the symbol its market calls it, even one that an instrument with an ISIN has there.
+  CHECK(w.store->addInstrument({{}, "XAIX", "no isin", InstrumentKind::Other}, w.hel.id).id == a.id);
+  // A market's symbol changing replaces it, and the old one finds nothing there.
+  w.store->addInstrument({{}, "XAIX2", "Xtrackers AI", InstrumentKind::Etf, "IE00BGV5VN51"}, w.hel.id);
+  CHECK(w.snap()->symbolOn(a.id, w.hel.id) == "XAIX2" && w.snap()->findInstrument("XAIX2", w.hel.id)->id == a.id);
+  CHECK(w.snap()->findInstrument("XAIX", w.hel.id)->id == b.id);  // the other fund still has that one there
+}
+
+TEST(a_currency_symbol_is_its_code_whichever_market_has_it) {
+  World w;
+  Instrument usd = w.store->addInstrument({{}, "USD", "US dollar", InstrumentKind::Currency}, w.hel.id);
+  CHECK(w.store->addInstrument({{}, "USD", "US dollar", InstrumentKind::Currency}, w.sto.id).id == usd.id);
+  CHECK(w.snap()->findInstrument("USD", MarketId{})->id == usd.id);
+  CHECK(w.snap()->symbolOn(usd.id, w.hel.id) == "USD");  // no market's own: the code
 }
 
 TEST(edges_can_be_selected_by_the_type_of_their_base_instrument) {

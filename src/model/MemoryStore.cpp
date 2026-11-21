@@ -66,6 +66,16 @@ std::optional<Instrument> Snapshot::findInstrument(const std::string & s) const 
   auto n = findByAttribute(NodeType::Instrument, predicate::symbol, s);
   return n ? instrument({n->id}) : std::nullopt;
 }
+std::optional<Instrument> Snapshot::findInstrument(const std::string & s, MarketId m) const {
+  auto n = findByAttribute(NodeType::Instrument, predicate::symbol, s, m);
+  return n ? instrument({n->id}) : std::nullopt;
+}
+std::string Snapshot::symbolOn(InstrumentId id, MarketId m) const {
+  for (const Attribute & a : attributes(id))
+    if (a.predicate == predicate::symbol && a.market == m) return a.value;
+  auto i = instrument(id);
+  return i ? i->symbol : std::string();
+}
 std::optional<Instrument> Snapshot::findInstrumentByIsin(const std::string & isin) const {
   auto n = findByAttribute(NodeType::Instrument, predicate::isin, isin);
   return n ? instrument({n->id}) : std::nullopt;
@@ -81,8 +91,14 @@ std::vector<Attribute> Snapshot::attributes(NodeRef n) const {
   const auto * a = attributes_.find(n);
   return a ? *a : std::vector<Attribute>{};
 }
-std::optional<NodeRef> Snapshot::findByAttribute(NodeType t, const std::string & p, const std::string & v) const {
-  const auto * ids = byAttribute_.find(std::string(1, static_cast<char>('0' + static_cast<int>(t))) + p + '\0' + v);
+namespace {
+std::string indexKey(NodeType t, const std::string & p, const std::string & v) {
+  return std::string(1, static_cast<char>('0' + static_cast<int>(t))) + p + '\0' + v;
+}
+std::string indexKey(NodeType t, const std::string & p, const std::string & v, MarketId m) {
+  return indexKey(t, p, v) + '\0' + std::to_string(m.value);
+}
+std::optional<NodeRef> lowest(const immer::set<uint32_t> * ids, NodeType t) {
   if (!ids || ids->size() == 0) return std::nullopt;
   uint32_t first = std::numeric_limits<uint32_t>::max();
   for (uint32_t id : *ids) first = std::min(first, id);
@@ -90,6 +106,14 @@ std::optional<NodeRef> Snapshot::findByAttribute(NodeType t, const std::string &
   n.type = t;
   n.id = first;
   return n;
+}
+}  // namespace
+
+std::optional<NodeRef> Snapshot::findByAttribute(NodeType t, const std::string & p, const std::string & v) const {
+  return lowest(byAttribute_.find(indexKey(t, p, v)), t);
+}
+std::optional<NodeRef> Snapshot::findByAttribute(NodeType t, const std::string & p, const std::string & v, MarketId m) const {
+  return lowest(byAttribute_.find(indexKey(t, p, v, m)), t);
 }
 std::optional<Dataset> Snapshot::findDataset(const std::string & s) const {
   auto n = findByAttribute(NodeType::Dataset, predicate::name, s);
@@ -146,41 +170,45 @@ Seq<CorporateAction> Snapshot::actions(const EventKey & k, TimeRange r) const {
   return s ? slice(*s, r) : Seq<CorporateAction>{};
 }
 
-namespace {
-std::string indexKey(NodeType t, const std::string & p, const std::string & v) {
-  return std::string(1, static_cast<char>('0' + static_cast<int>(t))) + p + '\0' + v;
-}
-}  // namespace
-
 void Snapshot::setAttribute(NodeRef n, const Attribute & a) {
   const size_t count = n.type == NodeType::Instrument ? instruments_.size()
                        : n.type == NodeType::Market   ? markets_.size()
                                                       : datasets_.size();
   if (n.id == 0 || n.id > count || a.value.empty()) return;
   std::vector<Attribute> attrs = attributes(n);
-  auto at = std::find_if(attrs.begin(), attrs.end(), [&](const Attribute & x) { return x.predicate == a.predicate; });
+  auto at = std::find_if(attrs.begin(), attrs.end(), [&](const Attribute & x) { return x.predicate == a.predicate && x.market == a.market; });
+  auto drop = [&](const std::string & key) {
+    if (const auto * ids = byAttribute_.find(key)) {
+      auto rest = ids->erase(n.id);
+      byAttribute_ = rest.size() ? byAttribute_.set(key, rest) : byAttribute_.erase(key);
+    }
+  };
   if (at != attrs.end()) {
     if (at->value == a.value) return;
-    // The old value no longer says it of this node.
-    const std::string old = indexKey(n.type, a.predicate, at->value);
-    if (const auto * ids = byAttribute_.find(old)) {
-      auto rest = ids->erase(n.id);
-      byAttribute_ = rest.size() ? byAttribute_.set(old, rest) : byAttribute_.erase(old);
-    }
+    const std::string old = at->value;
     at->value = a.value;
+    // The old value no longer says it of this node, unless another market still says it.
+    drop(indexKey(n.type, a.predicate, old, a.market));
+    const bool still = std::any_of(attrs.begin(), attrs.end(), [&](const Attribute & x) { return x.predicate == a.predicate && x.value == old; });
+    if (!still) drop(indexKey(n.type, a.predicate, old));
   } else {
     attrs.push_back(a);
   }
   attributes_ = attributes_.set(n, attrs);
-  const std::string key = indexKey(n.type, a.predicate, a.value);
-  const auto * ids = byAttribute_.find(key);
-  byAttribute_ = byAttribute_.set(key, (ids ? *ids : immer::set<uint32_t>{}).insert(n.id));
+  for (const std::string & key : {indexKey(n.type, a.predicate, a.value), indexKey(n.type, a.predicate, a.value, a.market)}) {
+    const auto * ids = byAttribute_.find(key);
+    byAttribute_ = byAttribute_.set(key, (ids ? *ids : immer::set<uint32_t>{}).insert(n.id));
+  }
 
-  // The view the app reads is made from the attributes.
+  // The view the app reads is made from the attributes: what is said of the node itself, else the first said of a market.
   auto value = [&](const char * p) {
+    std::string first;
     for (const Attribute & x : attrs)
-      if (x.predicate == p) return x.value;
-    return std::string();
+      if (x.predicate == p) {
+        if (!x.market.valid()) return x.value;
+        if (first.empty()) first = x.value;
+      }
+    return first;
   };
   if (n.type == NodeType::Instrument) {
     instruments_ = instruments_.set(n.id - 1, Instrument{{n.id}, value(predicate::symbol), value(predicate::name),
@@ -194,9 +222,11 @@ void Snapshot::setAttribute(NodeRef n, const Attribute & a) {
   version_++;
 }
 
-Instrument Snapshot::add(Instrument i) {
-  // An instrument with an ISIN is that ISIN; one without is its symbol.
-  std::optional<NodeRef> found = i.isin.empty() ? findByAttribute(NodeType::Instrument, predicate::symbol, i.symbol)
+Instrument Snapshot::add(Instrument i, MarketId market) {
+  // A currency's symbol is its code, whichever market has it; any other is what the market calls it.
+  if (i.kind == InstrumentKind::Currency) market = MarketId{};
+  // An instrument with an ISIN is that ISIN; one without is the symbol its market calls it.
+  std::optional<NodeRef> found = i.isin.empty() ? findByAttribute(NodeType::Instrument, predicate::symbol, i.symbol, market)
                                                 : findByAttribute(NodeType::Instrument, predicate::isin, i.isin);
   NodeRef n;
   if (found) {
@@ -207,11 +237,7 @@ Instrument Snapshot::add(Instrument i) {
     instruments_ = instruments_.push_back(Instrument{{n.id}, {}, {}, InstrumentKind::Other, {}, {}});
     version_++;
   }
-  // A symbol belongs to a listing, not to the instrument (the same ISIN has another symbol on another market), so one an
-  // instrument already has stays until listings carry their own.
-  bool hasSymbol = false;
-  for (const Attribute & x : attributes(n)) hasSymbol = hasSymbol || x.predicate == predicate::symbol;
-  if (!hasSymbol) setAttribute(n, {predicate::symbol, i.symbol});
+  setAttribute(n, {predicate::symbol, i.symbol, market});
   setAttribute(n, {predicate::name, i.name});
   setAttribute(n, {predicate::isin, i.isin});
   setAttribute(n, {predicate::type, i.type});
@@ -326,8 +352,9 @@ class MemoryStore : public Store {
 
   std::shared_ptr<const Snapshot> snapshot() const override { return current_.load(); }
 
-  Instrument addInstrument(Instrument i) override {
-    return write([&](Snapshot & s) { return s.add(std::move(i)); });
+  using Store::addInstrument;
+  Instrument addInstrument(Instrument i, MarketId market) override {
+    return write([&](Snapshot & s) { return s.add(std::move(i), market); });
   }
   Market resolveMarket(const std::vector<Attribute> & a) override {
     return write([&](Snapshot & s) { return s.resolve(a); });
