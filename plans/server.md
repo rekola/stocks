@@ -629,32 +629,47 @@ and they decide how history has to be collected):
    and `Dataset` are the resolved views the app reads, made from the attributes. A node is found
    by an attribute: a market by Nordnet's id or by its name, tried in that order, and made
    with a surrogate id if neither is there, so one Nordnet gives no name for is found by the id
-   and named later, keeping its edges; an instrument by its ISIN, else by the symbol its market
-   calls it. **A symbol is not an exception**: an instrument is its ISIN, and a symbol is a
-   statement qualified by a market ("the Helsinki market calls this instrument NOKIA"); an
-   attribute is one value per predicate and market. `findInstrument(symbol)` finds by any
-   market's symbol and `findInstrument(symbol, market)` by one's; a table row shows the
-   symbol of its edge's market. A currency's symbol is its code, said of the node itself.
-   **A market has identifiers too**: its ISO 10383 code (the MIC: XHEL, XSTO, XCSE, XETR; an
-   operating MIC and a segment MIC per exchange), which does for markets what the ISIN does for
-   instruments, and each provider's own code (Nordnet's market id; Yahoo's `exchangeName`, for
-   example "CMX", and its `fullExchangeName`, "COMEX"). A market is found by its code before its
-   name. Nordnet gives no MIC in the discovery rows (the slug ends in an exchange code that is
-   not reliable); the three main Nordic ones are set, and the rest come with the metadata
-   endpoints or the registry.
-   **Which source names things is decided, not left to the last writer**: where providers say
-   different things the name comes from an authoritative source per predicate and kind (a market's
-   from the MIC registry, a currency's from ISO 4217, an instrument's from the provider that
-   knows it best, Nordnet for what it lists, and the others only where it has none). Until
-   statements carry their dataset the last said stands, which can swap the name between
-   two providers.
+   and named later, keeping its edges; an instrument by its ISIN.
+   **Fat edges**: an instrument is its ISIN, and everything that depends on a market is an
+   attribute of the edge (instrument, currency, market, dataset), which is itself a node, made
+   when it first has data, so one dataset's say at one market is one thing: what the market calls
+   it (the symbol), the market's own id for it (Nordnet's identifier: "XAIX" on Xetra and
+   "419021" on Stockholm for one ETF), the order book its history is asked for by, the
+   provider's own type. An edge takes nothing before it has data. `findEdge(predicate, value,
+   market)` finds the edge by what the market says, whoever said it. A currency has no ISIN and
+   is its code, said of the node itself. **Nothing but a currency is without an ISIN**: the
+   adapters that have none (Yahoo) make no instruments.
+   **Yahoo makes no instruments.** It has no ISIN, so it finds the instrument another source
+   made, by the symbol its market calls it (the Yahoo lists name each instrument by Nordnet's symbol
+   and carry Yahoo's own ticker beside it; 99 of the 100 Helsinki ones matched, and the hundredth,
+   Nordea, is "NDA FI" at Nordnet and "NDA-FI" at Yahoo), and puts its own edge beside Nordnet's,
+   with its ticker as the edge's symbol. Nordnet runs first (the default is nordnet, then
+   yahoo); Yahoo run alone does nothing for stocks and says how many entries wait. With the server
+   the problem goes away, as the universe no longer disappears when the app is closed.
+   **Markets are found by code, Nordnet id or name, else made**; a market with no MIC (a crypto
+   venue) is a surrogate id with the attributes it has.
    **A currency is the node the store has for its symbol**: a provider that has a currency gets
    that node (made, named as usually called, if none is there) and describes nothing.
 2. **Currency pairs and commodities.** The currencies are not added by hand: a currency is
    found in the store by its symbol (above). What is listed by hand is the **edges**, the
    Nordnet pairs and commodities with the order book ids their history is asked for by
    (a pair is an edge between two currency nodes, not an instrument of its own), in a data
-   file as `data/yahoo` is. To settle: the ids, and the calendar (24 hours, see calendars.md).
+   file as `data/yahoo` is. The owner's list of Nordnet's commodities (Gold, Silver, Copper,
+   Aluminium, Nickel, Lead, Zinc, WTI and Brent crude), each with an ISIN-like id (`XC...` for
+   most, one a US ISIN for WTI, and for Lead and Zinc only the ticker), a ticker, the quote
+   currency USD and the order book id, goes in `data/nordnet/commodities.csv` when the
+   history loader exists, because the discovery does not list them and an edge exists only when
+   it has data. To settle: whether Nordnet's are spot-like prices or continuous futures, and
+   what the legacy `invert` field ("USD/GOLD") is for (the direct edge is gold priced in USD).
+   **What Yahoo's "gold" is**: `GC=F` is not the price of gold. It is the front-month
+   COMEX gold **futures contract** (the chart meta names it "Gold Dec 26", Yahoo's instrument
+   type is FUTURE), rolled to the next contract when the front one expires: a series that
+   follows the metal plus the cost of carry and jumps by the roll spread on roll days, a
+   different instrument. Yahoo has no spot gold (`XAUUSD=X` answers "not found"). So it does
+   not belong under the ISIN of the metal, and with the rule that Yahoo makes no instruments its
+   commodities (all `=F` futures) simply wait: they would need a node of their own (a
+   continuous contract, with no ISIN) if the long history (back to 2000) is wanted for
+   modelling; for a metal's price Nordnet's is the better start.
 3. **Metadata endpoints**, for getting ids and the like. The first use is the market list
    (a market is a number in the discovery answers, and the names in the adapter are
    inferred from the data: 4 Xetra, 11 Nasdaq Stockholm, 24 Nasdaq Helsinki, ...), and the
