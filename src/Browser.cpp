@@ -19,18 +19,24 @@ struct Preset {
 constexpr Preset kPresets[] = {{"Commodities", "show-commodities"}, {"Nasdaq Helsinki", "show-nasdaq-helsinki"}, {"Currencies", "show-currencies"},
                               {"Indices", "show-indices"}};
 
+// Wide enough for "Link: Full speed, 480 kB/s, RTT 38 ms (pinned)".
+constexpr int kLinkCols = 52;
+
 }  // namespace
 
 Browser::Browser(Application & app, std::shared_ptr<Store> store, std::shared_ptr<IconLoader> icons)
-    : app_(app), store_(std::move(store)), icons_(std::move(icons)), tags_(app.root()), table_(app.root(), app.charts()), info_(app.root()), status_(app.root()) {
+    : app_(app), store_(std::move(store)), icons_(std::move(icons)), tags_(app.root()), table_(app.root(), app.charts()), info_(app.root()), link_(app.root()), status_(app.root()) {
   tags_.attach(app.widgets());
   table_.attach(app.widgets());
   info_.attach(app.widgets());
+  link_.attach(app.widgets());
   status_.attach(app.widgets());
   std::vector<std::string> tags;
   for (const Preset & preset : kPresets) tags.push_back(preset.tag);
   tags_.setTags(std::move(tags));
   info_.setColors(&StyleProvider::info_line_fg_color, &StyleProvider::info_line_bg_color);
+  link_.setColors(&StyleProvider::info_line_fg_color, &StyleProvider::info_line_bg_color);
+  link_.setStyle({TextFont::PROPORTIONAL, TextOverflow::ELLIPSIS, kPlainFace, TextAlign::RIGHT});
   table_.setColumns({{.title = "", .width = 2, .sortable = false, .icon = true},
                      {.title = "Base", .width = 8},
                      {.title = "Quote", .width = 6},
@@ -42,12 +48,19 @@ Browser::Browser(Application & app, std::shared_ptr<Store> store, std::shared_pt
   defineCommands();
   bindKeys();
   showHelp();
+  showLink();
   layout(app.rows(), app.cols());
   resized_ = app.resized.connect([this](int rows, int cols) { layout(rows, cols); });
   // The keymap profile (the help's key names) and the theme's colours come with the display.
   display_ = app.display_changed.connect([this] {
     showHelp();
     info_.render();
+    showLink();
+  });
+  // A change of the link shows in the info line, so a frame is wanted.
+  app.backend().setLinkHandler([this](const LinkStatus &) {
+    showLink();
+    app_.requestFrame();
   });
   tag_ = tags_.chosen.connect([this](int i) {
     if (i < 0) return;
@@ -137,8 +150,11 @@ void Browser::refresh() {
 // The tags on the top row (one cell in), a gap, the table, the info line and the status line.
 void Browser::layout(int rows, int cols) {
   layoutRows(0, 0, rows, cols,
-             {{.widget = &tags_, .margin_start = 1}, {.size = 1}, {.widget = &table_, .fill = 1}, {.widget = &info_}, {.widget = &status_}});
+             {{.widget = &tags_, .margin_start = 1}, {.size = 1}, {.widget = &table_, .fill = 1}, {.size = 1}, {.widget = &status_}});
+  layoutColumns(rows - 2, 0, 1, cols, {{.widget = &info_, .fill = 1}, {.widget = &link_, .size = std::min(kLinkCols, cols / 2)}});
 }
+
+void Browser::showLink() { link_.setText(linkStatusText(app_.backend().linkStatus()) + " "); }
 
 void Browser::showHelp() {
   info_.setText(" stocks.  " + app_.bindingFor("command-palette") + ": commands, click a heading: sort, Tab: switch focus, " +

@@ -36,6 +36,8 @@ class Browser {
   void layout(int rows, int cols);
   // The info line's help: the keys as this display's keymap binds them.
   void showHelp();
+  // The link text from the backend, drawn again when it changed.
+  void showLink();
   void defineCommands();
   void bindKeys();
 
@@ -45,6 +47,7 @@ class Browser {
   cellui::TagBar tags_;
   cellui::Table table_;
   cellui::Label info_;
+  cellui::Label link_;  // the display's link, at the right end of the info line
   cellui::StatusLine status_;
   uint64_t shown_version_ = 0;  // of the snapshot the table shows
   int shown_preset_ = -1;       // the preset the table shows
