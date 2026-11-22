@@ -2,6 +2,7 @@
 
 #include "FakeHttp.h"
 #include "model/Dates.h"
+#include "AttributeView.h"
 #include "model/Isin.h"
 #include "source/AktiaSource.h"
 #include "source/OpSource.h"
@@ -103,6 +104,14 @@ TEST(the_aktia_source_writes_funds_as_nav_bars_and_drops_sparse_series) {
   auto fee = s->attribute(nordic.id, "redemption-fee");
   CHECK(fee && asReal(*fee) == 0.5);
   CHECK(listener.changes == 1);
+  // The info panel shows what is said of the fund: its fees, risk class and rating beside its ISIN.
+  std::string shown;
+  for (const InfoSection & section : buildInfo(*s, *edge))
+    for (const InfoRow & row : section.rows) shown += section.title + "/" + row.predicate + "=" + row.value.text + "\n";
+  CHECK(shown.find("Instrument/redemption-fee=0.5") != std::string::npos);
+  CHECK(shown.find("Instrument/management-fee=1.53") != std::string::npos);
+  CHECK(shown.find("Instrument/fund-risk-class=6") != std::string::npos);
+  CHECK(shown.find("Instrument/fund-morningstar-rating=4") != std::string::npos);
 }
 
 TEST(an_op_page_gives_its_token_without_a_leading_ampersand) {
