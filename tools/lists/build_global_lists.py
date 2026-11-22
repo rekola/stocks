@@ -4,12 +4,12 @@ the Yahoo adapter, which has no discovery and needs its instruments listed.
 
 usage: build_global_lists.py [OUTPUT_DIR] [COUNTRY ...]      (default: data/lists, every country below)
 
-Where the instruments come from: Nordnet's stock list, which has an ISIN for every stock and its market value. The largest
+Where the instruments come from: a stock list that has an ISIN for every stock and its market value. The largest
 N of a country by market value are taken (ordinary shares only: no preferred shares or over-the-counter listings). Each is
 found on Yahoo by its **ISIN** (Yahoo's search answers an ISIN with its listings), so that the ticker is certainly the same
 company, and the listing on the country's own exchange is chosen (a suffix: .L for London, .PA for Paris, ...). It is then
 checked against Yahoo's chart: one with no recent price is left out. Two requests a candidate, paused between them; run it
-when the lists change, not on every build. Only what Nordnet lists has an ISIN here: Asia-Pacific and Latin America wait for
+when the lists change, not on every build. Only what that list has gets an ISIN here: Asia-Pacific and Latin America wait for
 another source of ISINs.
 """
 import csv
@@ -22,7 +22,7 @@ import urllib.request
 
 import build_lists as bl
 
-# country (Nordnet's exchange_country) -> the market's name, how many, the Yahoo suffix of its exchange ("" for the US, whose
+# country (the list's exchange_country) -> the market's name, how many, the Yahoo suffix of its exchange ("" for the US, whose
 # tickers have none and whose exchanges are listed beside).
 COUNTRIES = {
     "US": ("US", 300, "", {"NASDAQ", "NYSE", "NYSE American", "NYSEArca", "NASDAQ GS", "NasdaqGS", "NasdaqGM", "NasdaqCM"}),
@@ -46,8 +46,8 @@ SHARE_TYPES = {"ESH", "ESHMTF"}  # ordinary shares, on an exchange or a multilat
 PAUSE = 0.3
 
 
-def nordnet_stocks():
-    """Every stock of Nordnet's list with an ISIN and a market value: country -> [(market value, isin, name, symbol)]."""
+def listed_stocks():
+    """Every stock of the list with an ISIN and a market value: country -> [(market value, isin, name, symbol)]."""
     base = "https://www.nordnet.fi/api/2/instrument_search/query/stocklist?sort_order=asc&sort_attribute=symbol&limit=1000"
     headers = {"Accept": "application/json", "Origin": "https://www.nordnet.fi", "Referer": "https://www.nordnet.fi/",
                "Client-Id": "NEXT"}
@@ -127,8 +127,8 @@ def main():
     args = sys.argv[1:]
     out = args.pop(0) if args and os.path.isdir(args[0]) else os.path.join(os.path.dirname(__file__), "..", "..", "data", "lists")
     wanted = [c for c in args] or list(COUNTRIES)
-    stocks = nordnet_stocks()
-    print("Nordnet: %s" % {c: len(stocks.get(c, [])) for c in wanted}, flush=True)
+    stocks = listed_stocks()
+    print("listed: %s" % {c: len(stocks.get(c, [])) for c in wanted}, flush=True)
     for country in wanted:
         build(country, stocks.get(country, []), out)
 
