@@ -42,8 +42,8 @@ std::optional<double> number(const json & o, const char * key) {
   return it != o.end() && it->is_number() ? std::optional<double>(it->get<double>()) : std::nullopt;
 }
 
-// What a row says of the instrument itself, as facts: a table of where each is in the row and what it is called. The
-// table is the registry of Nordnet's predicates; a field the row does not have is not a fact.
+// What a row says of the instrument itself, as triples: a table of where each is in the row and what it is called. The
+// table is the registry of Nordnet's predicates; a field the row does not have is not said.
 enum class Kind { Text, Integer, Real, Boolean, Day };
 struct FactField {
   const char * section;
@@ -55,7 +55,7 @@ const FactField kFactFields[] = {
     // every instrument
     {"instrument_info", "issuer_name", "issuer", Kind::Text},
     {"instrument_info", "issuer_id", "issuer-id", Kind::Integer},
-    {"instrument_info", "instrument_icon_url", fact::iconUrl, Kind::Text},
+    {"instrument_info", "instrument_icon_url", predicate::iconUrl, Kind::Text},
     {"instrument_info", "is_tradable", "tradable", Kind::Boolean},
     {"instrument_info", "is_shortable", "shortable", Kind::Boolean},
     {"instrument_info", "instrument_pawn_percentage", "collateral-percent", Kind::Integer},
@@ -110,8 +110,8 @@ const FactField kFactFields[] = {
     {"etp_info", "underlying_name", "underlying-name", Kind::Text},
 };
 
-std::vector<Fact> factsOf(const json & row) {
-  std::vector<Fact> out;
+std::vector<Attribute> attributesOf(const json & row) {
+  std::vector<Attribute> out;
   for (const FactField & f : kFactFields) {
     auto section = row.find(f.section);
     if (section == row.end() || !section->is_object()) continue;
@@ -135,7 +135,7 @@ std::vector<Fact> factsOf(const json & row) {
         if (it->is_number_integer() && it->get<int64_t>() > 0) v = dayNumberOfInstant(it->get<int64_t>() / 1000);
         break;
     }
-    if (!std::holds_alternative<std::monostate>(v)) out.push_back({{}, f.predicate, v, {}});
+    if (!std::holds_alternative<std::monostate>(v)) out.push_back({f.predicate, v});
   }
   return out;
 }
@@ -241,7 +241,7 @@ bool NordnetSource::parsePage(const std::string & body, Page & page, std::string
     }
     if (row.is_object() && row.contains("exchange_info") && row["exchange_info"].is_object())
       l.country = text(row["exchange_info"], "exchange_country");
-    if (row.is_object()) l.facts = factsOf(row);
+    if (row.is_object()) l.attributes = attributesOf(row);
     if (l.instrumentId == 0 || l.symbol.empty() || l.isin.empty() || l.currency.empty() || l.marketId == 0) {
       page.skipped++;
       continue;
@@ -327,7 +327,7 @@ size_t NordnetSource::loadIndicators(const List & list, Store & store, Http & ht
                                      {predicate::nordnetInstrument, row.instrumentId}};
       if (kind != InstrumentKind::Other) rest.push_back({predicate::kind, kindName(kind)});
       base = store.resolveInstrument(identifying, rest);
-      if (!row.country.empty()) store.setFacts({{base.id, fact::country, row.country, dataset.id}});
+      store.setAttribute(base.id, {predicate::country, row.country});  // of an index
       // An index is in points. The answer gives a commodity no currency; the owner's table has them all in dollars.
       quote = row.type == "INDEX" ? quoteNode(store, "pts") : currencyNode(store, "USD");
     }
@@ -399,11 +399,7 @@ void NordnetSource::load(Store & store, Http & http, SourceListener & listener) 
         Instrument base = store.addInstrument({{}, "", l.name, kindOfNordnetType(l.type), l.isin, l.type});
         Instrument quote = currencyNode(store, l.currency);
         // What Nordnet says of the instrument itself: thin edges, of the types it has.
-        for (Fact & f : l.facts) {
-          f.subject = base.id;
-          f.dataset = dataset.id;
-        }
-        store.setFacts(l.facts);
+        store.setAttributes(base.id, l.attributes);
         // Today's bar makes the edge; a listing with none stays a node nothing selects.
         if (l.hasBar) {
           const EdgeKey edge{base.id, quote.id, market.id, dataset.id};

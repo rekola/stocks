@@ -528,7 +528,7 @@ TEST(the_indicator_lists_make_indices_in_points_currency_pairs_and_commodities_i
   CHECK(s->lastCandles(onDax, Resolution::Day, 1).candles.size() == 1);
   CHECK(s->symbol(onDax) == "DAX");
   CHECK(!s->listing(onDax)->orderBook.empty() && s->listing(onDax)->type == "INDEX");  // what its history is asked for by
-  CHECK(asText(s->fact(dax.id, "country", nordnet)->object) == "DE");
+  CHECK(asText(*s->attribute(dax.id, "country")) == "DE");
 
   // One with no ISIN gets one of ours, in the private namespace, from its symbol.
   const std::string bric = privateIsin("BRIC50D");
@@ -557,12 +557,12 @@ TEST(the_indicator_lists_make_indices_in_points_currency_pairs_and_commodities_i
 
 // The object of a predicate among the facts a parsed row has.
 const Value * said(const NordnetListing & l, const char * predicate) {
-  for (const Fact & f : l.facts)
-    if (f.predicate == predicate) return &f.object;
+  for (const Attribute & a : l.attributes)
+    if (a.predicate == predicate) return &a.value;
   return nullptr;
 }
 
-TEST(what_a_row_says_of_the_instrument_becomes_facts_of_the_predicates_it_has) {
+TEST(what_a_row_says_of_the_instrument_becomes_triples_of_the_predicates_it_has) {
   NordnetSource::Page stocks, funds, certificates;
   std::string error;
   CHECK(NordnetSource::parsePage(fixture("stocklist-1.json"), stocks, error));
@@ -570,7 +570,7 @@ TEST(what_a_row_says_of_the_instrument_becomes_facts_of_the_predicates_it_has) {
   CHECK(NordnetSource::parsePage(fixture("certificatelist-1.json"), certificates, error));
 
   // A stock with figures and a calendar; one with none says nothing of them.
-  CHECK(!said(stocks.listings[0], "pe") && !said(stocks.listings[0], "market-cap"));  // empty blocks: no facts
+  CHECK(!said(stocks.listings[0], "pe") && !said(stocks.listings[0], "market-cap"));  // empty blocks: nothing said
   const NordnetListing & abbvie = stocks.listings[1];
   CHECK(asReal(*said(abbvie, "pe")) == 48.8 && asReal(*said(abbvie, "eps")) == 2.36);
   CHECK(asReal(*said(abbvie, "market-cap")) == 456283309908.0);
@@ -599,25 +599,24 @@ TEST(what_a_row_says_of_the_instrument_becomes_facts_of_the_predicates_it_has) {
   CHECK(asReal(*said(certificates.listings[0], "management-fee")) == 0.0);  // zero is a fact; none is not
 }
 
-TEST(the_facts_reach_the_store_with_their_dataset_and_a_reload_changes_nothing) {
+TEST(what_a_row_says_reaches_the_instrument_and_a_reload_changes_nothing) {
   auto store = makeMemoryStore();
   FakeHttp http;
   http.answer = pages;
   Listener listener;
   quick().load(*store, http, listener);
   auto s = store->snapshot();
-  const DatasetId nordnet = s->findDataset("nordnet")->id;
-  const InstrumentId xaix = s->findInstrumentByIsin("IE00BGV5VN51")->id;
-  CHECK(s->fact(xaix, "tradable", nordnet) && s->fact(xaix, "fund-category") && !s->fact(xaix, "pe"));  // an ETF has no P/E
-  const InstrumentId gold = s->findInstrumentByIsin("DE000A0S9GB0")->id;
-  CHECK(asInteger(s->fact(gold, "leverage", nordnet)->object) == 1);
+  const NodeRef xaix = s->findInstrumentByIsin("IE00BGV5VN51")->id;
+  CHECK(s->attribute(xaix, "tradable") && s->attribute(xaix, "fund-category") && !s->attribute(xaix, "pe"));  // an ETF has no P/E
+  const NodeRef gold = s->findInstrumentByIsin("DE000A0S9GB0")->id;
+  CHECK(asInteger(*s->attribute(gold, "leverage")) == 1);
 
-  // Loading again changes no fact: only today's bars are written again.
-  const size_t facts = s->facts(xaix).size();
+  // Loading again says nothing new: only today's bars are written again.
+  const size_t said = s->attributes(xaix).size();
   FakeHttp again;
   again.answer = pages;
   quick().load(*store, again, listener);
-  CHECK(store->snapshot()->facts(xaix).size() == facts);
+  CHECK(store->snapshot()->attributes(xaix).size() == said);
 }
 
 TEST(a_private_isin_is_made_from_what_the_thing_is_in_a_namespace_nobody_issues_from) {

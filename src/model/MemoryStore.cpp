@@ -82,16 +82,12 @@ std::optional<EdgeKey> Snapshot::findEdge(const std::string & symbol, MarketId m
   const EdgeKey * k = edgeBySymbol_.find(symbolKey(m, symbol));
   return k ? std::optional<EdgeKey>(*k) : std::nullopt;
 }
-std::optional<Fact> Snapshot::fact(InstrumentId subject, const std::string & predicate, DatasetId dataset) const {
-  const std::vector<Fact> * all = facts_.find(subject);
+std::optional<Value> Snapshot::attribute(NodeRef n, const std::string & predicate) const {
+  const std::vector<Attribute> * all = attributes_.find(n);
   if (!all) return std::nullopt;
-  for (const Fact & f : *all)
-    if (f.predicate == predicate && (!dataset.valid() || f.dataset == dataset)) return f;
+  for (const Attribute & a : *all)
+    if (a.predicate == predicate) return a.value;
   return std::nullopt;
-}
-std::vector<Fact> Snapshot::facts(InstrumentId subject) const {
-  const std::vector<Fact> * all = facts_.find(subject);
-  return all ? *all : std::vector<Fact>{};
 }
 std::optional<Instrument> Snapshot::findInstrumentByIsin(const std::string & isin) const {
   auto n = findByAttribute(NodeType::Instrument, predicate::isin, isin);
@@ -181,38 +177,57 @@ Seq<CorporateAction> Snapshot::actions(const EventKey & k, TimeRange r) const {
   return s ? slice(*s, r) : Seq<CorporateAction>{};
 }
 
-void Snapshot::setAttribute(NodeRef n, const Attribute & a) {
+namespace {
+// An empty text, an undefined number and nothing say nothing.
+bool says(const Value & v) {
+  if (std::holds_alternative<std::monostate>(v)) return false;
+  if (const auto * t = std::get_if<std::string>(&v)) return !t->empty();
+  if (const auto * d = std::get_if<double>(&v)) return !std::isnan(*d);
+  return true;
+}
+std::string textOf(const Value & v) {
+  const auto * t = std::get_if<std::string>(&v);
+  return t ? *t : std::string();
+}
+}  // namespace
+
+void Snapshot::setAttribute(NodeRef n, const Attribute & a) { setAttributes(n, {a}); }
+
+void Snapshot::setAttributes(NodeRef n, const std::vector<Attribute> & in) {
   const size_t count = n.type == NodeType::Instrument ? instruments_.size()
                        : n.type == NodeType::Market   ? markets_.size()
                                                       : datasets_.size();
-  if (n.id == 0 || n.id > count || a.value.empty()) return;
+  if (n.id == 0 || n.id > count) return;
   std::vector<Attribute> attrs = attributes(n);
-  auto at = std::find_if(attrs.begin(), attrs.end(), [&](const Attribute & x) { return x.predicate == a.predicate; });
-  auto drop = [&](const std::string & key) {
-    if (const auto * ids = byAttribute_.find(key)) {
-      auto rest = ids->erase(n.id);
-      byAttribute_ = rest.size() ? byAttribute_.set(key, rest) : byAttribute_.erase(key);
+  bool changed = false;
+  for (const Attribute & a : in) {
+    if (!says(a.value) || a.predicate.empty()) continue;
+    auto at = std::find_if(attrs.begin(), attrs.end(), [&](const Attribute & x) { return x.predicate == a.predicate; });
+    if (at != attrs.end() && at->value == a.value) continue;
+    // The old text no longer says it of this node; the new, if it is text, does.
+    if (at != attrs.end() && std::holds_alternative<std::string>(at->value)) {
+      const std::string key = indexKey(n.type, a.predicate, textOf(at->value));
+      if (const auto * ids = byAttribute_.find(key)) {
+        auto rest = ids->erase(n.id);
+        byAttribute_ = rest.size() ? byAttribute_.set(key, rest) : byAttribute_.erase(key);
+      }
     }
-  };
-  if (at != attrs.end()) {
-    if (at->value == a.value) return;
-    const std::string old = at->value;
-    at->value = a.value;
-    drop(indexKey(n.type, a.predicate, old));  // the old value no longer says it of this node
-  } else {
-    attrs.push_back(a);
+    if (at != attrs.end()) at->value = a.value;
+    else attrs.push_back(a);
+    if (std::holds_alternative<std::string>(a.value)) {
+      const std::string key = indexKey(n.type, a.predicate, textOf(a.value));
+      const auto * ids = byAttribute_.find(key);
+      byAttribute_ = byAttribute_.set(key, (ids ? *ids : immer::set<uint32_t>{}).insert(n.id));
+    }
+    changed = true;
   }
+  if (!changed) return;
   attributes_ = attributes_.set(n, attrs);
-  {
-    const std::string key = indexKey(n.type, a.predicate, a.value);
-    const auto * ids = byAttribute_.find(key);
-    byAttribute_ = byAttribute_.set(key, (ids ? *ids : immer::set<uint32_t>{}).insert(n.id));
-  }
 
   // The view the app reads is made from the attributes.
   auto value = [&](const char * p) {
     for (const Attribute & x : attrs)
-      if (x.predicate == p) return x.value;
+      if (x.predicate == p) return textOf(x.value);
     return std::string();
   };
   if (n.type == NodeType::Instrument) {
@@ -232,7 +247,7 @@ Instrument Snapshot::resolveInstrument(const std::vector<Attribute> & identifyin
   n.type = NodeType::Instrument;
   bool found = false;
   for (const Attribute & a : identifying)
-    if (auto f = findByAttribute(NodeType::Instrument, a.predicate, a.value)) {
+    if (auto f = findByAttribute(NodeType::Instrument, a.predicate, textOf(a.value))) {
       n = *f;
       found = true;
       break;
@@ -258,7 +273,7 @@ Market Snapshot::resolve(const std::vector<Attribute> & attributes) {
   n.type = NodeType::Market;
   bool found = false;
   for (const Attribute & a : attributes)
-    if (auto f = findByAttribute(NodeType::Market, a.predicate, a.value)) {
+    if (auto f = findByAttribute(NodeType::Market, a.predicate, textOf(a.value))) {
       n = *f;
       found = true;
       break;
@@ -305,28 +320,6 @@ void Snapshot::setListing(const Listing & l) {
   if (!l.symbol.empty() && !edgeBySymbol_.find(symbolKey(k.market, l.symbol)))
     edgeBySymbol_ = edgeBySymbol_.set(symbolKey(k.market, l.symbol), k);
   version_++;
-}
-
-void Snapshot::setFacts(const std::vector<Fact> & in) {
-  bool changed = false;
-  for (const Fact & f : in) {
-    if (!f.subject.valid() || f.subject.value > instruments_.size() || f.predicate.empty() ||
-        std::holds_alternative<std::monostate>(f.object) ||
-        (std::holds_alternative<double>(f.object) && std::isnan(std::get<double>(f.object))) ||
-        (std::holds_alternative<std::string>(f.object) && std::get<std::string>(f.object).empty()))
-      continue;
-    std::vector<Fact> all = facts_.find(f.subject) ? *facts_.find(f.subject) : std::vector<Fact>{};
-    auto at = std::find_if(all.begin(), all.end(), [&](const Fact & x) { return x.predicate == f.predicate && x.dataset == f.dataset; });
-    if (at != all.end()) {
-      if (*at == f) continue;
-      *at = f;
-    } else {
-      all.push_back(f);
-    }
-    facts_ = facts_.set(f.subject, std::move(all));
-    changed = true;
-  }
-  if (changed) version_++;
 }
 
 void Snapshot::appendCandles(const EdgeKey & k, Resolution r, const std::vector<Candle> & in) {
@@ -414,8 +407,8 @@ class MemoryStore : public Store {
   Market resolveMarket(const std::vector<Attribute> & a) override {
     return write([&](Snapshot & s) { return s.resolve(a); });
   }
-  void setFacts(const std::vector<Fact> & f) override {
-    write([&](Snapshot & s) { s.setFacts(f); });
+  void setAttributes(NodeRef n, const std::vector<Attribute> & a) override {
+    write([&](Snapshot & s) { s.setAttributes(n, a); });
   }
   void setListing(const Listing & l) override {
     write([&](Snapshot & s) { s.setListing(l); });

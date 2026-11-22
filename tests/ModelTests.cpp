@@ -310,46 +310,47 @@ TEST(a_fat_edge_has_a_typed_listing_and_only_once_it_has_data) {
   CHECK(w.snap()->symbol(other) == "XAIX.HE" && *w.snap()->findEdge("XAIX2", w.hel.id) == onHel);
 }
 
-TEST(a_thin_edge_is_a_triple_with_its_dataset_and_a_value_that_changes_replaces_it) {
+TEST(a_thin_edge_is_a_triple_of_a_node_with_no_dataset_and_a_value_that_changes_replaces_it) {
   World w;
-  CHECK(!w.snap()->fact(w.nokia.id, "icon-url") && w.snap()->facts(w.nokia.id).empty());
+  const NodeRef nokia = w.nokia.id;
+  CHECK(!w.snap()->attribute(nokia, predicate::iconUrl));
+  const size_t own = w.snap()->attributes(nokia).size();  // the instrument's own: symbol, name, kind
 
-  // (subject, predicate, object, dataset): text, a whole number, a real number, a truth value, a day.
-  w.store->setFacts({{w.nokia.id, "icon-url", std::string("https://x/nokia.png"), w.a.id},
-                     {w.nokia.id, "owners", int64_t(1234), w.a.id},
-                     {w.nokia.id, "pe", 12.5, w.a.id},
-                     {w.nokia.id, "tradable", false, w.a.id},
-                     {w.nokia.id, "dividend-ex-day", dayNumber(2026, 12, 1), w.a.id}});
+  // (subject, predicate, object): text, a whole number, a real number, a truth value, a day. Icons, shares and the like
+  // are not part of a market, so no dataset says them.
+  w.store->setAttributes(nokia, {{predicate::iconUrl, "https://x/nokia.png"},
+                                 {"owners", int64_t(1234)},
+                                 {"pe", 12.5},
+                                 {"tradable", false},
+                                 {"dividend-ex-day", int64_t(dayNumber(2026, 12, 1))}});
   auto s = w.snap();
-  CHECK(asText(s->fact(w.nokia.id, "icon-url")->object) == "https://x/nokia.png");
-  CHECK(asInteger(s->fact(w.nokia.id, "owners")->object) == 1234 && asReal(s->fact(w.nokia.id, "owners")->object) == 1234.0);
-  CHECK(asReal(s->fact(w.nokia.id, "pe")->object) == 12.5 && !asInteger(s->fact(w.nokia.id, "pe")->object));
-  CHECK(asBoolean(s->fact(w.nokia.id, "tradable")->object) == false);  // false is a fact too
-  CHECK(asInteger(s->fact(w.nokia.id, "dividend-ex-day")->object) == dayNumber(2026, 12, 1));
-  CHECK(s->facts(w.nokia.id).size() == 5 && !s->fact(w.nokia.id, "eps"));  // what is not said is not there
+  CHECK(asText(*s->attribute(nokia, predicate::iconUrl)) == "https://x/nokia.png");
+  CHECK(asInteger(*s->attribute(nokia, "owners")) == 1234 && asReal(*s->attribute(nokia, "owners")) == 1234.0);
+  CHECK(asReal(*s->attribute(nokia, "pe")) == 12.5 && !asInteger(*s->attribute(nokia, "pe")));
+  CHECK(asBoolean(*s->attribute(nokia, "tradable")) == false);  // false is said too
+  CHECK(asInteger(*s->attribute(nokia, "dividend-ex-day")) == dayNumber(2026, 12, 1));
+  CHECK(!s->attribute(nokia, "eps"));  // what is not said is not there
+  CHECK(s->attributes(nokia).size() == own + 5);
 
-  // One row per subject, predicate and dataset: another dataset says its own, and `fact` can ask for one's.
-  w.store->setFacts({{w.nokia.id, "icon-url", std::string("https://y/nokia.png"), w.b.id}});
-  s = w.snap();
-  CHECK(s->facts(w.nokia.id).size() == 6);
-  CHECK(asText(s->fact(w.nokia.id, "icon-url", w.b.id)->object) == "https://y/nokia.png");
-  CHECK(asText(s->fact(w.nokia.id, "icon-url", w.a.id)->object) == "https://x/nokia.png");
-  CHECK(asText(s->fact(w.nokia.id, "icon-url")->object) == "https://x/nokia.png");  // none asked for: the first there
+  // The same node says the same things as before and more: the name, found by its text, beside the icon.
+  CHECK(w.snap()->findInstrument("NOKIA")->id == w.nokia.id);
 
   // A value that changes replaces the one there; one that does not makes no new version.
   const uint64_t version = s->version();
-  w.store->setFacts({{w.nokia.id, "pe", 12.5, w.a.id}, {w.nokia.id, "owners", int64_t(1234), w.a.id}});
+  w.store->setAttributes(nokia, {{"pe", 12.5}, {"owners", int64_t(1234)}});
   CHECK(w.snap()->version() == version);
-  w.store->setFacts({{w.nokia.id, "pe", 13.0, w.a.id}});
-  CHECK(w.snap()->version() == version + 1 && asReal(w.snap()->fact(w.nokia.id, "pe")->object) == 13.0);
-  CHECK(w.snap()->facts(w.nokia.id).size() == 6);
+  w.store->setAttributes(nokia, {{"pe", 13.0}});
+  CHECK(w.snap()->version() == version + 1 && asReal(*w.snap()->attribute(nokia, "pe")) == 13.0);
+  CHECK(w.snap()->attributes(nokia).size() == s->attributes(nokia).size());
 
-  // Empty, undefined and unknown say nothing.
-  w.store->setFacts({{w.nokia.id, "x", std::string(), w.a.id},
-                     {w.nokia.id, "y", std::numeric_limits<double>::quiet_NaN(), w.a.id},
-                     {w.nokia.id, "z", Value{}, w.a.id},
-                     {InstrumentId{999}, "pe", 1.0, w.a.id}});
-  CHECK(w.snap()->facts(w.nokia.id).size() == 6 && w.snap()->version() == version + 1);
+  // Empty, undefined and nothing say nothing; so does a node that is not there.
+  w.store->setAttributes(nokia, {{"x", std::string()}, {"y", std::numeric_limits<double>::quiet_NaN()}, {"z", Value{}}});
+  w.store->setAttribute(NodeRef(InstrumentId{999}), {"pe", 1.0});
+  CHECK(w.snap()->attributes(nokia).size() == s->attributes(nokia).size() && w.snap()->version() == version + 1);
+
+  // Text is found by its value; other values are not.
+  CHECK(w.snap()->findByAttribute(NodeType::Instrument, predicate::iconUrl, "https://x/nokia.png")->id == w.nokia.id.value);
+  CHECK(!w.snap()->findByAttribute(NodeType::Instrument, "owners", "1234"));
 }
 
 TEST(edges_can_be_selected_by_the_type_of_their_base_instrument) {

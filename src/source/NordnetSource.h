@@ -18,8 +18,8 @@ struct NordnetListing {
   // has not traded (no last price or no tick time). A daily bar is keyed by its date (a day number), not by an instant.
   bool hasBar = false;
   Candle bar;
-  // What else the row says about the instrument, as facts (the subject and the dataset are filled in when they are written).
-  std::vector<Fact> facts;
+  // What else the row says about the instrument, as triples (the subject is the instrument, once it is made).
+  std::vector<Attribute> attributes;
 };
 
 // One row of Nordnet's indicator lists (indices, currency pairs, commodities): not an exchange listing, so no market of its

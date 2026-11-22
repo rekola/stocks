@@ -41,13 +41,42 @@ struct TimeRange {
   bool contains(Timestamp t) const { return t >= from && t < to; }
 };
 
-// One thing said about a node: a predicate and its value. Instruments, markets and datasets keep what is known about them
-// as attributes, in the same way for all of them, one value per predicate; a value can change. Edges are not nodes: what
-// they say is typed (Listing, below), and so are the facts about an instrument.
+// What a triple says: text, a whole number (a day is a day number), a real number or a truth value. A number that is not
+// given is not said at all: there is no undefined value in a triple.
+using Value = std::variant<std::monostate, std::string, int64_t, double, bool>;
+
+inline std::optional<std::string> asText(const Value & v) {
+  return std::holds_alternative<std::string>(v) ? std::optional<std::string>(std::get<std::string>(v)) : std::nullopt;
+}
+inline std::optional<int64_t> asInteger(const Value & v) {
+  return std::holds_alternative<int64_t>(v) ? std::optional<int64_t>(std::get<int64_t>(v)) : std::nullopt;
+}
+inline std::optional<double> asReal(const Value & v) {  // a whole number is a real one too
+  if (std::holds_alternative<double>(v)) return std::get<double>(v);
+  if (std::holds_alternative<int64_t>(v)) return static_cast<double>(std::get<int64_t>(v));
+  return std::nullopt;
+}
+inline std::optional<bool> asBoolean(const Value & v) {
+  return std::holds_alternative<bool>(v) ? std::optional<bool>(std::get<bool>(v)) : std::nullopt;
+}
+
+// One thing said of a node: a triple (subject, predicate, object), the subject being the node. Instruments, markets and
+// datasets keep what is known about them in the same way: their name, ISIN and kind, an instrument's icon, the number of
+// its shares, who runs it. These are not part of any market, so no dataset says them: one value per predicate, a value
+// that changes replaces the one there (the last said stands, until a rule picks the authoritative source). What predicates
+// there are is data. Edges are not nodes: a fat edge is a Listing, below, which has the dataset.
 struct Attribute {
-  std::string predicate, value;
+  std::string predicate;
+  Value value;
+  Attribute(std::string p, std::string v) : predicate(std::move(p)), value(std::move(v)) {}
+  Attribute(std::string p, const char * v) : predicate(std::move(p)), value(std::string(v)) {}
+  Attribute(std::string p, int64_t v) : predicate(std::move(p)), value(v) {}
+  Attribute(std::string p, double v) : predicate(std::move(p)), value(v) {}
+  Attribute(std::string p, bool v) : predicate(std::move(p)), value(v) {}
+  Attribute(std::string p, Value v) : predicate(std::move(p)), value(std::move(v)) {}
   friend bool operator==(const Attribute &, const Attribute &) = default;
 };
+
 
 namespace predicate {
 inline constexpr const char * name = "name";
@@ -59,6 +88,8 @@ inline constexpr const char * nordnetId = "nordnet-id";  // a market's id at Nor
 inline constexpr const char * nordnetInstrument = "nordnet-instrument";  // an instrument's id at Nordnet
 inline constexpr const char * country = "country";  // a market's country (ISO 3166 alpha-2)
 inline constexpr const char * timezone = "timezone";  // a market's time zone (IANA name)
+inline constexpr const char * iconUrl = "icon-url";
+inline constexpr const char * firstTradeDay = "first-trade-day";  // a day number: where an instrument's history begins
 inline constexpr const char * mic = "mic";  // a market's ISO 10383 code, the way an ISIN identifies an instrument
 }  // namespace predicate
 
@@ -148,11 +179,9 @@ struct EventKey {
   }
 };
 
-// Edges are rows of a fixed shape, each carrying its own key. A **fat edge** is a Listing: an instrument on a market in a
-// quote currency, as one dataset says it. It is small, and the price series (candles, books) are beside it under the same
-// key. A **thin edge** is a Fact: a triple with the dataset that says it, (subject, predicate, object, dataset): the
-// instrument, what is said of it, the value. One row of each per subject, predicate and dataset; a value that changes
-// replaces the one there. What predicates there are is data, not types: a new kind of fact is a new predicate.
+// A **fat edge** is a Listing: an instrument on a market in a quote currency, as one dataset says it. It is a row of fixed
+// fields carrying its own key; it is small, and the price series (candles, books) are beside it under the same key. A
+// **thin edge** is a triple, an Attribute of a node, above: it is not part of a market, so it has no dataset.
 
 struct Listing {
   EdgeKey key;
@@ -162,40 +191,6 @@ struct Listing {
   std::string type;        // the provider's own type for it ("UETF", "EQUITY")
   friend bool operator==(const Listing &, const Listing &) = default;
 };
-
-// The object of a fact: text, a whole number (a day is a day number), a real number or a truth value. A number a dataset does
-// not give is not written at all: there is no undefined value in a fact.
-using Value = std::variant<std::monostate, std::string, int64_t, double, bool>;
-
-inline std::optional<std::string> asText(const Value & v) {
-  return std::holds_alternative<std::string>(v) ? std::optional<std::string>(std::get<std::string>(v)) : std::nullopt;
-}
-inline std::optional<int64_t> asInteger(const Value & v) {
-  return std::holds_alternative<int64_t>(v) ? std::optional<int64_t>(std::get<int64_t>(v)) : std::nullopt;
-}
-inline std::optional<double> asReal(const Value & v) {  // a whole number is a real one too
-  if (std::holds_alternative<double>(v)) return std::get<double>(v);
-  if (std::holds_alternative<int64_t>(v)) return static_cast<double>(std::get<int64_t>(v));
-  return std::nullopt;
-}
-inline std::optional<bool> asBoolean(const Value & v) {
-  return std::holds_alternative<bool>(v) ? std::optional<bool>(std::get<bool>(v)) : std::nullopt;
-}
-
-struct Fact {
-  InstrumentId subject;
-  std::string predicate;
-  Value object;
-  DatasetId dataset;
-  friend bool operator==(const Fact &, const Fact &) = default;
-};
-
-// The predicates that code outside an adapter reads; an adapter's own are in its table.
-namespace fact {
-inline constexpr const char * iconUrl = "icon-url";
-inline constexpr const char * country = "country";  // of an index
-inline constexpr const char * firstTradeDay = "first-trade-day";  // a day number: where the history begins
-}  // namespace fact
 
 // How big the bars of a series are, as a code. The intraday resolutions are fixed lengths and are keyed by their slot
 // number: the UTC Unix seconds of the start of the bar divided by the length (the hour number is the seconds divided by

@@ -26,16 +26,14 @@ class Snapshot {
   std::string symbol(const EdgeKey &) const;
   // The first edge made that a market's `symbol` is for: the instrument a market calls "NOKIA", whoever said it.
   std::optional<EdgeKey> findEdge(const std::string & symbol, MarketId) const;
-  // The thin edges: what datasets say of an instrument, as facts. `fact` is the object of one predicate, from `dataset` or,
-  // if none is given, from the first dataset that says it; `facts` is every fact about the instrument, as said.
-  std::optional<Fact> fact(InstrumentId, const std::string & predicate, DatasetId dataset = {}) const;
-  std::vector<Fact> facts(InstrumentId) const;
+  // The object of one predicate of a node, if it is said: an instrument's icon, its number of shares, a market's country.
+  std::optional<Value> attribute(NodeRef, const std::string & predicate) const;
   std::optional<Instrument> findInstrumentByIsin(const std::string & isin) const;
   std::optional<Market> market(MarketId) const;
   std::optional<Market> findMarket(const std::string & name) const;  // by its name attribute
   std::optional<Market> findMarketByAttribute(const std::string & predicate, const std::string & value) const;
-  // What is said about any node, in the order it was first said; and the node, of the type, that says `predicate` is
-  // `value` (the one made first, if several do).
+  // What is said about any node, in the order it was first said; and the node, of the type, that says the text `predicate`
+  // is `value` (the one made first, if several do). Only text is found by its value.
   std::vector<Attribute> attributes(NodeRef) const;
   std::optional<NodeRef> findByAttribute(NodeType, const std::string & predicate, const std::string & value) const;
   std::optional<Dataset> dataset(DatasetId) const;
@@ -73,9 +71,9 @@ class Snapshot {
   Instrument add(Instrument);
   Instrument resolveInstrument(const std::vector<Attribute> & identifying, const std::vector<Attribute> & rest);
   void setListing(const Listing &);
-  void setFacts(const std::vector<Fact> &);
   Market resolve(const std::vector<Attribute> &);
   void setAttribute(NodeRef, const Attribute &);
+  void setAttributes(NodeRef, const std::vector<Attribute> &);
   Dataset add(Dataset);
   void appendCandles(const EdgeKey &, Resolution, const std::vector<Candle> &);
   void appendBooks(const EdgeKey &, const std::vector<BookSnapshot> &);
@@ -90,7 +88,6 @@ class Snapshot {
   Seq<Dataset> datasets_;
   immer::map<EdgeKey, Listing> listings_;
   immer::map<std::string, EdgeKey> edgeBySymbol_;  // "market \0 symbol" to the first edge there that has it
-  immer::map<InstrumentId, std::vector<Fact>> facts_;
   immer::map<NodeRef, std::vector<Attribute>> attributes_;
   immer::map<std::string, immer::set<uint32_t>> byAttribute_;  // "type predicate \0 value" to the ids that say it
   immer::map<SeriesKey, Seq<Candle>> series_;
@@ -133,9 +130,8 @@ class Store {
   // The listing of an edge, replacing the one it had. An edge exists once it has data, so one that has none yet takes
   // nothing.
   virtual void setListing(const Listing &) = 0;
-  // Facts, in one write: each replaces the one with the same subject, predicate and dataset, or is added. An empty object
-  // or an unknown subject is left out; one that changes nothing makes no new version.
-  virtual void setFacts(const std::vector<Fact> &) = 0;
+  // Says several things of a node in one write (an adapter's whole row), each as setAttribute does.
+  virtual void setAttributes(NodeRef, const std::vector<Attribute> &) = 0;
   virtual Dataset addDataset(Dataset) = 0;
 
   // Candles. An edge has a series for each resolution it has data in, as the provider gives it: nothing is derived from
