@@ -57,6 +57,9 @@ class Snapshot {
   bool hasCandles(const EdgeKey &, Resolution) const;
   // The resolutions the edge has bars in, shortest first.
   std::vector<Resolution> resolutions(const EdgeKey &) const;
+  // The close before the session of `day` (a day number), as a provider says it: the base of a day's change. Only for the
+  // day it was said for, so a value left from an earlier session is never used for a later one.
+  std::optional<double> previousClose(const EdgeKey &, int64_t day) const;
 
   // The snapshots in `range`, oldest first.
   Seq<BookSnapshot> books(const EdgeKey &, TimeRange range = {}) const;
@@ -78,6 +81,7 @@ class Snapshot {
   void setAttributes(NodeRef, const std::vector<Attribute> &);
   Dataset add(Dataset);
   void appendCandles(const EdgeKey &, Resolution, const std::vector<Candle> &);
+  void setPreviousClose(const EdgeKey &, int64_t day, double close);
   void appendBooks(const EdgeKey &, const std::vector<BookSnapshot> &);
   void appendAnnouncements(const EventKey &, const std::vector<Announcement> &);
   void appendActions(const EventKey &, const std::vector<CorporateAction> &);
@@ -94,6 +98,7 @@ class Snapshot {
   immer::map<std::string, immer::set<uint32_t>> byAttribute_;  // "type predicate \0 value" to the ids that say it
   immer::map<SeriesKey, Seq<Candle>> series_;
   immer::map<EdgeKey, immer::set<int>> resolutions_;
+  immer::map<EdgeKey, std::pair<int64_t, double>> previousClose_;  // the session's day number and the close before it
   immer::map<EdgeKey, Seq<BookSnapshot>> books_;
   immer::map<MarketId, immer::set<EdgeKey>> edgesByMarket_;
   immer::map<EventKey, Seq<Announcement>> announcements_;
@@ -140,6 +145,8 @@ class Store {
   // another. A bar at a time already in the series replaces it (a correction, or today's bar updated); the rest are
   // inserted in order. The bars' times are slot numbers, or day numbers for a date resolution.
   virtual void appendCandles(const EdgeKey &, Resolution, const std::vector<Candle> &) = 0;
+  // The close before the session of `day`, which a provider gives beside the day's bars; replaces what was said.
+  virtual void setPreviousClose(const EdgeKey &, int64_t day, double close) = 0;
   // Order book snapshots, time-ordered; one at a time already in the series replaces it.
   virtual void appendBooks(const EdgeKey &, const std::vector<BookSnapshot> &) = 0;
   // Announcements and corporate actions of an instrument, per dataset, time-ordered. An announcement at the same time

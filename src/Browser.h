@@ -1,6 +1,7 @@
 #pragma once
 
 #include "history/HistoryLoader.h"
+#include "model/Period.h"
 #include "icons/IconLoader.h"
 #include "model/Store.h"
 
@@ -16,8 +17,10 @@
 
 // The screen: preset tags on the top row, the table filling what is between them
 // and the info and status lines, laid out again whenever the display changes size.
+// The period tags at the right end of that row choose the period the Change and the trace columns show (the headings
+// name it); it is one for every row, and kept while the session runs.
 // Commands (named, run by a key or from the application's command palette) do what
-// the keys and the mouse do: show a preset, move the focus, quit. A click on a
+// the keys and the mouse do: show a preset, choose a period, move the focus, quit. A click on a
 // heading sorts by it. The status line is the echo area.
 class Browser {
  public:
@@ -29,6 +32,8 @@ class Browser {
 
   cellui::Table & table() { return table_; }
   cellui::TagBar & tags() { return tags_; }
+  cellui::TagBar & periodTags() { return periods_; }
+  Period period() const { return period_; }
   cellui::StatusLine & statusLine() { return status_; }
   // How soon the table follows the store again: a source that writes a page a second, or a store of tens of thousands of
   // rows that changes all the time, is shown at most this often (default a quarter of a second).
@@ -39,6 +44,9 @@ class Browser {
   void showPreset(int i);
   // Tells the icon loader which rows are on screen and near it: those first, then the screens after and before.
   void requestIcons();
+  // Shows `period` in the change and the trace columns, their headings and the period tags.
+  void showPeriod(Period);
+  void setColumns();
   // Tells the history loader which rows are on screen and near it, when that changed.
   void requestHistory();
   // Shows what the store holds now, keeping the sort, the scroll position and the selected row.
@@ -59,7 +67,8 @@ class Browser {
   std::shared_ptr<Store> store_;
   std::shared_ptr<IconLoader> icons_;
   std::shared_ptr<HistoryLoader> history_;
-  cellui::TagBar tags_;
+  cellui::TagBar tags_, periods_;
+  Period period_ = kDefaultPeriod;
   cellui::Table table_;
   cellui::Label info_;
   cellui::Label link_;  // the display's link, at the right end of the info line
@@ -69,11 +78,13 @@ class Browser {
   struct HistoryView {
     const void * model = nullptr;
     int first = -1, rows = -1, count = -1;
+    Period period = Period::Day;
+    bool set = false;
     bool operator==(const HistoryView &) const = default;
   } history_view_;              // what the history loader was last told is wanted
   double min_refresh_ = 0.25;
   std::chrono::steady_clock::time_point last_refresh_{};
   std::optional<int> action_row_;  // the row a button was clicked on, while its command runs: not the selected one
   bool pending_ = false;        // the store changed and the table does not show it yet
-  cellui::Connection button_, resized_, display_, tag_, message_, frame_, changed_, said_, loaded_;
+  cellui::Connection period_tag_, button_, resized_, display_, tag_, message_, frame_, changed_, said_, loaded_;
 };

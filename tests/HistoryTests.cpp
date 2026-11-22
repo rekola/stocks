@@ -92,8 +92,8 @@ TEST(what_is_not_a_series_is_refused_and_a_resolution_not_stored_is_left_unsuppo
   CHECK(!HistoryLoader::parse("", false, s, error) && error == "not a price time series");
   CHECK(!HistoryLoader::parse("{}", false, s, error));
   CHECK(!HistoryLoader::parse("<html>", false, s, error));
-  // Minute bars: parsed as an answer, but not ours to store yet.
-  CHECK(HistoryLoader::parse(R"({"pricePoints":[{"timeStamp":1,"last":1}],"returnedResolution":"MIN_5","availablePeriods":["DAY_1"]})", false, s, error));
+  // A resolution we have no name for: parsed as an answer, but not ours to store.
+  CHECK(HistoryLoader::parse(R"({"pricePoints":[{"timeStamp":1,"last":1}],"returnedResolution":"SECOND_1","availablePeriods":["DAY_1"]})", false, s, error));
   CHECK(!s.supported && s.bars.empty());
 }
 
@@ -164,7 +164,7 @@ TEST(edges_that_cannot_or_need_not_be_loaded_are_left_out) {
   EdgeKey noBook = w.edge(InstrumentKind::Company, "");
   EdgeKey has = w.edge(InstrumentKind::Company, "book-c");
   std::vector<Candle> past;
-  for (int d = 0; d < 20; d++) past.push_back({dayNumber(2026, 1, 1) + d, 1, 1, 1, 1, 1});
+  for (int d = 0; d < 70; d++) past.push_back({dayNumber(2026, 12, 1) - 70 + d, 1, 1, 1, 1, 1});  // up to the discovery's bar of 1 December
   w.store->appendCandles(has, Resolution::Day, past);  // it has its history already
   EdgeKey noListing{w.store->addInstrument({{}, "", "X", InstrumentKind::Company, "XX999999"}).id, w.usd.id, w.market.id, w.nordnet.id};
   FakeHttp http;
@@ -230,4 +230,112 @@ TEST(edges_are_loaded_in_the_order_they_are_wanted) {
   CHECK(http.urls.size() == 3);
   CHECK(http.urls[0].find("book-c") != std::string::npos && http.urls[1].find("book-a") != std::string::npos &&
         http.urls[2].find("book-b") != std::string::npos);
+}
+
+namespace {
+// An intraday answer: 5-minute bars of 1 December 2026 from 07:00 UTC, in the resolution `returned`.
+std::string intraday(const std::string & returned, int count, int stepSeconds, double previousClose) {
+  std::string points;
+  const int64_t start = (dayNumber(2026, 12, 1) - kUnixEpochDayNumber) * 86400 + 7 * 3600;
+  for (int i = 0; i < count; i++)
+    points += std::string(i ? "," : "") + R"({"timeStamp":)" + std::to_string((start + i * stepSeconds) * 1000) + R"(,"open":1,"high":2,"low":1,"last":)" +
+              std::to_string(10 + i) + R"(,"volume":5})";
+  return R"({"pricePoints":[)" + points + R"(],"previousClose":)" + std::to_string(previousClose) + R"(,"returnedResolution":")" + returned + R"(","availablePeriods":["DAY_1"]})";
+}
+}  // namespace
+
+TEST(intraday_bars_are_stored_under_their_slot_numbers_and_the_resolution_the_answer_returned) {
+  HistoryLoader::Series s;
+  std::string error;
+  CHECK(HistoryLoader::parse(intraday("MIN_5", 3, 300, 9.5), false, s, error));
+  const int64_t start = (dayNumber(2026, 12, 1) - kUnixEpochDayNumber) * 86400 + 7 * 3600;
+  CHECK(s.supported && s.resolution == Resolution::Min5 && s.bars.size() == 3);
+  CHECK(s.bars[0].time == slotOfInstant(Resolution::Min5, start) && s.bars[0].time == start / 300);  // a slot number, not seconds
+  CHECK(s.bars[1].time == s.bars[0].time + 1 && s.bars[0].close == 10 && s.bars[0].volume == 5);
+  CHECK(s.previousClose == 9.5);
+  // Hourly bars are by the hour number; one that is not on the hour is left out.
+  CHECK(HistoryLoader::parse(intraday("HOUR_1", 3, 3600, 9), false, s, error));
+  CHECK(s.resolution == Resolution::Hour1 && s.bars[0].time == start / 3600 && s.bars.size() == 3);
+  CHECK(HistoryLoader::parse(intraday("HOUR_1", 2, 1800, 9), false, s, error));
+  CHECK(s.bars.size() == 1);
+}
+
+TEST(the_day_is_one_request_of_five_minute_bars_stored_with_the_previous_close_and_not_asked_again) {
+  World w;
+  EdgeKey k = w.edge(InstrumentKind::Company, "book-1");
+  FakeHttp http;
+  // Asked for 5 minutes, answered in 15: what the answer says is what is stored.
+  http.answer = [](const std::string &) { return ok(intraday("MIN_15", 4, 900, 9.5)); };
+  HistoryLoader loader(w.store, borrow(http), quickly(), [] {});
+  loader.want({k}, Period::Day);
+  loader.waitIdle();
+  CHECK(http.urls.size() == 1);
+  CHECK(http.urls[0] == "https://api.prod.nntech.io/market-data/v3/price-time-series/period/DAY_1/identifier/book-1?resolution=MIN_5");
+  auto snapshot = w.store->snapshot();
+  CHECK(snapshot->candles(k, Resolution::Min15).candles.size() == 4 && !snapshot->hasCandles(k, Resolution::Min5));
+  CHECK(snapshot->previousClose(k, dayNumber(2026, 12, 1)) == 9.5 && !snapshot->previousClose(k, dayNumber(2026, 12, 2)));
+  loader.want({k}, Period::Day);
+  loader.waitIdle();
+  CHECK(http.urls.size() == 1);  // once per edge and period
+}
+
+TEST(each_period_asks_once_per_edge_for_the_rows_wanted_and_a_month_shares_the_quarters_request) {
+  World w;
+  EdgeKey a = w.edge(InstrumentKind::Company, "book-a"), b = w.edge(InstrumentKind::Company, "book-b"), c = w.edge(InstrumentKind::Company, "book-c");
+  FakeHttp http;
+  http.answer = [](const std::string & url) {
+    if (url.find("YEAR_1") != std::string::npos) return ok(fixture("history-gold-week.json"));
+    if (url.find("HOUR_1") != std::string::npos) return ok(intraday("HOUR_1", 3, 3600, 9));
+    return ok(fixture("history-stock-day.json"));
+  };
+  HistoryLoader loader(w.store, borrow(http), quickly(), [] {});
+  auto asked = [&](const std::string & what) {
+    size_t n = 0;
+    for (const std::string & u : http.urls) n += u.find(what) != std::string::npos;
+    return n;
+  };
+  loader.want({a, b}, Period::Week);  // c is not on screen
+  loader.waitIdle();
+  CHECK(http.urls.size() == 2 && asked("WEEK_1") == 2 && asked("book-c") == 0);
+  loader.want({a, b, c}, Period::Week);
+  loader.waitIdle();
+  CHECK(http.urls.size() == 3 && asked("book-c") == 1);  // only the one not asked before
+  loader.want({a}, Period::Year);
+  loader.waitIdle();
+  CHECK(asked("YEAR_1/identifier/book-a?resolution=WEEK") == 1);
+  loader.want({a}, Period::Month);
+  loader.waitIdle();
+  loader.want({a}, Period::Quarter);
+  loader.waitIdle();
+  CHECK(asked("MONTH_3/identifier/book-a") == 1);  // the month and the quarter are one request
+  loader.want({a, b, c}, Period::Year);
+  loader.waitIdle();
+  CHECK(http.urls.size() == 3 + 1 + 1 + 2);
+}
+
+TEST(a_fund_has_no_intraday_so_its_day_and_week_are_the_daily_request_and_what_the_store_has_is_used_first) {
+  World w;
+  EdgeKey fund = w.edge(InstrumentKind::Fund, "book-f");
+  EdgeKey stock = w.edge(InstrumentKind::Company, "book-s");
+  std::vector<Candle> past;
+  for (int d = 0; d < 70; d++) past.push_back({dayNumber(2026, 12, 1) - 70 + d, 1, 1, 1, 1, 1});
+  w.store->appendCandles(stock, Resolution::Day, past);
+  w.store->appendCandles(stock, Resolution::Hour1, {{slotOfInstant(Resolution::Hour1, (dayNumber(2026, 12, 1) - kUnixEpochDayNumber) * 86400), 1, 1, 1, 1, 1}});
+  FakeHttp http;
+  http.answer = [](const std::string &) { return ok(fixture("history-fund-nav.json")); };
+  HistoryLoader loader(w.store, borrow(http), quickly(), [] {});
+  loader.want({fund}, Period::Day);
+  loader.waitIdle();
+  CHECK(http.urls.size() == 1 && http.urls[0].find("MONTH_3") != std::string::npos && http.urls[0].find("FUND_NAV") != std::string::npos);
+  // The stock has a quarter of daily bars (a quarter and a month need no request) but no five-minute ones (the day does).
+  loader.want({stock}, Period::Quarter);
+  loader.waitIdle();
+  CHECK(http.urls.size() == 1);
+  loader.want({stock}, Period::Month);
+  loader.waitIdle();
+  CHECK(http.urls.size() == 1);
+  // An hourly bar is there, but it does not reach back a week: asked for.
+  loader.want({stock}, Period::Week);
+  loader.waitIdle();
+  CHECK(http.urls.size() == 2);
 }
