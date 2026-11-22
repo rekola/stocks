@@ -45,8 +45,9 @@ constexpr int kLinkCols = 52;
 
 }  // namespace
 
-Browser::Browser(Application & app, std::shared_ptr<Store> store, std::shared_ptr<IconLoader> icons)
-    : app_(app), store_(std::move(store)), icons_(std::move(icons)), tags_(app.root()), table_(app.root(), app.charts()), info_(app.root()), link_(app.root()), status_(app.root()) {
+Browser::Browser(Application & app, std::shared_ptr<Store> store, std::shared_ptr<IconLoader> icons,
+                 std::shared_ptr<HistoryLoader> history)
+    : app_(app), store_(std::move(store)), icons_(std::move(icons)), history_(std::move(history)), tags_(app.root()), table_(app.root(), app.charts()), info_(app.root()), link_(app.root()), status_(app.root()) {
   tags_.attach(app.widgets());
   table_.attach(app.widgets());
   info_.attach(app.widgets());
@@ -118,6 +119,7 @@ Browser::Browser(Application & app, std::shared_ptr<Store> store, std::shared_pt
   // The table eases to a scroll position where the display scrolls smoothly: it moves with each frame, and asks for the next.
   frame_ = app.frame_started.connect([this](double seconds) {
     requestIcons();
+    requestHistory();
     if (pending_) requestRefresh();
     if (table_.tick(seconds) || pending_) app_.requestFrame();
   });
@@ -157,6 +159,24 @@ void Browser::requestIcons() {
   for (int p = first; p < std::min(count, first + view + margin); p++) add(p);  // on screen, then the screens after
   for (int p = first - 1; p >= std::max(0, first - margin); p--) add(p);        // then the ones before
   icons_->want(urls);
+}
+
+void Browser::requestHistory() {
+  auto * quotes = dynamic_cast<const Quotes *>(table_.model().get());
+  if (!history_ || !quotes) return;
+  const int count = quotes->rowCount(), first = table_.firstVisiblePosition(), view = std::max(1, table_.visibleRows());
+  const HistoryView now{quotes, first, view, count};
+  if (now == history_view_) return;  // the same rows as the last time: the loader has them
+  history_view_ = now;
+  std::vector<EdgeKey> edges;
+  auto add = [&](int position) {
+    const int row = table_.rowAt(position);
+    if (row >= 0) edges.push_back(quotes->edge(row));
+  };
+  // Each is a request a second: what is on screen, then the screen after and the one before.
+  for (int p = first; p < std::min(count, first + 2 * view); p++) add(p);
+  for (int p = first - 1; p >= std::max(0, first - view); p--) add(p);
+  history_->want(edges);
 }
 
 void Browser::refresh() {

@@ -2,12 +2,15 @@
 
 #include "AttributeView.h"
 #include "Browser.h"
+#include "model/Dates.h"
 #include "Quotes.h"
 #include "Synthetic.h"
 #include "model/Dates.h"
 #include "source/Source.h"
 #include "source/InstrumentLists.h"
 
+#include <fstream>
+#include <sstream>
 #include <cellui/Application.h>
 #include <cellui/TestBackend.h>
 
@@ -363,6 +366,57 @@ TEST(the_table_keeps_its_scroll_position_when_the_store_changes) {
   f.app->widgets().postToRoot(StoreChanged{});  // what the source thread's post turns into
   CHECK(t.firstVisiblePosition() == first);      // not back at the first row
   CHECK(t.selectedRow() == selected);
+}
+
+#include "FakeHttp.h"
+
+TEST(the_rows_on_screen_have_their_history_loaded_and_the_table_follows) {
+  std::shared_ptr<Store> store = makeMemoryStore();
+  Instrument usd = store->addInstrument({{}, "USD", "US dollar", InstrumentKind::Currency});
+  Market market = store->addMarket({{}, "Nasdaq Helsinki"});
+  Dataset nordnet = store->addDataset({{}, "nordnet"});
+  std::vector<EdgeKey> edges;
+  for (int i = 0; i < 40; i++) {  // more rows than the screen holds
+    Instrument inst = store->addInstrument({{}, "", "Stock " + std::to_string(i), InstrumentKind::Company, "XX" + std::to_string(100000 + i)});
+    EdgeKey k{inst.id, usd.id, market.id, nordnet.id};
+    store->appendCandles(k, Resolution::Day, {{dayNumber(2026, 12, 1), kUndefined, 1, 1, 1, kUndefined}});
+    store->setListing({k, "S" + std::to_string(i), "", "book-" + std::to_string(i), "ESH", "Stock " + std::to_string(i)});
+    edges.push_back(k);
+  }
+  FakeHttp http;
+  http.answer = [](const std::string &) {
+    std::ifstream in(std::string(STOCKS_FIXTURES_DIR) + "/nordnet/history-stock-day.json");
+    std::stringstream s;
+    s << in.rdbuf();
+    return ok(s.str());
+  };
+  struct Borrowed : Http {
+    FakeHttp * inner = nullptr;
+    HttpResult get(const std::string & url, const HttpHeaders & h) override { return inner->get(url, h); }
+  };
+  auto lend = std::make_unique<Borrowed>();
+  lend->inner = &http;
+  HistoryLoader::Options quick;
+  quick.pause = std::chrono::milliseconds(0);
+  auto history = std::make_shared<HistoryLoader>(store, std::move(lend), quick, [] {});
+
+  auto owned = std::make_unique<test::TestBackend>(24, 100);
+  auto app = Application::adopt(std::move(owned));
+  Browser browser(*app, store, nullptr, history);
+  app->execute("show-nasdaq-helsinki");
+  app->present();  // a frame: the browser tells the loader what is on screen
+  history->waitIdle();
+  const size_t requested = http.urls.size();
+  CHECK(requested > 0 && requested < 40);  // the screen and a margin, not all of them
+  CHECK(http.urls[0].find("identifier/book-0?") != std::string::npos);  // the first row first
+  // What arrived is in the store: the history of the first row.
+  CHECK(store->snapshot()->candles(edges[0], Resolution::Day).candles.size() == 8);
+  CHECK(store->snapshot()->candles(edges[39], Resolution::Day).candles.size() == 1);  // not on screen: not asked for
+
+  // Nothing changed on screen: the loader is not told again, and asks for nothing more.
+  app->present();
+  history->waitIdle();
+  CHECK(http.urls.size() == requested);
 }
 
 TEST(the_all_preset_shows_every_market_and_the_market_column_tells_the_rows_apart) {

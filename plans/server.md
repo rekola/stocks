@@ -560,7 +560,8 @@ and they decide how history has to be collected):
   NOKIA.HE); the same works for `1wk`, `1mo`, `5d` and `3mo`. Yahoo has its own weekly
   and monthly bars, like Nordnet.
 
-**Nordnet history** (`api.prod.nntech.io`), as observed, not built yet:
+**Nordnet history** (`api.prod.nntech.io`), as observed; the daily and coarser part is built
+(`HistoryLoader`, see "The history loader" below):
 
 - `GET https://api.prod.nntech.io/market-data/v3/price-time-series/period/<PERIOD>/identifier/<ID>?resolution=<RESOLUTION>`
   with `Accept: */*`, `Origin` and `Referer` (`https://www.nordnet.fi`) and `x-locale: fi-FI`.
@@ -759,8 +760,30 @@ and they decide how history has to be collected):
    inferred from the data: 4 Xetra, 11 Nasdaq Stockholm, 24 Nasdaq Helsinki, ...), and the
    ids that the history endpoint wants for the instruments added by hand. The owner will
    supply them with the details of the plan.
-4. **The history loader** on top of the history endpoint described above, with the old
+4. **The history loader** (built for days and coarser, see below), then intraday, and the old
    data imported from the legacy system.
+
+   **The history loader** (`src/history/HistoryLoader`). A thread of its own, like the icon loader: the
+   table says which rows are on screen and a screen on either side (`want()`, most wanted first, replacing
+   what was wanted), and the loader fills those edges, one request at a time with a pause of 500 ms,
+   writing the bars to the store as they arrive (the table follows through the store's change). It does not
+   load 17,000 instruments at start: only what is looked at, once per session per edge; what a
+   persistent store keeps will make it once per edge ever. Only Nordnet's edges with an order book
+   id and without bars (fewer than 20 daily ones) are loaded. **How much**: the interactive program needs only a
+   small snapshot, the last 60 days a row's trace draws, so an edge is **one request**: `MONTH_3` daily (65 bars
+   for a stock, 92 for a commodity that trades every day, 62 for a fund's NAV; 3-10 KB). Nothing more is asked for
+   in the interactive use. **The whole history is a server's job**, loaded once and kept (a backfill), and the
+   loader has it as `Depth::Full`, tested and not used by the program: the whole period (`ALL`), daily, stored
+   under the resolution the answer **returned** (not what was asked for: a stock answers `DAY`, 1,596 bars back to
+   2020; a commodity's `ALL` comes back `WEEK`, 1,530 bars back to 1997, and a fund's too, 1,797 back to 1992), and
+   where that was not days the longest of `YEAR_10`, `YEAR_5`, `YEAR_3`, `YEAR_1` that gives days is asked for
+   next (a commodity: 3,485 daily bars; a fund's NAV: 2,377), with the pause between the requests. Weeks, months
+   and quarters are keyed by their first day. A fund's points are `{timeStamp, value}`: a bar with only a close. A `volume` of 0 is no
+   volume (undefined), since a commodity or an ETC has none. Minute and hour bars are not stored yet (the answer
+   is parsed and left alone), and the history's last bar replaces today's bar from the discovery, which the
+   next discovery reload replaces again. Failures: a 404 is remembered for the edge for the session; a 403 or 429
+   stops all requests for the session (said once in the status line); no answer or a 5xx pauses a minute and
+   asks again.
 
 **Suggested, added to the plan** (not decided; in the order I would do them):
 
