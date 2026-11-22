@@ -1,9 +1,9 @@
 // The stock browser: cellui's Table, TagBar and trace chart over a store of
 // candles that data sources fill on a thread of their own.
-//   stocks                 on the display cellui picks, with Nordnet's instruments and prices from Yahoo for them
+//   stocks                 on the display cellui picks, with Nordnet's data, or Yahoo's if Nordnet gives nothing
 //   stocks --ui terminal   in the terminal;  --ui window  in a window
-//   stocks --source NAME   pick the data source (yahoo, nordnet, synthetic); more than one may be given, run in that order
-//                          (default: nordnet, yahoo; yahoo only loads the instruments nordnet has made)
+//   stocks --source NAME   the data source, one at a time: auto (the default: nordnet, and yahoo if nordnet gives nothing),
+//                          nordnet, yahoo or synthetic
 //   stocks --lists DIR     the instrument lists of the yahoo and synthetic sources (default: data/yahoo)
 //   stocks --market NAME   of those lists, load only that market, e.g. "Nasdaq Helsinki" (repeatable)
 // Keys: arrows, PgUp/PgDn, Home/End move; Tab moves between the tags and the
@@ -13,6 +13,7 @@
 #include "Browser.h"
 #include "Synthetic.h"
 #include "icons/IconLoader.h"
+#include "source/AutoSource.h"
 #include "source/SourceRunner.h"
 #include "source/NordnetSource.h"
 #include "source/YahooSource.h"
@@ -27,15 +28,17 @@
 
 namespace {
 
-// The adapters there are, by the name the user picks them with.
+// The adapters there are, by the name the user picks them with. One runs at a time: "auto" is Nordnet, and Yahoo if Nordnet
+// gives nothing.
 std::unique_ptr<Source> makeSource(const std::string & name, const ListSpec & lists) {
+  if (name == "auto") return std::make_unique<AutoSource>(std::make_unique<NordnetSource>(), std::make_unique<YahooSource>(lists));
   if (name == "yahoo") return std::make_unique<YahooSource>(lists);
   if (name == "nordnet") return std::make_unique<NordnetSource>();
   if (name == "synthetic") return std::make_unique<SyntheticSource>(lists);
   return nullptr;
 }
 
-constexpr const char * kSourceNames = "yahoo, nordnet, synthetic";
+constexpr const char * kSourceNames = "auto, nordnet, yahoo, synthetic";
 
 }  // namespace
 
@@ -52,35 +55,29 @@ int main(int argc, char ** argv) {
     std::fprintf(stderr, "%s\n", message.c_str());
     return status;
   };
-  std::vector<std::string> source_names;
+  std::string source_name = "auto";
   std::string list_directory;
   std::vector<std::string> market_names;
   const auto & args = app->arguments();
   for (size_t i = 0; i < args.size(); i++) {
-    if (args[i] == "--source" && i + 1 < args.size()) source_names.push_back(args[++i]);
-    else if (args[i].rfind("--source=", 0) == 0) source_names.push_back(args[i].substr(9));
+    if (args[i] == "--source" && i + 1 < args.size()) source_name = args[++i];
+    else if (args[i].rfind("--source=", 0) == 0) source_name = args[i].substr(9);
     else if (args[i] == "--market" && i + 1 < args.size()) market_names.push_back(args[++i]);
     else if (args[i].rfind("--market=", 0) == 0) market_names.push_back(args[i].substr(9));
     else if (args[i] == "--lists" && i + 1 < args.size()) list_directory = args[++i];
     else if (args[i].rfind("--lists=", 0) == 0) list_directory = args[i].substr(8);
     else {
       return fail(2, std::string("usage: ") + argv[0] + " [--ui auto|terminal|window] [--theme original|dark|light] [--source " +
-                         kSourceNames + "]... [--lists DIR] [--market NAME]...");
+                         kSourceNames + "] [--lists DIR] [--market NAME]...");
     }
   }
-  // Yahoo makes no instruments (it has no ISIN): it waits for the ones Nordnet's discovery makes, so Nordnet goes first.
-  if (source_names.empty()) source_names = {"nordnet", "yahoo"};
-
-  // The instrument lists are the yahoo source's own (and the synthetic one follows them); each reads them when it loads.
+  // One source, for now: the instrument lists are the yahoo source's own (and the synthetic one follows them); each reads
+  // them when it loads.
   ListSpec lists{list_directory, market_names};
+  std::unique_ptr<Source> source = makeSource(source_name, lists);
+  if (!source) return fail(2, "stocks: unknown --source " + source_name + " (there are " + kSourceNames + ")");
   std::vector<std::unique_ptr<Source>> sources;
-  for (const std::string & name : source_names) {
-    std::unique_ptr<Source> source = makeSource(name, lists);
-    if (!source) {
-      return fail(2, "stocks: unknown --source " + name + " (there are " + kSourceNames + ")");
-    }
-    sources.push_back(std::move(source));
-  }
+  sources.push_back(std::move(source));
 
   std::shared_ptr<Store> store = makeMemoryStore();
   // The loader and the sources run on threads of their own and tell the UI thread what happened.

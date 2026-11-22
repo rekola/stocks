@@ -40,9 +40,9 @@ struct Fixture {
   std::shared_ptr<Store> store = makeMemoryStore();
   std::unique_ptr<Browser> browser;
   // Over the made-up data, or over a store the test has filled.
-  explicit Fixture(bool synthetic = true) {
+  explicit Fixture(bool synthetic = true, int cols = 100) {
     if (synthetic) fillSyntheticData(*store, instrumentList());
-    auto owned = std::make_unique<test::TestBackend>(24, 100);
+    auto owned = std::make_unique<test::TestBackend>(24, cols);
     backend = owned.get();
     app = Application::adopt(std::move(owned));
     browser = std::make_unique<Browser>(*app, store);
@@ -148,7 +148,7 @@ TEST(the_palette_takes_every_key_while_open_and_escape_closes_it_at_once_without
 }
 
 TEST(the_palette_and_the_help_line_name_the_bindings_of_the_commands) {
-  Fixture f;
+  Fixture f(true, 200);  // wide: the info line shares its row with the link text, and the help must fit in its share
   CHECK(f.text().find("M-x: commands") != std::string::npos && f.text().find("q: quit") != std::string::npos);
   f.press('x', kModAlt);
   std::string text = f.text();

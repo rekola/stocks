@@ -12,11 +12,12 @@ A row of preset tags (commodities, Nasdaq Helsinki, currencies, indices, and all
 scrollable table with a price trace per row. The rows are the edges of a
 [data model](plans/data-model.md) that data sources fill on a thread of their
 own; the table follows as the data arrives, a few times a second at most, and reads
-only the rows it draws, so it stays quick with tens of thousands. The default sources are
-Nordnet's discovery (stocks, ETFs, funds, certificates, indices, currencies and
-commodities: today's bar of each, reloaded every five minutes) and then Yahoo Finance
-(daily candles, dividends and splits for the instruments in the lists on disk);
-both are unofficial, need no key, and are for personal use.
+only the rows it draws, so it stays quick with tens of thousands. One data source runs at
+a time. The default, `auto`, is Nordnet's discovery (stocks, ETFs, funds, certificates, indices,
+currencies and commodities: today's bar of each, reloaded every five minutes, and the history
+of the rows on screen), and if Nordnet gives nothing (no network, a refusal) Yahoo Finance
+(daily candles, dividends and splits for the instruments in the lists on disk) instead for
+the rest of the session. Both are unofficial, need no key, and are for personal use.
 
     cmake -B build
     cmake --build build -j
@@ -25,7 +26,8 @@ both are unofficial, need no key, and are for personal use.
     build/stocks --ui window     # in a window, when cellui is built with GTK
     build/stocks --source synthetic   # made-up prices, no network
     build/stocks --market "Nasdaq Helsinki"   # load only that list
-    build/stocks --source nordnet     # Nordnet's ETFs and certificates (about 3400), reloaded every 5 minutes
+    build/stocks --source nordnet     # Nordnet only, reloaded every 5 minutes (auto, the default, is Nordnet, then Yahoo)
+    build/stocks --source yahoo       # Yahoo only
 
 Keys: arrows, PgUp/PgDn, Home/End move; Tab moves between the tags and the table; `M-x` (`Ctrl+Shift+P` on
 the desktop keymap) opens the command palette, where every command is listed with
