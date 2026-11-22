@@ -60,7 +60,7 @@ target_link_libraries(stocks_model PUBLIC immer Threads::Threads)
 
 # The browser: the screen, its commands and the rows it shows, as a library so the tests can drive it.
 add_library(stocks_lib STATIC src/Browser.cpp src/Quotes.cpp src/Synthetic.cpp src/source/Http.cpp src/source/InstrumentLists.cpp src/source/InstrumentTypes.cpp
-  src/icons/IconLoader.cpp src/source/YahooSource.cpp src/source/NordnetSource.cpp src/source/SourceRunner.cpp)
+  src/icons/IconLoader.cpp src/history/HistoryLoader.cpp src/source/YahooSource.cpp src/source/NordnetSource.cpp src/source/SourceRunner.cpp)
 target_include_directories(stocks_lib PUBLIC src)
 target_link_libraries(stocks_lib PUBLIC cellui stocks_model httpclient::httpclient nlohmann_json::nlohmann_json)
 target_compile_definitions(stocks_lib PUBLIC STOCKS_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
@@ -77,7 +77,7 @@ set_tests_properties(stocks_rejects_an_unknown_ui PROPERTIES PASS_REGULAR_EXPRES
 # The browser on a test display: keys in, what it shows out. cellui's test display
 # (TestBackend) is built where there is a POSIX event loop, so not on Windows.
 if(NOT WIN32)
-  add_executable(stocks_tests tests/test_main.cpp tests/BrowserTests.cpp tests/ModelTests.cpp tests/SourceTests.cpp tests/InstrumentListsTests.cpp tests/NordnetTests.cpp tests/InstrumentTypesTests.cpp tests/DatesTests.cpp tests/IconTests.cpp)
+  add_executable(stocks_tests tests/test_main.cpp tests/BrowserTests.cpp tests/ModelTests.cpp tests/SourceTests.cpp tests/InstrumentListsTests.cpp tests/NordnetTests.cpp tests/HistoryTests.cpp tests/InstrumentTypesTests.cpp tests/DatesTests.cpp tests/IconTests.cpp)
   target_link_libraries(stocks_tests PRIVATE stocks_lib)
   add_test(NAME stocks_tests COMMAND stocks_tests)
   set_tests_properties(stocks_tests PROPERTIES TIMEOUT 60)

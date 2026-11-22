@@ -12,6 +12,7 @@
 // or row chooses it, the wheel scrolls.
 #include "Browser.h"
 #include "Synthetic.h"
+#include "history/HistoryLoader.h"
 #include "icons/IconLoader.h"
 #include "source/SourceRunner.h"
 #include "source/NordnetSource.h"
@@ -86,7 +87,10 @@ int main(int argc, char ** argv) {
   // The loader and the sources run on threads of their own and tell the UI thread what happened.
   cellui::ThreadInbox inbox(app->backend().eventLoop(), app->widgets());
   auto icons = std::make_shared<IconLoader>(makeHttp(), IconLoader::Options{.cache_dir = defaultIconCacheDir()}, [&inbox] { inbox.post(IconsLoaded{}); });
-  Browser browser(*app, store, icons);
+  auto history = std::make_shared<HistoryLoader>(
+      store, makeHttp(), HistoryLoader::Options{}, [&inbox] { inbox.post(StoreChanged{}); },
+      [&inbox](std::string text) { inbox.post(SourceMessage{std::move(text)}); });
+  Browser browser(*app, store, icons, history);
   SourceRunner runner(
       store, std::move(sources), [&inbox] { inbox.post(StoreChanged{}); },
       [&inbox](std::string text) { inbox.post(SourceMessage{std::move(text)}); });

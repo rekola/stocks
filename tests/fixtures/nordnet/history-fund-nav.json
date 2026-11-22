@@ -1,0 +1,58 @@
+{
+ "timeSeriesIdentifier": "ee5e3ee2-1406-4df7-8d7e-68ee3f6b1b95",
+ "pricePoints": [
+  {
+   "timeStamp": 704332800000,
+   "value": 3.6226839455928
+  },
+  {
+   "timeStamp": 704937600000,
+   "value": 3.64992852037169
+  },
+  {
+   "timeStamp": 705542400000,
+   "value": 3.84697962154294
+  },
+  {
+   "timeStamp": 706147200000,
+   "value": 3.9739076789084
+  },
+  {
+   "timeStamp": 1793577600000,
+   "value": 24.5827
+  },
+  {
+   "timeStamp": 1794182400000,
+   "value": 23.8557
+  },
+  {
+   "timeStamp": 1794787200000,
+   "value": 22.759
+  }
+ ],
+ "previousClose": 3.6226839455928,
+ "high": 50.6254,
+ "low": 2.2252,
+ "comparePricePoints": [],
+ "technicalAnalysisPoints": [],
+ "validResolutionsForPeriod": [
+  "WEEK",
+  "MONTH",
+  "QUARTER"
+ ],
+ "availablePeriods": [
+  "WEEK_1",
+  "MONTH_1",
+  "MONTH_3",
+  "MONTH_6",
+  "YTD",
+  "YEAR_1",
+  "YEAR_3",
+  "YEAR_5",
+  "YEAR_10",
+  "ALL"
+ ],
+ "enrichPoints": [],
+ "returnedResolution": "WEEK",
+ "returnedPeriod": "ALL"
+}

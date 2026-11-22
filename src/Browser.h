@@ -1,5 +1,6 @@
 #pragma once
 
+#include "history/HistoryLoader.h"
 #include "icons/IconLoader.h"
 #include "model/Store.h"
 
@@ -20,7 +21,9 @@ class Browser {
  public:
   // Shows what `store` holds: a preset is a market of that name, a row an edge in it.
   // `icons` loads the pictures of the icon column; without it the rows have none.
-  Browser(cellui::Application & app, std::shared_ptr<Store> store, std::shared_ptr<IconLoader> icons = nullptr);
+  // `history` loads the price history of the rows on screen; without it the rows have what the sources gave.
+  Browser(cellui::Application & app, std::shared_ptr<Store> store, std::shared_ptr<IconLoader> icons = nullptr,
+          std::shared_ptr<HistoryLoader> history = nullptr);
 
   cellui::Table & table() { return table_; }
   cellui::TagBar & tags() { return tags_; }
@@ -31,6 +34,8 @@ class Browser {
   void showPreset(int i);
   // Tells the icon loader which rows are on screen and near it: those first, then the screens after and before.
   void requestIcons();
+  // Tells the history loader which rows are on screen and near it, when that changed.
+  void requestHistory();
   // Shows what the store holds now, keeping the sort and the selected row.
   void refresh();
   void layout(int rows, int cols);
@@ -44,6 +49,7 @@ class Browser {
   cellui::Application & app_;
   std::shared_ptr<Store> store_;
   std::shared_ptr<IconLoader> icons_;
+  std::shared_ptr<HistoryLoader> history_;
   cellui::TagBar tags_;
   cellui::Table table_;
   cellui::Label info_;
@@ -51,5 +57,10 @@ class Browser {
   cellui::StatusLine status_;
   uint64_t shown_version_ = 0;  // of the snapshot the table shows
   int shown_preset_ = -1;       // the preset the table shows
+  struct HistoryView {
+    const void * model = nullptr;
+    int first = -1, rows = -1, count = -1;
+    bool operator==(const HistoryView &) const = default;
+  } history_view_;              // what the history loader was last told is wanted
   cellui::Connection resized_, display_, tag_, message_, frame_, changed_, said_, loaded_;
 };

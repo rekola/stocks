@@ -1,0 +1,87 @@
+{
+ "timeSeriesIdentifier": "46aaf605-e36f-4bc1-8c1e-764d50fbd23e",
+ "pricePoints": [
+  {
+   "timeStamp": 865814400000,
+   "high": 342.95001,
+   "low": 340.6,
+   "open": 342.3,
+   "last": 340.9,
+   "volume": 0
+  },
+  {
+   "timeStamp": 866419200000,
+   "high": 342.55,
+   "low": 337.39001,
+   "open": 340.8,
+   "last": 337.8,
+   "volume": 0
+  },
+  {
+   "timeStamp": 867024000000,
+   "high": 340.25,
+   "low": 334.5,
+   "open": 337.1,
+   "last": 334.5,
+   "volume": 0
+  },
+  {
+   "timeStamp": 867628800000,
+   "high": 335,
+   "low": 323.8,
+   "open": 334.5,
+   "last": 324.3,
+   "volume": 0
+  },
+  {
+   "timeStamp": 1793577600000,
+   "high": 4146.89,
+   "low": 3890.92,
+   "open": 3898.02,
+   "last": 4055.45,
+   "volume": 0
+  },
+  {
+   "timeStamp": 1794182400000,
+   "high": 4148.49,
+   "low": 3852.35,
+   "open": 4055.43,
+   "last": 3900.08,
+   "volume": 0
+  },
+  {
+   "timeStamp": 1794787200000,
+   "high": 3900.16,
+   "low": 3502.64,
+   "open": 3900.06,
+   "last": 3524.44,
+   "volume": 0
+  }
+ ],
+ "previousClose": 342.3,
+ "high": 5596.68,
+ "low": 251.7,
+ "comparePricePoints": [],
+ "technicalAnalysisPoints": [],
+ "validResolutionsForPeriod": [
+  "WEEK",
+  "MONTH",
+  "QUARTER"
+ ],
+ "availablePeriods": [
+  "DAY_1",
+  "WEEK_1",
+  "MONTH_1",
+  "MONTH_3",
+  "MONTH_6",
+  "YTD",
+  "YEAR_1",
+  "YEAR_3",
+  "YEAR_5",
+  "YEAR_10",
+  "ALL"
+ ],
+ "enrichPoints": [],
+ "returnedResolution": "WEEK",
+ "returnedPeriod": "ALL"
+}
