@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-// What the fund-company sources (Aktia, OP) have in common: a fund is an instrument with an ISIN and a quote currency of euro,
+// What the fund sources have in common: a fund is an instrument with an ISIN and a quote currency of euro,
 // priced once a day by its NAV, as one dataset says it on a market of that company's own.
 
 // One fund as a company's list says it.
@@ -22,6 +22,9 @@ struct FundRow {
 };
 
 // A number the company gives as a number or as a string of one ("280.18"); nothing where it is missing, null or not a number.
+std::optional<double> looseNumber(const nlohmann::json & value);
+std::optional<int64_t> looseInteger(const nlohmann::json & value);
+// The same of a member of an object.
 std::optional<double> looseNumber(const nlohmann::json & object, const char * key);
 std::optional<int64_t> looseInteger(const nlohmann::json & object, const char * key);
 

@@ -1,0 +1,44 @@
+{
+ "name": "beta",
+ "market": "Beta Funds",
+ "dataset": "beta",
+ "pauseMs": 2000,
+ "refreshHours": 6,
+ "headers": {
+  "Referer": "https://beta.example",
+  "Origin": "https://beta.example/"
+ },
+ "token": {
+  "page": "https://beta.example/funds",
+  "regex": "window\\.sessionStorage\\.setItem\\(\"data_token\", \"([^\"]*)\"\\);"
+ },
+ "isins": {
+  "FI4000439971": "",
+  "FI4000108436": "",
+  "FI4000281738": "",
+  "FI4000530860": "",
+  "FI4000060934": "",
+  "FI4000306774": ""
+ },
+ "list": {
+  "url": "https://beta.example/list?{token}&sort=name&tab=today",
+  "rows": "/inst",
+  "fields": {
+   "id": "/id_notation",
+   "symbol": "/isin",
+   "name": "/name",
+   "isin": "/isin",
+   "risk": "/risk_level",
+   "rating": "/morningstar",
+   "esg": "/esg_rating",
+   "managementFee": "/management_fee",
+   "subscriptionFee": "/subs_fee",
+   "redemptionFee": "/redemption_fee",
+   "link": "/link"
+  },
+  "linkPrefix": "https://beta.example"
+ },
+ "history": {
+  "url": "https://beta.example/chart?id={id}&type=line&{token}"
+ }
+}

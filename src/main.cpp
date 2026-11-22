@@ -3,7 +3,7 @@
 //   stocks                 on the display cellui picks, with Nordnet's data, or Yahoo's if Nordnet gives nothing
 //   stocks --ui terminal   in the terminal;  --ui window  in a window
 //   stocks --source NAME   the data source (several, comma-separated, run one after another): auto (the default: nordnet, and yahoo if nordnet gives nothing),
-//                          nordnet, yahoo, aktia, op or synthetic
+//                          nordnet, yahoo, funds:SCHEMA (a fund company: a schema in data/funds, or a schema file) or synthetic
 //   stocks --lists DIR     the instrument lists of the yahoo and synthetic sources (default: data/lists)
 //   stocks --market NAME   of those lists, load only that market, e.g. "Nasdaq Helsinki" (repeatable)
 // Keys: arrows, PgUp/PgDn, Home/End move; Tab moves between the tags and the
@@ -17,8 +17,7 @@
 #include "source/AutoSource.h"
 #include "source/SourceRunner.h"
 #include "source/NordnetSource.h"
-#include "source/AktiaSource.h"
-#include "source/OpSource.h"
+#include "source/FundSource.h"
 #include "source/YahooSource.h"
 
 #include <cellui/Application.h>
@@ -33,17 +32,21 @@ namespace {
 
 // The adapters there are, by the name the user picks them with. One runs at a time: "auto" is Nordnet, and Yahoo if Nordnet
 // gives nothing.
-std::unique_ptr<Source> makeSource(const std::string & name, const ListSpec & lists) {
+// `funds:NAME` is the fund adapter with the schema NAME (data/funds/NAME.json) or the schema file NAME; `error` says what is wrong with a schema.
+std::unique_ptr<Source> makeSource(const std::string & name, const ListSpec & lists, std::string & error) {
+  if (name.rfind("funds:", 0) == 0) {
+    FundSchema schema;
+    if (!FundSchema::load(name.substr(6), schema, error)) return nullptr;
+    return std::make_unique<FundSource>(std::move(schema));
+  }
   if (name == "auto") return std::make_unique<AutoSource>(std::make_unique<NordnetSource>(), std::make_unique<YahooSource>(lists));
   if (name == "yahoo") return std::make_unique<YahooSource>(lists);
   if (name == "nordnet") return std::make_unique<NordnetSource>();
-  if (name == "aktia") return std::make_unique<AktiaSource>();
-  if (name == "op") return std::make_unique<OpSource>();
   if (name == "synthetic") return std::make_unique<SyntheticSource>(lists);
   return nullptr;
 }
 
-constexpr const char * kSourceNames = "auto, nordnet, yahoo, aktia, op, synthetic";
+constexpr const char * kSourceNames = "auto, nordnet, yahoo, funds:SCHEMA, synthetic";
 
 }  // namespace
 
@@ -79,14 +82,15 @@ int main(int argc, char ** argv) {
   // One source, for now: the instrument lists are the yahoo source's own (and the synthetic one follows them); each reads
   // them when it loads.
   ListSpec lists{list_directory, market_names};
-  // --source takes one name or several, separated by commas ("nordnet,aktia,op"): they run one after another.
+  // --source takes one name or several, separated by commas ("nordnet,yahoo"): they run one after another.
   std::vector<std::unique_ptr<Source>> sources;
   for (size_t from = 0; from <= source_name.size();) {
     size_t comma = source_name.find(',', from);
     if (comma == std::string::npos) comma = source_name.size();
     const std::string one = source_name.substr(from, comma - from);
-    std::unique_ptr<Source> source = makeSource(one, lists);
-    if (!source) return fail(2, "stocks: unknown --source " + one + " (there are " + kSourceNames + ")");
+    std::string schema_error;
+    std::unique_ptr<Source> source = makeSource(one, lists, schema_error);
+    if (!source) return fail(2, "stocks: " + (schema_error.empty() ? "unknown --source " + one + " (there are " + std::string(kSourceNames) + ")" : schema_error));
     sources.push_back(std::move(source));
     from = comma + 1;
   }

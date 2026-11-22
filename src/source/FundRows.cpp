@@ -10,25 +10,33 @@
 
 using nlohmann::json;
 
-std::optional<double> looseNumber(const json & o, const char * key) {
-  auto it = o.find(key);
-  if (it == o.end()) return std::nullopt;
-  if (it->is_number()) {
-    const double v = it->get<double>();
-    return std::isfinite(v) ? std::optional<double>(v) : std::nullopt;
+std::optional<double> looseNumber(const json & v) {
+  if (v.is_number()) {
+    const double d = v.get<double>();
+    return std::isfinite(d) ? std::optional<double>(d) : std::nullopt;
   }
-  if (it->is_string()) {
-    const std::string s = it->get<std::string>();
-    double v = 0;
-    auto [end, ec] = std::from_chars(s.data(), s.data() + s.size(), v);
-    if (ec == std::errc() && end == s.data() + s.size() && std::isfinite(v)) return v;
+  if (v.is_string()) {
+    const std::string s = v.get<std::string>();
+    double d = 0;
+    auto [end, ec] = std::from_chars(s.data(), s.data() + s.size(), d);
+    if (ec == std::errc() && end == s.data() + s.size() && std::isfinite(d)) return d;
   }
   return std::nullopt;
 }
 
+std::optional<int64_t> looseInteger(const json & v) {
+  auto d = looseNumber(v);
+  return d && *d == std::floor(*d) ? std::optional<int64_t>(static_cast<int64_t>(*d)) : std::nullopt;
+}
+
+std::optional<double> looseNumber(const json & o, const char * key) {
+  auto it = o.find(key);
+  return it == o.end() ? std::nullopt : looseNumber(*it);
+}
+
 std::optional<int64_t> looseInteger(const json & o, const char * key) {
-  auto v = looseNumber(o, key);
-  return v && *v == std::floor(*v) ? std::optional<int64_t>(static_cast<int64_t>(*v)) : std::nullopt;
+  auto it = o.find(key);
+  return it == o.end() ? std::nullopt : looseInteger(*it);
 }
 
 int64_t navDay(int64_t ms) { return dayNumberOfInstant(ms / 1000, 12 * 3600); }

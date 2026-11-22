@@ -1,0 +1,45 @@
+{
+ "name": "alpha",
+ "market": "Alpha Funds",
+ "dataset": "alpha",
+ "pauseMs": 2000,
+ "refreshHours": 6,
+ "list": {
+  "url": "https://alpha.example/list",
+  "rows": "",
+  "fields": {
+   "id": "/productId",
+   "symbol": "/productId",
+   "name": "/productNameEn",
+   "risk": "/riskClass",
+   "rating": "/morningstarRating",
+   "managementFee": "/runningCosts"
+  },
+  "scale": {
+   "managementFee": 100
+  }
+ },
+ "isinFromId": "^(LU\\d{10})EUR$",
+ "isins": {
+  "ALPHANORDIC": "FI0008810569",
+  "ALPHAMICRO": "FI4000297817",
+  "ALPHAREALTY": "",
+  "ALPHACLOSED": ""
+ },
+ "detail": {
+  "url": "https://alpha.example/details/{id}",
+  "fields": {
+   "redemptionFee": [
+    "/values/onlineRedemptionFee/value",
+    "/values/redemptionFee/value"
+   ],
+   "subscriptionFee": [
+    "/values/onlineSubscriptionFee/value",
+    "/values/subscriptionFee/value"
+   ]
+  }
+ },
+ "history": {
+  "url": "https://alpha.example/rates/{id}"
+ }
+}
