@@ -219,8 +219,8 @@ representation, so a market cannot be given where an instrument is wanted. Zero 
   name, the provider and what the dataset's days and prices mean are facts of the dataset, keyed by the code. A schema-driven
   adapter (a fund company's schema file) names its code in the schema. Rules: a code is permanent, and a dataset whose
   meaning changes gets a new code, since bars under the old one keep the old meaning; two adapters with the same code is a
-  mistake the program refuses to start with. Open: ten characters may be too few once prediction models each write a dataset
-  of their own; the key would have to grow to 128 bits, which only `EdgeKey` and the file would feel.
+  mistake the program refuses to start with. Decided: ten characters, and a string and not a number, so that no list of numbers
+  has to be kept and a schema file or a model can name its dataset without asking anyone.
 
 **What goes, and what takes its place**
 
