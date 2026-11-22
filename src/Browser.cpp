@@ -86,9 +86,12 @@ Browser::Browser(Application & app, std::shared_ptr<Store> store, std::shared_pt
     showLink();
     app_.requestFrame();
   });
-  // The table selected the row; the button's command acts on it.
-  button_ = table_.button_clicked.connect([this](int, int, int button) {
-    if (button >= 0 && button < static_cast<int>(std::size(kRowActions))) app_.execute(kRowActions[button].command);
+  // A button's command acts on the row it was clicked on; the selection stays where it was.
+  button_ = table_.button_clicked.connect([this](int row, int, int button) {
+    if (button < 0 || button >= static_cast<int>(std::size(kRowActions))) return;
+    action_row_ = row;
+    app_.execute(kRowActions[button].command);
+    action_row_.reset();
   });
   tag_ = tags_.chosen.connect([this](int i) {
     if (i < 0) return;
@@ -223,17 +226,21 @@ void Browser::showHelp() {
 
 void Browser::showInfo() {
   auto quotes = std::dynamic_pointer_cast<Quotes>(table_.model());
-  if (!quotes || table_.selectedRow() < 0) {
+  const int row = action_row_.value_or(table_.selectedRow());
+  if (!quotes || row < 0) {
     status_.setMessage("No row selected");
     return;
   }
-  const EdgeKey edge = quotes->edge(table_.selectedRow());
+  const EdgeKey edge = quotes->edge(row);
   auto snapshot = store_->snapshot();
   std::string label = snapshot->symbol(edge);
   if (label.empty())
     if (auto base = snapshot->instrument(edge.base)) label = base->name;
   std::string title = "Info: " + label;
   AttributeModal modal(app_.widgets(), app_.root(), app_.backend().eventLoop(), std::move(title), snapshot, buildInfo(*snapshot, edge));
+  // The input that got us here does not return until the modal closes, so no frame follows it: ask for the one that shows
+  // the new selection and the dialog.
+  app_.requestFrame();
   modal.showModal();
   app_.requestFrame();
 }
