@@ -1,5 +1,6 @@
 #pragma once
 
+#include "model/Period.h"
 #include "model/Store.h"
 #include "source/Http.h"
 
@@ -14,12 +15,34 @@
 #include <unordered_set>
 #include <vector>
 
+// One request of one edge: the edge and which of the requests there are (0 the three months daily, 1 the day, 2 the week, 3 the
+// year).
+struct HistoryAsk {
+  EdgeKey edge;
+  int request = 0;
+  friend bool operator==(const HistoryAsk &, const HistoryAsk &) = default;
+};
+template <>
+struct std::hash<HistoryAsk> {
+  size_t operator()(const HistoryAsk & a) const { return hashCombine(std::hash<EdgeKey>()(a.edge), static_cast<size_t>(a.request)); }
+};
+
 // Loads price history for Nordnet's edges on a thread of its own, from Nordnet's price time series, for the edges that are
 // wanted: a caller says which (want(): the rows on screen and a margin, most wanted first) and the loader fills them in, one
 // request at a time with a pause between them, writing the bars to the store as they arrive.
 //
-// How much: the interactive use needs a small snapshot, the trace of the last 60 days a row draws, so by default (Recent) an
-// edge is one request, the last three months daily (about 60 to 90 bars, 3-10 KB). The whole history is for a server that
+// How much: the interactive use needs a small snapshot, the trace a row draws for the period the table shows, so by default
+// (Recent) an edge is one request for that period, once per session (a request is remembered with the edge, and what the store
+// has already for the period is used without one):
+//
+//   day      DAY_1 at MIN_5: the last session's 5-minute bars (about 100 for a stock, 10-15 KB) and the previous close
+//   week     WEEK_1 at HOUR_1: about 45 hourly bars (5-8 KB)
+//   month    MONTH_3 at DAY, the request of the quarter: it is shared, so a month then a quarter is one request (3-10 KB)
+//   quarter  MONTH_3 at DAY: about 60 to 90 bars (3-10 KB)
+//   year     YEAR_1 at WEEK: about 53 weekly bars (5-8 KB); the daily bars of a year would be five times that for a trace
+//            that has 22 cells
+//
+// A fund has a NAV once a day and no intraday bars, so its day and week are the daily request. The whole history is for a server that
 // backfills once and keeps it (Full): the whole period, and where Nordnet answers with a coarser resolution for it (a
 // commodity's whole period comes weekly, back to 1997) that is stored too and the longest period that gives days is asked for
 // next (the last ten years, five, three). Full exists and is tested; nothing in the interactive program uses it.
@@ -30,6 +53,7 @@
 //   the session. No answer or a 5xx pauses requests for a minute, and the edge is asked for again afterwards.
 class HistoryLoader {
  public:
+  using Ask = HistoryAsk;
   enum class Depth { Recent, Full };
   struct Options {
     Depth depth = Depth::Recent;                     // the last three months, or all there is
@@ -44,9 +68,10 @@ class HistoryLoader {
   HistoryLoader(const HistoryLoader &) = delete;
   HistoryLoader & operator=(const HistoryLoader &) = delete;
 
-  // What is wanted now, most wanted first. It replaces what was wanted before: edges scrolled past are not loaded. An edge
-  // that is not Nordnet's, has no order book, has its bars already or failed is left out.
-  void want(const std::vector<EdgeKey> & edges);
+  // What is wanted now for `period`, most wanted first. It replaces what was wanted before: edges scrolled past are not
+  // loaded. An edge that is not Nordnet's, has no order book, has the period's bars already, or asked for them and failed
+  // or was answered, is left out. (Full depth loads the whole history, whatever the period.)
+  void want(const std::vector<EdgeKey> & edges, Period period = kDefaultPeriod);
 
   // Whether a refusal has stopped the network for this session.
   bool refused() const;
@@ -56,9 +81,10 @@ class HistoryLoader {
   // One answer of the price time series, as the bars it holds.
   struct Series {
     Resolution resolution = Resolution::Day;  // the one the answer returned
-    std::vector<Candle> bars;                 // oldest first, keyed by day number (a period's first day for the coarser)
+    std::vector<Candle> bars;                 // oldest first: by slot number (intraday), else by day number (a period's first day for the coarser)
+    double previousClose = kUndefined;        // the close before the session, as the answer gives it
     std::vector<std::string> periods;         // the periods it offers
-    bool supported = false;                   // the resolution is one we store (days and coarser)
+    bool supported = false;                   // the resolution is one we store
   };
   // False, with `error` set, when `json` is not an answer. `nav`: the points are a fund's, with only a value.
   static bool parse(const std::string & json, bool nav, Series & out, std::string & error);
@@ -66,10 +92,10 @@ class HistoryLoader {
  private:
   void run();
   // Loads one edge; returns whether bars were written. `network` is set if a request was made.
-  bool load(const EdgeKey & edge, bool & network);
+  bool load(const Ask & ask, bool & network);
   // One request; false if it did not give an answer (`outcome` says why).
   enum class Outcome { Ok, Missing, Refused, Offline };
-  Outcome request(const std::string & book, const std::string & period, bool nav, Series & out);
+  Outcome request(const std::string & book, const std::string & period, const std::string & resolution, bool nav, Series & out);
 
   std::shared_ptr<Store> store_;
   std::unique_ptr<Http> http_;
@@ -78,8 +104,8 @@ class HistoryLoader {
   std::function<void(std::string)> message_;
   mutable std::mutex mutex_;
   std::condition_variable wake_, idle_;
-  std::list<EdgeKey> queue_;
-  std::unordered_set<EdgeKey> done_, failed_;
+  std::list<Ask> queue_;
+  std::unordered_set<Ask> done_, failed_;
   bool busy_ = false, stop_ = false, refused_ = false;
   std::chrono::steady_clock::time_point offline_until_{};
   std::thread thread_;  // last: it starts in the constructor

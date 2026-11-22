@@ -40,12 +40,13 @@ void appendEdges(const Snapshot & snapshot, MarketId market, std::vector<EdgeKey
     if (snapshot.hasCandles(key, Resolution::Day)) out.push_back(key);  // no daily bars: a book alone has no row
 }
 
-void appendRows(const Snapshot & snapshot, MarketId market, size_t bars, std::vector<QuoteRow> & rows) {
+void appendRows(const Snapshot & snapshot, MarketId market, Period period, std::vector<QuoteRow> & rows) {
   const std::string label = labelOf(snapshot, market);
   std::vector<EdgeKey> keys;
   appendEdges(snapshot, market, keys);
   for (const EdgeKey & key : keys) {
-    CandleSeries series = snapshot.lastCandles(key, Resolution::Day, bars);  // the table shows daily bars
+    const CandleSeries last = snapshot.lastCandles(key, Resolution::Day, 1);  // the price is the latest daily close
+    PeriodView view = periodView(snapshot, key, period, true);
     QuoteRow r;
     r.key = key;
     r.market = label;
@@ -54,25 +55,24 @@ void appendRows(const Snapshot & snapshot, MarketId market, size_t bars, std::ve
     r.name = nameOf(snapshot, key);
     r.quote = quoteOf(snapshot, key);
     if (auto dataset = snapshot.dataset(key.dataset)) r.dataset = dataset->name;
-    r.history.reserve(series.candles.size());
-    for (const Candle & c : series.candles) r.history.push_back(static_cast<float>(c.close));
-    r.price = series.candles.back().close;
-    if (series.candles.size() > 1) r.change = (r.price / series.candles[series.candles.size() - 2].close - 1.0) * 100.0;
+    r.history = std::move(view.closes);
+    r.price = last.candles.back().close;
+    r.change = view.change();
     rows.push_back(std::move(r));
   }
 }
 
 }  // namespace
 
-std::vector<QuoteRow> makeRows(const Snapshot & snapshot, MarketId market, size_t bars) {
+std::vector<QuoteRow> makeRows(const Snapshot & snapshot, MarketId market, Period period) {
   std::vector<QuoteRow> rows;
-  appendRows(snapshot, market, bars, rows);
+  appendRows(snapshot, market, period, rows);
   return rows;
 }
 
-std::vector<QuoteRow> makeAllRows(const Snapshot & snapshot, size_t bars) {
+std::vector<QuoteRow> makeAllRows(const Snapshot & snapshot, Period period) {
   std::vector<QuoteRow> rows;
-  for (const Market & m : snapshot.markets()) appendRows(snapshot, m.id, bars, rows);
+  for (const Market & m : snapshot.markets()) appendRows(snapshot, m.id, period, rows);
   return rows;
 }
 
@@ -144,14 +144,20 @@ const std::string & Quotes::datasetName(DatasetId id) const {
   return it->second;
 }
 
-Quotes::Latest Quotes::latest(int r) const {
-  CandleSeries last = snapshot_->lastCandles(edge(r), Resolution::Day, 2);  // the table shows daily bars
-  Latest out;
-  if (last.candles.empty()) return out;
-  out.price = last.candles.back().close;
-  if (last.candles.size() > 1) out.change = (out.price / last.candles[0].close - 1.0) * 100.0;
-  return out;
+double Quotes::price(int r) const {
+  CandleSeries last = snapshot_->lastCandles(edge(r), Resolution::Day, 1);  // the price is the latest daily close
+  return last.candles.empty() ? 0 : last.candles.back().close;
 }
+
+double Quotes::change(int r) const { return periodView(*snapshot_, edge(r), period_, false).change(); }
+
+void Quotes::setPeriod(Period period) {
+  period_ = period;
+  traces_.clear();
+  built_[CHANGE] = false;  // the change is another number; every other sort key stands
+}
+
+std::string changeTitle(Period period) { return std::string("Change ") + info(period).label; }
 
 std::string Quotes::text(int r, int c) const {
   switch (c) {
@@ -160,8 +166,11 @@ std::string Quotes::text(int r, int c) const {
     case NAME: return nameOf(*snapshot_, edge(r));
     case MARKET: return marketLabel(edge(r).market);
     case DATASET: return datasetName(edge(r).dataset);
-    case PRICE: return fixed(latest(r).price, 2);
-    case CHANGE: return fixed(latest(r).change, 2, true) + "%";
+    case PRICE: return fixed(price(r), 2);
+    case CHANGE: {
+      const double v = change(r);
+      return isDefined(v) ? fixed(v, 2, true) + "%" : "";  // no number yet: nothing, not a zero
+    }
     default: return "";
   }
 }
@@ -170,30 +179,25 @@ std::span<const float> Quotes::trace(int r, int) const {
   auto it = traces_.find(r);
   if (it == traces_.end()) {
     if (traces_.size() > 1024) traces_.clear();  // far more than a screen draws at once
-    std::vector<float> closes;
-    for (const Candle & c : snapshot_->lastCandles(edge(r), Resolution::Day, 60).candles) closes.push_back(static_cast<float>(c.close));
-    it = traces_.emplace(r, std::move(closes)).first;
+    it = traces_.emplace(r, periodView(*snapshot_, edge(r), period_, true).closes).first;
   }
   return it->second;
 }
 
+// The change and the trace beside it are one colour, the sign of the period's change (trendUp: the only place the rule is).
 std::optional<cellui::Color> Quotes::color(int r, int c) const {
-  bool up;
-  if (c == CHANGE) {
-    up = latest(r).change >= 0;
-  } else if (c == HISTORY) {
-    std::span<const float> t = trace(r, c);
-    if (t.empty()) return std::nullopt;
-    up = t.back() >= t.front();
-  } else {
-    return std::nullopt;
-  }
-  return up ? cellui::Color(0x3f, 0xb9, 0x50) : cellui::Color(0xf8, 0x51, 0x49);
+  if (c != CHANGE && c != HISTORY) return std::nullopt;
+  const std::optional<bool> up = trendUp(change(r));
+  if (!up) return std::nullopt;
+  return *up ? cellui::Color(0x3f, 0xb9, 0x50) : cellui::Color(0xf8, 0x51, 0x49);
 }
 
 std::optional<double> Quotes::number(int r, int c) const {
-  if (c == PRICE) return latest(r).price;
-  if (c == CHANGE) return latest(r).change;
+  if (c == PRICE) return price(r);
+  if (c == CHANGE) {
+    const double v = change(r);
+    return isDefined(v) ? std::optional<double>(v) : std::nullopt;
+  }
   return std::nullopt;
 }
 
@@ -204,8 +208,7 @@ void Quotes::build(int column) const {
     std::vector<double> & v = numbers_[column == PRICE ? 0 : 1];
     v.resize(static_cast<size_t>(n));
     for (int r = 0; r < n; r++) {
-      Latest l = latest(r);
-      v[static_cast<size_t>(r)] = column == PRICE ? l.price : l.change;
+      v[static_cast<size_t>(r)] = column == PRICE ? price(r) : change(r);
     }
   } else if (column < HISTORY) {
     std::vector<std::string> & v = texts_[column];
@@ -225,6 +228,7 @@ int Quotes::compare(int a, int b, int column) const {
   if (column == PRICE || column == CHANGE) {
     const std::vector<double> & v = numbers_[column == PRICE ? 0 : 1];
     const double x = v[static_cast<size_t>(a)], y = v[static_cast<size_t>(b)];
+    if (!isDefined(x) || !isDefined(y)) return isDefined(x) - isDefined(y);  // rows with no number sort before every number
     return x < y ? -1 : x > y ? 1 : 0;
   }
   const std::vector<std::string> & v = texts_[column];

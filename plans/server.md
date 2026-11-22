@@ -779,8 +779,8 @@ and they decide how history has to be collected):
    where that was not days the longest of `YEAR_10`, `YEAR_5`, `YEAR_3`, `YEAR_1` that gives days is asked for
    next (a commodity: 3,485 daily bars; a fund's NAV: 2,377), with the pause between the requests. Weeks, months
    and quarters are keyed by their first day. A fund's points are `{timeStamp, value}`: a bar with only a close. A `volume` of 0 is no
-   volume (undefined), since a commodity or an ETC has none. Minute and hour bars are not stored yet (the answer
-   is parsed and left alone), and the history's last bar replaces today's bar from the discovery, which the
+   volume (undefined), since a commodity or an ETC has none. Intraday bars (1 to 30 minutes, 1 and 4 hours) are stored under their slot numbers, for the table's day and week
+   (periods, `Period.h`: each period names the series that feeds it and its base price), and the history's last bar replaces today's bar from the discovery, which the
    next discovery reload replaces again. Failures: a 404 is remembered for the edge for the session; a 403 or 429
    stops all requests for the session (said once in the status line); no answer or a 5xx pauses a minute and
    asks again.
