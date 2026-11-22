@@ -35,6 +35,10 @@ using DatasetId = Id<struct DatasetTag>;
 // instant: it is a day number (Dates.h).
 using Timestamp = int64_t;
 
+// The time of a fact's write, which is kept to the millisecond: milliseconds since the Unix epoch, UTC. Only the store
+// assigns one, where the write happens.
+using TimestampMs = int64_t;
+
 // A half-open range [from, to), in whatever the thing it selects is keyed by: seconds, slot numbers or day numbers.
 struct TimeRange {
   Timestamp from = std::numeric_limits<Timestamp>::min(), to = std::numeric_limits<Timestamp>::max();
@@ -65,16 +69,21 @@ inline std::optional<bool> asBoolean(const Value & v) {
 // its shares, who runs it. These are not part of any market, so no dataset says them: one value per predicate, a value
 // that changes replaces the one there (the last said stands, until a rule picks the authoritative source). What predicates
 // there are is data. Edges are not nodes: a fat edge is a Listing, below, which has the dataset.
+//
+// A fact also says when it was learned: `updated` is when its value last changed and `checked` when a source last said it,
+// even when it was the same (both set by the store, 0 on one a source has just made). Two attributes are equal when they say
+// the same, whatever the times: "did it change" never looks at them.
 struct Attribute {
   std::string predicate;
   Value value;
+  TimestampMs updated = 0, checked = 0;
   Attribute(std::string p, std::string v) : predicate(std::move(p)), value(std::move(v)) {}
   Attribute(std::string p, const char * v) : predicate(std::move(p)), value(std::string(v)) {}
   Attribute(std::string p, int64_t v) : predicate(std::move(p)), value(v) {}
   Attribute(std::string p, double v) : predicate(std::move(p)), value(v) {}
   Attribute(std::string p, bool v) : predicate(std::move(p)), value(v) {}
   Attribute(std::string p, Value v) : predicate(std::move(p)), value(std::move(v)) {}
-  friend bool operator==(const Attribute &, const Attribute &) = default;
+  friend bool operator==(const Attribute & a, const Attribute & b) { return a.predicate == b.predicate && a.value == b.value; }
 };
 
 

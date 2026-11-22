@@ -127,6 +127,45 @@ the in-memory one, and a server-backed store would hand out snapshots too.
 - The UI takes a snapshot per refresh. The writer tells it that a new version
   exists through cellui's `ThreadInbox`; the UI never waits on the store.
 
+## What is kept between runs
+
+The node attributes (what the sources said of instruments, markets and datasets: names, icons, share counts, a market's
+country) are kept in a local SQLite file, so a restart shows what an earlier run was told. Only these: nodes themselves
+are not kept (a node exists when it has edges, and the edges, the bars and everything else on them are not kept), and
+there is no server in this step.
+
+- **A fact** is `(node, predicate, value, updated, checked)`. `updated` is when the value last *changed*; `checked` is
+  when a source last *said* it, even unchanged. Both are taken by the store where the write happens (UTC, milliseconds).
+  `Snapshot::attributes()` and `Snapshot::fact()` return them (`Attribute::updated`/`checked`); `Attribute` equality
+  ignores them. A write of an unchanged value moves `checked` only and makes **no new version**, so nothing that watches the
+  version (the table) wakes; a changed value moves both and makes one.
+- **The key of a node** is not its id, which belongs to one run, but what identifies it (`src/model/NodeIdentity.cpp`, the
+  one place): an instrument's ISIN, or its symbol where it has none; a market's MIC, else the id a source gives it, else its
+  name; a dataset's name. Facts of a node that has none of these yet are not written until it has, and when a stronger one is
+  learned the facts move to it (the old rows are forgotten in the same batch).
+- **Restoring makes no node.** The file is read into the store before the sources run and kept as *held* facts under their
+  node keys. A node that is made again (a source resolves it by its ISIN, MIC or name) takes what is held for it, for the
+  predicates that have not been said in this run; so a source that loads some predicates leaves the others as an earlier
+  run left them, and a value said again with the same value is only a check, with its old `updated`. A node with no edges
+  is still not seen: `instruments()` of a fresh store is empty, and nothing selects a node that has none.
+- **Layers** (`src/model/`): `Facts.h` has the plain `StoredFact`/`FactBatch` and the `FactStore` interface (`loadAll()`,
+  `apply(batch)`), which a server-backed store can implement instead. `FactWriter` takes batches from the store's writers
+  and gives them to the `FactStore` on a thread of its own, so a write never waits for the disk: facts that changed go
+  after a short delay, facts only said again wait up to ten seconds and go with other batches, one fact per key, so a source
+  that says ten thousand known things again costs one transaction. The destructor flushes. `SqliteFactStore` (SQLiteCpp,
+  behind `openSqliteFactStore()`, in no header) is the SQLite one.
+- **The file**: one table `facts(node_type, node_key, predicate, value, is_bool, updated, checked)` keyed by
+  `(node_type, node_key, predicate)`, WAL mode, a transaction per batch, the schema version in `PRAGMA user_version` (1).
+  `value` has no declared type, so SQLite's own null, integer, real and text are kept as given (a real that is whole stays a
+  real) and a truth value is an integer with `is_bool` set. An undefined number is not said, so it is not kept. A file that
+  is not a database, is damaged or has a newer `user_version` is moved aside (`.bad-<time>`, with its WAL files) and
+  an empty one started; where no file can be made the store keeps nothing and says so. Nothing throws out of `SqliteFactStore`.
+- **Where**: `--facts FILE`, else `facts.sqlite` in the user's data directory (`XDG_DATA_HOME` or `~/.local/share/stocks`;
+  `%LOCALAPPDATA%\stocks` on Windows); `--no-facts` runs without. `makeMemoryStore()` with no argument keeps nothing, which
+  is what the tests use.
+- **Not done**: any loader that writes new facts (they will be ordinary attributes through the same writes), node-valued links,
+  and a rule for which source stands when two disagree (the last said stands).
+
 ## Steps
 
 1. ~~Types, with tests.~~ Done.

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "model/FactWriter.h"
+#include "model/Facts.h"
 #include "model/Types.h"
 
 #include <immer/map.hpp>
@@ -7,6 +9,7 @@
 
 #include <functional>
 #include <memory>
+#include <utility>
 
 // One immutable version of everything the application knows. A snapshot never changes: a reader that holds one reads it
 // without locks, for as long as it likes, and sees one consistent world (the candles, books, announcements and
@@ -28,11 +31,14 @@ class Snapshot {
   std::optional<EdgeKey> findEdge(const std::string & symbol, MarketId) const;
   // The object of one predicate of a node, if it is said: an instrument's icon, its number of shares, a market's country.
   std::optional<Value> attribute(NodeRef, const std::string & predicate) const;
+  // The same with its times: when the value last changed (`updated`) and when a source last said it, even when it was the
+  // same (`checked`), in milliseconds UTC as the store took them where the write happened.
+  std::optional<Attribute> fact(NodeRef, const std::string & predicate) const;
   std::optional<Instrument> findInstrumentByIsin(const std::string & isin) const;
   std::optional<Market> market(MarketId) const;
   std::optional<Market> findMarket(const std::string & name) const;  // by its name attribute
   std::optional<Market> findMarketByAttribute(const std::string & predicate, const std::string & value) const;
-  // What is said about any node, in the order it was first said; and the node, of the type, that says the text `predicate`
+  // What is said about any node, in the order it was first said, with the times of each; and the node, of the type, that says the text `predicate`
   // is `value` (the one made first, if several do). Only text is found by its value.
   std::vector<Attribute> attributes(NodeRef) const;
   std::optional<NodeRef> findByAttribute(NodeType, const std::string & predicate, const std::string & value) const;
@@ -86,9 +92,23 @@ class Snapshot {
   void appendAnnouncements(const EventKey &, const std::vector<Announcement> &);
   void appendActions(const EventKey &, const std::vector<CorporateAction> &);
 
+  // For a store to make on its own copy, with the changes above. `setTime` is the time of the write in progress: what
+  // `updated` and `checked` become. `hold` gives it what an earlier run said, kept until its node is made (a node is not
+  // made by it). `revision` is the version plus the times of facts that were only said again, which no version counts: a
+  // store publishes a copy when it moves. `takeFacts` is what the writes since the last call ask of the disk.
+  void setTime(TimestampMs now) { now_ = now; }
+  void hold(const std::vector<StoredFact> &);
+  uint64_t revision() const { return version_ + checks_; }
+  FactBatch takeFacts() { return std::exchange(outbox_, FactBatch{}); }
+
  private:
 
   uint64_t version_ = 0;
+  uint64_t checks_ = 0;
+  TimestampMs now_ = 0;
+  FactBatch outbox_;  // what to keep, for the store that made this copy
+  immer::map<std::string, std::vector<Attribute>> held_;  // "type key" to what an earlier run said of that node
+  immer::map<NodeRef, std::string> keyOf_;  // the key a node's facts are kept under, once it has one
   Seq<Instrument> instruments_;
   Seq<Market> markets_;
   Seq<Dataset> datasets_;
@@ -154,7 +174,20 @@ class Store {
   // at the same instant is kept beside it.
   virtual void appendAnnouncements(const EventKey &, const std::vector<Announcement> &) = 0;
   virtual void appendActions(const EventKey &, const std::vector<CorporateAction> &) = 0;
+
+  // Returns when what has been said of the nodes is on its way to where it is kept (the disk, if a FactStore was given).
+  virtual void flush() {}
+};
+
+struct StoreOptions {
+  // Where the node attributes are kept between runs. Read when the store is made, before anything writes to it; every
+  // change and every fact said again is written through on a thread of its own. None: nothing is kept.
+  std::shared_ptr<FactStore> facts;
+  FactWriter::Options writer;
+  // The time of a write, for `updated` and `checked`. The wall clock by default; a test sets its own.
+  std::function<TimestampMs()> clock;
 };
 
 // An in-memory store.
 std::unique_ptr<Store> makeMemoryStore();
+std::unique_ptr<Store> makeMemoryStore(StoreOptions);

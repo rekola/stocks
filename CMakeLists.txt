@@ -51,12 +51,30 @@ FetchContent_Declare(json
   GIT_TAG v3.11.3)
 FetchContent_MakeAvailable(json)
 
+# SQLiteCpp: RAII C++ wrapper over SQLite (MIT), built with its bundled SQLite amalgamation (public domain) so no system
+# library is needed on any platform. Keeps the node attributes between runs (src/model/SqliteFactStore.cpp, the one
+# place that names it). Pinned to 3.4.0 (21 September 2026); a new release is a deliberate bump.
+set(SQLITECPP_INTERNAL_SQLITE ON CACHE BOOL "" FORCE)
+set(SQLITECPP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(SQLITECPP_RUN_CPPLINT OFF CACHE BOOL "" FORCE)
+set(SQLITECPP_RUN_CPPCHECK OFF CACHE BOOL "" FORCE)
+set(SQLITECPP_INSTALL OFF CACHE BOOL "" FORCE)
+set(SQLITECPP_INCLUDE_SCRIPT OFF CACHE BOOL "" FORCE)
+set(SQLITE_OMIT_LOAD_EXTENSION ON CACHE BOOL "" FORCE)
+FetchContent_Declare(SQLiteCpp
+  GIT_REPOSITORY https://github.com/SRombauts/SQLiteCpp
+  GIT_TAG df0a28ca9733f687ab7ce77f070c0df84368a45e)  # 3.4.0
+FetchContent_MakeAvailable(SQLiteCpp)
+
 # The data model: plain values and the Store they live in. Knows nothing of the screen.
-add_library(stocks_model STATIC src/model/MemoryStore.cpp src/model/Isin.cpp src/model/Period.cpp)
+add_library(stocks_model STATIC src/model/MemoryStore.cpp src/model/Isin.cpp src/model/Period.cpp src/model/NodeIdentity.cpp
+  src/model/FactWriter.cpp src/model/SqliteFactStore.cpp)
 target_include_directories(stocks_model PUBLIC src)
 target_compile_features(stocks_model PUBLIC cxx_std_20)
 find_package(Threads REQUIRED)
 target_link_libraries(stocks_model PUBLIC immer Threads::Threads)
+# Private: no header names SQLiteCpp.
+target_link_libraries(stocks_model PRIVATE SQLiteCpp)
 
 # The browser: the screen, its commands and the rows it shows, as a library so the tests can drive it.
 add_library(stocks_lib STATIC src/Browser.cpp src/AttributeView.cpp src/Quotes.cpp src/Synthetic.cpp src/source/Http.cpp src/source/InstrumentLists.cpp src/source/InstrumentTypes.cpp
@@ -82,7 +100,7 @@ set_tests_properties(stocks_rejects_an_unknown_ui PROPERTIES PASS_REGULAR_EXPRES
 # The browser on a test display: keys in, what it shows out. cellui's test display
 # (TestBackend) is built where there is a POSIX event loop, so not on Windows.
 if(NOT WIN32)
-  add_executable(stocks_tests tests/test_main.cpp tests/BrowserTests.cpp tests/ModelTests.cpp tests/SourceTests.cpp tests/InstrumentListsTests.cpp tests/NordnetTests.cpp tests/HistoryTests.cpp tests/InstrumentTypesTests.cpp tests/DatesTests.cpp tests/IconTests.cpp tests/FundTests.cpp)
+  add_executable(stocks_tests tests/test_main.cpp tests/BrowserTests.cpp tests/ModelTests.cpp tests/SourceTests.cpp tests/InstrumentListsTests.cpp tests/NordnetTests.cpp tests/HistoryTests.cpp tests/InstrumentTypesTests.cpp tests/DatesTests.cpp tests/IconTests.cpp tests/FundTests.cpp tests/FactTests.cpp)
   target_link_libraries(stocks_tests PRIVATE stocks_lib)
   add_test(NAME stocks_tests COMMAND stocks_tests)
   set_tests_properties(stocks_tests PROPERTIES TIMEOUT 60)
