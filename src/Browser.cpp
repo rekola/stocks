@@ -25,7 +25,7 @@ struct RowAction {
   const char * glyph;
   const char * command;
 };
-constexpr RowAction kRowActions[] = {{"[i]", "show-info"}};
+constexpr RowAction kRowActions[] = {{kInfoGlyph, "show-info"}};
 
 // The edges of a preset: a market's, or everything.
 std::vector<EdgeKey> edgesOf(const Snapshot & snapshot, const Preset & preset) {
@@ -34,8 +34,8 @@ std::vector<EdgeKey> edgesOf(const Snapshot & snapshot, const Preset & preset) {
   return market ? quoteEdges(snapshot, market->id) : std::vector<EdgeKey>{};
 }
 
-std::vector<std::string> buttonGlyphs() {
-  std::vector<std::string> glyphs;
+std::vector<ButtonFace> buttonGlyphs() {
+  std::vector<ButtonFace> glyphs;
   for (const RowAction & action : kRowActions) glyphs.push_back(action.glyph);
   return glyphs;
 }

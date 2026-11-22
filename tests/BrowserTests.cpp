@@ -460,10 +460,10 @@ TEST(a_click_on_the_info_button_selects_its_row_and_opens_the_viewer) {
   addNokia(*f.store);
   f.app->execute("show-nasdaq-helsinki");
   f.browser->table().select(-1);
-  auto [row, col] = cellOf(f.text(), "[i]");
+  auto [row, col] = cellOf(f.text(), kInfoGlyph);
   CHECK(row >= 0);
   std::string shown;
-  const bool closed = f.inModal([&] { f.click(row, col + 1); }, {[&] { shown = f.text(); }, [&] { f.press(Key::Escape); }});
+  const bool closed = f.inModal([&] { f.click(row, col); }, {[&] { shown = f.text(); }, [&] { f.press(Key::Escape); }});
   CHECK(f.browser->table().selectedRow() == 0);
   CHECK(shown.find("FI0009000681") != std::string::npos && shown.find("NOKIA") != std::string::npos);
   CHECK(closed);
@@ -485,11 +485,11 @@ TEST(the_buttons_follow_a_sort_and_leave_the_scroll_position_alone) {
   const int first = table.firstVisiblePosition();
   CHECK(first > 0);
   auto open_first_visible = [&] {
-    auto [row, col] = cellOf(f.text(), "[i]");  // the first row in view
+    auto [row, col] = cellOf(f.text(), kInfoGlyph);  // the first row in view
     CHECK(row >= 0);
     const int expected = table.rowAt(table.firstVisiblePosition());
     std::string shown;
-    f.inModal([&] { f.click(row, col + 1); }, {[&] { shown = f.text(); }, [&] { f.press(Key::Escape); }});
+    f.inModal([&] { f.click(row, col); }, {[&] { shown = f.text(); }, [&] { f.press(Key::Escape); }});
     CHECK(table.selectedRow() == expected);
     auto isin = f.store->snapshot()->instrument(quotes.edge(expected).base)->isin;
     CHECK(!isin.empty() && shown.find(isin) != std::string::npos);  // the row clicked, not another
