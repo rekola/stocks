@@ -21,8 +21,8 @@ constexpr Preset kPresets[] = {{"Commodities", "show-commodities"}, {"Nasdaq Hel
 
 }  // namespace
 
-Browser::Browser(Application & app, std::shared_ptr<Store> store)
-    : app_(app), store_(std::move(store)), tags_(app.root()), table_(app.root(), app.charts()), info_(app.root()), status_(app.root()) {
+Browser::Browser(Application & app, std::shared_ptr<Store> store, std::shared_ptr<IconLoader> icons)
+    : app_(app), store_(std::move(store)), icons_(std::move(icons)), tags_(app.root()), table_(app.root(), app.charts()), info_(app.root()), status_(app.root()) {
   tags_.attach(app.widgets());
   table_.attach(app.widgets());
   info_.attach(app.widgets());
@@ -31,7 +31,8 @@ Browser::Browser(Application & app, std::shared_ptr<Store> store)
   for (const Preset & preset : kPresets) tags.push_back(preset.tag);
   tags_.setTags(std::move(tags));
   info_.setColors(&StyleProvider::info_line_fg_color, &StyleProvider::info_line_bg_color);
-  table_.setColumns({{.title = "Base", .width = 8},
+  table_.setColumns({{.title = "", .width = 2, .sortable = false, .icon = true},
+                     {.title = "Base", .width = 8},
                      {.title = "Quote", .width = 6},
                      {.title = "Name", .width = 0},
                      {.title = "Dataset", .width = 12},
@@ -59,6 +60,13 @@ Browser::Browser(Application & app, std::shared_ptr<Store> store)
     app_.requestFrame();  // the data came from another thread, not from an input
     return Handled::no;
   });
+  // An icon arrived on the loader's thread: draw the table again where it is (no new model, so the scroll position, the
+  // selection and the sort stay).
+  loaded_ = table_.on<IconsLoaded>([this](const IconsLoaded &, EventContext &) {
+    table_.render();
+    app_.requestFrame();
+    return Handled::no;
+  });
   said_ = table_.on<SourceMessage>([this](const SourceMessage & m, EventContext &) {
     status_.setMessage(m.text);
     app_.requestFrame();
@@ -69,6 +77,7 @@ Browser::Browser(Application & app, std::shared_ptr<Store> store)
   app.input().setFocus(&table_);
   // The table eases to a scroll position where the display scrolls smoothly: it moves with each frame, and asks for the next.
   frame_ = app.frame_started.connect([this](double seconds) {
+    requestIcons();
     if (table_.tick(seconds)) app_.requestFrame();
   });
 }
@@ -76,9 +85,24 @@ Browser::Browser(Application & app, std::shared_ptr<Store> store)
 void Browser::showPreset(int i) {
   auto snapshot = store_->snapshot();
   std::optional<Market> market = snapshot->findMarket(kPresets[i].tag);
-  table_.setModel(std::make_shared<Quotes>(market ? makeRows(*snapshot, market->id) : std::vector<QuoteRow>{}));
+  table_.setModel(std::make_shared<Quotes>(market ? makeRows(*snapshot, market->id) : std::vector<QuoteRow>{}, icons_));
   shown_version_ = snapshot->version();
   shown_preset_ = i;
+}
+
+void Browser::requestIcons() {
+  auto * quotes = dynamic_cast<const Quotes *>(table_.model().get());
+  if (!icons_ || !quotes) return;
+  const int count = quotes->rowCount(), first = table_.firstVisiblePosition(), view = std::max(1, table_.visibleRows());
+  std::vector<std::string> urls;
+  auto add = [&](int position) {
+    const int row = table_.rowAt(position);
+    if (row >= 0 && !quotes->rows[static_cast<size_t>(row)].icon_url.empty()) urls.push_back(quotes->rows[static_cast<size_t>(row)].icon_url);
+  };
+  const int margin = 3 * view;
+  for (int p = first; p < std::min(count, first + view + margin); p++) add(p);  // on screen, then the screens after
+  for (int p = first - 1; p >= std::max(0, first - margin); p--) add(p);        // then the ones before
+  icons_->want(urls);
 }
 
 void Browser::refresh() {
