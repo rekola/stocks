@@ -1,0 +1,69 @@
+{
+ "orderBookId": "ee5e3ee2-1406-4df7-8d7e-68ee3f6b1b95",
+ "isin": "LU0231483743",
+ "name": "abrdn-All China Sustainable Eq A AccUSD",
+ "description": "The Fund’s investment objective is long term total return to be achieved by investing at least 90% of the Fund’s assets in equities and equity-related securitie",
+ "assetClass": "EQUITY",
+ "baseCurrency": "USD",
+ "dividend": {
+  "distributionType": "ACCUMULATED"
+ },
+ "fees": {
+  "managementFee": 1.75,
+  "ongoingCost": 1.93,
+  "totalFee": 1.93
+ },
+ "fundCompany": {
+  "name": "abrdn Investments Luxembourg S.A.",
+  "homepage": "http://www.aberdeenstandard.com"
+ },
+ "inceptionDate": "1992-04-27",
+ "morningstarValues": {
+  "rating": {
+   "maxValue": 5,
+   "value": 2
+  },
+  "risk": {
+   "displayLabel": "Keskimääräinen",
+   "label": "MEDIUM",
+   "maxValue": 7,
+   "value": 5
+  }
+ },
+ "risksStatistics": {
+  "fiveYears": {
+   "alpha": -6.34,
+   "beta": 0.95,
+   "r2": 88.43,
+   "sharpeRatio": -0.26,
+   "standardDeviation": 25.07,
+   "trackingError": 8.62
+  },
+  "oneYear": {
+   "alpha": -6.59,
+   "beta": 0.62,
+   "r2": 21.09,
+   "sharpeRatio": -1.11,
+   "standardDeviation": 16.38,
+   "trackingError": 15.28
+  },
+  "threeYears": {
+   "alpha": -4.43,
+   "beta": 1.0,
+   "r2": 83.69,
+   "sharpeRatio": -0.02,
+   "standardDeviation": 22.94,
+   "trackingError": 9.26
+  },
+  "updatedAt": "2026-10-31"
+ },
+ "tradingInfo": {
+  "cutOffTime": "10:00:00",
+  "minInvestment": {
+   "currency": "EUR",
+   "value": 15
+  },
+  "pricingFrequency": "DAILY"
+ },
+ "ucits": true
+}

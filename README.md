@@ -24,6 +24,7 @@ session if the first gives nothing (no network, a refusal).
     build/stocks --source synthetic   # made-up prices, no network
     build/stocks --market "Nasdaq Helsinki"   # load only that list
     build/stocks --source nordnet,funds:NAME   # several sources, one after another; funds:NAME is a fund company by its schema, data/funds/NAME.json (shown under All)
+    build/stocks --source nordnet,nordnet-details   # the descriptions, shares, ratings and fees of every instrument, a batch at a time (`auto` includes it)
 
 Keys: arrows, PgUp/PgDn, Home/End move; Tab moves between the tags and the table; `M-x` (`Ctrl+Shift+P` on
 the desktop keymap) opens the command palette, where every command is listed with
