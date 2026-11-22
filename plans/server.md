@@ -633,24 +633,24 @@ and they decide how history has to be collected):
    **Edges are typed, not bags of attributes** (the owner's decision: their fields are static, so
    they are plain C++ types, fast, and kept apart from the nodes; a new kind of edge is a new type).
    Nodes (instruments, markets, datasets) keep attributes, as above; edges do not.
-   A **fat edge** is the listing of an instrument on a market in a quote currency from one dataset
-   (instrument, currency, market, dataset), small, with the price series beside it. Its `Listing` is
-   what the market says: the symbol it calls the instrument, its own id for it (Nordnet's identifier:
+   A **fat edge is a Listing**: an instrument on a market in a quote currency from one dataset
+   (its key, the foreign keys), small, with the price series beside it under the same key, and the fields the
+   market says: the symbol it calls the instrument, its own id for it (Nordnet's identifier:
    "XAIX" on Xetra and "419021" on Stockholm for one ETF), the order book its history is asked for
    by, the provider's own type. An edge takes nothing before it has data. `findEdge(symbol,
-   market)` finds the edge by what a market calls it, whoever said it. A **thin edge** is a fact about
-   the instrument itself from one dataset, a typed record of one of four types so far
-   (`InstrumentFacts`, `CompanyFacts`, `FundFacts`, `CertificateFacts`), kept as the latest values and
-   replaced when they change. **The instruments need data**, so the adapters keep what a row says of
-   them (see the census below), and the fat edge stays light. A currency has no ISIN and is its
-   code; **nothing else is without an ISIN**.
-   **Private ISINs**: an instrument that has none gets one of our own: `ZZ` (ISO 3166-1's
-   user-assigned code element; no numbering agency issues ISINs under it), then a two-letter
-   source ("NN" Nordnet, "YF" Yahoo's continuous futures) and the provider's symbol, upper case, in
-   nine characters padded with zeros, and the check digit (`privateIsin()`, tested against real
-   ISINs; the Python that writes the data files has the same function). Zinc at Nordnet is
-   `ZZNNZINC0002`. The mapping is in code for the Nordnet indicator rows with no ISIN (Lead, Zinc,
-   BRIC 50 India, Shanghai) and in the data file for Yahoo's.
+   market)` finds the edge by what a market calls it, whoever said it. A **thin edge** is a fact
+   about the instrument itself from one dataset, a record of one of four types so far
+   (`InstrumentFacts`, `CompanyFacts`, `FundFacts`, `CertificateFacts`), each carrying its key
+   (instrument, dataset), kept as the latest values and replaced when they change. **The
+   instruments need data**, so the adapters keep what a row says of them (see the census below),
+   and the fat edge stays light. A currency has no ISIN and is its code; **nothing else is
+   without an ISIN**.
+   **Private ISINs**: a thing that has none gets one of our own, made from what it is and not
+   from who says it (there is one zinc): `ZZ` (ISO 3166-1's user-assigned code element; no
+   numbering agency issues ISINs under it), its name, upper case, in nine characters padded
+   with zeros, and the check digit (`privateIsin()`, tested against real ISINs). Zinc is
+   `ZZZINC000006`. Used for the Nordnet indicator rows with no ISIN (Lead, Zinc, BRIC 50 India,
+   Shanghai).
    **Yahoo has no discovery, so its data files carry the ISIN** next to the ticker
    (`kind,base,quote,name,yahoo,isin`): Yahoo makes its instrument from the file, by its ISIN, which
    is the same node another source made, and its own edge has its ticker as the symbol. Nothing
@@ -658,13 +658,14 @@ and they decide how history has to be collected):
    an ISIN is refused by the list loader, and a test checks every ISIN in the files. The Helsinki
    file's ISINs come from Nordnet's stock list (`tools/yahoo/build_lists.py` fetches it; 100 of 100
    matched, Nordea being "NDA FI" at Nordnet).
-   **Yahoo's commodities are back, with ISINs** (Nordnet's commodity prices are not very
-   good): the six that Nordnet or the legacy data has an ISIN for (gold, silver, copper,
-   aluminium, WTI, Brent) take that ISIN, so one instrument has two edges, Nordnet's and Yahoo's,
-   and the dataset says whose prices they are; the other 24 get private ISINs (`YF`).
-   Yahoo's are futures contracts, rolled from one contract to the next, not the metal itself (see
-   below): the difference between the two edges is the cost of carry and the roll, and is visible.
-   Edit the ISIN column to change a match.
+   **Yahoo's commodities stay off.** Every one is a futures contract (the chart names the
+   contract: "Gold Dec 26", "Crude Oil Jan 27", "Aluminum Futures, Feb-2027"), not the commodity's
+   price, and the units differ (copper is 5.49 dollars a pound at Yahoo and 12,150 dollars a
+   tonne at Nordnet; Yahoo's aluminium is 2,790 against Nordnet's 3,159); Nordnet's gold, WTI and Brent
+   look like spot-like or derived prices (WTI is quoted to four decimals, 83.0166, which a futures
+   tick is not). So no ISIN of the commodity applies to them; if a futures series is wanted
+   it is an instrument of its own (a contract or a continuous series), and Nordnet's commodity prices
+   are the ones loaded. If Nordnet's turn out to be futures contracts too, Yahoo's can be matched.
    **Indices**: Yahoo has them (`^GSPC` S&P 500 from 1927, `^IXIC`, `^DJI`, `^FTSE`, `^GDAXI`,
    `^N225`, `^VIX`, `^OMXH25`, `^OMXSPI`, `^STOXX50E`), each with its own pseudo-exchange (SNP, NIM,
    DJI, FGI, GER, OSA, STO, CXI, ZRH), which is the index's calculator, not a place where it
