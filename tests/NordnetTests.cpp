@@ -366,9 +366,10 @@ TEST(a_stock_bar_carries_the_volume_when_the_answer_has_it) {
 
 TEST(the_default_lists_are_the_etfs_the_certificates_the_funds_and_the_stocks) {
   auto lists = NordnetSource::defaultLists();
-  CHECK(lists.size() == 7);
+  CHECK(lists.size() == 8);
   CHECK(lists[2].name == "fundlist" && lists[3].name == "stocklist");
   CHECK(lists[4].name == "indices" && lists[5].name == "currencies" && lists[6].name == "commodities");
+  CHECK(lists[7].name == "news" && lists[7].shape == NordnetSource::List::Shape::News && lists[7].url.find("/news/v1/news/preview/main?includeInstruments=true") != std::string::npos);
   CHECK(lists[4].shape == NordnetSource::List::Shape::Indicators && lists[4].market == "Indices");
   CHECK(lists[3].url.find("/stocklist?") != std::string::npos && lists[3].pageSize == 1000);
 }
@@ -512,6 +513,7 @@ TEST(the_indicator_lists_make_indices_in_points_currency_pairs_and_commodities_i
   };
   auto lists = NordnetSource::defaultLists();
   lists.erase(lists.begin(), lists.begin() + 4);  // only the three indicator lists
+  lists.pop_back();                                 // not the news
   Listener listener;
   NordnetSource(lists, std::chrono::milliseconds(0)).load(*store, http, listener);
   CHECK(http.urls.size() == 3 && http.urls[0].find("/instrument-screening/v1/indicator/web/list/WORLDMAP") != std::string::npos);
@@ -637,4 +639,117 @@ TEST(a_private_isin_is_made_from_what_the_thing_is_in_a_namespace_nobody_issues_
   CHECK(privateIsin("zinc") == zinc && privateIsin("Z-I NC") == zinc);  // case and punctuation do not matter
   CHECK(privateIsin("LEAD") != zinc);
   CHECK(privateIsin("TOOLONGNAME").empty() && privateIsin("").empty());
+}
+
+TEST(a_news_item_has_its_text_its_time_its_newswire_and_the_instruments_it_is_about) {
+  std::vector<NordnetNews> items;
+  std::string error;
+  CHECK(NordnetSource::parseNews(fixture("news-1.json"), items, error));
+  CHECK(items.size() == 5);
+  const NordnetNews & first = items[0];
+  CHECK(first.headline == "Stor sulfidfyndighet vid Rockley-projektet" && first.type == "PRESS_RELEASE");
+  CHECK(first.agency == "GLOBE_NEWSWIRE" && first.language == "sv" && first.published == 1795214447);  // seconds, not milliseconds
+  CHECK(first.url.find("globenewswire.com") != std::string::npos && !first.intro.empty() && !first.tags.empty());
+  CHECK(first.instruments.size() == 1 && first.instruments[0].uuid == "e66ae6a8-5427-4f91-94c1-c59a11eb1ff5" && first.instruments[0].symbol == "ALKEF");
+  CHECK(items[2].instruments.empty());  // a general item is about none
+  CHECK(!NordnetSource::parseNews("{}", items, error) && error == "not a news list");
+  CHECK(!NordnetSource::parseNews("", items, error));
+}
+
+TEST(search_rows_give_the_instrument_the_id_the_news_refers_to_it_by) {
+  auto store = makeMemoryStore();
+  FakeHttp http;
+  http.answer = pages;
+  Listener listener;
+  quick().load(*store, http, listener);
+  auto s = store->snapshot();
+  const InstrumentId flxk = s->findInstrumentByIsin("IE00BHZRR030")->id;
+  CHECK(asText(*s->attribute(flxk, predicate::nordnetInstrument)) == "e9cab3b7-681a-4676-9790-6cdcdd9e7527");
+  // And it finds the instrument by that id.
+  CHECK(s->findByAttribute(NodeType::Instrument, predicate::nordnetInstrument, "e9cab3b7-681a-4676-9790-6cdcdd9e7527")->id == flxk.value);
+}
+
+namespace {
+
+// A store with the instruments two of the fixture's news items are about, as the search lists would have made them.
+std::shared_ptr<Store> storeWithNewsInstruments() {
+  std::shared_ptr<Store> store = makeMemoryStore();
+  Instrument alkane = store->addInstrument({{}, "", "Alkane Resources Ltd", InstrumentKind::Company, "AU000000ALK9"});
+  Instrument oatly = store->addInstrument({{}, "", "Oatly Group", InstrumentKind::Company, "US67421J1088"});
+  store->setAttribute(alkane.id, {predicate::nordnetInstrument, "e66ae6a8-5427-4f91-94c1-c59a11eb1ff5"});
+  store->setAttribute(oatly.id, {predicate::nordnetInstrument, "7fb9dda7-a3b1-4bf3-a266-75706e95b7f6"});
+  return store;
+}
+
+NordnetSource newsOnly(int pageSize) {
+  auto lists = NordnetSource::defaultLists();
+  NordnetSource::List news = lists.back();
+  news.pageSize = pageSize;
+  return NordnetSource({news}, std::chrono::milliseconds(0));
+}
+
+}  // namespace
+
+TEST(news_becomes_announcements_of_the_instruments_it_is_about_and_a_general_item_is_left_out) {
+  auto store = storeWithNewsInstruments();
+  FakeHttp http;
+  http.answer = [](const std::string &) { return ok(fixture("news-1.json")); };
+  Listener listener;
+  NordnetSource source = newsOnly(50);
+  source.load(*store, http, listener);
+  CHECK(http.urls.size() == 1);  // fewer items than a page: the last page
+  CHECK(http.urls[0].find("/news/v1/news/preview/main?includeInstruments=true&limit=50&agencies=GLOBAL_NEWSWIRE%2CFINWIRE_FUNDS%2CINDERES&offset=0") != std::string::npos);
+  bool locale = false, cookie = false;
+  for (const auto & [n, v] : http.headers[0]) {
+    locale = locale || (n == "x-locale" && v == "fi-FI");
+    cookie = cookie || n == "Cookie";
+  }
+  CHECK(locale && !cookie);
+
+  auto s = store->snapshot();
+  const DatasetId nordnet = s->findDataset("nordnet")->id;
+  const InstrumentId alkane = s->findInstrumentByIsin("AU000000ALK9")->id, oatly = s->findInstrumentByIsin("US67421J1088")->id;
+  auto a = s->announcements({alkane, nordnet});
+  CHECK(a.size() == 1 && a[0].headline == "Stor sulfidfyndighet vid Rockley-projektet" && a[0].time == 1795214447);
+  CHECK(a[0].category == "PRESS_RELEASE" && a[0].agency == "GLOBE_NEWSWIRE" && a[0].language == "sv");
+  CHECK(a[0].url.find("globenewswire.com") != std::string::npos && !a[0].body.empty());
+  CHECK(s->announcements({oatly, nordnet}).size() == 1);
+  CHECK(listener.changes == 1 && listener.messages.size() == 1 && listener.messages[0].find("news 2") != std::string::npos);
+  CHECK(s->events(alkane).size() == 1);
+
+  // Loading again says nothing twice: the same time and headline replace.
+  FakeHttp again;
+  again.answer = http.answer;
+  source.load(*store, again, listener);
+  CHECK(again.urls.size() == 1);
+  CHECK(store->snapshot()->announcements({alkane, nordnet}).size() == 1);
+}
+
+TEST(the_first_load_reads_two_pages_of_news_and_a_later_one_the_newest_page) {
+  auto store = storeWithNewsInstruments();
+  FakeHttp http;
+  http.answer = [](const std::string &) { return ok(fixture("news-1.json")); };
+  Listener listener;
+  NordnetSource source = newsOnly(5);  // a page as big as the fixture: there may be more
+  source.load(*store, http, listener);
+  CHECK(http.urls.size() == 2);
+  CHECK(http.urls[0].find("&offset=0") != std::string::npos && http.urls[1].find("&offset=5") != std::string::npos);
+  FakeHttp later;
+  later.answer = http.answer;
+  source.load(*store, later, listener);
+  CHECK(later.urls.size() == 1 && later.urls[0].find("&offset=0") != std::string::npos);
+}
+
+TEST(a_refusal_stops_the_news_and_what_is_not_news_is_said_so) {
+  auto store = storeWithNewsInstruments();
+  FakeHttp http;
+  http.answer = [](const std::string &) { return failed(429); };
+  Listener listener;
+  newsOnly(50).load(*store, http, listener);
+  CHECK(http.urls.size() == 1 && listener.messages.size() == 1 && listener.messages[0] == "nordnet: news: HTTP 429, stopping");
+  FakeHttp junk;
+  junk.answer = [](const std::string &) { return ok("<html>"); };
+  Listener l2;
+  newsOnly(50).load(*store, junk, l2);
+  CHECK(l2.messages.size() == 1 && l2.messages[0] == "nordnet: news: not a news list");
 }

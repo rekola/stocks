@@ -560,6 +560,34 @@ and they decide how history has to be collected):
   NOKIA.HE); the same works for `1wk`, `1mo`, `5d` and `3mo`. Yahoo has its own weekly
   and monthly bars, like Nordnet.
 
+**Nordnet news** (`api.prod.nntech.io/news/v1/news/preview/main`), built into the Nordnet source:
+
+- `GET .../news/v1/news/preview/main?includeInstruments=true&offset=N&limit=50&agencies=GLOBAL_NEWSWIRE%2CFINWIRE_FUNDS%2CINDERES`
+  with `Accept: */*`, `Origin`, `Referer`, `X-Locale: fi-FI` (the indicator lists' headers); no cookie. The
+  agencies are the owner's choice for the Nordic markets; without the parameter the answer has other
+  agencies too. The answer is `{news: [...], limit, offset, total}`, newest first (50 items cover about four
+  hours of the three newswires), `total` growing with the offset (it is not a count), and paging works (offset
+  100 and more were answered).
+- An item: `id` (uuid), `headline`, `intro` (the start of the text, the article itself is at
+  `originalArticleLink`), `published` (milliseconds), `language` (en, fi, da, sv in a sample of 100),
+  `agency` (`GLOBE_NEWSWIRE` 69, `INDERES` 31 of 100), `newsType` (`PRESS_RELEASE` 79, `ANALYSIS` 14, `NEWS`
+  7), `tags`, `views`, and the instruments it is about: `instruments` with `instrumentId` (a uuid),
+  `legacyInstrumentId` (the number of `instrument_info.instrument_id` in the search lists), `symbol`,
+  `name`, `orderBookId` (the data order book of the search lists), `countryCode`, `displaySlug`. **20 of 100
+  items are about no instrument** (general news), 57 about one, the rest about 2 to 7.
+- **Matching an item to our instruments: by `instrumentId`**, which is the search rows' `nnx_info.nnx_instrument_id`
+  (70 of 73 references in a sample of 100 items matched the instruments of the lists; the legacy number matched
+  65 and the order book 65). The adapter keeps that id on the instrument (`nordnet-instrument`), as the
+  indicator lists' `instrumentId` already was.
+- **What is stored**: an `Announcement` (time in seconds, category = `newsType`, headline, body = the intro, url, and
+  the agency and language, which it now has) of every instrument that the item is about and that we have, under the
+  dataset `nordnet`; the same time and headline replace, so a reload says nothing twice. A general item and an
+  instrument outside the lists are left out (a market-wide place for general news is open). The first load of a
+  session reads two pages (100 items, about eight hours back), the later ones the newest page, every five minutes
+  with the lists. Failures as for the lists: a 403 or 429 stops the Nordnet load.
+- Not done: the article's full text (the preview has the intro), more agencies, showing the announcements in
+  the UI (the info view of a row can list the instrument's announcements).
+
 **Nordnet history** (`api.prod.nntech.io`), as observed; the daily and coarser part is built
 (`HistoryLoader`, see "The history loader" below):
 

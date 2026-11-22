@@ -12,6 +12,7 @@ struct NordnetListing {
   int marketId = 0, marketSubId = 0;
   std::string identifier;  // the instrument's identifier on that market
   std::string symbol, name, isin, currency, type, issuer, slug, clearingPlace, country;
+  std::string nnxId;   // Nordnet's id for the instrument (a uuid): what its news refers to it by
   std::string list;    // the list it was found in
   std::string bookId;  // market_data_order_book_id: what the price history is asked for by
   // Today's bar from the listing's price block: what discovery gives besides the instrument. Absent where the listing
@@ -32,6 +33,19 @@ struct NordnetIndicator {
   Candle bar;
 };
 
+// One news item of Nordnet's news preview: a press release, an analysis or a news item, with the instruments it is about
+// (none for a general one). The text is the preview's intro, not the article: the article is at `url`.
+struct NordnetNewsInstrument {
+  std::string uuid;  // Nordnet's id for the instrument (nnx_info.nnx_instrument_id of the search lists)
+  std::string symbol, name;
+};
+struct NordnetNews {
+  std::string id, headline, intro, language, agency, type, url;
+  int64_t published = 0;  // UTC seconds
+  std::vector<std::string> tags;
+  std::vector<NordnetNewsInstrument> instruments;
+};
+
 // Nordnet's unofficial search endpoints: no key and no login (a cookie is not needed). Discovery loads every instrument
 // of every list it knows (ETFs, certificates, ...) in the same way, whatever their type. Each is an instrument (a node,
 // with its ISIN and its own type) and its quote currency; and from the price block of its listing, today's daily bar,
@@ -50,7 +64,7 @@ class NordnetSource : public Source {
     std::chrono::milliseconds interval{0};
     // What the list holds: the search lists above (paged, with a market per row), or an indicator list (indices,
     // currency pairs or commodities in one answer) whose rows are all on the market named here.
-    enum class Shape { Search, Indicators } shape = Shape::Search;
+    enum class Shape { Search, Indicators, News } shape = Shape::Search;
     std::string market;
   };
   // The lists loaded: the ETFs, the certificates of type PTC, the funds and the stocks, then the indices, the currency pairs
@@ -83,6 +97,8 @@ class NordnetSource : public Source {
   // The rows of an indicator list; False, with `error` set, when `json` is not one. Rows with no symbol, order book or
   // type are left out.
   static bool parseIndicators(const std::string & json, std::vector<NordnetIndicator> & rows, std::string & error);
+  // The items of a news preview; False, with `error` set, when `json` is not one. An item with no id or no headline is left out.
+  static bool parseNews(const std::string & json, std::vector<NordnetNews> & items, std::string & error);
   // What the indicator lists gave, for the history step.
   const std::vector<NordnetIndicator> & indicators() const { return indicators_; }
 
@@ -98,5 +114,7 @@ class NordnetSource : public Source {
   std::vector<NordnetListing> listings_;
   std::vector<NordnetIndicator> indicators_;
   size_t loadIndicators(const List &, Store &, Http &, SourceListener &, bool & stop);
+  // The latest news, as announcements of the instruments they are about: two pages the first time, one after.
+  size_t loadNews(const List &, Store &, Http &, SourceListener &, bool & stop, bool first);
   std::map<std::string, std::chrono::steady_clock::time_point> loaded_;  // when each list was last loaded
 };

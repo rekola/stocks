@@ -268,6 +268,7 @@ struct BookSnapshot {
 struct Announcement {
   Timestamp time = 0;  // when it was published: UTC seconds
   std::string category, headline, body, url;
+  std::string agency, language;  // who published it (a newswire), and in which language ("fi", "en")
 };
 
 enum class ActionKind {

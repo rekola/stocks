@@ -165,7 +165,11 @@ std::vector<NordnetSource::List> NordnetSource::defaultLists() {
           // One answer each, no sparkline (it is only the day's development in per cent).
           {"indices", indicators + "WORLDMAP", 0, std::chrono::milliseconds(0), Shape::Indicators, "Indices"},
           {"currencies", indicators + "CURRENCY_GLOBAL", 0, std::chrono::milliseconds(0), Shape::Indicators, "Currencies"},
-          {"commodities", indicators + "COMMODITIES", 0, std::chrono::milliseconds(0), Shape::Indicators, "Commodities"}};
+          {"commodities", indicators + "COMMODITIES", 0, std::chrono::milliseconds(0), Shape::Indicators, "Commodities"},
+          // The newswires Nordnet shows by default for the Nordic markets; 50 an answer, the newest first.
+          {"news",
+           "https://api.prod.nntech.io/news/v1/news/preview/main?includeInstruments=true&limit=50&agencies=GLOBAL_NEWSWIRE%2CFINWIRE_FUNDS%2CINDERES",
+           50, std::chrono::milliseconds(0), Shape::News, ""}};
 }
 
 const char * NordnetSource::knownMarketName(int id) {
@@ -221,6 +225,7 @@ bool NordnetSource::parsePage(const std::string & body, Page & page, std::string
     if (row.is_object() && row.contains("nnx_info") && row["nnx_info"].is_object()) {
       l.slug = text(row["nnx_info"], "display_slug");
       l.bookId = text(row["nnx_info"], "market_data_order_book_id");
+      l.nnxId = text(row["nnx_info"], "nnx_instrument_id");
     }
     if (row.is_object() && row.contains("price_info") && row["price_info"].is_object()) {
       const json & p = row["price_info"];
@@ -344,6 +349,78 @@ size_t NordnetSource::loadIndicators(const List & list, Store & store, Http & ht
   return written;
 }
 
+bool NordnetSource::parseNews(const std::string & body, std::vector<NordnetNews> & items, std::string & error) {
+  json doc = json::parse(body, nullptr, /*allow_exceptions=*/false);
+  if (doc.is_discarded() || !doc.is_object() || !doc.contains("news") || !doc["news"].is_array()) {
+    error = "not a news list";
+    return false;
+  }
+  for (const json & n : doc["news"]) {
+    if (!n.is_object()) continue;
+    NordnetNews item;
+    item.id = text(n, "id");
+    item.headline = text(n, "headline");
+    item.intro = text(n, "intro");
+    item.language = text(n, "language");
+    item.type = text(n, "newsType");
+    item.url = text(n, "originalArticleLink");
+    item.published = integer(n, "published") / 1000;  // milliseconds in the answer
+    if (auto agency = n.find("agency"); agency != n.end() && agency->is_object()) item.agency = text(*agency, "id");
+    if (auto tags = n.find("tags"); tags != n.end() && tags->is_array())
+      for (const json & t : *tags)
+        if (t.is_string()) item.tags.push_back(t.get<std::string>());
+    if (auto ins = n.find("instruments"); ins != n.end() && ins->is_array())
+      for (const json & i : *ins)
+        if (i.is_object() && !text(i, "instrumentId").empty())
+          item.instruments.push_back({text(i, "instrumentId"), text(i, "symbol"), text(i, "name")});
+    if (item.id.empty() || item.headline.empty() || item.published <= 0) continue;
+    items.push_back(std::move(item));
+  }
+  return true;
+}
+
+size_t NordnetSource::loadNews(const List & list, Store & store, Http & http, SourceListener & listener, bool & stop, bool first) {
+  size_t stored = 0;
+  const int pages = first ? 2 : 1;  // the first time a few hours back, then what is new since the last load
+  Dataset dataset = store.addDataset({{}, "nordnet"});
+  for (int page = 0; page < pages; page++) {
+    if (listener.cancelled()) return stored;
+    HttpResult r = http.get(list.url + "&offset=" + std::to_string(page * list.pageSize), kIndicatorHeaders);
+    if (!r.ok()) {
+      const bool refused = r.status == 429 || r.status == 403;
+      listener.message("nordnet: " + list.name + ": " +
+                       (r.status == 0 ? (r.error.empty() ? std::string("no answer") : r.error) : "HTTP " + std::to_string(r.status)) +
+                       (refused ? ", stopping" : ""));
+      stop = refused;
+      return stored;
+    }
+    std::vector<NordnetNews> items;
+    std::string error;
+    if (!parseNews(r.body, items, error)) {
+      listener.message("nordnet: " + list.name + ": " + error);
+      return stored;
+    }
+    // Each item is an announcement of every instrument it is about, found by Nordnet's id for it; one that is about none we
+    // have (a general item, or an instrument outside the lists) is left out.
+    auto snapshot = store.snapshot();
+    std::map<InstrumentId, std::vector<Announcement>> by;
+    for (const NordnetNews & n : items) {
+      Announcement a{n.published, n.type, n.headline, n.intro, n.url, n.agency, n.language};
+      for (const NordnetNewsInstrument & i : n.instruments)
+        if (auto node = snapshot->findByAttribute(NodeType::Instrument, predicate::nordnetInstrument, i.uuid))
+          by[InstrumentId{node->id}].push_back(a);
+    }
+    for (const auto & [instrument, announcements] : by) {
+      store.appendAnnouncements({instrument, dataset.id}, announcements);
+      stored += announcements.size();
+    }
+    if (items.size() < static_cast<size_t>(list.pageSize)) break;  // the last page
+    if (page + 1 < pages && pause_.count() > 0) std::this_thread::sleep_for(pause_);
+  }
+  if (stored) listener.changed();
+  return stored;
+}
+
 void NordnetSource::load(Store & store, Http & http, SourceListener & listener) {
   std::string counts;  // "etflist 2304, certificatelist 1097": the lists loaded now
   int skipped = 0;
@@ -353,9 +430,17 @@ void NordnetSource::load(Store & store, Http & http, SourceListener & listener) 
     const auto now = std::chrono::steady_clock::now();
     auto last = loaded_.find(list.name);
     if (last != loaded_.end() && now - last->second < list.interval) continue;  // not due: what it gave stays
+    const bool first = last == loaded_.end();  // never loaded in this session
     loaded_[list.name] = now;
     std::erase_if(listings_, [&](const NordnetListing & l) { return l.list == list.name; });
     std::erase_if(indicators_, [&](const NordnetIndicator & i) { return i.list == list.name; });
+    if (list.shape == List::Shape::News) {
+      if (listener.cancelled()) return;
+      const size_t n = loadNews(list, store, http, listener, stop, first);
+      if (n) counts += (counts.empty() ? "" : ", ") + list.name + " " + std::to_string(n);
+      if (!stop && pause_.count() > 0) std::this_thread::sleep_for(pause_);
+      continue;
+    }
     if (list.shape == List::Shape::Indicators) {
       if (listener.cancelled()) return;
       const size_t n = loadIndicators(list, store, http, listener, stop);
@@ -401,6 +486,7 @@ void NordnetSource::load(Store & store, Http & http, SourceListener & listener) 
         Instrument quote = currencyNode(store, l.currency);
         // What Nordnet says of the instrument itself: thin edges, of the types it has.
         store.setAttributes(base.id, l.attributes);
+        store.setAttribute(base.id, {predicate::nordnetInstrument, l.nnxId});  // what the news refers to it by
         // Today's bar makes the edge; a listing with none stays a node nothing selects.
         if (l.hasBar) {
           const EdgeKey edge{base.id, quote.id, market.id, dataset.id};
