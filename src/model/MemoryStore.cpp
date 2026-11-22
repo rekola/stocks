@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <map>
 #include <random>
+#include <set>
 #include <memory>
 #include <functional>
 #include <mutex>
@@ -249,6 +250,12 @@ void Snapshot::hold(const std::vector<StoredFact> & facts) {
         }
     held_ = held_.set(key, std::move(attrs));
   }
+  for (const auto & [said, keys] : heldMarkets_) {
+    const size_t at = said.find('\0');
+    if (keys.size() > 1 && at != std::string::npos && isUnique(NodeType::Market, said.substr(1, at - 1)))
+      notices_.push_back("market: the file says " + said.substr(1, at - 1) + " " + said.substr(at + 1) + " of " + std::to_string(keys.size()) +
+                         " markets");
+  }
 }
 
 void Snapshot::setAttributes(NodeRef n, const std::vector<Attribute> & in) {
@@ -259,6 +266,23 @@ void Snapshot::setAttributes(NodeRef n, const std::vector<Attribute> & in) {
   std::vector<Attribute> said;
   for (const Attribute & a : in)
     if (says(a.value) && !a.predicate.empty()) said.push_back(a);
+  if (said.empty()) return;
+
+  // What says which node is meant is not said of two: another node that has it keeps it, and the second is refused.
+  const auto refuse = [&](const Attribute & a) {
+    notices_.push_back(std::string(n.type == NodeType::Market ? "market" : n.type == NodeType::Instrument ? "instrument"
+                                                                                                          : "dataset") +
+                       ": " +
+                       a.predicate + " " + textOf(a.value) + " is already said of another, not said of this one too");
+  };
+  std::erase_if(said, [&](const Attribute & a) {
+    const auto * text = std::get_if<std::string>(&a.value);
+    if (!text || !isUnique(n.type, a.predicate)) return false;
+    const auto * ids = byAttribute_.find(indexKey(n.type, a.predicate, *text));
+    if (!ids || !std::any_of(ids->begin(), ids->end(), [&](uint32_t id) { return id != n.id; })) return false;
+    refuse(a);
+    return true;
+  });
   if (said.empty()) return;
 
   std::vector<Attribute> attrs = attributes(n);
@@ -305,6 +329,17 @@ void Snapshot::setAttributes(NodeRef n, const std::vector<Attribute> & in) {
       if (key.key.empty() && mint_ && *mint_) key = {StoredType::Market, (*mint_)()};
     }
   }
+
+  // The same of the held markets, which another run kept: those of a market that is not this one.
+  std::erase_if(said, [&](const Attribute & a) {
+    const auto * text = std::get_if<std::string>(&a.value);
+    if (!text || n.type != NodeType::Market || !isUnique(n.type, a.predicate)) return false;
+    const auto * keys = heldMarkets_.find(indexKey(n.type, a.predicate, *text));
+    if (!keys || !std::any_of(keys->begin(), keys->end(), [&](const std::string & k) { return k != key.key; })) return false;
+    refuse(a);
+    return true;
+  });
+  if (said.empty()) return;
 
   // What an earlier run said of this node, now that it is known by what it was kept under: it stands where this run has
   // not said otherwise, with the times it had, so a value said again changes nothing but its time.
@@ -542,7 +577,10 @@ class SnapshotSlot {
 class MemoryStore : public Store {
  public:
   explicit MemoryStore(StoreOptions options)
-      : current_(std::make_shared<const Snapshot>()), clock_(std::move(options.clock)), mint_(std::move(options.mint)) {
+      : current_(std::make_shared<const Snapshot>()),
+        clock_(std::move(options.clock)),
+        mint_(std::move(options.mint)),
+        notice_(std::move(options.notice)) {
     if (!mint_)
       mint_ = [] {
         static std::mutex m;
@@ -561,6 +599,7 @@ class MemoryStore : public Store {
       // What was kept is held until its nodes are made; it makes none. Read before any source can write.
       Snapshot first;
       first.hold(options.facts->loadAll());
+      tell(first.takeNotices());
       current_.store(std::make_shared<const Snapshot>(std::move(first)));
       writer_ = std::make_unique<FactWriter>(std::move(options.facts), options.writer);
     }
@@ -610,6 +649,11 @@ class MemoryStore : public Store {
   }
 
  private:
+  void tell(const std::vector<std::string> & notices) {
+    for (const std::string & text : notices)
+      if (notice_ && told_.insert(text).second) notice_(text);
+  }
+
   // Change a copy of the current snapshot and publish it if the version moved, or if only the times of facts said again did
   // (the version is the same then, so nothing that watches it wakes). What the change asks of the disk is handed on
   // in the order the writes were made.
@@ -622,6 +666,7 @@ class MemoryStore : public Store {
     next.setKeyMaker(&mint_);
     const auto finish = [&] {
       next.setKeyMaker(nullptr);
+      tell(next.takeNotices());
       FactBatch facts = next.takeFacts();
       if (writer_) writer_->post(std::move(facts));
       if (next.revision() != old->revision()) current_.store(std::make_shared<const Snapshot>(std::move(next)));
@@ -639,7 +684,9 @@ class MemoryStore : public Store {
   std::mutex mutex_;
   SnapshotSlot current_;
   std::function<TimestampMs()> clock_;
-  std::function<std::string()> mint_;   // the keys of markets
+  std::function<std::string()> mint_;  // the keys of markets
+  std::function<void(const std::string &)> notice_;
+  std::set<std::string> told_;          // what notice_ has been told, which it is told once
   std::unique_ptr<FactWriter> writer_;  // last: its thread ends first, with everything written
 };
 

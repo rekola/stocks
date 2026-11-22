@@ -41,3 +41,5 @@ std::vector<std::pair<std::string, std::string>> recognisedBy(NodeType type, con
         if (const auto * text = std::get_if<std::string>(&a.value); text && !text->empty()) out.emplace_back(p, *text);
   return out;
 }
+
+bool isUnique(NodeType type, const std::string & p) { return type == NodeType::Market && (p == predicate::mic || p == predicate::nordnetId); }

@@ -28,6 +28,7 @@
 
 #include <cstdio>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -105,31 +106,42 @@ int main(int argc, char ** argv) {
   }
 
   // What the sources said of the nodes is read from the file before they run. What goes wrong with the file is a message on
-  // the status line once the display is up (the ones that come when it is open are on stderr).
+  // the status line once the display is up.
   struct FactMessages {
     std::mutex mutex;
-    std::vector<std::string> early;
-    bool open = false;
+    std::vector<std::string> early;         // said before the display is up
+    std::function<void(std::string)> post;  // once it is: to the status line, from any thread
+    void say(std::string text) {
+      std::lock_guard lock(mutex);
+      if (post) post(std::move(text));
+      else early.push_back(std::move(text));
+    }
   };
   auto fact_messages = std::make_shared<FactMessages>();
   StoreOptions store_options;
+  // What the store refuses (a MIC that two markets would have) is said once, on the status line.
+  store_options.notice = [fact_messages](const std::string & text) { fact_messages->say("facts: " + text); };
   if (keep_facts) {
     const std::filesystem::path file = facts_file.empty() ? defaultFactsFile() : std::filesystem::path(facts_file);
-    if (!file.empty())
-      store_options.facts = openSqliteFactStore(file, [fact_messages](const std::string & text) {
-        std::lock_guard lock(fact_messages->mutex);
-        if (!fact_messages->open) fact_messages->early.push_back("facts: " + text);
-        else std::fprintf(stderr, "stocks: facts: %s\n", text.c_str());
-      });
+    if (!file.empty()) store_options.facts = openSqliteFactStore(file, [fact_messages](const std::string & text) { fact_messages->say("facts: " + text); });
   }
   std::shared_ptr<Store> store = makeMemoryStore(std::move(store_options));
   // The loader and the sources run on threads of their own and tell the UI thread what happened.
   cellui::ThreadInbox inbox(app->backend().eventLoop(), app->widgets());
   {
     std::lock_guard lock(fact_messages->mutex);
-    fact_messages->open = true;
-    for (std::string & text : fact_messages->early) inbox.post(SourceMessage{std::move(text)});
+    fact_messages->post = [&inbox](std::string text) { inbox.post(SourceMessage{std::move(text)}); };
+    for (std::string & text : fact_messages->early) fact_messages->post(std::move(text));
+    fact_messages->early.clear();
   }
+  // Declared after the inbox, so gone before it: nothing says anything to a display that is gone.
+  struct StopPosting {
+    FactMessages & messages;
+    ~StopPosting() {
+      std::lock_guard lock(messages.mutex);
+      messages.post = nullptr;
+    }
+  } stop_posting{*fact_messages};
   auto icons = std::make_shared<IconLoader>(makeHttp(), IconLoader::Options{.cache_dir = defaultIconCacheDir()}, [&inbox] { inbox.post(IconsLoaded{}); });
   auto history = std::make_shared<HistoryLoader>(
       store, makeHttp(), HistoryLoader::Options{}, [&inbox] { inbox.post(StoreChanged{}); },

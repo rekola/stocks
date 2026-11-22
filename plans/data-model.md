@@ -153,6 +153,14 @@ there is no server in this step.
   predicates that have not been said in this run; so a source that loads some predicates leaves the others as an earlier
   run left them, and a value said again with the same value changes nothing but its `updated`. A node with no edges
   is still not seen: `instruments()` of a fresh store is empty, and nothing selects a node that has none.
+- **No two markets share a MIC or an id at a source** (`isUnique()` in `NodeIdentity.cpp`). The store keeps the first and
+  refuses the second: a MIC or an id that another market has, in the store or among the held facts of an earlier run, is not
+  said of this one, and nothing changes (no version). Each refusal is told once through `StoreOptions::notice`, which the
+  program shows on the status line. A resolve that gives the MIC of one market and the id of another finds the first and
+  does not take the id from the second: that is two records of one market, which only merging them would settle, and it is
+  not attempted while edges refer to markets by id. A file that already says the same of two markets is told of when it is
+  read, and the lowest key is the market. Not enforced in the file itself: a unique index there would fail a whole batch for
+  one conflict, and would put the predicates into every backend.
 - **Layers** (`src/model/`): `Facts.h` has the plain `StoredFact`/`FactBatch` and the `FactStore` interface (`loadAll()`,
   `apply(batch)`), which a server-backed store can implement instead. `FactWriter` takes batches from the store's writers
   and gives them to the `FactStore` on a thread of its own, so a write never waits for the disk: facts that changed go

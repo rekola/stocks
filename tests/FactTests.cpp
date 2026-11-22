@@ -344,6 +344,80 @@ TEST(a_market_is_found_again_by_any_of_what_it_was_said_to_be) {
   CHECK(!store->snapshot()->fact(unknown.id, predicate::country));
 }
 
+TEST(two_markets_do_not_have_the_same_mic_or_the_same_id_at_a_source) {
+  Clock clock;
+  std::vector<std::string> told;
+  StoreOptions options = optionsFor(nullptr, clock);
+  options.notice = [&](const std::string & text) { told.push_back(text); };
+  auto store = makeMemoryStore(std::move(options));
+  Market a = store->resolveMarket({{predicate::name, "Nasdaq Helsinki"}, {predicate::mic, "XHEL"}, {predicate::nordnetId, "4"}});
+  Market b = store->resolveMarket({{predicate::name, "Nasdaq Stockholm"}});
+  const uint64_t version = store->snapshot()->version();
+
+  store->setAttribute(b.id, {predicate::mic, "XHEL"});  // a's
+  store->setAttribute(b.id, {predicate::nordnetId, "4"});
+  CHECK(!store->snapshot()->fact(b.id, predicate::mic) && !store->snapshot()->fact(b.id, predicate::nordnetId));
+  CHECK(std::get<std::string>(valueOf(*store->snapshot(), a.id, predicate::mic)) == "XHEL");  // the first keeps it
+  CHECK(store->snapshot()->version() == version);
+  CHECK(told.size() == 2 && told[0].find("mic XHEL") != std::string::npos && told[1].find("nordnet-id 4") != std::string::npos);
+  store->setAttribute(b.id, {predicate::mic, "XHEL"});
+  CHECK(told.size() == 2);  // each is told once
+
+  // What a market says of itself again is no conflict, and another one's own value is no conflict either.
+  store->setAttribute(a.id, {predicate::mic, "XHEL"});
+  store->setAttribute(b.id, {predicate::mic, "XSTO"});
+  CHECK(told.size() == 2 && std::get<std::string>(valueOf(*store->snapshot(), b.id, predicate::mic)) == "XSTO");
+  // The one in the others' names is no unique: two markets may have one name said (it says nothing of which is meant).
+  store->setAttribute(b.id, {predicate::name, "Nasdaq Helsinki"});
+  CHECK(told.size() == 2 && std::get<std::string>(valueOf(*store->snapshot(), b.id, predicate::name)) == "Nasdaq Helsinki");
+
+  // A resolve that says two markets are one (the MIC of the one, the id at a source of the other) finds the first, and the
+  // second's id is not taken from it.
+  Market c = store->resolveMarket({{predicate::mic, "XNYS"}, {predicate::nordnetId, "11"}});
+  Market d = store->resolveMarket({{predicate::mic, "XNAS"}});
+  Market found = store->resolveMarket({{predicate::mic, "XNAS"}, {predicate::nordnetId, "11"}});
+  CHECK(found.id == d.id && c.id.value != d.id.value);
+  CHECK(!store->snapshot()->fact(d.id, predicate::nordnetId));
+  CHECK(std::get<std::string>(valueOf(*store->snapshot(), c.id, predicate::nordnetId)) == "11");
+  CHECK(told.size() == 3);
+}
+
+TEST(a_mic_that_a_market_of_the_file_has_is_not_given_to_another) {
+  TempFile t;
+  Clock clock;
+  {
+    auto store = makeMemoryStore(optionsFor(openSqliteFactStore(t.file), clock));
+    store->resolveMarket({{predicate::mic, "XHEL"}, {predicate::name, "Nasdaq Helsinki"}});
+  }
+  std::vector<std::string> told;
+  StoreOptions options = optionsFor(openSqliteFactStore(t.file), clock);
+  options.notice = [&](const std::string & text) { told.push_back(text); };
+  auto store = makeMemoryStore(std::move(options));
+  Market other = store->resolveMarket({{predicate::name, "Somewhere else"}});  // not the held one
+  store->setAttribute(other.id, {predicate::mic, "XHEL"});
+  CHECK(!store->snapshot()->fact(other.id, predicate::mic) && told.size() == 1);
+  // Said first of the market that is meant, it is that market: the held one is found by its MIC.
+  Market hel = store->resolveMarket({{predicate::mic, "XHEL"}});
+  CHECK(hel.name == "Nasdaq Helsinki" && hel.id.value != other.id.value && told.size() == 1);
+}
+
+TEST(a_file_that_gives_two_markets_the_same_mic_is_told_of) {
+  TempFile t;
+  Clock clock;
+  {
+    auto facts = openSqliteFactStore(t.file);
+    FactBatch b;
+    b.changed = {{StoredType::Market, "one", predicate::mic, std::string("XHEL"), 1}, {StoredType::Market, "two", predicate::mic, std::string("XHEL"), 2}};
+    facts->apply(b);
+  }
+  std::vector<std::string> told;
+  StoreOptions options = optionsFor(openSqliteFactStore(t.file), clock);
+  options.notice = [&](const std::string & text) { told.push_back(text); };
+  auto store = makeMemoryStore(std::move(options));
+  CHECK(told.size() == 1 && told[0].find("mic XHEL") != std::string::npos && told[0].find("2 markets") != std::string::npos);
+  CHECK(store->resolveMarket({{predicate::mic, "XHEL"}}).id.valid());  // and goes on: the lowest key is the market
+}
+
 TEST(a_file_that_is_no_database_is_moved_aside_and_replaced) {
   TempFile t;
   {

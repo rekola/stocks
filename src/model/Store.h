@@ -101,17 +101,20 @@ class Snapshot {
   void hold(const std::vector<StoredFact> &);
   uint64_t revision() const { return version_ + checks_; }
   FactBatch takeFacts() { return std::exchange(outbox_, FactBatch{}); }
+  // What the writes since the last call refused to say, in words (`isUnique()`): a MIC or an id at a source that another market
+  // already has is not given to a second one.
+  std::vector<std::string> takeNotices() { return std::exchange(notices_, {}); }
 
  private:
-
   uint64_t version_ = 0;
   uint64_t checks_ = 0;
   TimestampMs now_ = 0;
-  std::function<std::string()> * mint_ = nullptr;  // set by the store for the length of a write
-  FactBatch outbox_;  // what to keep, for the store that made this copy
-  immer::map<std::string, std::vector<Attribute>> held_;  // "type key" to what an earlier run said of that node
+  std::function<std::string()> * mint_ = nullptr;                 // set by the store for the length of a write
+  FactBatch outbox_;                                              // what to keep, for the store that made this copy
+  std::vector<std::string> notices_;                              // what was refused, for the store that made this copy
+  immer::map<std::string, std::vector<Attribute>> held_;          // "type key" to what an earlier run said of that node
   immer::map<std::string, immer::set<std::string>> heldMarkets_;  // "type predicate \0 text" to the keys of the held markets that say it
-  immer::map<NodeRef, StoredNode> keyOf_;  // the key a node's facts are kept under, once it has one
+  immer::map<NodeRef, StoredNode> keyOf_;                         // the key a node's facts are kept under, once it has one
   Seq<Instrument> instruments_;
   Seq<Market> markets_;
   Seq<Dataset> datasets_;
@@ -191,6 +194,9 @@ struct StoreOptions {
   std::function<TimestampMs()> clock;
   // The keys of markets (NodeIdentity.h): 16 random hex digits by default; a test can count instead.
   std::function<std::string()> mint;
+  // Told, once for each, what the store refused or found wrong in what it was given or had kept: a MIC or an id at a source
+  // that two markets would have. Called with the store's writer lock held, so it must not call back into the store.
+  std::function<void(const std::string &)> notice;
 };
 
 // An in-memory store.

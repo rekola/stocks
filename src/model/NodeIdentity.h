@@ -24,3 +24,7 @@ StoredNode nodeKey(NodeType, const std::vector<Attribute> & said);
 // What a market is recognised by, strongest first, as (predicate, text): the facts of an earlier run say which market is the
 // one with this MIC, this id at a source or this name. Empty for a node that is kept under a key of its own (nodeKey()).
 std::vector<std::pair<std::string, std::string>> recognisedBy(NodeType, const std::vector<Attribute> & said);
+
+// Whether no two nodes of the type may say the same text of the predicate: what says which node is meant. Two markets do not
+// have the same MIC or the same id at a source. The store keeps the first and refuses the second.
+bool isUnique(NodeType, const std::string & predicate);
