@@ -293,6 +293,37 @@ TEST(a_runner_with_no_refreshing_source_finishes_by_itself) {
   CHECK(a == 1 && b == 1);
 }
 
+namespace {
+// A source that does not finish until another is loading too: it can only, if the runner loads them at once.
+class MeetingSource : public Source {
+ public:
+  MeetingSource(std::atomic<int> & arrived, std::atomic<bool> & met) : arrived_(arrived), met_(met) {}
+  std::string name() const override { return "meeting"; }
+  std::string description() const override { return ""; }
+  void load(Store &, Http &, SourceListener &) override {
+    arrived_++;
+    for (int i = 0; i < 400 && arrived_ < 2; i++) std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    if (arrived_ >= 2) met_ = true;
+  }
+
+ private:
+  std::atomic<int> & arrived_;
+  std::atomic<bool> & met_;
+};
+}  // namespace
+
+TEST(the_runner_loads_its_sources_at_once) {
+  std::shared_ptr<Store> store = makeMemoryStore();
+  std::atomic<int> arrived{0};
+  std::atomic<bool> first{false}, second{false};
+  std::vector<std::unique_ptr<Source>> sources;
+  sources.push_back(std::make_unique<MeetingSource>(arrived, first));
+  sources.push_back(std::make_unique<MeetingSource>(arrived, second));
+  SourceRunner runner(store, std::move(sources), [] {}, [](std::string) {});
+  runner.wait();
+  CHECK(first && second);  // one after the other, the first would have waited for the second in vain
+}
+
 TEST(yahoo_makes_the_instrument_from_the_isin_in_its_list_and_the_same_node_as_another_source) {
   auto store = makeMemoryStore();
   // Nordnet made it first, by its ISIN, with its own edge.

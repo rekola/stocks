@@ -23,7 +23,7 @@ session if the first gives nothing (no network, a refusal).
     build/stocks --ui window     # in a window, when cellui is built with GTK
     build/stocks --source synthetic   # made-up prices, no network
     build/stocks --market "Nasdaq Helsinki"   # load only that list
-    build/stocks --source nordnet,funds:NAME   # several sources, one after another; funds:NAME is a fund company by its schema, data/funds/NAME.json (shown under All)
+    build/stocks --source nordnet,funds:NAME   # several sources, at once; funds:NAME is a fund company by its schema, data/funds/NAME.json (shown under All)
 
 Keys: arrows, PgUp/PgDn, Home/End move; Tab moves between the tags and the table; `M-x` (`Ctrl+Shift+P` on
 the desktop keymap) opens the command palette, where every command is listed with

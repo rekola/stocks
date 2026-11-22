@@ -2,7 +2,7 @@
 // candles that data sources fill on a thread of their own.
 //   stocks                 on the display cellui picks, with Nordnet's data, or Yahoo's if Nordnet gives nothing
 //   stocks --ui terminal   in the terminal;  --ui window  in a window
-//   stocks --source NAME   the data source (several, comma-separated, run one after another): auto (the default: nordnet, and yahoo if nordnet gives nothing),
+//   stocks --source NAME   the data source (several, comma-separated, run at once): auto (the default: nordnet, and yahoo if nordnet gives nothing),
 //                          nordnet, yahoo, funds:SCHEMA (a fund company: a schema in data/funds, or a schema file) or synthetic
 //   stocks --lists DIR     the instrument lists of the yahoo and synthetic sources (default: data/lists)
 //   stocks --market NAME   of those lists, load only that market, e.g. "Nasdaq Helsinki" (repeatable)
@@ -82,7 +82,7 @@ int main(int argc, char ** argv) {
   // One source, for now: the instrument lists are the yahoo source's own (and the synthetic one follows them); each reads
   // them when it loads.
   ListSpec lists{list_directory, market_names};
-  // --source takes one name or several, separated by commas ("nordnet,yahoo"): they run one after another.
+  // --source takes one name or several, separated by commas ("nordnet,funds:NAME"): they run at once, each on a thread of its own.
   std::vector<std::unique_ptr<Source>> sources;
   for (size_t from = 0; from <= source_name.size();) {
     size_t comma = source_name.find(',', from);
@@ -102,6 +102,8 @@ int main(int argc, char ** argv) {
   auto history = std::make_shared<HistoryLoader>(
       store, makeHttp(), HistoryLoader::Options{}, [&inbox] { inbox.post(StoreChanged{}); },
       [&inbox](std::string text) { inbox.post(SourceMessage{std::move(text)}); });
+  // A source that has the history of what it found, but not with the rest, hands the loader what loads it when it is wanted.
+  for (const auto & s : sources) history->addProvider(s->historyProvider());
   Browser browser(*app, store, icons, history);
   SourceRunner runner(
       store, std::move(sources), [&inbox] { inbox.post(StoreChanged{}); },
