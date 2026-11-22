@@ -12,6 +12,7 @@
 #include <fstream>
 #include <limits>
 #include <map>
+#include <set>
 #include <mutex>
 #include <thread>
 
@@ -258,10 +259,66 @@ TEST(facts_follow_a_node_to_a_stronger_identity) {
 TEST(what_identifies_a_node) {
   CHECK(nodeKey(NodeType::Instrument, {{predicate::symbol, "EUR"}}) == "symbol:EUR");
   CHECK(nodeKey(NodeType::Instrument, {{predicate::symbol, "ACME"}, {predicate::isin, kIsin}}) == std::string("isin:") + kIsin);
-  CHECK(nodeKey(NodeType::Market, {{predicate::name, "Nasdaq Helsinki"}, {predicate::nordnetId, "4"}}) == "nordnet-id:4");
-  CHECK(nodeKey(NodeType::Market, {{predicate::nordnetId, "4"}, {predicate::mic, "XHEL"}}) == "mic:XHEL");
   CHECK(nodeKey(NodeType::Dataset, {{predicate::name, "provider-a"}}) == "name:provider-a");
   CHECK(nodeKey(NodeType::Dataset, {{"other", "x"}}).empty());
+  // A market has no key of what it is said to be: it is recognised by it.
+  CHECK(nodeKey(NodeType::Market, {{predicate::mic, "XHEL"}}).empty());
+  const auto by = recognisedBy(NodeType::Market, {{predicate::name, "Nasdaq Helsinki"}, {predicate::nordnetId, "4"}, {predicate::mic, "XHEL"}});
+  CHECK(by.size() == 3 && by[0].first == predicate::mic && by[1].first == predicate::nordnetId && by[2].first == predicate::name);
+  CHECK(recognisedBy(NodeType::Market, {{predicate::country, "FI"}}).empty() && recognisedBy(NodeType::Instrument, {{predicate::mic, "X"}}).empty());
+}
+
+TEST(a_market_is_kept_under_a_key_of_its_own_and_its_mic_is_a_fact) {
+  TempFile t;
+  Clock clock;
+  {
+    auto store = makeMemoryStore(optionsFor(openSqliteFactStore(t.file), clock));
+    Market hel = store->resolveMarket({{predicate::name, "Nasdaq Helsinki"}});  // known by its name first
+    store->setAttribute(hel.id, {predicate::mic, "XHEL"});                      // its MIC learned later
+    Market other = store->resolveMarket({{predicate::nordnetId, "7"}});         // one with no MIC and no name
+    store->setAttribute(other.id, {predicate::country, "SE"});
+  }
+  std::set<std::string> keys;
+  std::map<std::string, Value> mic;
+  for (const StoredFact & f : openSqliteFactStore(t.file)->loadAll()) {
+    CHECK(f.type == NodeType::Market);
+    keys.insert(f.node);
+    CHECK(f.node.find("XHEL") == std::string::npos && f.node.find("Helsinki") == std::string::npos);  // no fact's value is in a key
+    if (f.predicate == predicate::mic) mic[f.node] = f.value;
+  }
+  CHECK(keys.size() == 2);  // the market learned its MIC later kept its key, and is one
+  CHECK(mic.size() == 1 && std::get<std::string>(mic.begin()->second) == "XHEL");
+}
+
+TEST(a_market_is_found_again_by_any_of_what_it_was_said_to_be) {
+  TempFile t;
+  Clock clock;
+  {
+    auto store = makeMemoryStore(optionsFor(openSqliteFactStore(t.file), clock));
+    Market hel = store->resolveMarket({{predicate::nordnetId, "4"}, {predicate::mic, "XHEL"}, {predicate::name, "Nasdaq Helsinki"}});
+    store->setAttribute(hel.id, {predicate::country, "FI"});
+    Market nameless = store->resolveMarket({{predicate::nordnetId, "9"}});  // no MIC, no name
+    store->setAttribute(nameless.id, {predicate::country, "NO"});
+    Market other = store->resolveMarket({{predicate::name, "Nasdaq Stockholm"}});
+    store->setAttribute(other.id, {predicate::country, "SE"});
+  }
+  for (auto said : std::vector<std::vector<Attribute>>{{{predicate::mic, "XHEL"}}, {{predicate::nordnetId, "4"}}, {{predicate::name, "Nasdaq Helsinki"}}}) {
+    auto store = makeMemoryStore(optionsFor(openSqliteFactStore(t.file), clock));
+    Market m = store->resolveMarket(said);
+    CHECK(std::get<std::string>(valueOf(*store->snapshot(), m.id, predicate::country)) == "FI");
+    CHECK(std::get<std::string>(valueOf(*store->snapshot(), m.id, predicate::mic)) == "XHEL");
+    CHECK(std::get<std::string>(valueOf(*store->snapshot(), m.id, predicate::name)) == "Nasdaq Helsinki");
+  }
+  // Markets with no MIC are as good: the id at a source finds the one, the name the other, and neither takes the other's facts.
+  auto store = makeMemoryStore(optionsFor(openSqliteFactStore(t.file), clock));
+  Market nameless = store->resolveMarket({{predicate::nordnetId, "9"}});
+  Market sto = store->resolveMarket({{predicate::name, "Nasdaq Stockholm"}});
+  CHECK(nameless.id.value != sto.id.value);
+  CHECK(std::get<std::string>(valueOf(*store->snapshot(), nameless.id, predicate::country)) == "NO");
+  CHECK(std::get<std::string>(valueOf(*store->snapshot(), sto.id, predicate::country)) == "SE");
+  // One not seen before is a new market with nothing held for it.
+  Market unknown = store->resolveMarket({{predicate::mic, "XNYS"}});
+  CHECK(!store->snapshot()->fact(unknown.id, predicate::country));
 }
 
 TEST(a_file_that_is_no_database_is_moved_aside_and_replaced) {

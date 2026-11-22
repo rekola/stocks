@@ -97,6 +97,7 @@ class Snapshot {
   // made by it). `revision` is the version plus the writes of facts that were only said again, which no version counts: a
   // store publishes a copy when it moves. `takeFacts` is what the writes since the last call ask of the disk.
   void setTime(TimestampMs now) { now_ = now; }
+  void setKeyMaker(std::function<std::string()> * mint) { mint_ = mint; }  // for the keys of nodes kept under a surrogate
   void hold(const std::vector<StoredFact> &);
   uint64_t revision() const { return version_ + checks_; }
   FactBatch takeFacts() { return std::exchange(outbox_, FactBatch{}); }
@@ -106,8 +107,10 @@ class Snapshot {
   uint64_t version_ = 0;
   uint64_t checks_ = 0;
   TimestampMs now_ = 0;
+  std::function<std::string()> * mint_ = nullptr;  // set by the store for the length of a write
   FactBatch outbox_;  // what to keep, for the store that made this copy
   immer::map<std::string, std::vector<Attribute>> held_;  // "type key" to what an earlier run said of that node
+  immer::map<std::string, immer::set<std::string>> heldMarkets_;  // "type predicate \0 text" to the keys of the held markets that say it
   immer::map<NodeRef, std::string> keyOf_;  // the key a node's facts are kept under, once it has one
   Seq<Instrument> instruments_;
   Seq<Market> markets_;
@@ -186,6 +189,8 @@ struct StoreOptions {
   FactWriter::Options writer;
   // The time of a write, for `updated`. The wall clock by default; a test sets its own.
   std::function<TimestampMs()> clock;
+  // The keys of markets (NodeIdentity.h): 16 random hex digits by default; a test can count instead.
+  std::function<std::string()> mint;
 };
 
 // An in-memory store.

@@ -5,7 +5,9 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cstdio>
 #include <map>
+#include <random>
 #include <memory>
 #include <functional>
 #include <mutex>
@@ -239,6 +241,13 @@ void Snapshot::hold(const std::vector<StoredFact> & facts) {
   for (auto & [key, attrs] : grouped) {
     const auto * old = held_.find(key);
     if (old) attrs.insert(attrs.begin(), old->begin(), old->end());
+    if (key[0] == static_cast<char>('0' + static_cast<int>(NodeType::Market)))
+      for (const Attribute & a : attrs)
+        if (const auto * text = std::get_if<std::string>(&a.value)) {
+          const std::string said = indexKey(NodeType::Market, a.predicate, *text);
+          const auto * keys = heldMarkets_.find(said);
+          heldMarkets_ = heldMarkets_.set(said, (keys ? *keys : immer::set<std::string>{}).insert(key.substr(1)));
+        }
     held_ = held_.set(key, std::move(attrs));
   }
 }
@@ -272,9 +281,10 @@ void Snapshot::setAttributes(NodeRef n, const std::vector<Attribute> & in) {
     byAttribute_ = byAttribute_.set(key, (ids ? *ids : immer::set<uint32_t>{}).insert(n.id));
   };
 
-  // What an earlier run said of this node, now that it is known by what it was kept under: it stands where this run has
-  // not said otherwise, with the times it had, so a value said again is a check and not a change.
-  bool adopted = false;
+  // The key the node's facts are kept under, once it has one. An instrument or a dataset has what identifies it; a market has
+  // a key of its own, which is that of the held market (what an earlier run kept) that says it is what this one is said to be
+  // (its MIC, its id at a source, its name), else one made new. A market that has its key keeps it whatever is said of it.
+  std::string key;
   {
     std::vector<Attribute> after = attrs;
     for (const Attribute & a : said) {
@@ -282,18 +292,41 @@ void Snapshot::setAttributes(NodeRef n, const std::vector<Attribute> & in) {
       if (at != after.end()) at->value = a.value;
       else after.push_back(a);
     }
-    const std::string key = nodeKey(n.type, after);
-    if (!key.empty())
-      if (const auto * held = held_.find(heldKey(n.type, key))) {
-        for (const Attribute & h : *held) {
-          if (find(h.predicate) != attrs.end()) continue;
-          attrs.push_back(h);
-          index(h);
-          adopted = true;
-        }
-        held_ = held_.erase(heldKey(n.type, key));
+    if (n.type != NodeType::Market) {
+      key = nodeKey(n.type, after);
+    } else if (const std::string * known = keyOf_.find(n)) {
+      key = *known;
+    } else if (const auto recognised = recognisedBy(n.type, after); !recognised.empty()) {
+      for (const auto & [p, text] : recognised) {
+        const auto * keys = heldMarkets_.find(indexKey(n.type, p, text));
+        if (!keys || keys->size() == 0) continue;
+        key = *std::min_element(keys->begin(), keys->end());
+        break;
       }
+      if (key.empty() && mint_ && *mint_) key = (*mint_)();
+    }
   }
+
+  // What an earlier run said of this node, now that it is known by what it was kept under: it stands where this run has
+  // not said otherwise, with the times it had, so a value said again changes nothing but its time.
+  bool adopted = false;
+  if (!key.empty())
+    if (const auto * held = held_.find(heldKey(n.type, key))) {
+      for (const Attribute & h : *held) {
+        if (const auto * text = std::get_if<std::string>(&h.value); text && n.type == NodeType::Market) {
+          const std::string said_key = indexKey(n.type, h.predicate, *text);
+          if (const auto * keys = heldMarkets_.find(said_key)) {
+            auto rest = keys->erase(key);
+            heldMarkets_ = rest.size() ? heldMarkets_.set(said_key, rest) : heldMarkets_.erase(said_key);
+          }
+        }
+        if (find(h.predicate) != attrs.end()) continue;
+        attrs.push_back(h);
+        index(h);
+        adopted = true;
+      }
+      held_ = held_.erase(heldKey(n.type, key));
+    }
 
   std::vector<size_t> changed, rechecked;  // positions in attrs
   for (const Attribute & a : said) {
@@ -322,7 +355,6 @@ void Snapshot::setAttributes(NodeRef n, const std::vector<Attribute> & in) {
 
   // What goes to the disk: the facts of this write under the node's key; and where the node has just got a key, or a
   // stronger one, all of its facts under it, and none under the old.
-  const std::string key = nodeKey(n.type, attrs);
   const std::string * known = keyOf_.find(n);
   if (!key.empty()) {
     if (!known || *known != key) {
@@ -510,7 +542,17 @@ class SnapshotSlot {
 
 class MemoryStore : public Store {
  public:
-  explicit MemoryStore(StoreOptions options) : current_(std::make_shared<const Snapshot>()), clock_(std::move(options.clock)) {
+  explicit MemoryStore(StoreOptions options)
+      : current_(std::make_shared<const Snapshot>()), clock_(std::move(options.clock)), mint_(std::move(options.mint)) {
+    if (!mint_)
+      mint_ = [] {
+        static std::mutex m;
+        static std::mt19937_64 random{std::random_device{}()};
+        std::lock_guard lock(m);
+        char out[17];
+        std::snprintf(out, sizeof out, "%016llx", static_cast<unsigned long long>(random()));
+        return std::string(out);
+      };
     if (!clock_)
       clock_ = [] {
         return static_cast<TimestampMs>(
@@ -578,7 +620,9 @@ class MemoryStore : public Store {
     std::shared_ptr<const Snapshot> old = current_.load();
     Snapshot next = *old;
     next.setTime(clock_());
+    next.setKeyMaker(&mint_);
     const auto finish = [&] {
+      next.setKeyMaker(nullptr);
       FactBatch facts = next.takeFacts();
       if (writer_) writer_->post(std::move(facts));
       if (next.revision() != old->revision()) current_.store(std::make_shared<const Snapshot>(std::move(next)));
@@ -596,6 +640,7 @@ class MemoryStore : public Store {
   std::mutex mutex_;
   SnapshotSlot current_;
   std::function<TimestampMs()> clock_;
+  std::function<std::string()> mint_;   // the keys of markets
   std::unique_ptr<FactWriter> writer_;  // last: its thread ends first, with everything written
 };
 

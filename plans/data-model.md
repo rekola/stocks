@@ -140,11 +140,15 @@ there is no server in this step.
   `Snapshot::fact()` return it (`Attribute::updated`); `Attribute` equality ignores it. A write of an unchanged value moves
   `updated` and makes **no new version**, so nothing that watches the version (the table) wakes; a changed value makes one.
 - **The key of a node** is not its id, which belongs to one run, but what identifies it (`src/model/NodeIdentity.cpp`, the
-  one place): an instrument's ISIN, or its symbol where it has none; a market's MIC, else the id a source gives it, else its
-  name; a dataset's name. Facts of a node that has none of these yet are not written until it has, and when a stronger one is
-  learned the facts move to it (the old rows are forgotten in the same batch).
+  one place): an instrument's ISIN, or its symbol where it has none; a dataset's name. Facts of a node that has none of these
+  yet are not written until it has, and when a stronger one is learned the facts move to it (the old rows are forgotten in
+  the same batch). **A market has a surrogate key**, 16 random hex digits the store makes when it first keeps a fact of the
+  market: some markets have no MIC, so the MIC is a fact of the market like its name or its id at a source, not its key. The
+  key never changes however much is learned of the market. A market of a later run is *recognised* by what it is said to be: the
+  held market that has the same MIC, else the same id at a source, else the same name (`recognisedBy()`), and a market none
+  of the held ones is said to be is new.
 - **Restoring makes no node.** The file is read into the store before the sources run and kept as *held* facts under their
-  node keys. A node that is made again (a source resolves it by its ISIN, MIC or name) takes what is held for it, for the
+  node keys. A node that is made again (a source resolves it by its ISIN, a market by its MIC, source id or name) takes what is held for it, for the
   predicates that have not been said in this run; so a source that loads some predicates leaves the others as an earlier
   run left them, and a value said again with the same value changes nothing but its `updated`. A node with no edges
   is still not seen: `instruments()` of a fresh store is empty, and nothing selects a node that has none.

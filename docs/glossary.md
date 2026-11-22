@@ -15,9 +15,11 @@ new one started.
 
 **Node key**
 What a node's facts are kept under in the facts file, since the ids of a run
-mean nothing in the next: an instrument's ISIN (its symbol where it has none), a
-market's MIC (else the id a source gives it, else its name), a dataset's name.
-When a stronger one is learned the facts move to it.
+mean nothing in the next: an instrument's ISIN (its symbol where it has none) and
+a dataset's name. A market has a surrogate key the store makes the first time it
+keeps a fact of it: its MIC, the id a source gives it and its name are facts of
+it like any other (some markets have no MIC), and a market of a later run is
+recognised by them. When an instrument gets a stronger key, its facts move to it.
 
 **Updated**
 When a source last said a fact, whether or not the value was the same as

@@ -19,10 +19,20 @@ std::string nodeKey(NodeType type, const std::vector<Attribute> & said) {
   switch (type) {
     case NodeType::Instrument:
       return firstOf(said, {predicate::isin, predicate::symbol});
-    case NodeType::Market:
-      return firstOf(said, {predicate::mic, predicate::nordnetId, predicate::name});
     case NodeType::Dataset:
       return firstOf(said, {predicate::name});
+    case NodeType::Market:
+      break;  // a surrogate
   }
   return {};
+}
+
+std::vector<std::pair<std::string, std::string>> recognisedBy(NodeType type, const std::vector<Attribute> & said) {
+  std::vector<std::pair<std::string, std::string>> out;
+  if (type != NodeType::Market) return out;
+  for (const char * p : {predicate::mic, predicate::nordnetId, predicate::name})
+    for (const Attribute & a : said)
+      if (a.predicate == p)
+        if (const auto * text = std::get_if<std::string>(&a.value); text && !text->empty()) out.emplace_back(p, *text);
+  return out;
 }
