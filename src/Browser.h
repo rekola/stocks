@@ -49,6 +49,8 @@ class Browser {
   void showHelp();
   // The link text from the backend, drawn again when it changed.
   void showLink();
+  // The attribute viewer for the selected row, from the store's snapshot now.
+  void showInfo();
   void defineCommands();
   void bindKeys();
 
@@ -71,5 +73,5 @@ class Browser {
   double min_refresh_ = 0.25;
   std::chrono::steady_clock::time_point last_refresh_{};
   bool pending_ = false;        // the store changed and the table does not show it yet
-  cellui::Connection resized_, display_, tag_, message_, frame_, changed_, said_, loaded_;
+  cellui::Connection button_, resized_, display_, tag_, message_, frame_, changed_, said_, loaded_;
 };

@@ -324,3 +324,92 @@ TEST(yahoo_keeps_its_own_type_on_the_edge) {
   CHECK(typeOf(edgeOf(*s, kGold, "USD", "Commodities", "yahoo")) == "FUTURE");  // the contract, not the metal
   CHECK(s->findInstrumentByIsin(kGold)->kind == InstrumentKind::Commodity);
 }
+
+#include "source/AutoSource.h"
+#include "source/NordnetSource.h"
+
+namespace {
+
+// A source that says what it did: it changes the store `changes` times, or none.
+class Scripted : public Source {
+ public:
+  Scripted(std::string n, int changes, std::chrono::milliseconds every = {}) : name_(std::move(n)), changes_(changes), every_(every) {}
+  std::string name() const override { return name_; }
+  std::string description() const override { return ""; }
+  void load(Store &, Http &, SourceListener & listener) override {
+    loads++;
+    for (int i = 0; i < changes_; i++) listener.changed();
+  }
+  std::chrono::milliseconds refreshInterval() const override { return every_; }
+  int loads = 0;
+
+ private:
+  std::string name_;
+  int changes_;
+  std::chrono::milliseconds every_;
+};
+
+}  // namespace
+
+TEST(auto_stays_with_the_primary_when_it_gives_something) {
+  auto store = makeMemoryStore();
+  FakeHttp http;
+  auto primary = std::make_unique<Scripted>("nordnet", 2, std::chrono::minutes(5));
+  auto fallback = std::make_unique<Scripted>("yahoo", 1);
+  Scripted * p = primary.get(), * f = fallback.get();
+  AutoSource source(std::move(primary), std::move(fallback));
+  Listener listener;
+  source.load(*store, http, listener);
+  source.load(*store, http, listener);
+  CHECK(p->loads == 2 && f->loads == 0);
+  CHECK(listener.changes == 4 && listener.messages.empty());
+  CHECK(source.refreshInterval() == std::chrono::minutes(5));  // the primary's
+}
+
+TEST(auto_jumps_to_the_fallback_when_the_primary_gives_nothing_and_stays_there) {
+  auto store = makeMemoryStore();
+  FakeHttp http;
+  auto primary = std::make_unique<Scripted>("nordnet", 0, std::chrono::minutes(5));
+  auto fallback = std::make_unique<Scripted>("yahoo", 3);
+  Scripted * p = primary.get(), * f = fallback.get();
+  AutoSource source(std::move(primary), std::move(fallback));
+  Listener listener;
+  source.load(*store, http, listener);
+  CHECK(p->loads == 1 && f->loads == 1);
+  CHECK(listener.changes == 3);
+  CHECK(listener.messages.size() == 1 && listener.messages[0] == "nordnet gave nothing: using yahoo");
+  source.load(*store, http, listener);  // the next load goes to the fallback alone
+  CHECK(p->loads == 1 && f->loads == 2);
+  CHECK(source.refreshInterval() == std::chrono::milliseconds(0));  // the fallback's: once
+}
+
+TEST(auto_with_nordnet_that_cannot_be_reached_loads_yahoo) {
+  auto store = makeMemoryStore();
+  FakeHttp http;
+  http.answer = [](const std::string & url) {
+    if (url.find("nordnet") != std::string::npos || url.find("nntech") != std::string::npos) return failed(0);  // no answer
+    return failed(404);
+  };
+  Listener listener;
+  AutoSource source(std::make_unique<NordnetSource>(NordnetSource::defaultLists(), std::chrono::milliseconds(0)),
+                    std::make_unique<YahooSource>(testList(), "1y", std::chrono::milliseconds(0)));
+  source.load(*store, http, listener);
+  bool jumped = false, asked = false;
+  for (const std::string & m : listener.messages) jumped = jumped || m == "nordnet gave nothing: using yahoo";
+  for (const std::string & u : http.urls) asked = asked || u.find("finance.yahoo.com") != std::string::npos;
+  CHECK(jumped && asked);
+}
+
+TEST(a_stopped_primary_has_not_failed) {
+  auto store = makeMemoryStore();
+  FakeHttp http;
+  auto primary = std::make_unique<Scripted>("nordnet", 0);
+  auto fallback = std::make_unique<Scripted>("yahoo", 1);
+  Scripted * f = fallback.get();
+  AutoSource source(std::move(primary), std::move(fallback));
+  struct Stopped : Listener {
+    bool cancelled() const override { return true; }
+  } listener;
+  source.load(*store, http, listener);
+  CHECK(f->loads == 0 && listener.messages.empty());  // cancelled: nothing is decided
+}

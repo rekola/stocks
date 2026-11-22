@@ -1,5 +1,6 @@
 #include "Browser.h"
 
+#include "AttributeView.h"
 #include "Quotes.h"
 #include "source/Source.h"
 
@@ -19,11 +20,24 @@ struct Preset {
 constexpr Preset kPresets[] = {{"Commodities", "show-commodities"}, {"Nasdaq Helsinki", "show-nasdaq-helsinki"}, {"Currencies", "show-currencies"},
                               {"Indices", "show-indices"}, {"All", "show-all"}};
 
+// What the buttons at the end of a row do: a glyph and the command that runs for the selected row. A new action is a new line.
+struct RowAction {
+  const char * glyph;
+  const char * command;
+};
+constexpr RowAction kRowActions[] = {{kInfoGlyph, "show-info"}};
+
 // The edges of a preset: a market's, or everything.
 std::vector<EdgeKey> edgesOf(const Snapshot & snapshot, const Preset & preset) {
   if (std::string(preset.tag) == "All") return allQuoteEdges(snapshot);
   std::optional<Market> market = snapshot.findMarket(preset.tag);
   return market ? quoteEdges(snapshot, market->id) : std::vector<EdgeKey>{};
+}
+
+std::vector<ButtonFace> buttonGlyphs() {
+  std::vector<ButtonFace> glyphs;
+  for (const RowAction & action : kRowActions) glyphs.push_back(action.glyph);
+  return glyphs;
 }
 
 // Wide enough for "Link: Full speed, 480 kB/s, RTT 38 ms (pinned)".
@@ -53,7 +67,8 @@ Browser::Browser(Application & app, std::shared_ptr<Store> store, std::shared_pt
                      {.title = "Dataset", .width = 10},
                      {.title = "Price", .width = 10, .align = Align::RIGHT},
                      {.title = "Change", .width = 9, .align = Align::RIGHT},
-                     {.title = "60 days", .width = 22, .sortable = false, .trace = true}});
+                     {.title = "60 days", .width = 22, .sortable = false, .trace = true},
+                     {.title = "", .buttons = buttonGlyphs()}});
   defineCommands();
   bindKeys();
   showHelp();
@@ -70,6 +85,10 @@ Browser::Browser(Application & app, std::shared_ptr<Store> store, std::shared_pt
   app.backend().setLinkHandler([this](const LinkStatus &) {
     showLink();
     app_.requestFrame();
+  });
+  // The table selected the row; the button's command acts on it.
+  button_ = table_.button_clicked.connect([this](int, int, int button) {
+    if (button >= 0 && button < static_cast<int>(std::size(kRowActions))) app_.execute(kRowActions[button].command);
   });
   tag_ = tags_.chosen.connect([this](int i) {
     if (i < 0) return;
@@ -136,7 +155,7 @@ void Browser::requestIcons() {
     std::string url = quotes->iconUrl(row);
     if (!url.empty()) urls.push_back(std::move(url));
   };
-  const int margin = 3 * view;
+  const int margin = view;
   for (int p = first; p < std::min(count, first + view + margin); p++) add(p);  // on screen, then the screens after
   for (int p = first - 1; p >= std::max(0, first - margin); p--) add(p);        // then the ones before
   icons_->want(urls);
@@ -202,6 +221,23 @@ void Browser::showHelp() {
                 app_.bindingFor("quit") + ": quit");
 }
 
+void Browser::showInfo() {
+  auto quotes = std::dynamic_pointer_cast<Quotes>(table_.model());
+  if (!quotes || table_.selectedRow() < 0) {
+    status_.setMessage("No row selected");
+    return;
+  }
+  const EdgeKey edge = quotes->edge(table_.selectedRow());
+  auto snapshot = store_->snapshot();
+  std::string label = snapshot->symbol(edge);
+  if (label.empty())
+    if (auto base = snapshot->instrument(edge.base)) label = base->name;
+  std::string title = "Info: " + label;
+  AttributeModal modal(app_.widgets(), app_.root(), app_.backend().eventLoop(), std::move(title), snapshot, buildInfo(*snapshot, edge));
+  modal.showModal();
+  app_.requestFrame();
+}
+
 void Browser::defineCommands() {
   CommandRegistry & commands = app_.commands();
   for (size_t i = 0; i < std::size(kPresets); i++) {
@@ -212,12 +248,15 @@ void Browser::defineCommands() {
   commands.define("previous-preset", "Show the previous preset", [this] { tags_.select(std::max(tags_.selected() - 1, 0)); });
   commands.define("focus-tags", "Move the keyboard to the preset tags", [this] { app_.input().setFocus(&tags_); });
   commands.define("focus-table", "Move the keyboard to the table", [this] { app_.input().setFocus(&table_); });
+  commands.define("show-info", "Show everything known about the selected row", [this] { showInfo(); });
   commands.define("quit", "Leave stocks", [this] { app_.quit(); });
 }
 
 void Browser::bindKeys() {
   Keymap & keymap = app_.keymap();
   keymap.bind("q", "quit");
+  keymap.bind("i", "show-info");
+  keymap.bind(KeymapProfile::TERMINAL, "C-x =", "show-info");  // where the point is, as in Emacs
   keymap.bind(KeymapProfile::TERMINAL, "C-x C-c", "quit");
   keymap.bind(KeymapProfile::DESKTOP, "Ctrl+Q", "quit");
   assert(keymap.allBoundIn(app_.commands()));

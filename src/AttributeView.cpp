@@ -1,0 +1,201 @@
+#include "AttributeView.h"
+
+#include "Quotes.h"
+#include "model/Dates.h"
+
+#include <cellui/Input.h>
+#include <cellui/Scrollbar.h>
+#include <cellui/Utf8.h>
+
+#include <algorithm>
+#include <cmath>
+
+using namespace cellui;
+
+namespace {
+
+constexpr int kMaxWidth = 100;
+constexpr int kMaxPredicateWidth = 26;
+constexpr const char * kHint = "Esc: close  Up/Down, PgUp/PgDn, Home/End: scroll";
+
+std::string twoDigits(int n) { return (n < 10 ? "0" : "") + std::to_string(n); }
+
+// One overload for each alternative of Value and no template to catch the rest: a new alternative does not compile here.
+struct ValueText {
+  const std::string & predicate;
+  ShownValue operator()(std::monostate) const { return {}; }
+  ShownValue operator()(const std::string & s) const { return {s, std::nullopt}; }
+  ShownValue operator()(int64_t n) const { return {isDayPredicate(predicate) ? dateText(n) : std::to_string(n), std::nullopt}; }
+  ShownValue operator()(double d) const { return {realText(d), std::nullopt}; }
+  ShownValue operator()(bool b) const { return {b ? "yes" : "no", std::nullopt}; }
+};
+
+// The attributes of a node: `first` in that order, then the rest alphabetically.
+std::vector<InfoRow> attributeRows(const Snapshot & snapshot, NodeRef node, const std::vector<std::string> & first) {
+  std::vector<Attribute> all = snapshot.attributes(node);
+  std::stable_sort(all.begin(), all.end(), [&](const Attribute & a, const Attribute & b) {
+    auto rank = [&](const std::string & p) { return static_cast<size_t>(std::find(first.begin(), first.end(), p) - first.begin()); };
+    const size_t ra = rank(a.predicate), rb = rank(b.predicate);
+    if (ra != rb) return ra < rb;
+    return a.predicate < b.predicate;
+  });
+  std::vector<InfoRow> rows;
+  for (const Attribute & a : all) rows.push_back({a.predicate, showValue(a.predicate, a.value)});
+  return rows;
+}
+
+// A bar's time as a date, and for an intraday bar its minute (UTC).
+std::string barTime(Resolution r, int64_t time) {
+  if (isDateResolution(r)) return dateText(time);
+  const Timestamp t = instantOfSlot(r, time);
+  const int64_t secondOfDay = t - (dayNumberOfInstant(t) - kUnixEpochDayNumber) * 86400;
+  return dateText(dayNumberOfInstant(t)) + " " + twoDigits(static_cast<int>(secondOfDay / 3600)) + ":" + twoDigits(static_cast<int>(secondOfDay % 3600 / 60));
+}
+
+}  // namespace
+
+std::string realText(double v) {
+  if (!isDefined(v)) return "-";
+  std::string s = fixed(v, 4);  // never printf: its point is the locale's
+  if (s.find('.') != std::string::npos) {
+    while (s.back() == '0') s.pop_back();
+    if (s.back() == '.') s.pop_back();
+  }
+  return s;
+}
+
+std::string dateText(int64_t number) {
+  const Date d = dateOfDayNumber(number);
+  return std::to_string(d.year) + "-" + twoDigits(static_cast<int>(d.month)) + "-" + twoDigits(static_cast<int>(d.day));
+}
+
+bool isDayPredicate(const std::string & predicate) { return predicate.size() > 4 && predicate.compare(predicate.size() - 4, 4, "-day") == 0; }
+
+ShownValue showValue(const std::string & predicate, const Value & value) { return std::visit(ValueText{predicate}, value); }
+
+std::vector<InfoSection> buildInfo(const Snapshot & snapshot, const EdgeKey & edge) {
+  std::vector<InfoSection> out;
+
+  InfoSection listing{"Listing", {}};
+  auto add = [&](const char * predicate, std::string text) { listing.rows.push_back({predicate, {std::move(text), std::nullopt}}); };
+  const std::optional<Listing> l = snapshot.listing(edge);
+  add("symbol", l && !l->symbol.empty() ? l->symbol : snapshot.symbol(edge));
+  if (l) {
+    add("identifier", l->identifier);
+    add("order book", l->orderBook);
+    add("type", l->type);
+    add("name", l->name);
+  }
+  if (auto d = snapshot.dataset(edge.dataset)) add("dataset", d->name);
+  if (auto m = snapshot.market(edge.market)) add("market", m->name);
+  if (auto q = snapshot.instrument(edge.quote)) add("quote currency", q->symbol);
+  out.push_back(std::move(listing));
+
+  out.push_back({"Instrument", attributeRows(snapshot, NodeRef(edge.base), {predicate::isin, predicate::name, predicate::kind})});
+  out.push_back({"Market", attributeRows(snapshot, NodeRef(edge.market), {predicate::name, predicate::mic, predicate::nordnetId, predicate::country, predicate::timezone})});
+  if (auto rows = attributeRows(snapshot, NodeRef(edge.quote), {predicate::isin, predicate::name, predicate::kind}); !rows.empty())
+    out.push_back({"Quote currency", std::move(rows)});
+
+  InfoSection series{"Series", {}};
+  for (Resolution r : snapshot.resolutions(edge)) {
+    const CandleSeries bars = snapshot.candles(edge, r);
+    if (bars.candles.empty()) continue;
+    const size_t n = bars.candles.size();
+    series.rows.push_back({name(r), {std::to_string(n) + (n == 1 ? " bar, " : " bars, ") + barTime(r, bars.candles.front().time) + " to " + barTime(r, bars.candles.back().time), std::nullopt}});
+  }
+  out.push_back(std::move(series));
+
+  // A section with nothing to say is not shown.
+  out.erase(std::remove_if(out.begin(), out.end(), [](const InfoSection & s) { return s.rows.empty(); }), out.end());
+  return out;
+}
+
+AttributeModal::AttributeModal(Widget & root, Plane & screen, EventLoop & loop, std::string title, std::shared_ptr<const Snapshot> snapshot,
+                               std::vector<InfoSection> sections)
+    : ModalDialog(root, screen, loop), title_(std::move(title)), snapshot_(std::move(snapshot)) {
+  for (const InfoSection & section : sections) {
+    if (!lines_.empty()) lines_.push_back({});
+    lines_.push_back({Line::HEADING, section.title, "", false});
+    for (const InfoRow & row : section.rows) {
+      lines_.push_back({Line::ROW, row.predicate, row.value.text, row.value.link.has_value()});
+      predicate_width_ = std::max(predicate_width_, utf8::displayWidth(row.predicate));
+    }
+  }
+  predicate_width_ = std::min(predicate_width_, kMaxPredicateWidth);
+}
+
+std::vector<std::string> AttributeModal::lines() const {
+  std::vector<std::string> out;
+  for (const Line & line : lines_) out.push_back(line.kind == Line::ROW ? line.predicate + "  " + line.text : line.predicate);
+  return out;
+}
+
+void AttributeModal::layout(Plane & screen, int rows, int cols) {
+  const int width = std::min(kMaxWidth, std::max(20, cols - 4));
+  // Padding, title, a gap, the lines, a gap, the hint, padding.
+  constexpr int kChrome = 6;
+  const int height = std::min(static_cast<int>(lines_.size()) + kChrome, std::max(kChrome + 1, rows - 2));
+  body_rows_ = std::max(1, height - kChrome);
+  scroll_.setExtent(static_cast<int>(lines_.size()), body_rows_);
+
+  if (!plane_) {
+    plane_ = screen.createChild();
+    plane_->setMouseCursor(MouseCursor::DEFAULT);
+    plane_->setElevation(screen.getStyles().theme.elevation.modal);
+    plane_->setCornerRadius(screen.getStyles().theme.dialog_radius_px);
+  }
+  plane_->resize(height, width);
+  const StyleProvider & styles = plane_->getStyles();
+  const Color bg = styles.picker_bg_color, fg = styles.window_fg_color, strong = styles.window_accent_fg_color, quiet = styles.theme.text_secondary;
+  auto paint = [&](const Color & foreground) {
+    plane_->setFgColor(foreground);
+    plane_->setBgColor(bg);
+  };
+  paint(fg);
+  for (int y = 0; y < height; y++) plane_->putstr(y, 0, std::string(static_cast<size_t>(width), ' '));
+  const int inner = width - 2;
+  paint(strong);
+  plane_->putstr(1, 1, utf8::truncateToWidth(title_, inner), kBoldFace);
+  paint(quiet);
+  plane_->putstr(height - 2, 1, utf8::truncateToWidth(kHint, inner));
+
+  const int valueX = 1 + predicate_width_ + 2, valueCols = std::max(0, width - 1 - valueX);
+  for (int i = 0; i < body_rows_; i++) {
+    const size_t at = static_cast<size_t>(scroll_.offset() + i);
+    if (at >= lines_.size()) break;
+    const Line & line = lines_[at];
+    const int y = 3 + i;
+    if (line.kind == Line::HEADING) {
+      paint(strong);
+      plane_->putstr(y, 1, utf8::truncateToWidth(line.predicate, inner), kBoldFace);
+    } else if (line.kind == Line::ROW) {
+      paint(quiet);
+      plane_->putText(y, 1, predicate_width_, line.predicate, TextStyle{TextFont::MONOSPACE, TextOverflow::ELLIPSIS, kPlainFace, TextAlign::LEFT});
+      paint(line.link ? strong : fg);  // where a value refers to a node it will be a link
+      plane_->putText(y, valueX, valueCols, line.text, TextStyle{TextFont::MONOSPACE, TextOverflow::ELLIPSIS, kPlainFace, TextAlign::LEFT});
+    }
+  }
+  drawScrollbar(*plane_, 3, width - 1, body_rows_, static_cast<int>(lines_.size()), body_rows_, scroll_.shown(), bg, quiet, strong);
+  plane_->move((rows - height) / 2, (cols - width) / 2);
+  plane_->moveToTop();
+}
+
+void AttributeModal::scrollBy(int delta) {
+  scroll_.scrollBy(delta);
+  relayout();
+}
+
+void AttributeModal::keyDown(const KeyDown & e) {
+  const int page = std::max(1, bodyRows() - 1);
+  if (e.key == Key::Escape || e.key == 'q' || (e.mods.ctrl && e.key == 'g')) done(0);
+  else if (e.key == Key::Down || (e.mods.ctrl && e.key == 'n')) scrollBy(1);
+  else if (e.key == Key::Up || (e.mods.ctrl && e.key == 'p')) scrollBy(-1);
+  else if (e.key == Key::PageDown || (e.mods.ctrl && e.key == 'v')) scrollBy(page);
+  else if (e.key == Key::PageUp || (e.mods.alt && e.key == 'v')) scrollBy(-page);
+  else if (e.key == Key::Home) scrollBy(-static_cast<int>(lines_.size()));
+  else if (e.key == Key::End) scrollBy(static_cast<int>(lines_.size()));
+}
+
+void AttributeModal::wheel(const Wheel & e) {
+  if (e.dy != 0) scrollBy(-e.dy * 3);
+}
