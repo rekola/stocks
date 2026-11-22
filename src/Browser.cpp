@@ -78,22 +78,35 @@ void Browser::showPreset(int i) {
   std::optional<Market> market = snapshot->findMarket(kPresets[i].tag);
   table_.setModel(std::make_shared<Quotes>(market ? makeRows(*snapshot, market->id) : std::vector<QuoteRow>{}));
   shown_version_ = snapshot->version();
+  shown_preset_ = i;
 }
 
 void Browser::refresh() {
   const int preset = tags_.selected();
-  if (preset < 0 || store_->snapshot()->version() == shown_version_) return;
+  auto snapshot = store_->snapshot();
+  if (preset < 0 || snapshot->version() == shown_version_) return;
   std::optional<EdgeKey> selected;
-  if (auto * quotes = dynamic_cast<const Quotes *>(table_.model().get()); quotes && table_.selectedRow() >= 0)
-    selected = quotes->edge(table_.selectedRow());
-  const int column = table_.sortColumn();
-  const SortOrder order = table_.sortOrder();
-  showPreset(preset);
-  if (column >= 0) table_.sortBy(column, order);
-  const auto & quotes = static_cast<const Quotes &>(*table_.model());
-  int row = quotes.rowCount() > 0 ? 0 : -1;
-  for (int r = 0; selected && r < quotes.rowCount(); r++)
-    if (quotes.edge(r) == *selected) row = r;
+  auto quotes = std::dynamic_pointer_cast<Quotes>(table_.model());
+  if (quotes && table_.selectedRow() >= 0) selected = quotes->edge(table_.selectedRow());
+
+  if (quotes && preset == shown_preset_) {
+    // The same preset with new data: change the rows in place, which keeps the scroll position, the sort and the selection
+    // (setModel would put the table back at the top).
+    std::optional<Market> market = snapshot->findMarket(kPresets[preset].tag);
+    quotes->rows = market ? makeRows(*snapshot, market->id) : std::vector<QuoteRow>{};
+    shown_version_ = snapshot->version();
+    table_.modelChanged();
+  } else {
+    const int column = table_.sortColumn();
+    const SortOrder order = table_.sortOrder();
+    showPreset(preset);
+    if (column >= 0) table_.sortBy(column, order);
+    quotes = std::dynamic_pointer_cast<Quotes>(table_.model());
+  }
+  // The row that was selected is selected still, wherever it is now.
+  int row = quotes->rowCount() > 0 ? 0 : -1;
+  for (int r = 0; selected && r < quotes->rowCount(); r++)
+    if (quotes->edge(r) == *selected) row = r;
   if (row >= 0) table_.select(row);
 }
 

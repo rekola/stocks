@@ -42,5 +42,6 @@ class Browser {
   cellui::Label info_;
   cellui::StatusLine status_;
   uint64_t shown_version_ = 0;  // of the snapshot the table shows
+  int shown_preset_ = -1;       // the preset the table shows
   cellui::Connection resized_, display_, tag_, message_, frame_, changed_, said_;
 };

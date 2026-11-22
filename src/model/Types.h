@@ -189,6 +189,7 @@ struct Listing {
   std::string identifier;  // the market's own id for it (Nordnet's, on its market)
   std::string orderBook;   // the id the price history is asked for by
   std::string type;        // the provider's own type for it ("UETF", "EQUITY")
+  std::string name;        // what the dataset calls it there ("EUR/USD", a fund's name on that market): what a row shows
   friend bool operator==(const Listing &, const Listing &) = default;
 };
 

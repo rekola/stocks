@@ -24,7 +24,7 @@ struct NordnetListing {
 
 // One row of Nordnet's indicator lists (indices, currency pairs, commodities): not an exchange listing, so no market of its
 // own, but an instrument (an index or a commodity, with an ISIN where Nordnet has one) or a pair of currencies, and its
-// price block: high, low and last, with no open and no volume.
+// price block: the last price with its time, and the high and low where there are any, with no open and no volume.
 struct NordnetIndicator {
   std::string instrumentId, isin, name, orderBookId, symbol, type, country;
   std::string list;

@@ -536,7 +536,15 @@ TEST(the_indicator_lists_make_indices_in_points_currency_pairs_and_commodities_i
   CHECK(s->findInstrumentByIsin(bric) && s->findInstrumentByIsin(bric)->kind == InstrumentKind::Index);
   CHECK(s->findInstrumentByIsin(privateIsin("LEAD"))->kind == InstrumentKind::Commodity);
 
-  // A pair is an edge between two currency nodes.
+  // A metal the London exchange prices has only a last price: a bar with the high and the low undefined.
+  const InstrumentId lead = s->findInstrumentByIsin(privateIsin("LEAD"))->id;
+  CandleSeries leadBar = s->lastCandles({lead, s->findInstrument("USD")->id, s->findMarket("Commodities")->id, nordnet}, Resolution::Day, 1);
+  CHECK(leadBar.candles.size() == 1 && leadBar.candles[0].close == 1808.7);
+  CHECK(!isDefined(leadBar.candles[0].high) && !isDefined(leadBar.candles[0].low) && !isDefined(leadBar.candles[0].open));
+  CHECK(s->listing({lead, s->findInstrument("USD")->id, s->findMarket("Commodities")->id, nordnet})->name == "Lyijy");
+
+  // A pair is an edge between two currency nodes, named for the two.
+  CHECK(s->listing({s->findInstrument("EUR")->id, s->findInstrument("USD")->id, s->findMarket("Currencies")->id, nordnet})->name == "EUR/USD");
   const EdgeKey eurusd{s->findInstrument("EUR")->id, s->findInstrument("USD")->id, s->findMarket("Currencies")->id, nordnet};
   CHECK(s->lastCandles(eurusd, Resolution::Day, 1).candles.size() == 1 && s->symbol(eurusd) == "EURUSD");
 
