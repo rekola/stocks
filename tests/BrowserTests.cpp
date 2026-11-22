@@ -773,3 +773,15 @@ TEST(a_narrow_screen_keeps_the_presets_and_the_headings_still_name_the_period) {
   Fixture wide(true, 100);
   CHECK(cellOf(wide.text(), "1w").first == 0);  // room: the tags are at the right end of the top row
 }
+
+TEST(the_presets_can_still_be_chosen_by_a_click_and_by_the_keyboard) {
+  Fixture f(true, 100);
+  auto [line, col] = cellOf(f.text(), "Currencies");
+  f.click(line, col + 2);
+  CHECK(f.browser->tags().selected() == 2);
+  f.app->execute("focus-tags");
+  f.press(Key::Left);
+  CHECK(f.browser->tags().selected() == 1);
+  f.press(Key::Right);
+  CHECK(f.browser->tags().selected() == 2);
+}

@@ -240,8 +240,8 @@ void Browser::layout(int rows, int cols) {
   layoutRows(0, 0, rows, cols, {{.size = 1}, {.size = 1}, {.widget = &table_, .fill = 1}, {.size = 1}, {.widget = &status_}});
   // The period tags have the right end of the top row, where there is room beside the presets.
   const int periodCols = std::min(periods_.preferredWidth(), cols);
-  const bool room = tags_.preferredWidth() + 1 + periodCols <= cols;
-  layoutColumns(0, 0, 1, cols, {{.widget = &tags_, .fill = 1, .margin_start = 1}, {.widget = &periods_, .size = room ? periodCols : 1}});  // not 0: a bar of no width is not drawn again
+  const bool room = 1 + tags_.preferredWidth() + 1 + periodCols <= cols;
+  layoutColumns(0, 0, 1, cols, {{.size = 1}, {.widget = &tags_, .fill = 1}, {.widget = &periods_, .size = room ? periodCols : 1}});  // not 0: a bar of no width is not drawn again
   // Where there is no room the bar has no tags at all (the headings still name the period).
   if (room != !periods_.tags().empty()) {
     std::vector<std::string> labels;
