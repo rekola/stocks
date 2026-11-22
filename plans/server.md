@@ -630,26 +630,26 @@ and they decide how history has to be collected):
    by an attribute: a market by Nordnet's id or by its name, tried in that order, and made
    with a surrogate id if neither is there, so one Nordnet gives no name for is found by the id
    and named later, keeping its edges; an instrument by its ISIN.
-   **Edges are rows of a fixed shape** (the owner's decision), each carrying its own key, plain C++
-   and kept apart from the nodes. A **fat edge is a Listing**: an instrument on a market in a
-   quote currency from one dataset, small, with the price series beside it under the same key, and
-   the fields the market says: the symbol it calls the instrument, its own id for it (Nordnet's
+   **Edges are rows of a fixed shape** (the owner's decision), plain C++ and kept apart from the
+   nodes. A **fat edge is a Listing**: an instrument on a market in a quote currency from one
+   dataset, a row carrying its own key, small, with the price series beside it under the same key,
+   and the fields the market says: the symbol it calls the instrument, its own id for it (Nordnet's
    identifier: "XAIX" on Xetra and "419021" on Stockholm for one ETF), the order book its history
    is asked for by, the provider's own type. An edge takes nothing before it has data.
    `findEdge(symbol, market)` finds the edge by what a market calls it, whoever said it. A **thin
-   edge is a Fact**: a triple with the dataset that says it, (subject, predicate, object, dataset),
-   the same shape of thing as the listing: one row per subject, predicate and dataset, a value that
-   changes replacing it. The object is text, a whole number (a day is a day number), a real
-   number or a truth value; a number a dataset does not give is not written. What predicates there
-   are is data: a new kind of fact is a new predicate, not a new type (an earlier version had four
-   wide record types, `CompanyFacts` and the like; they were the wrong shape). `fact(instrument,
-   predicate[, dataset])` and `facts(instrument)` read them. **The instruments need data**, so the
-   adapters keep what a row says of them, as a table of where each field is and what it is called
-   (see the census below), and the fat edge stays light. A currency has no ISIN and is its code;
-   **nothing else is without an ISIN**.
-   Node attributes (name, ISIN, kind, a market's code and country) are the same triples without a
-   dataset, kept in the nodes; making them facts too, with a rule that picks the authoritative
-   dataset, is the natural next step and what removes the swapping of names.
+   edge is a triple of a node**, (subject, predicate, object): what is known of the thing itself, which is
+   not part of any market, so **no dataset says it** (an icon, the number of shares, who runs the
+   company; three fields are an implementation detail, more may come). It is the same store as the
+   nodes' own attributes (name, ISIN, kind, a market's code and country): one value per predicate, a
+   value that changes replacing it (the last said stands until a rule picks the authoritative
+   source), the object text, a whole number (a day is a day number), a real number or a truth value,
+   and what is not given not said at all. What predicates there are is data: a new kind of fact is a new
+   predicate, not a new type (two earlier shapes, four wide record types and then triples with a
+   dataset, were the wrong ones). `attribute(node, predicate)` reads one and `attributes(node)`
+   all; text is found by its value. **The instruments need data**, so the adapters say what a row
+   says of the instrument, as a table of where each field is and what it is called (see the census
+   below), and the fat edge stays light. A currency has no ISIN and is its code; **nothing else is
+   without an ISIN**.
    **Private ISINs**: a thing that has none gets one of our own, made from what it is and not
    from who says it (there is one zinc): `ZZ` (ISO 3166-1's user-assigned code element; no
    numbering agency issues ISINs under it), its name, upper case, in nine characters padded
