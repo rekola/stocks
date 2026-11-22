@@ -53,6 +53,8 @@ files from its candidate lists, keeping the tickers Yahoo answers for.
 
 The data model is planned in [plans/data-model.md](plans/data-model.md), and the market calendars in [plans/calendars.md](plans/calendars.md).
 
+The market regime embeddings are planned in [plans/embeddings.md](plans/embeddings.md).
+
 ## Tests
 
     cmake --build build -j
