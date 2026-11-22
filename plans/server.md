@@ -650,6 +650,21 @@ and they decide how history has to be collected):
    says of the instrument, as a table of where each field is and what it is called (see the census
    below), and the fat edge stays light. A currency has no ISIN and is its code; **nothing else is
    without an ISIN**.
+   **Links between nodes (planned, not built).** A value may refer to another node: a company's
+   `ceo` is the CEO's own node, a person, with attributes of its own (name, birth year). Issued by,
+   tracks (an ETF's index), underlying of (a certificate's asset), director, major owner and index
+   constituent are the same kind of link; today a certificate's underlying is only Nordnet's number
+   and name. It needs:
+   - a reference to a node as one more kind of `Value`, and a node type for what is linked to
+     (a person, an issuer, an index), made and found like the others, by attributes;
+   - an index on the node-valued objects, beside the one on text, so that "who is the CEO of
+     this" and "everything this person has run" are cheap;
+   - **a validity period on a link**: a CEO changes, and the history of who was is worth keeping
+     (valid from and to). So a row may have more than the three fields; "the latest value
+     replaces" then applies per period, and a plain value such as the market cap keeps working as
+     now;
+   - in the attribute viewer, a node-valued attribute shown as a link to the node it names, with
+     the reverse links ("is the CEO of") listed on the target.
    **Private ISINs**: a thing that has none gets one of our own, made from what it is and not
    from who says it (there is one zinc): `ZZ` (ISO 3166-1's user-assigned code element; no
    numbering agency issues ISINs under it), its name, upper case, in nine characters padded
