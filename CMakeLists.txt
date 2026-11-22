@@ -52,7 +52,7 @@ FetchContent_Declare(json
 FetchContent_MakeAvailable(json)
 
 # The data model: plain values and the Store they live in. Knows nothing of the screen.
-add_library(stocks_model STATIC src/model/MemoryStore.cpp src/model/Isin.cpp)
+add_library(stocks_model STATIC src/model/MemoryStore.cpp src/model/Isin.cpp src/model/Period.cpp)
 target_include_directories(stocks_model PUBLIC src)
 target_compile_features(stocks_model PUBLIC cxx_std_20)
 find_package(Threads REQUIRED)
@@ -68,6 +68,10 @@ target_compile_definitions(stocks_lib PUBLIC STOCKS_FIXTURES_DIR="${CMAKE_CURREN
 
 add_executable(stocks src/main.cpp)
 target_link_libraries(stocks PRIVATE stocks_lib)
+
+# What a period costs on tens of thousands of rows (run it in a Release build; see the file).
+add_executable(stocks_period_bench tools/PeriodBench.cpp)
+target_link_libraries(stocks_period_bench PRIVATE stocks_lib)
 
 enable_testing()
 # The program starts, reads its command line through cellui and says what is wrong with it.

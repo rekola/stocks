@@ -30,6 +30,14 @@ its description and key; `q` (`C-x C-c`, `Ctrl+Q`) quits. `i` (`C-x =`) or the ð
 heading sorts; clicking a tag or row chooses it; the wheel scrolls. The table
 fills the screen and follows it when it is resized.
 
+The period: the Change column and the trace beside it always show the same period, and the headings say which
+(`Change 3m`, `3 months`). The tags `1d 1w 1m 3m 1y` at the right end of the top row (where there is room) show it and a click
+chooses it; `]` and `[` (`next-period`, `previous-period`) step through them, `C-c d w m q y` (`Alt+1` to `Alt+5` on the
+desktop keymap) choose one (`show-period-day`, `-week`, `-month`, `-quarter`, `-year`). It is one for every row, kept while the
+program runs, and starts at the three months. The change is the last price against the period's first (for the day, the
+previous close), and the colour of both is its sign. A row with no bars for the period shows no number and no trace. The rows on
+screen load what the period needs, once each per session (see `HistoryLoader.h`).
+
 cellui is not pinned while the two are developed together: the build fetches its
 `main`. CI builds on Linux (x86-64 and ARM64, with the GTK window), macOS and
 Windows, and runs `ctest`. To build against a local checkout:

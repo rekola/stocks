@@ -146,6 +146,18 @@ CandleSeries Snapshot::lastCandles(const EdgeKey & k, Resolution r, size_t n) co
   const auto * bars = series_.find({k, r});
   return {r, bars ? bars->drop(bars->size() - std::min(n, bars->size())) : Seq<Candle>{}};
 }
+std::optional<double> Snapshot::previousClose(const EdgeKey & k, int64_t day) const {
+  const auto * p = previousClose_.find(k);
+  if (!p || p->first != day) return std::nullopt;
+  return p->second;
+}
+void Snapshot::setPreviousClose(const EdgeKey & k, int64_t day, double close) {
+  if (!isDefined(close)) return;
+  const auto * p = previousClose_.find(k);
+  if (p && *p == std::make_pair(day, close)) return;
+  previousClose_ = previousClose_.set(k, {day, close});
+  version_++;
+}
 bool Snapshot::hasCandles(const EdgeKey & k, Resolution r) const {
   const auto * s = series_.find(SeriesKey{k, r});
   return s && !s->empty();
@@ -425,6 +437,9 @@ class MemoryStore : public Store {
   }
   void appendCandles(const EdgeKey & k, Resolution r, const std::vector<Candle> & c) override {
     write([&](Snapshot & s) { s.appendCandles(k, r, c); });
+  }
+  void setPreviousClose(const EdgeKey & k, int64_t day, double close) override {
+    write([&](Snapshot & s) { s.setPreviousClose(k, day, close); });
   }
   void appendBooks(const EdgeKey & k, const std::vector<BookSnapshot> & b) override {
     write([&](Snapshot & s) { s.appendBooks(k, b); });

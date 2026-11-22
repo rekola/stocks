@@ -1,6 +1,7 @@
 #pragma once
 
 #include "icons/IconLoader.h"
+#include "model/Period.h"
 #include "model/Store.h"
 
 #include <cellui/Table.h>
@@ -17,14 +18,16 @@ struct QuoteRow {
   EdgeKey key;
   std::string base, quote, name, market, dataset;
   std::string icon_url;  // of the base instrument; empty for none
-  double price = 0, change = 0;  // change in percent, over the last interval
-  std::vector<float> history;    // recent closes, oldest first
+  double price = 0;
+  double change = kUndefined;  // in percent, over the period; undefined where the bars do not give one
+  std::vector<float> history;  // the period's closes, oldest first
 };
 
-// The rows of a market: one per edge that has candles, in the order the store lists them. At most `bars` closes each.
-std::vector<QuoteRow> makeRows(const Snapshot & snapshot, MarketId market, size_t bars = 60);
+// The rows of a market: one per edge that has candles, in the order the store lists them, with the change and the closes of
+// `period`.
+std::vector<QuoteRow> makeRows(const Snapshot & snapshot, MarketId market, Period period = kDefaultPeriod);
 // The rows of every market, in market order.
-std::vector<QuoteRow> makeAllRows(const Snapshot & snapshot, size_t bars = 60);
+std::vector<QuoteRow> makeAllRows(const Snapshot & snapshot, Period period = kDefaultPeriod);
 
 // The edges that have daily bars, in a market or in every market (in market order): what a table shows.
 std::vector<EdgeKey> quoteEdges(const Snapshot & snapshot, MarketId market);
@@ -33,7 +36,10 @@ std::vector<EdgeKey> allQuoteEdges(const Snapshot & snapshot);
 // A number with `decimals` places and a decimal point whatever the locale, with a sign when `sign`.
 std::string fixed(double v, int decimals, bool sign = false);
 
-// A list of edges as a table: base, quote, name, market, dataset, price, change and a trace of the closes. The rows are not
+// The headings of the change and the trace columns name the period: "Change 1d", "1 day".
+std::string changeTitle(Period);
+
+// A list of edges as a table: base, quote, name, market, dataset, price, the change over a period and a trace of its closes. The rows are not
 // built: a cell is read from the snapshot when the table asks for it, which is for the rows in view, so the cost of
 // showing tens of thousands of rows, and of showing them again when the store changes, does not grow with their number.
 // Only a sort reads a whole column, once, and keeps it until the rows change.
@@ -43,6 +49,10 @@ class Quotes : public cellui::TableModel {
 
   // `icons` supplies the pictures of the icon column; without it the column is empty.
   Quotes(std::shared_ptr<const Snapshot> snapshot, std::vector<EdgeKey> keys, std::shared_ptr<IconLoader> icons = nullptr);
+  // The period the change column and the trace show: every row at once. The sort keys of the change are read again; the rows,
+  // the sort and the scroll position are the table's, which is told with modelChanged().
+  void setPeriod(Period);
+  Period period() const { return period_; }
   // Shows other edges, or the same from a newer snapshot: the caches go.
   void reset(std::shared_ptr<const Snapshot> snapshot, std::vector<EdgeKey> keys);
 
@@ -60,13 +70,12 @@ class Quotes : public cellui::TableModel {
   int compare(int a, int b, int column) const override;
 
  private:
-  struct Latest {
-    double price = 0, change = 0;
-  };
-  Latest latest(int r) const;
+  double price(int r) const;
+  double change(int r) const;  // over the period, in percent; undefined for no number
   const std::string & marketLabel(MarketId) const;
   const std::string & datasetName(DatasetId) const;
 
+  Period period_ = kDefaultPeriod;
   std::shared_ptr<IconLoader> icons_;
   std::shared_ptr<const Snapshot> snapshot_;
   std::vector<EdgeKey> keys_;

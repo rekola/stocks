@@ -20,6 +20,31 @@ using namespace cellui;
 
 namespace {
 
+// A row that rose over the three months and fell today: daily bars from 10 to 21 up to 30 November, today's 1 December
+// bar at 20, and today's three 5-minute bars after a close of 21 yesterday. Both are on the Currencies preset.
+constexpr int64_t kToday = dayNumber(2026, 12, 1);
+int64_t fiveMinuteSlot(int64_t day, int k) { return slotOfInstant(Resolution::Min5, (day - kUnixEpochDayNumber) * 86400 + 7 * 3600 + k * 300); }
+struct Rows {
+  EdgeKey riseFall, flat;
+};
+Rows periodWorld(Store & store) {
+  Instrument usd = store.addInstrument({{}, "USD", "US dollar", InstrumentKind::Currency});
+  Instrument eur = store.addInstrument({{}, "EUR", "Euro", InstrumentKind::Currency});
+  Instrument gbp = store.addInstrument({{}, "GBP", "British pound", InstrumentKind::Currency});
+  Market currencies = store.addMarket({{}, "Currencies"});
+  Dataset a = store.addDataset({{}, "provider-a"});
+  Rows rows{{eur.id, usd.id, currencies.id, a.id}, {gbp.id, usd.id, currencies.id, a.id}};
+  std::vector<Candle> days;
+  for (int d = 70; d >= 1; d--) days.push_back({kToday - d, 1, 1, 1, 21.0 - d * 11.0 / 70.0 + (d == 1 ? 0.0 : 0.0), 1});
+  days.back().close = 21;  // yesterday
+  days.push_back({kToday, 1, 1, 1, 20, 1});
+  store.appendCandles(rows.riseFall, Resolution::Day, days);
+  store.appendCandles(rows.riseFall, Resolution::Min5, {{fiveMinuteSlot(kToday, 0), 1, 1, 1, 20.5, 1}, {fiveMinuteSlot(kToday, 1), 1, 1, 1, 20.2, 1}, {fiveMinuteSlot(kToday, 2), 1, 1, 1, 20, 1}});
+  // A second row with a single daily bar: no period has bars for it yet but today's price.
+  store.appendCandles(rows.flat, Resolution::Day, {{kToday, 1, 1, 1, 5, 1}});
+  return rows;
+}
+
 // The lists on disk, which the made-up data follows.
 const InstrumentList & instrumentList() {
   static const InstrumentList u = [] {
@@ -163,6 +188,8 @@ TEST(the_palette_and_the_help_line_name_the_bindings_of_the_commands) {
     return text.substr(at + 1, end - at - 1);
   };
   CHECK(row("command-palette").find("M-x") != std::string::npos);
+  f.type("quit");  // the list is longer than the screen: look for it
+  text = f.text();
   std::string quit = row("quit");
   CHECK(quit.back() == 'q');
 }
@@ -253,6 +280,7 @@ TEST(a_preset_shows_one_row_per_edge_with_its_dataset) {
   f.store->appendCandles({eur.id, usd.id, currencies.id, a.id}, Resolution::Day, {{0, 1, 1, 1, 1.00, 1}, {1000, 1, 1, 1, 1.10, 1}});
   f.store->appendCandles({eur.id, usd.id, currencies.id, b.id}, Resolution::Day, {{0, 1, 1, 1, 2.00, 1}, {1000, 1, 1, 1, 1.00, 1}});
   f.app->execute("show-currencies");
+  f.app->execute("show-period-day");  // the bars are a thousand days apart: the day is the change since the previous bar
   Table & t = f.browser->table();
   CHECK(t.model()->rowCount() == 2);  // the same pair on the same market from two datasets: two rows
   t.sortBy(Quotes::DATASET, SortOrder::ASCENDING);
@@ -260,7 +288,7 @@ TEST(a_preset_shows_one_row_per_edge_with_its_dataset) {
   CHECK(t.model()->text(t.rowAt(0), Quotes::BASE) == "EUR" && t.model()->text(t.rowAt(0), Quotes::QUOTE) == "USD");
   CHECK(t.model()->text(t.rowAt(0), Quotes::PRICE) == "1.10" && t.model()->text(t.rowAt(0), Quotes::CHANGE) == "+10.00%");
   CHECK(t.model()->text(t.rowAt(1), Quotes::PRICE) == "1.00" && t.model()->text(t.rowAt(1), Quotes::CHANGE) == "-50.00%");
-  CHECK(t.model()->trace(t.rowAt(1), Quotes::HISTORY).size() == 2);
+  CHECK(t.model()->trace(t.rowAt(1), Quotes::HISTORY).empty());  // no intraday bars: the day has no trace
 }
 
 TEST(a_preset_whose_market_has_no_data_shows_no_rows_and_a_book_alone_is_not_a_row) {
@@ -584,4 +612,176 @@ TEST(the_viewer_is_drawn_by_the_loop_without_another_input) {
   f.inModal([&] { before = f.backend->frameCount(), f.press('i'); },
             {[&] { during = f.backend->frameCount(); }, [&] { f.press(Key::Escape); }});
   CHECK(during > before);  // the input that opened it has not returned, so no frame follows it: the dialog asks for one
+}
+
+TEST(the_period_command_changes_the_change_column_and_the_trace_and_the_headings_say_which) {
+  Fixture f(false);
+  Rows rows = periodWorld(*f.store);
+  f.app->execute("show-currencies");
+  Table & t = f.browser->table();
+  auto row = [&](const EdgeKey & k) {
+    for (int r = 0; r < t.model()->rowCount(); r++)
+      if (static_cast<Quotes &>(*t.model()).edge(r) == k) return r;
+    return -1;
+  };
+  const int r = row(rows.riseFall);
+  CHECK(f.browser->period() == Period::Quarter);  // not the day: on a weekend the day has no bars
+  CHECK(f.text().find("Change 3m") != std::string::npos && f.text().find("3 months") != std::string::npos);
+  CHECK(t.model()->text(r, Quotes::CHANGE) == "+100.00%");  // 10 to 20 over the three months
+  CHECK(t.model()->trace(r, Quotes::HISTORY).size() == 71 && t.model()->trace(r, Quotes::HISTORY).back() == 20.0f);
+
+  f.app->execute("show-period-day");
+  CHECK(f.browser->period() == Period::Day);
+  CHECK(f.text().find("Change 1d") != std::string::npos && f.text().find("1 day") != std::string::npos);
+  CHECK(t.model()->text(r, Quotes::CHANGE) == "-4.76%");  // 20 against yesterday's 21
+  CHECK(t.model()->trace(r, Quotes::HISTORY).size() == 3 && t.model()->trace(r, Quotes::HISTORY)[0] == 20.5f);  // today's bars
+
+  f.app->execute("next-period");
+  CHECK(f.browser->period() == Period::Week && f.text().find("Change 1w") != std::string::npos);
+  f.app->execute("previous-period");
+  f.app->execute("previous-period");
+  CHECK(f.browser->period() == Period::Year);  // round the end of the list
+  f.app->execute("next-period");
+  CHECK(f.browser->period() == Period::Day);
+  f.app->execute("show-period-month");
+  CHECK(f.browser->period() == Period::Month && f.browser->periodTags().selected() == static_cast<int>(Period::Month));
+}
+
+TEST(a_key_cycles_the_period_and_a_click_on_a_tag_chooses_it) {
+  Fixture f(false);
+  periodWorld(*f.store);
+  f.app->execute("show-currencies");
+  f.press(']');
+  CHECK(f.browser->period() == Period::Year);
+  f.press('[');
+  CHECK(f.browser->period() == Period::Quarter);
+  f.press('c', kModCtrl);
+  f.press('d');
+  CHECK(f.browser->period() == Period::Day);
+  // The tag of "1w" is on the top row.
+  auto [line, col] = cellOf(f.text(), "1w");
+  CHECK(line == 0);
+  f.click(line, col);
+  CHECK(f.browser->period() == Period::Week);
+}
+
+TEST(the_change_and_the_trace_are_one_colour_that_follows_the_sign_of_the_periods_change) {
+  Fixture f(false);
+  Rows rows = periodWorld(*f.store);
+  f.app->execute("show-currencies");
+  Table & t = f.browser->table();
+  auto & quotes = static_cast<Quotes &>(*t.model());
+  int r = -1;
+  for (int i = 0; i < quotes.rowCount(); i++)
+    if (quotes.edge(i) == rows.riseFall) r = i;
+  auto up = t.model()->color(r, Quotes::CHANGE);  // three months: up
+  CHECK(up && up == t.model()->color(r, Quotes::HISTORY));
+  f.app->execute("show-period-day");
+  auto down = t.model()->color(r, Quotes::CHANGE);  // today: down
+  CHECK(down && down == t.model()->color(r, Quotes::HISTORY));
+  CHECK(up != down);
+}
+
+TEST(a_period_without_bars_shows_no_number_no_trace_and_no_colour) {
+  Fixture f(false);
+  Rows rows = periodWorld(*f.store);
+  f.app->execute("show-currencies");
+  Table & t = f.browser->table();
+  auto & quotes = static_cast<Quotes &>(*t.model());
+  int r = -1;
+  for (int i = 0; i < quotes.rowCount(); i++)
+    if (quotes.edge(i) == rows.flat) r = i;
+  for (const char * command : {"show-period-day", "show-period-week", "show-period-month", "show-period-quarter", "show-period-year"}) {
+    f.app->execute(command);
+    CHECK(t.model()->text(r, Quotes::CHANGE).empty());  // not "+0.00%"
+    CHECK(t.model()->trace(r, Quotes::HISTORY).empty());
+    CHECK(!t.model()->color(r, Quotes::CHANGE) && !t.model()->color(r, Quotes::HISTORY));
+    CHECK(t.model()->text(r, Quotes::PRICE) == "5.00");  // the price is there
+  }
+  // Three months of bars are not a year: the first row has no change for the year either.
+  f.app->execute("show-period-year");
+  int first = -1;
+  for (int i = 0; i < quotes.rowCount(); i++)
+    if (quotes.edge(i) == rows.riseFall) first = i;
+  CHECK(t.model()->text(first, Quotes::CHANGE).empty() && t.model()->trace(first, Quotes::HISTORY).empty());
+}
+
+TEST(sorting_by_change_sorts_by_the_periods_change_and_a_store_change_or_a_scroll_keeps_the_period) {
+  Fixture f(false);
+  Rows rows = periodWorld(*f.store);
+  f.app->execute("show-currencies");
+  Table & t = f.browser->table();
+  auto base = [&](int position) { return t.model()->text(t.rowAt(position), Quotes::BASE); };
+  t.sortBy(Quotes::CHANGE, SortOrder::DESCENDING);
+  CHECK(base(0) == "EUR");  // +100% over the quarter, and the other row has no number: it sorts last
+  f.app->execute("show-period-day");
+  // The sort follows the period: EUR has -4.76% today and GBP none.
+  CHECK(t.sortColumn() == Quotes::CHANGE);
+  CHECK(base(0) == "EUR" && base(1) == "GBP");
+  t.sortBy(Quotes::CHANGE, SortOrder::ASCENDING);
+  CHECK(base(0) == "GBP" && base(1) == "EUR");  // no number first
+
+  // Today's bars come in: the new number is in the sort.
+  f.store->appendCandles(rows.flat, Resolution::Day, {{kToday - 1, 1, 1, 1, 4, 1}});
+  f.app->widgets().postToRoot(StoreChanged{});
+  CHECK(f.browser->period() == Period::Day);
+  CHECK(t.model()->text(t.rowAt(0), Quotes::CHANGE) == "-4.76%" && t.model()->text(t.rowAt(1), Quotes::CHANGE) == "+25.00%");
+  // A change of preset keeps it as well, and a scroll.
+  f.app->execute("show-all");
+  f.app->execute("show-currencies");
+  Wheel wheel;
+  wheel.dy = -2;
+  t.post(wheel);
+  f.app->present();
+  CHECK(f.browser->period() == Period::Day);
+  CHECK(f.text().find("Change 1d") != std::string::npos);
+}
+
+TEST(the_info_viewer_lists_the_intraday_series_of_a_row) {
+  Fixture f(false);
+  Rows rows = periodWorld(*f.store);
+  const std::vector<InfoSection> info = buildInfo(*f.store->snapshot(), rows.riseFall);
+  bool found = false;
+  for (const InfoSection & section : info)
+    for (const InfoRow & r : section.rows)
+      if (r.predicate == "5m") found = r.value.text.find("3 bars, 2026-12-01 07:00 to 2026-12-01 07:10") != std::string::npos;
+  CHECK(found);
+}
+
+TEST(the_days_base_is_the_previous_close_of_that_session_never_one_left_from_an_earlier_one) {
+  Fixture f(false);
+  Rows rows = periodWorld(*f.store);
+  auto snapshot = [&] { return f.store->snapshot(); };
+  CHECK(periodView(*snapshot(), rows.riseFall, Period::Day, false).base == 21);  // the daily bar before today
+  f.store->setPreviousClose(rows.riseFall, kToday, 25);  // the provider's own, for today
+  CHECK(periodView(*snapshot(), rows.riseFall, Period::Day, false).base == 25);
+  // A newer session's bars: a close said for the one before is not its base.
+  f.store->appendCandles(rows.riseFall, Resolution::Day, {{kToday + 1, 1, 1, 1, 22, 1}});
+  f.store->appendCandles(rows.riseFall, Resolution::Min5, {{fiveMinuteSlot(kToday + 1, 0), 1, 1, 1, 23, 1}});
+  PeriodView v = periodView(*snapshot(), rows.riseFall, Period::Day, true);
+  CHECK(v.base == 20 && v.last == 23 && v.closes.size() == 1);
+}
+
+TEST(a_narrow_screen_keeps_the_presets_and_the_headings_still_name_the_period) {
+  Fixture f(true, 60);
+  const std::string text = f.text();
+  CHECK(text.find("Commodities") != std::string::npos);  // the presets first
+  CHECK(cellOf(text, "1w").first != 0);                   // no room for the period tags beside them
+  f.app->execute("show-period-week");
+  CHECK(f.browser->period() == Period::Week);
+  CHECK(f.text().find("1 week") != std::string::npos || f.text().find("Change 1w") != std::string::npos);
+  Fixture wide(true, 100);
+  CHECK(cellOf(wide.text(), "1w").first == 0);  // room: the tags are at the right end of the top row
+}
+
+TEST(the_presets_can_still_be_chosen_by_a_click_and_by_the_keyboard) {
+  Fixture f(true, 100);
+  auto [line, col] = cellOf(f.text(), "Currencies");
+  f.click(line, col + 2);
+  CHECK(f.browser->tags().selected() == 2);
+  f.app->execute("focus-tags");
+  f.press(Key::Left);
+  CHECK(f.browser->tags().selected() == 1);
+  f.press(Key::Right);
+  CHECK(f.browser->tags().selected() == 2);
 }

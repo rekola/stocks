@@ -47,8 +47,9 @@ constexpr int kLinkCols = 52;
 
 Browser::Browser(Application & app, std::shared_ptr<Store> store, std::shared_ptr<IconLoader> icons,
                  std::shared_ptr<HistoryLoader> history)
-    : app_(app), store_(std::move(store)), icons_(std::move(icons)), history_(std::move(history)), tags_(app.root()), table_(app.root(), app.charts()), info_(app.root()), link_(app.root()), status_(app.root()) {
+    : app_(app), store_(std::move(store)), icons_(std::move(icons)), history_(std::move(history)), tags_(app.root()), periods_(app.root()), table_(app.root(), app.charts()), info_(app.root()), link_(app.root()), status_(app.root()) {
   tags_.attach(app.widgets());
+  periods_.attach(app.widgets());
   table_.attach(app.widgets());
   info_.attach(app.widgets());
   link_.attach(app.widgets());
@@ -56,19 +57,13 @@ Browser::Browser(Application & app, std::shared_ptr<Store> store, std::shared_pt
   std::vector<std::string> tags;
   for (const Preset & preset : kPresets) tags.push_back(preset.tag);
   tags_.setTags(std::move(tags));
+  std::vector<std::string> periods;
+  for (size_t i = 0; i < kPeriodCount; i++) periods.push_back(info(static_cast<Period>(i)).label);
+  periods_.setTags(std::move(periods));
   info_.setColors(&StyleProvider::info_line_fg_color, &StyleProvider::info_line_bg_color);
   link_.setColors(&StyleProvider::info_line_fg_color, &StyleProvider::info_line_bg_color);
   link_.setStyle({TextFont::PROPORTIONAL, TextOverflow::ELLIPSIS, kPlainFace, TextAlign::RIGHT});
-  table_.setColumns({{.title = "", .width = 2, .sortable = false, .icon = true},
-                     {.title = "Base", .width = 8},
-                     {.title = "Quote", .width = 6},
-                     {.title = "Name", .width = 0},
-                     {.title = "Market", .width = 16},
-                     {.title = "Dataset", .width = 10},
-                     {.title = "Price", .width = 10, .align = Align::RIGHT},
-                     {.title = "Change", .width = 9, .align = Align::RIGHT},
-                     {.title = "60 days", .width = 22, .sortable = false, .trace = true},
-                     {.title = "", .buttons = buttonGlyphs()}});
+  setColumns();
   defineCommands();
   bindKeys();
   showHelp();
@@ -93,6 +88,10 @@ Browser::Browser(Application & app, std::shared_ptr<Store> store, std::shared_pt
     app_.execute(kRowActions[button].command);
     action_row_.reset();
   });
+  period_tag_ = periods_.chosen.connect([this](int i) {
+    if (i >= 0) showPeriod(static_cast<Period>(i));
+  });
+  periods_.select(static_cast<int>(period_));
   tag_ = tags_.chosen.connect([this](int i) {
     if (i < 0) return;
     showPreset(i);
@@ -128,9 +127,35 @@ Browser::Browser(Application & app, std::shared_ptr<Store> store, std::shared_pt
   });
 }
 
+void Browser::setColumns() {
+  table_.setColumns({{.title = "", .width = 2, .sortable = false, .icon = true},
+                     {.title = "Base", .width = 8},
+                     {.title = "Quote", .width = 6},
+                     {.title = "Name", .width = 0},
+                     {.title = "Market", .width = 16},
+                     {.title = "Dataset", .width = 10},
+                     {.title = "Price", .width = 10, .align = Align::RIGHT},
+                     {.title = changeTitle(period_), .width = 12, .align = Align::RIGHT},
+                     {.title = info(period_).trace, .width = 22, .sortable = false, .trace = true},
+                     {.title = "", .buttons = buttonGlyphs()}});
+}
+
+void Browser::showPeriod(Period period) {
+  if (period == period_) return;
+  period_ = period;
+  periods_.select(static_cast<int>(period_));  // the tag, where there are tags (its own signal finds the period shown)
+  if (auto quotes = std::dynamic_pointer_cast<Quotes>(table_.model())) quotes->setPeriod(period_);
+  setColumns();  // the headings; the sort and the scroll position stay
+  table_.modelChanged();
+  status_.setMessage(std::string("Showing ") + info(period_).trace);
+  app_.requestFrame();
+}
+
 void Browser::showPreset(int i) {
   auto snapshot = store_->snapshot();
-  table_.setModel(std::make_shared<Quotes>(snapshot, edgesOf(*snapshot, kPresets[i]), icons_));
+  auto quotes = std::make_shared<Quotes>(snapshot, edgesOf(*snapshot, kPresets[i]), icons_);
+  quotes->setPeriod(period_);
+  table_.setModel(quotes);
   shown_version_ = snapshot->version();
   shown_preset_ = i;
   last_refresh_ = std::chrono::steady_clock::now();
@@ -168,7 +193,7 @@ void Browser::requestHistory() {
   auto * quotes = dynamic_cast<const Quotes *>(table_.model().get());
   if (!history_ || !quotes) return;
   const int count = quotes->rowCount(), first = table_.firstVisiblePosition(), view = std::max(1, table_.visibleRows());
-  const HistoryView now{quotes, first, view, count};
+  const HistoryView now{quotes, first, view, count, period_, true};
   if (now == history_view_) return;  // the same rows as the last time: the loader has them
   history_view_ = now;
   std::vector<EdgeKey> edges;
@@ -179,7 +204,7 @@ void Browser::requestHistory() {
   // Each is a request a second: what is on screen, then the screen after and the one before.
   for (int p = first; p < std::min(count, first + 2 * view); p++) add(p);
   for (int p = first - 1; p >= std::max(0, first - view); p--) add(p);
-  history_->want(edges);
+  history_->want(edges, period_);
 }
 
 void Browser::refresh() {
@@ -212,8 +237,18 @@ void Browser::refresh() {
 
 // The tags on the top row (one cell in), a gap, the table, the info line and the status line.
 void Browser::layout(int rows, int cols) {
-  layoutRows(0, 0, rows, cols,
-             {{.widget = &tags_, .margin_start = 1}, {.size = 1}, {.widget = &table_, .fill = 1}, {.size = 1}, {.widget = &status_}});
+  layoutRows(0, 0, rows, cols, {{.size = 1}, {.size = 1}, {.widget = &table_, .fill = 1}, {.size = 1}, {.widget = &status_}});
+  // The period tags have the right end of the top row, where there is room beside the presets.
+  const int periodCols = std::min(periods_.preferredWidth(), cols);
+  const bool room = 1 + tags_.preferredWidth() + 1 + periodCols <= cols;
+  layoutColumns(0, 0, 1, cols, {{.size = 1}, {.widget = &tags_, .fill = 1}, {.widget = &periods_, .size = room ? periodCols : 1}});  // not 0: a bar of no width is not drawn again
+  // Where there is no room the bar has no tags at all (the headings still name the period).
+  if (room != !periods_.tags().empty()) {
+    std::vector<std::string> labels;
+    for (size_t i = 0; room && i < kPeriodCount; i++) labels.push_back(info(static_cast<Period>(i)).label);
+    periods_.setTags(std::move(labels));
+    if (room) periods_.select(static_cast<int>(period_));
+  }
   layoutColumns(rows - 2, 0, 1, cols, {{.widget = &info_, .fill = 1}, {.widget = &link_, .size = std::min(kLinkCols, cols / 2)}});
 }
 
@@ -253,6 +288,13 @@ void Browser::defineCommands() {
   const int last = static_cast<int>(std::size(kPresets)) - 1;
   commands.define("next-preset", "Show the next preset", [this, last] { tags_.select(std::min(tags_.selected() + 1, last)); });
   commands.define("previous-preset", "Show the previous preset", [this] { tags_.select(std::max(tags_.selected() - 1, 0)); });
+  for (size_t i = 0; i < kPeriodCount; i++) {
+    const PeriodInfo & p = info(static_cast<Period>(i));
+    commands.define(std::string("show-period-") + p.id, std::string("Show the change and the trace over ") + p.trace, [this, i] { showPeriod(static_cast<Period>(i)); });
+  }
+  commands.define("next-period", "Show the next period in the change and the trace (1d, 1w, 1m, 3m, 1y, then round)",
+                  [this] { showPeriod(nextPeriod(period_)); });
+  commands.define("previous-period", "Show the previous period in the change and the trace", [this] { showPeriod(previousPeriod(period_)); });
   commands.define("focus-tags", "Move the keyboard to the preset tags", [this] { app_.input().setFocus(&tags_); });
   commands.define("focus-table", "Move the keyboard to the table", [this] { app_.input().setFocus(&table_); });
   commands.define("show-info", "Show everything known about the selected row", [this] { showInfo(); });
@@ -265,6 +307,16 @@ void Browser::bindKeys() {
   keymap.bind("i", "show-info");
   keymap.bind(KeymapProfile::TERMINAL, "C-x =", "show-info");  // where the point is, as in Emacs
   keymap.bind(KeymapProfile::TERMINAL, "C-x C-c", "quit");
+  // The period: ] and [ step through them; a direct choice is C-c and a letter (d w m q y: day, week, month, quarter, year) in the
+  // terminal (C-c and a letter is what Emacs leaves to the user), Alt and a digit on the desktop.
+  keymap.bind("]", "next-period");
+  keymap.bind("[", "previous-period");
+  constexpr const char * kLetters = "dwmqy";
+  for (size_t i = 0; i < kPeriodCount; i++) {
+    const std::string command = std::string("show-period-") + info(static_cast<Period>(i)).id;
+    keymap.bind(KeymapProfile::TERMINAL, std::string("C-c ") + kLetters[i], command);
+    keymap.bind(KeymapProfile::DESKTOP, "Alt+" + std::to_string(i + 1), command);
+  }
   keymap.bind(KeymapProfile::DESKTOP, "Ctrl+Q", "quit");
   assert(keymap.allBoundIn(app_.commands()));
 }

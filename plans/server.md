@@ -677,9 +677,11 @@ without bars (fewer than 20 daily ones) are loaded.
   daily; a commodity's or a fund's comes back weekly, so the longest period that gives days
   is asked for next, with the pause between the requests). Weeks, months and quarters are
   keyed by their first day.
-- A fund's points are a time and a value: a bar with only a close. Minute and hour bars are
-  not stored yet (the answer is parsed and left alone), and the history's last bar replaces
-  today's bar from the discovery, which the next discovery reload replaces again.
+- A fund's points are a time and a value: a bar with only a close. Intraday bars (1 to 30
+  minutes, 1 and 4 hours) are stored under their slot numbers, for the table's day and week
+  periods (`Period.h`: each period names the series that feeds it and its base price). The
+  history's last bar replaces today's bar from the discovery, which the next discovery
+  reload replaces again.
 - Failures: a 404 is remembered for the edge for the session; a 403 or 429 stops all
   requests for the session (said once in the status line); no answer or a 5xx pauses a
   minute and asks again.
