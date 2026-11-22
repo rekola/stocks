@@ -12,6 +12,7 @@
 
 #include <chrono>
 #include <memory>
+#include <optional>
 
 // The screen: preset tags on the top row, the table filling what is between them
 // and the info and status lines, laid out again whenever the display changes size.
@@ -72,6 +73,7 @@ class Browser {
   } history_view_;              // what the history loader was last told is wanted
   double min_refresh_ = 0.25;
   std::chrono::steady_clock::time_point last_refresh_{};
+  std::optional<int> action_row_;  // the row a button was clicked on, while its command runs: not the selected one
   bool pending_ = false;        // the store changed and the table does not show it yet
   cellui::Connection button_, resized_, display_, tag_, message_, frame_, changed_, said_, loaded_;
 };

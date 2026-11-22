@@ -509,7 +509,7 @@ TEST(show_info_from_the_keyboard_shows_the_isin_the_symbol_a_number_and_a_date_a
   CHECK(shown.find("FI0009000681") != std::string::npos);
 }
 
-TEST(a_click_on_the_info_button_selects_its_row_and_opens_the_viewer) {
+TEST(a_click_on_the_info_button_opens_its_row_and_leaves_the_selection) {
   Fixture f(false);
   addNokia(*f.store);
   f.app->execute("show-nasdaq-helsinki");
@@ -518,7 +518,7 @@ TEST(a_click_on_the_info_button_selects_its_row_and_opens_the_viewer) {
   CHECK(row >= 0);
   std::string shown;
   const bool closed = f.inModal([&] { f.click(row, col); }, {[&] { shown = f.text(); }, [&] { f.press(Key::Escape); }});
-  CHECK(f.browser->table().selectedRow() == 0);
+  CHECK(f.browser->table().selectedRow() == -1);  // the click chose nothing
   CHECK(shown.find("FI0009000681") != std::string::npos && shown.find("NOKIA") != std::string::npos);
   CHECK(closed);
 }
@@ -538,13 +538,14 @@ TEST(the_buttons_follow_a_sort_and_leave_the_scroll_position_alone) {
   f.press(Key::End);  // the last row selected, the view scrolled down to it
   const int first = table.firstVisiblePosition();
   CHECK(first > 0);
+  const int selected_before = table.selectedRow();
   auto open_first_visible = [&] {
     auto [row, col] = cellOf(f.text(), kInfoGlyph);  // the first row in view
     CHECK(row >= 0);
     const int expected = table.rowAt(table.firstVisiblePosition());
     std::string shown;
     f.inModal([&] { f.click(row, col); }, {[&] { shown = f.text(); }, [&] { f.press(Key::Escape); }});
-    CHECK(table.selectedRow() == expected);
+    CHECK(table.selectedRow() == selected_before);
     auto isin = f.store->snapshot()->instrument(quotes.edge(expected).base)->isin;
     CHECK(!isin.empty() && shown.find(isin) != std::string::npos);  // the row clicked, not another
   };
