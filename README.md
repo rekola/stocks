@@ -13,11 +13,8 @@ scrollable table with a price trace per row. The rows are the edges of a
 [data model](plans/data-model.md) that data sources fill on a thread of their
 own; the table follows as the data arrives, a few times a second at most, and reads
 only the rows it draws, so it stays quick with tens of thousands. One data source runs at
-a time. The default, `auto`, is Nordnet's discovery (stocks, ETFs, funds, certificates, indices,
-currencies and commodities: today's bar of each, reloaded every five minutes, and the history
-of the rows on screen), and if Nordnet gives nothing (no network, a refusal) Yahoo Finance
-(daily candles, dividends and splits for the instruments in the lists on disk) instead for
-the rest of the session. Both are unofficial, need no key, and are for personal use.
+a time; the default, `auto`, picks one, and falls back to another for the rest of the
+session if the first gives nothing (no network, a refusal).
 
     cmake -B build
     cmake --build build -j
@@ -26,8 +23,6 @@ the rest of the session. Both are unofficial, need no key, and are for personal 
     build/stocks --ui window     # in a window, when cellui is built with GTK
     build/stocks --source synthetic   # made-up prices, no network
     build/stocks --market "Nasdaq Helsinki"   # load only that list
-    build/stocks --source nordnet     # Nordnet only, reloaded every 5 minutes (auto, the default, is Nordnet, then Yahoo)
-    build/stocks --source yahoo       # Yahoo only
 
 Keys: arrows, PgUp/PgDn, Home/End move; Tab moves between the tags and the table; `M-x` (`Ctrl+Shift+P` on
 the desktop keymap) opens the command palette, where every command is listed with
@@ -47,15 +42,14 @@ that is installed), fetched at a pinned commit
 like [immer](https://github.com/arximboldi/immer) and
 [nlohmann/json](https://github.com/nlohmann/json).
 
-The instruments the tags show are lists on disk, `data/yahoo/*.csv`, one file
-per market (Nasdaq Helsinki, Currencies, Commodities: about 220 instruments, not
-complete). A file starts with `# market: NAME`, then rows of
-`kind,base,quote,name,yahoo,isin` (what one unit of `base` costs in `quote`, the
-ticker Yahoo uses for it, and the ISIN, which only a currency may lack); `--lists DIR` reads another directory. Yahoo is
-asked for one instrument at a time, so loading all of them takes over a minute
-and about 6 MB: `--market NAME` (repeatable) loads one list, and
-`--source synthetic` loads none. `tools/yahoo/build_lists.py` rebuilds the
-files from its candidate lists, keeping the tickers Yahoo answers for.
+Some instruments come from lists on disk, `data/*/*.csv`, one file
+per market (about 220 instruments, not complete). A file starts with
+`# market: NAME`, then rows of `kind,base,quote,name,ticker,isin` (what one unit of
+`base` costs in `quote`, the ticker the source uses for it, and the ISIN, which only a
+currency may lack); `--lists DIR` reads another directory. Such a source is asked for one
+instrument at a time, so loading all of them takes over a minute and about 6 MB:
+`--market NAME` (repeatable) loads one list, and `--source synthetic` loads none.
+The script under `tools/` rebuilds the files from its candidate lists.
 
 The data model is planned in [plans/data-model.md](plans/data-model.md), the server, its API and the bars in [plans/server.md](plans/server.md), and the market calendars in [plans/calendars.md](plans/calendars.md).
 
