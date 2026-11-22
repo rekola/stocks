@@ -50,6 +50,7 @@ void appendRows(const Snapshot & snapshot, MarketId market, size_t bars, std::ve
     r.key = key;
     r.market = label;
     r.base = baseOf(snapshot, key);
+    if (auto url = snapshot.attribute(key.base, predicate::iconUrl)) r.icon_url = asText(*url).value_or("");
     r.name = nameOf(snapshot, key);
     r.quote = quoteOf(snapshot, key);
     if (auto dataset = snapshot.dataset(key.dataset)) r.dataset = dataset->name;
@@ -103,7 +104,21 @@ std::string fixed(double v, int decimals, bool sign) {
   return out;
 }
 
-Quotes::Quotes(std::shared_ptr<const Snapshot> snapshot, std::vector<EdgeKey> keys) { reset(std::move(snapshot), std::move(keys)); }
+Quotes::Quotes(std::shared_ptr<const Snapshot> snapshot, std::vector<EdgeKey> keys, std::shared_ptr<IconLoader> icons)
+    : icons_(std::move(icons)) {
+  reset(std::move(snapshot), std::move(keys));
+}
+
+std::string Quotes::iconUrl(int r) const {
+  auto url = snapshot_->attribute(edge(r).base, predicate::iconUrl);
+  return url ? asText(*url).value_or("") : std::string();
+}
+
+std::shared_ptr<const cellui::TableIcon> Quotes::icon(int r, int c) const {
+  if (!icons_ || c != ICON) return nullptr;
+  const std::string url = iconUrl(r);
+  return url.empty() ? nullptr : icons_->get(url);
+}
 
 void Quotes::reset(std::shared_ptr<const Snapshot> snapshot, std::vector<EdgeKey> keys) {
   snapshot_ = std::move(snapshot);
@@ -205,7 +220,7 @@ void Quotes::build(int column) const {
 }
 
 int Quotes::compare(int a, int b, int column) const {
-  if (column < 0 || column >= HISTORY) return 0;  // a trace sorts as equal
+  if (column <= ICON || column >= HISTORY) return 0;  // the icon and the trace sort as equal
   if (!built_[column]) build(column);
   if (column == PRICE || column == CHANGE) {
     const std::vector<double> & v = numbers_[column == PRICE ? 0 : 1];

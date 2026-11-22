@@ -1,5 +1,6 @@
 #pragma once
 
+#include "icons/IconLoader.h"
 #include "model/Store.h"
 
 #include <cellui/Table.h>
@@ -15,6 +16,7 @@
 struct QuoteRow {
   EdgeKey key;
   std::string base, quote, name, market, dataset;
+  std::string icon_url;  // of the base instrument; empty for none
   double price = 0, change = 0;  // change in percent, over the last interval
   std::vector<float> history;    // recent closes, oldest first
 };
@@ -37,9 +39,10 @@ std::string fixed(double v, int decimals, bool sign = false);
 // Only a sort reads a whole column, once, and keeps it until the rows change.
 class Quotes : public cellui::TableModel {
  public:
-  enum Column { BASE, QUOTE, NAME, MARKET, DATASET, PRICE, CHANGE, HISTORY };
+  enum Column { ICON, BASE, QUOTE, NAME, MARKET, DATASET, PRICE, CHANGE, HISTORY };
 
-  Quotes(std::shared_ptr<const Snapshot> snapshot, std::vector<EdgeKey> keys);
+  // `icons` supplies the pictures of the icon column; without it the column is empty.
+  Quotes(std::shared_ptr<const Snapshot> snapshot, std::vector<EdgeKey> keys, std::shared_ptr<IconLoader> icons = nullptr);
   // Shows other edges, or the same from a newer snapshot: the caches go.
   void reset(std::shared_ptr<const Snapshot> snapshot, std::vector<EdgeKey> keys);
 
@@ -47,6 +50,9 @@ class Quotes : public cellui::TableModel {
   std::string text(int r, int c) const override;
   // The edge a row shows: its identity.
   const EdgeKey & edge(int r) const { return keys_[static_cast<size_t>(r)]; }
+  // The icon URL of a row's base instrument, empty for none.
+  std::string iconUrl(int r) const;
+  std::shared_ptr<const cellui::TableIcon> icon(int r, int c) const override;
   std::span<const float> trace(int r, int) const override;
   std::optional<cellui::Color> color(int r, int c) const override;
   // Prices and changes sort by their values, not their rounded text; the others by their text, letters of either case alike.
@@ -61,6 +67,7 @@ class Quotes : public cellui::TableModel {
   const std::string & marketLabel(MarketId) const;
   const std::string & datasetName(DatasetId) const;
 
+  std::shared_ptr<IconLoader> icons_;
   std::shared_ptr<const Snapshot> snapshot_;
   std::vector<EdgeKey> keys_;
   mutable std::unordered_map<uint32_t, std::string> marketLabels_, datasetNames_;
