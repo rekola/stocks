@@ -4,9 +4,9 @@
 #include "model/Dates.h"
 #include "AttributeView.h"
 #include "model/Isin.h"
-#include "source/AktiaSource.h"
-#include "source/OpSource.h"
+#include "source/FundSource.h"
 
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 
@@ -19,7 +19,16 @@ std::string fixture(const std::string & name) {
   return s.str();
 }
 
-constexpr auto kNoPause = std::chrono::milliseconds(0);
+// The schemas of the tests (tests/fixtures/funds/schema-NAME.json): one whose answers are lists with a details request, one with a token and rows in an object.
+FundSchema schema(const std::string & name) {
+  FundSchema out;
+  std::string error;
+  CHECK(FundSchema::load(std::string(STOCKS_FIXTURES_DIR) + "/funds/schema-" + name + ".json", out, error));
+  out.pause = std::chrono::milliseconds(0);
+  return out;
+}
+
+FundSource source(const std::string & name) { return FundSource(schema(name)); }
 
 std::optional<EdgeKey> edgeOf(const Snapshot & s, const char * isin, const char * market, const char * dataset) {
   auto b = s.findInstrumentByIsin(isin);
@@ -32,74 +41,97 @@ std::optional<EdgeKey> edgeOf(const Snapshot & s, const char * isin, const char 
 
 }  // namespace
 
-TEST(aktia_isins_are_valid_and_luxembourg_ones_come_from_the_id) {
-  bool known = false;
-  auto isin = AktiaSource::isinOf("LU0823428346EUR", known);
-  CHECK(known && isin && *isin == "LU0823428346");
-  isin = AktiaSource::isinOf("AKTNORDICB", known);
-  CHECK(known && isin && *isin == "FI0008810569");
-  isin = AktiaSource::isinOf("AKTASUNNOTAO", known);
-  CHECK(known && !isin);  // listed, and not wanted
-  isin = AktiaSource::isinOf("NOSUCH", known);
-  CHECK(!known && !isin);
-  for (const char * id : {"ROBURSVERIGEA", "AKTNORDICHYJB", "AKTEUKASSAKONEJB", "AKTARVOREINJB", "AKTIALIKVI", "AKTEURHYB", "AKTEMFRONTB",
-                          "AKTEMLCB", "AKTEMERB", "AKTCORBONB", "ROBURROVAR", "ROBURCONTU", "ROBURJAPAN", "ROBURPACIF", "ODINSVERIGE",
-                          "ODINNORGE", "HQINDIEN", "PARINDIA", "PAREQWRLDEME", "PARCHINA", "PAREQASIA", "AKTNORSCAB", "AKTNORDMCB",
-                          "AKTNORDICB", "AKTEURSCAB", "AKTIAEUROB", "AKTVARH50B", "AKTVARH25B", "AKTIOSAKEB", "AKTABAB", "AKTEURSMAB",
-                          "AKTPROSPB"}) {
-    isin = AktiaSource::isinOf(id, known);
-    CHECK(known && isin && isValidIsin(*isin));
-  }
-}
-
-TEST(an_aktia_list_gives_the_wanted_funds_and_reports_the_unknown) {
-  std::vector<AktiaSource::Product> products;
-  std::vector<std::string> unknown;
+TEST(the_isin_table_is_valid_and_luxembourg_ones_come_from_the_id) {
+  FundSchema f = schema("alpha");
+  int wanted = 0;
+  for (const auto & [id, isin] : f.isins)
+    if (!isin.empty()) {
+      CHECK(isValidIsin(isin));
+      wanted++;
+    }
+  CHECK(wanted == 2);
+  FundSource s = source("alpha");
+  std::vector<FundSource::Entry> entries;
   std::string error;
-  CHECK(AktiaSource::parseList(fixture("aktia/product-list.json"), products, unknown, error));
-  CHECK(products.size() == 2);
-  CHECK(products[0].fund.isin == "FI0008810569" && products[0].productId == "AKTNORDICB");
-  CHECK_NEAR(*products[0].fund.managementFee, 1.53, 1e-9);
-  CHECK(*products[0].fund.risk == 6 && *products[0].fund.rating == 4);
-  CHECK(products[1].fund.isin == "LU0823428346");
-  CHECK(unknown.size() == 2);  // the quarterly one and the new one have no ISIN in the table
-  CHECK(!AktiaSource::parseList("{}", products, unknown, error));
+  CHECK(s.parseList(R"([{"productId":"LU0823428346EUR"},{"productId":"ALPHANORDIC"},{"productId":"ALPHAREALTY"},{"productId":"NOSUCH"}])", entries, error));
+  CHECK(entries.size() == 4);
+  CHECK(entries[0].fund.isin == "LU0823428346" && entries[0].wanted);
+  CHECK(entries[1].fund.isin == "FI0008810569");
+  CHECK(!entries[2].wanted);  // known, not wanted
+  CHECK(entries[3].fund.isin.empty() && entries[3].wanted);
 }
 
-TEST(aktia_fees_prefer_the_online_fee) {
-  FundRow f;
+TEST(a_list_of_rows_gives_the_funds_with_their_ratings_and_fees_in_per_cent) {
+  FundSource s = source("alpha");
+  std::vector<FundSource::Entry> entries;
   std::string error;
-  CHECK(AktiaSource::parseFees(fixture("aktia/fees-nordic.json"), f, error));
-  CHECK(f.subscriptionFee && *f.subscriptionFee == 0.0);  // the online fee, not 1.0
-  CHECK(f.redemptionFee && *f.redemptionFee == 0.5);
-  CHECK(!AktiaSource::parseFees("[]", f, error));
+  CHECK(s.parseList(fixture("funds/alpha-list.json"), entries, error));
+  CHECK(entries.size() == 5);
+  CHECK(entries[0].fund.isin == "FI0008810569" && entries[0].id == "ALPHANORDIC" && entries[0].fund.symbol == "ALPHANORDIC");
+  CHECK_NEAR(*entries[0].fund.managementFee, 1.53, 1e-9);
+  CHECK(*entries[0].fund.risk == 6 && *entries[0].fund.rating == 4);
+  CHECK(!entries[2].wanted);
+  CHECK(!s.parseList("{}", entries, error));
 }
 
-TEST(the_aktia_source_writes_funds_as_nav_bars_and_drops_sparse_series) {
+TEST(the_online_fee_is_preferred_to_the_ordinary_one) {
+  FundSource s = source("alpha");
+  FundSource::Entry e;
+  std::string error;
+  CHECK(s.parseDetail(fixture("funds/alpha-details.json"), e, error));
+  CHECK(e.fund.subscriptionFee && *e.fund.subscriptionFee == 0.0);  // the online fee, not 1.0
+  CHECK(e.fund.redemptionFee && *e.fund.redemptionFee == 0.5);
+  CHECK(!s.parseDetail("[]", e, error));
+}
+
+TEST(an_isin_the_list_does_not_give_is_found_in_the_details_and_said) {
+  FundSource s = source("alpha");
+  FundSource::Entry e;
+  e.id = "ALPHANEWFUND";
+  std::string error;
+  CHECK(s.parseDetail(R"({"values":{"redemptionFee":{"value":1}},"static":{"deep":["x",{"code":"FI4000297817"}]}})", e, error));
+  CHECK(e.fund.isin == "FI4000297817" && e.note.find("/static/deep/1/code") != std::string::npos);
+  FundSource::Entry other;
+  other.fund.isin = "FI0008810569";  // one it has is not replaced
+  CHECK(s.parseDetail(R"({"x":"FI4000297817"})", other, error));
+  CHECK(other.fund.isin == "FI0008810569" && other.note.empty());
+}
+
+TEST(an_isin_in_the_list_row_is_found_where_the_schema_names_no_field) {
+  FundSchema f = schema("alpha");
+  f.isins.clear();
+  FundSource s(f);
+  std::vector<FundSource::Entry> entries;
+  std::string error;
+  CHECK(s.parseList(R"([{"productId":"X1","info":{"code":"FI0008810569"}}])", entries, error));
+  CHECK(entries.size() == 1 && entries[0].fund.isin == "FI0008810569" && !entries[0].note.empty());
+}
+
+TEST(the_fund_source_writes_funds_as_nav_bars_and_drops_sparse_series) {
   FakeHttp http;
   http.answer = [](const std::string & url) {
-    if (url.find("product-list") != std::string::npos) return ok(fixture("aktia/product-list.json"));
-    if (url.find("product-base-details/AKTNORDICB") != std::string::npos) return ok(fixture("aktia/fees-nordic.json"));
-    if (url.find("product-base-details/") != std::string::npos) return failed(404);
-    if (url.find("base/rates/AKTNORDICB") != std::string::npos) return ok(fixture("aktia/rates-daily.json"));
-    if (url.find("base/rates/LU0823428346EUR") != std::string::npos) return ok(fixture("aktia/rates-quarterly.json"));
+    if (url.find("alpha.example/list") != std::string::npos) return ok(fixture("funds/alpha-list.json"));
+    if (url.find("alpha.example/details/ALPHANORDIC") != std::string::npos) return ok(fixture("funds/alpha-details.json"));
+    if (url.find("alpha.example/details/") != std::string::npos) return failed(404);
+    if (url.find("alpha.example/rates/ALPHANORDIC") != std::string::npos) return ok(fixture("funds/alpha-rates-daily.json"));
+    if (url.find("alpha.example/rates/LU0823428346EUR") != std::string::npos) return ok(fixture("funds/alpha-rates-quarterly.json"));
     return failed(404);
   };
   auto store = makeMemoryStore();
   Listener listener;
-  AktiaSource source(kNoPause);
-  source.load(*store, http, listener);
+  FundSource funds = source("alpha");
+  funds.load(*store, http, listener);
   auto s = store->snapshot();
-  auto edge = edgeOf(*s, "FI0008810569", "Aktia Funds", "aktia");
+  auto edge = edgeOf(*s, "FI0008810569", "Alpha Funds", "alpha");
   CHECK(edge.has_value());
   if (!edge) return;
   auto bars = s->candles(*edge, Resolution::Day).candles;
   CHECK(bars.size() == 4);  // the later of two on one day stands
   CHECK(bars[2].close == 10.25 && !isDefined(bars[2].open) && !isDefined(bars[2].volume));
   CHECK(bars[0].time == dayNumber(2025, 12, 30));
-  CHECK(s->listing(*edge)->identifier == "AKTNORDICB");
+  CHECK(s->listing(*edge)->identifier == "ALPHANORDIC");
   CHECK(s->findInstrumentByIsin("FI0008810569")->kind == InstrumentKind::Fund);
-  CHECK(!edgeOf(*s, "LU0823428346", "Aktia Funds", "aktia"));  // priced quarterly: dropped
+  CHECK(!edgeOf(*s, "LU0823428346", "Alpha Funds", "alpha"));  // priced quarterly: dropped
   auto nordic = *s->findInstrumentByIsin("FI0008810569");
   auto fee = s->attribute(nordic.id, "redemption-fee");
   CHECK(fee && asReal(*fee) == 0.5);
@@ -115,72 +147,126 @@ TEST(the_aktia_source_writes_funds_as_nav_bars_and_drops_sparse_series) {
 }
 
 TEST(an_op_page_gives_its_token_without_a_leading_ampersand) {
+  FundSchema f = schema("beta");
   std::string token, error;
-  CHECK(OpSource::parseToken(fixture("op/funds-page.html"), token, error));
+  CHECK(FundSource::parseToken(fixture("funds/beta-page.html"), f.tokenRegex, token, error));
   CHECK(token == "a=1&b=xyz");
-  CHECK(!OpSource::parseToken("<html></html>", token, error));
-  CHECK(OpSource::chartUrl("111", token) == "https://marketdata.op.fi/portal2/charts//fundchartdata.php?ID_NOTATION=111&type=line&a=1&b=xyz");
+  CHECK(!FundSource::parseToken("<html></html>", f.tokenRegex, token, error));
+  CHECK(FundSource::expand(f.historyUrl, "111", token) == "https://beta.example/chart?id=111&type=line&a=1&b=xyz");
 }
 
 TEST(an_op_list_leaves_out_the_less_often_priced_and_the_ones_without_an_isin) {
-  std::vector<OpSource::Product> products;
-  std::vector<std::string> unnamed;
+  FundSource s = source("beta");
+  std::vector<FundSource::Entry> entries;
   std::string error;
-  CHECK(OpSource::parseList(fixture("op/fundlist.json"), products, unnamed, error));
-  CHECK(products.size() == 2);  // the monthly one and the one with no ISIN are out
-  CHECK(unnamed.size() == 1 && unnamed[0] == "No ISIN");  // reported, not stored
-  CHECK(products[0].fund.isin == "FI0008800511" && products[0].notation == "111");
-  CHECK_NEAR(*products[0].fund.managementFee, 1.5, 1e-9);  // a string of a number
-  CHECK(*products[0].fund.risk == 5 && *products[0].fund.rating == 4 && *products[0].fund.esg == 3);
-  CHECK(products[0].fund.url == "https://www.op.fi/henkiloasiakkaat/saastot-ja-sijoitukset/rahastot/kaikki-rahastot/op-maailma/");
-  CHECK(products[1].notation == "333" && products[1].fund.url.empty());  // a number
-  CHECK(!OpSource::parseList("[]", products, unnamed, error));
+  CHECK(s.parseList(fixture("funds/beta-list.json"), entries, error));
+  CHECK(entries.size() == 4);
+  CHECK(entries[0].fund.isin == "FI0008800511" && entries[0].id == "111" && entries[0].wanted);
+  CHECK_NEAR(*entries[0].fund.managementFee, 1.5, 1e-9);  // a string of a number, not scaled
+  CHECK(*entries[0].fund.risk == 5 && *entries[0].fund.rating == 4 && *entries[0].fund.esg == 3);
+  CHECK(entries[0].fund.url == "https://beta.example/funds/beta-world/");
+  CHECK(!entries[1].wanted);  // the monthly one
+  CHECK(entries[2].id == "333" && entries[2].fund.url.empty());  // a number
+  CHECK(entries[3].fund.isin.empty());  // none
+  CHECK(!s.parseList("[]", entries, error));
 }
 
 TEST(the_op_source_writes_funds_under_its_own_dataset_and_market) {
   FakeHttp http;
   http.answer = [](const std::string & url) {
-    if (url.find("kaikki-rahastot") != std::string::npos) return ok(fixture("op/funds-page.html"));
-    if (url.find("fundlist-json.php?a=1&b=xyz&") != std::string::npos) return ok(fixture("op/fundlist.json"));
-    if (url.find("ID_NOTATION=111&") != std::string::npos) return ok(fixture("op/chart-daily.json"));
-    if (url.find("ID_NOTATION=333&") != std::string::npos) return ok(fixture("op/chart-wrapped.txt"));
+    if (url.find("beta.example/funds") != std::string::npos) return ok(fixture("funds/beta-page.html"));
+    if (url.find("beta.example/list?a=1&b=xyz&") != std::string::npos) return ok(fixture("funds/beta-list.json"));
+    if (url.find("id=111&") != std::string::npos) return ok(fixture("funds/beta-chart-daily.json"));
+    if (url.find("id=333&") != std::string::npos) return ok(fixture("funds/beta-chart-wrapped.txt"));
     return failed(404);
   };
   auto store = makeMemoryStore();
   Listener listener;
-  OpSource source(kNoPause);
-  source.load(*store, http, listener);
+  FundSource funds = source("beta");
+  funds.load(*store, http, listener);
   auto s = store->snapshot();
-  auto edge = edgeOf(*s, "FI0008800511", "OP Funds", "op");
+  auto edge = edgeOf(*s, "FI0008800511", "Beta Funds", "beta");
   CHECK(edge.has_value());
   if (edge) CHECK(s->candles(*edge, Resolution::Day).candles.size() == 3);
-  CHECK(edgeOf(*s, "FI0008801238", "OP Funds", "op").has_value());  // the wrapped series
+  CHECK(edgeOf(*s, "FI0008801238", "Beta Funds", "beta").has_value());  // the wrapped series
   if (edge) {
     auto url = s->attribute(NodeRef(edge->base), predicate::webUrl);
-    CHECK(url && asText(*url) && asText(*url)->find("https://www.op.fi/") == 0);
+    CHECK(url && asText(*url) && asText(*url)->find("https://beta.example/") == 0);
   }
-  CHECK(!edgeOf(*s, "FI4000439971", "OP Funds", "op"));
+  CHECK(!edgeOf(*s, "FI4000439971", "Beta Funds", "beta"));
   CHECK(!http.headers.empty() && http.headers[0].size() == 2);  // the page is asked for with a Referer and an Origin
 }
 
 TEST(a_fund_with_a_wrong_isin_is_not_stored_and_is_reported) {
-  std::vector<OpSource::Product> products;
-  std::vector<std::string> unnamed;
-  std::string error;
-  CHECK(OpSource::parseList(R"({"inst":[{"isin":"FI0008800512","name":"Typo","id_notation":"1"}]})", products, unnamed, error));
-  CHECK(products.empty() && unnamed.size() == 1);
+  FakeHttp http;
+  http.answer = [](const std::string & url) {
+    if (url.find("beta.example/funds") != std::string::npos) return ok(fixture("funds/beta-page.html"));
+    if (url.find("beta.example/list") != std::string::npos) return ok(R"({"inst":[{"isin":"FI0008800512","name":"Typo","id_notation":"1"}]})");
+    return ok(fixture("funds/beta-chart-daily.json"));
+  };
   auto store = makeMemoryStore();
-  CHECK(!writeFund(*store, "op", "OP Funds", FundRow{.isin = "", .name = "x"}, {{1, 0, 0, 0, 1, 0}}));
+  Listener listener;
+  FundSource funds = source("beta");
+  funds.load(*store, http, listener);
+  CHECK(store->snapshot()->instruments().empty());
+  bool said = false;
+  for (const std::string & m : listener.messages) said = said || m.find("no ISIN for 1 (Typo)") != std::string::npos;
+  CHECK(said);
+  CHECK(!writeFund(*store, "beta", "Beta Funds", FundRow{.isin = "", .name = "x"}, {{1, 0, 0, 0, 1, 0}}));
   CHECK(store->snapshot()->instruments().empty());
 }
 
-TEST(a_failed_op_page_says_so_and_writes_nothing) {
+TEST(a_fund_whose_isin_is_only_in_its_details_is_stored_and_the_find_is_said) {
+  FakeHttp http;
+  http.answer = [](const std::string & url) {
+    if (url.find("alpha.example/list") != std::string::npos) return ok(R"([{"productId":"ALPHANEWFUND","productNameEn":"Alpha New"}])");
+    if (url.find("alpha.example/details/") != std::string::npos) return ok(R"({"values":{},"identifiers":{"isin":"FI4000297817"}})");
+    return ok(fixture("funds/alpha-rates-daily.json"));
+  };
+  auto store = makeMemoryStore();
+  Listener listener;
+  FundSource funds = source("alpha");
+  funds.load(*store, http, listener);
+  CHECK(edgeOf(*store->snapshot(), "FI4000297817", "Alpha Funds", "alpha").has_value());
+  bool said = false;
+  for (const std::string & m : listener.messages) said = said || m.find("found in the details at /identifiers/isin") != std::string::npos;
+  CHECK(said);
+}
+
+TEST(schemas_are_read_from_json_and_a_wrong_one_says_what_is_wrong) {
+  // Every schema that comes with the program: it reads, by its name and by its path, and the ISINs in its table are valid.
+  int shipped = 0;
+  for (const auto & file : std::filesystem::directory_iterator(std::string(STOCKS_DATA_DIR) + "/funds")) {
+    if (file.path().extension() != ".json") continue;
+    shipped++;
+    FundSchema byPath, byName;
+    std::string error;
+    CHECK(FundSchema::load(file.path().string(), byPath, error));
+    CHECK(FundSchema::load(file.path().stem().string(), byName, error));
+    CHECK(byPath.name == file.path().stem().string() && byName.name == byPath.name);
+    CHECK(!byPath.list.url.empty() && !byPath.historyUrl.empty());
+    for (const auto & [id, isin] : byPath.isins) CHECK(isin.empty() || isValidIsin(isin));
+  }
+  CHECK(shipped >= 2);
+  FundSchema f;
+  std::string error;
+  CHECK(!FundSchema::load("nosuchschema", f, error) && error.find("nosuchschema") != std::string::npos);
+  CHECK(!FundSchema::load("/nonexistent/x.json", f, error));
+  CHECK(!FundSchema::parse("[]", f, error));
+  CHECK(!FundSchema::parse(R"({"name":"x","market":"X","dataset":"x","list":{"url":"u","fields":{"id":"id"}},"history":{"url":"h"}})", f, error));  // a pointer has a slash
+  CHECK(error.find("field id") != std::string::npos);
+  CHECK(!FundSchema::parse(R"({"name":"x","market":"X","dataset":"x","list":{"url":"u","fields":{"name":"/n"}},"history":{"url":"h"}})", f, error));  // no id
+  CHECK(FundSchema::parse(R"({"name":"x","market":"X","dataset":"x","list":{"url":"u","fields":{"id":"/i"}},"history":{"url":"h"}})", f, error));
+  CHECK(f.pause == std::chrono::milliseconds(2000) && f.refresh == std::chrono::hours(6));
+}
+
+TEST(a_failed_token_page_says_so_and_writes_nothing) {
   FakeHttp http;
   http.answer = [](const std::string &) { return failed(403); };
   auto store = makeMemoryStore();
   Listener listener;
-  OpSource source(kNoPause);
-  source.load(*store, http, listener);
+  FundSource funds = source("beta");
+  funds.load(*store, http, listener);
   CHECK(listener.changes == 0 && listener.messages.size() == 1);
   CHECK(store->snapshot()->instruments().empty());
 }

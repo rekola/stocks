@@ -1,0 +1,44 @@
+{
+ "name": "op",
+ "market": "OP Funds",
+ "dataset": "op",
+ "pauseMs": 2000,
+ "refreshHours": 6,
+ "headers": {
+  "Referer": "https://www.op.fi",
+  "Origin": "https://www.op.fi/"
+ },
+ "token": {
+  "page": "https://www.op.fi/henkiloasiakkaat/saastot-ja-sijoitukset/rahastot/kaikki-rahastot",
+  "regex": "window\\.sessionStorage\\.setItem\\(\"data_token\", \"([^\"]*)\"\\);"
+ },
+ "isins": {
+  "FI4000439971": "",
+  "FI4000108436": "",
+  "FI4000281738": "",
+  "FI4000530860": "",
+  "FI4000060934": "",
+  "FI4000306774": ""
+ },
+ "list": {
+  "url": "https://marketdata.op.fi/portal2/fundlist-json.php?{token}&y_rahastot=-1&group=all&region=all&tab=today&risk=1,7&tab=today&sort=fund_name%20asc",
+  "rows": "/inst",
+  "fields": {
+   "id": "/id_notation",
+   "symbol": "/isin",
+   "name": "/name",
+   "isin": "/isin",
+   "risk": "/risk_level",
+   "rating": "/morningstar",
+   "esg": "/esg_rating",
+   "managementFee": "/management_fee",
+   "subscriptionFee": "/subs_fee",
+   "redemptionFee": "/redemption_fee",
+   "link": "/link"
+  },
+  "linkPrefix": "https://www.op.fi"
+ },
+ "history": {
+  "url": "https://marketdata.op.fi/portal2/charts//fundchartdata.php?ID_NOTATION={id}&type=line&{token}"
+ }
+}

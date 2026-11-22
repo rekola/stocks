@@ -1,7 +1,0 @@
-[
- {"productId":"AKTNORDICB","productNameEn":"Aktia Nordic","productNameFi":"Aktia Nordic","riskClass":6,"morningstarRating":4,"runningCosts":0.0153,"fundCompanyAktia":1},
- {"productId":"LU0823428346EUR","productNameEn":"Parvest Equity India","productNameFi":"Parvest India","riskClass":6,"morningstarRating":3,"runningCosts":0.0245},
- {"productId":"AKTASUNNOTAO","productNameEn":"Aktia Real Estate","productNameFi":"Aktia Asunnot","riskClass":2,"morningstarRating":2,"runningCosts":0.01},
- {"productId":"AKTQUARTERLYB","productNameEn":"Aktia Quarterly","productNameFi":"Aktia Neljännes","riskClass":3,"morningstarRating":3,"runningCosts":0.01},
- {"productId":"AKTNEWFUNDB","productNameEn":"Aktia New","productNameFi":"Aktia Uusi","riskClass":3,"morningstarRating":3,"runningCosts":0.01}
-]

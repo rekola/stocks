@@ -1,0 +1,7 @@
+[
+ {"productId":"ALPHANORDIC","productNameEn":"Alpha Nordic","productNameFi":"Alpha Nordic","riskClass":6,"morningstarRating":4,"runningCosts":0.0153,"fundCompanyAlpha":1},
+ {"productId":"LU0823428346EUR","productNameEn":"Parvest Equity India","productNameFi":"Parvest India","riskClass":6,"morningstarRating":3,"runningCosts":0.0245},
+ {"productId":"ALPHAREALTY","productNameEn":"Alpha Real Estate","productNameFi":"Alpha Asunnot","riskClass":2,"morningstarRating":2,"runningCosts":0.01},
+ {"productId":"ALPHAQUARTERLY","productNameEn":"Alpha Quarterly","productNameFi":"Alpha Neljännes","riskClass":3,"morningstarRating":3,"runningCosts":0.01},
+ {"productId":"ALPHANEWFUND","productNameEn":"Alpha New","productNameFi":"Alpha Uusi","riskClass":3,"morningstarRating":3,"runningCosts":0.01}
+]
