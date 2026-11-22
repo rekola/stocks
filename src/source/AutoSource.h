@@ -19,6 +19,10 @@ class AutoSource : public Source {
   }
   void load(Store &, Http &, SourceListener &) override;
   std::chrono::milliseconds refreshInterval() const override { return chosen()->refreshInterval(); }
+  bool loadDetails(Store & store, Http & http, SourceListener & listener) override {
+    return decided_ && chosen()->loadDetails(store, http, listener);
+  }
+  std::chrono::milliseconds detailsInterval() const override { return chosen()->detailsInterval(); }
 
   // The source in use: the primary until it has failed.
   const Source & chosen_source() const { return *chosen(); }

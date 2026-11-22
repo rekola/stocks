@@ -1,6 +1,7 @@
 #include "source/NordnetDetails.h"
 
 #include "model/Dates.h"
+#include "source/Countries.h"
 
 #include <nlohmann/json.hpp>
 
@@ -71,9 +72,9 @@ void statistics(const json & object, const char * period, const char * suffix, s
   static const struct {
     const char * key;
     const char * name;
-  } kFigures[] = {{"alpha", "fund-alpha-"},        {"beta", "fund-beta-"},
-                  {"r2", "fund-r2-"},              {"sharpeRatio", "fund-sharpe-"},
-                  {"standardDeviation", "fund-deviation-"}, {"trackingError", "fund-tracking-error-"}};
+  } kFigures[] = {{"alpha", "alpha-"},        {"beta", "beta-"},
+                  {"r2", "r2-"},              {"sharpeRatio", "sharpe-"},
+                  {"standardDeviation", "deviation-"}, {"trackingError", "tracking-error-"}};
   for (const auto & f : kFigures) {
     const json * v = member(*stats, f.key);
     if (v && v->is_number()) out.push_back({std::string(f.name) + suffix, v->get<double>()});
@@ -94,15 +95,15 @@ std::optional<double> keyFigure(const json & stock, const char * type) {
 
 }  // namespace
 
-std::string NordnetDetailsSource::stockUrl(const std::string & orderBook) {
+std::string NordnetDetails::stockUrl(const std::string & orderBook) {
   return "https://api.prod.nntech.io/instrument-screening/v3/stocks/web/" + orderBook;
 }
 
-std::string NordnetDetailsSource::fundUrl(const std::string & orderBook) {
+std::string NordnetDetails::fundUrl(const std::string & orderBook) {
   return "https://api.prod.nntech.io/instrument/v2/funds/" + orderBook;
 }
 
-bool NordnetDetailsSource::parseStock(const std::string & body, std::vector<Attribute> & said, std::string & error) {
+bool NordnetDetails::parseStock(const std::string & body, std::vector<Attribute> & said, std::string & error) {
   json j = json::parse(body, nullptr, false);
   if (!j.is_object() || !member(j, "companyProfile")) {
     error = "not a stock's page";
@@ -111,7 +112,8 @@ bool NordnetDetailsSource::parseStock(const std::string & body, std::vector<Attr
   const json & p = j["companyProfile"];
   text(p, {"companyIdentity", "businessDescription"}, "description", said);
   text(p, {"companyIdentity", "websiteUrl"}, "company-website", said);
-  text(p, {"address", "country"}, "company-country", said);  // as the provider writes it, in the language it was asked in
+  if (const json * name = at(p, {"address", "country"}); name && name->is_string())
+    if (auto code = countryCodeOfFinnishName(name->get<std::string>())) said.push_back({predicate::country, *code});
   text(p, {"classification", "economy", "economy"}, "economy", said);
   text(p, {"classification", "sector", "sector"}, "sector", said);
   text(p, {"classification", "industry", "industry"}, "industry", said);
@@ -123,7 +125,7 @@ bool NordnetDetailsSource::parseStock(const std::string & body, std::vector<Attr
   return true;
 }
 
-bool NordnetDetailsSource::parseFund(const std::string & body, std::vector<Attribute> & said, std::string & error) {
+bool NordnetDetails::parseFund(const std::string & body, std::vector<Attribute> & said, std::string & error) {
   json j = json::parse(body, nullptr, false);
   if (!j.is_object() || !member(j, "isin")) {
     error = "not a fund's page";
@@ -132,19 +134,19 @@ bool NordnetDetailsSource::parseFund(const std::string & body, std::vector<Attri
   text(j, {"description"}, "description", said);
   text(j, {"tradingInfo", "cutOffTime"}, "fund-cut-off", said);  // the time of day, as given ("10:00:00")
   // The Morningstar figures say what the lists say, under the same names.
-  integer(j, {"morningstarValues", "rating", "value"}, "fund-morningstar-rating", said);
-  integer(j, {"morningstarValues", "risk", "value"}, "fund-risk-class", said);
+  integer(j, {"morningstarValues", "rating", "value"}, "morningstar-rating", said);
+  integer(j, {"morningstarValues", "risk", "value"}, "risk-class", said);
   real(j, {"fees", "managementFee"}, "management-fee", said);
-  real(j, {"fees", "ongoingCost"}, "fund-ongoing-cost", said);
-  real(j, {"fees", "totalFee"}, "fund-total-fee", said);
-  text(j, {"assetClass"}, "fund-asset-class", said);
-  text(j, {"baseCurrency"}, "fund-currency", said);
-  text(j, {"dividend", "distributionType"}, "fund-distribution", said);
-  text(j, {"fundCompany", "name"}, "fund-admin-company", said);
-  text(j, {"fundCompany", "homepage"}, "fund-company-website", said);
-  day(j, {"inceptionDate"}, "fund-start-day", said);
-  flag(j, {"ucits"}, "fund-ucits", said);
-  real(j, {"tradingInfo", "minInvestment", "value"}, "fund-min-investment", said);
+  real(j, {"fees", "ongoingCost"}, "ongoing-cost", said);
+  real(j, {"fees", "totalFee"}, "total-fee", said);
+  text(j, {"assetClass"}, "asset-class", said);
+  text(j, {"baseCurrency"}, "base-currency", said);
+  text(j, {"dividend", "distributionType"}, "distribution", said);
+  text(j, {"fundCompany", "name"}, "admin-company", said);
+  text(j, {"fundCompany", "homepage"}, "admin-company-website", said);
+  day(j, {"inceptionDate"}, "start-day", said);
+  flag(j, {"ucits"}, "ucits", said);
+  real(j, {"tradingInfo", "minInvestment", "value"}, "min-investment", said);
   if (const json * stats = member(j, "risksStatistics")) {
     statistics(*stats, "oneYear", "1y", said);
     statistics(*stats, "threeYears", "3y", said);
@@ -153,7 +155,7 @@ bool NordnetDetailsSource::parseFund(const std::string & body, std::vector<Attri
   return true;
 }
 
-void NordnetDetailsSource::load(Store & store, Http & http, SourceListener & listener) {
+bool NordnetDetails::loadBatch(Store & store, Http & http, SourceListener & listener, std::chrono::milliseconds pause, size_t batch) {
   struct Target {
     InstrumentId id;
     std::string orderBook;
@@ -163,7 +165,7 @@ void NordnetDetailsSource::load(Store & store, Http & http, SourceListener & lis
   {
     auto snapshot = store.snapshot();
     auto dataset = snapshot->findDataset("nordnet");
-    if (!dataset) return;
+    if (!dataset) return false;
     std::set<uint32_t> seen;
     for (const Market & market : snapshot->markets()) {
       for (const EdgeKey & edge : snapshot->edges(market.id)) {
@@ -180,7 +182,8 @@ void NordnetDetailsSource::load(Store & store, Http & http, SourceListener & lis
   }
   size_t done = 0;
   for (const Target & t : targets) {
-    if (listener.cancelled() || done >= batch_) return;
+    if (listener.cancelled()) return true;
+    if (done >= batch) return true;
     tried_.insert(t.id.value);
     done++;
     HttpResult r = http.get(t.fund ? fundUrl(t.orderBook) : stockUrl(t.orderBook), kHeaders);
@@ -194,6 +197,7 @@ void NordnetDetailsSource::load(Store & store, Http & http, SourceListener & lis
       store.setAttributes(t.id, said);
       listener.changed();
     }
-    if (pause_.count() > 0) std::this_thread::sleep_for(pause_);
+    if (pause.count() > 0) std::this_thread::sleep_for(pause);
   }
+  return false;
 }

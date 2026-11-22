@@ -15,7 +15,6 @@
 #include "history/HistoryLoader.h"
 #include "icons/IconLoader.h"
 #include "source/AutoSource.h"
-#include "source/NordnetDetails.h"
 #include "source/SourceRunner.h"
 #include "source/NordnetSource.h"
 #include "source/FundSource.h"
@@ -43,12 +42,11 @@ std::unique_ptr<Source> makeSource(const std::string & name, const ListSpec & li
   if (name == "auto") return std::make_unique<AutoSource>(std::make_unique<NordnetSource>(), std::make_unique<YahooSource>(lists));
   if (name == "yahoo") return std::make_unique<YahooSource>(lists);
   if (name == "nordnet") return std::make_unique<NordnetSource>();
-  if (name == "nordnet-details") return std::make_unique<NordnetDetailsSource>();
   if (name == "synthetic") return std::make_unique<SyntheticSource>(lists);
   return nullptr;
 }
 
-constexpr const char * kSourceNames = "auto, nordnet, nordnet-details, yahoo, funds:SCHEMA, synthetic";
+constexpr const char * kSourceNames = "auto, nordnet, yahoo, funds:SCHEMA, synthetic";
 
 }  // namespace
 
@@ -94,8 +92,6 @@ int main(int argc, char ** argv) {
     std::unique_ptr<Source> source = makeSource(one, lists, schema_error);
     if (!source) return fail(2, "stocks: " + (schema_error.empty() ? "unknown --source " + one + " (there are " + std::string(kSourceNames) + ")" : schema_error));
     sources.push_back(std::move(source));
-    // The details of the instruments Nordnet lists are filled in beside the lists, a batch at a time.
-    if (one == "auto") sources.push_back(std::make_unique<NordnetDetailsSource>());
     from = comma + 1;
   }
 
