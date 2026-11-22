@@ -12,6 +12,7 @@
 // or row chooses it, the wheel scrolls.
 #include "Browser.h"
 #include "Synthetic.h"
+#include "icons/IconLoader.h"
 #include "source/SourceRunner.h"
 #include "source/NordnetSource.h"
 #include "source/YahooSource.h"
@@ -82,9 +83,10 @@ int main(int argc, char ** argv) {
   }
 
   std::shared_ptr<Store> store = makeMemoryStore();
-  Browser browser(*app, store);
-  // The sources run on a thread of their own and tell the UI thread what happened.
+  // The loader and the sources run on threads of their own and tell the UI thread what happened.
   cellui::ThreadInbox inbox(app->backend().eventLoop(), app->widgets());
+  auto icons = std::make_shared<IconLoader>(makeHttp(), IconLoader::Options{.cache_dir = defaultIconCacheDir()}, [&inbox] { inbox.post(IconsLoaded{}); });
+  Browser browser(*app, store, icons);
   SourceRunner runner(
       store, std::move(sources), [&inbox] { inbox.post(StoreChanged{}); },
       [&inbox](std::string text) { inbox.post(SourceMessage{std::move(text)}); });
