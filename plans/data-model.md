@@ -2,7 +2,7 @@
 
 Status: steps 1 to 4 are built (`src/model/`: `Types.h`, `Store.h`,
 `MemoryStore.cpp`, tests in `tests/ModelTests.cpp`), as an immutable persistent
-store. The table shows what the store holds, filled by Yahoo (or made-up data)
+store. The table shows what the store holds, filled by a data source (or made-up data)
 on a thread of its own. The order book, announcements and a universal scraper
 are not built yet.
 
@@ -62,7 +62,7 @@ On an edge key (a price of something):
   week; absolute week numbers are to come from the day numbers, and months and quarters
   have no numbering yet). A daily bar is not an instant, and providers' midnight stamps
   on them are only markers of the date. A bar that does not start on a slot boundary
-  (Yahoo's hourly bars on US exchanges start at :30) cannot be keyed by its slot without
+  (hourly bars on US exchanges start at :30 at some providers) cannot be keyed by its slot without
   losing its offset: an open question, see server.md.
 - **Order book snapshots**: the bids and asks standing at a moment (price and
   size per level), time-ordered. Kept apart from candles because they are a
@@ -135,7 +135,7 @@ the in-memory one, and a server-backed store would hand out snapshots too.
    are edges (`QuoteRow` is the display row built from a snapshot), a Dataset
    column, latest price and change from the candles. Rows come in the store's
    key order.
-4. ~~A first real source~~ Done: Yahoo (see Sources). The table follows the
+4. ~~A first real source~~ Done: a candle source (see Sources). The table follows the
    store as sources write to it.
 5. The simple order-book view for the prediction models, once the questions
    below are settled.
@@ -156,27 +156,27 @@ for a frame. The UI never waits on a source.
   the small `Http` interface, so tests give them canned responses. httpclient has
   no build system of its own, so `CMakeLists.txt` compiles the two backend
   sources it needs.
-- **Yahoo's instrument lists** (`src/source/InstrumentLists.cpp`, `data/yahoo/*.csv`):
-  Yahoo has no discovery, so its adapter has lists of its own, one file per market,
-  with Yahoo's ticker for each instrument, and reads them when it loads. They stand in
-  until every adapter finds its own instruments, and then they go; the synthetic source
-  follows them meanwhile. They are checked against Yahoo by
-  `tools/yahoo/build_lists.py` and are not complete: about 100 Helsinki shares, 30
+- **Instrument lists** (`src/source/InstrumentLists.cpp`, `data/lists/*.csv`):
+  the candle source has no discovery, so its adapter has lists of its own, one file per
+  market, with the source's ticker for each instrument, and reads them when it loads. They
+  stand in until every adapter finds its own instruments, and then they go; the synthetic
+  source follows them meanwhile. They are checked against the source by
+  `tools/lists/build_lists.py` and are not complete: about 100 Helsinki shares, 30
   commodity futures, 88 currency pairs. No other part of the program knows them.
-- **Yahoo** (`YahooSource`, dataset `yahoo`): one chart request per
-  instrument (`range`, daily bars, `events=div|split`), second host as a
+- **Candle source** (its own dataset): one chart request per
+  instrument (a range, daily bars, dividend and split events), a second host as a
   fallback, a pause between requests, a stop on rate limiting. Days without a
   price are skipped; dividends and splits become corporate actions (a split is
-  new shares per old). Unofficial, no key, for personal use. Yahoo's history is
-  already adjusted for splits, so the series does not show a split's jump; the
-  action is stored beside it.
-- **Nordnet** (`NordnetSource`, no key, no login): discovery from Nordnet's
-  unofficial instrument search. It loads every list it knows in the same way, with no
-  category of its own for each: the ETFs (about 2300) and the certificates of type PTC
-  (about 1100), as 7 requests, a page at a time into the store, and again every five
-  minutes (`Source::refreshInterval`, run by `SourceRunner`). Each listing is an
-  instrument (a node, with its ISIN and Nordnet's own type) and, from the price block
-  of the listing, today's daily bar under the dataset `nordnet`, replaced at each
+  new shares per old). Unofficial, no key, for personal use. Its history is
+  already adjusted for splits retroactively, so the series does not show a split's
+  jump; the action is stored beside it. Handling that adjustment is a necessary
+  feature (see server.md).
+- **Discovery source** (no key, no login): discovery from an unofficial instrument
+  search. It loads every list it knows in the same way, with no category of its own for
+  each: ETFs, certificates, funds, stocks and the indicator lists, a page at a time into
+  the store, and again every few minutes (`Source::refreshInterval`, run by `SourceRunner`). Each listing is an
+  instrument (a node, with its ISIN and the provider's own type) and, from the price block
+  of the listing, today's daily bar under the source's dataset, replaced at each
   reload and added at a new day. **An edge exists only when it has data**: a node with
   no edge is not seen, and a listing that has not traded has no bar. An instrument
   listed on two markets is one instrument and two edges (an instrument with an ISIN is
@@ -203,8 +203,8 @@ Not done:
 
 - **One vocabulary of instrument types.** `InstrumentKind` (company, currency,
   commodity, index, ETF, certificate, other) is the combined vocabulary: each adapter
-  maps its provider's types onto it (`src/source/InstrumentTypes.cpp`: Nordnet's UETF
-  and KETF are ETFs and PTC are certificates; Yahoo's EQUITY, ETF, INDEX, FUTURE and
+  maps its provider's types onto it (`src/source/InstrumentTypes.cpp`: UETF
+  and KETF are ETFs and PTC are certificates; EQUITY, ETF, INDEX, FUTURE and
   CURRENCY), and keeps the provider's own type beside it (`Instrument::type`) as what
   the mapping came from. A certificate is a certificate whoever lists it. Selecting
   edges by type is not used yet (see server.md for what is hard about it).
