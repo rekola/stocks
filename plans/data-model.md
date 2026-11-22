@@ -43,10 +43,27 @@ of `base` costs this much `quote`" (NOKIA -> EUR, EUR -> USD).
 
 On an edge key (a price of something):
 
-- **Candles**: a time-ordered series of OHLCV bars, one bar per start time, all
-  the same interval. The interval belongs to the series; a dataset with two
-  intervals (1 minute and 1 day) is two datasets. A bar at a time already in the
-  series replaces it, so corrections need no special path.
+- **Candles**: time-ordered series of OHLCV bars, one bar per start time. **The
+  resolution is not part of the key**: an edge has a series for each resolution it has
+  data in (5 minutes, 15 minutes, an hour, a day, ...), the same edge with its data in
+  different forms, each as the provider gave it and none derived from another. A bar
+  at a time already in the series replaces it, so corrections, and today's bar kept up
+  to date, need no special path.
+  **Time.** An instant is whole Unix seconds, UTC (never milliseconds; where whole
+  seconds are not enough, as for order books, floating-point seconds). A resolution is
+  a code (`Resolution`: `Min1` to `Hour4`, `Day`, `Week`, `Month`, `Quarter`), not a
+  length: days, weeks and months are not fixed lengths. The key of a bar is a number, as
+  in the legacy platform. **Intraday bars are keyed by their slot number**: the UTC
+  seconds of the start divided by the length of the resolution, rounded down (the hour
+  number is the UTC seconds divided by 3600). The **date resolutions are keyed by a
+  date, as a day number** (the absolute day number of the proleptic Gregorian calendar,
+  1 = 1 January of the year 1, as in Date::Calc's `Date_to_Days`; `Dates.h`): a daily bar
+  by its trading date, a week, month or quarter bar by its first day (a Monday for a
+  week; absolute week numbers are to come from the day numbers, and months and quarters
+  have no numbering yet). A daily bar is not an instant, and providers' midnight stamps
+  on them are only markers of the date. A bar that does not start on a slot boundary
+  (Yahoo's hourly bars on US exchanges start at :30) cannot be keyed by its slot without
+  losing its offset: an open question, see server.md.
 - **Order book snapshots**: the bids and asks standing at a moment (price and
   size per level), time-ordered. Kept apart from candles because they are a
   different kind of fact, but under the same key. Quotes carry information even
@@ -77,8 +94,8 @@ for the same instrument on the selected market, they are two rows. Merging such
 rows is later work.
 
 A row needs the instrument's symbol and name, the dataset, the latest price and
-the change over the last interval (from `lastCandles`), and the trace of recent
-closes. So the table gets a Dataset column. The row's identity is the edge key.
+the change over the last day (from `lastCandles` of the daily series; an edge with
+only intraday bars has no row yet), and the trace of recent closes. So the table gets a Dataset column. The row's identity is the edge key.
 
 ## Store and snapshots
 
@@ -97,12 +114,13 @@ the in-memory one, and a server-backed store would hand out snapshots too.
   write that changes nothing publishes nothing, and each one that does makes the
   next `version()`.
 - Reads on a snapshot: lookups by id and name, `edges(market)` (keys with
-  candles or a book in a market), `candles(key, range)`, `lastCandles(key, n)`,
+  candles or a book in a market), `candles(key, resolution, range)`,
+  `lastCandles(key, resolution, n)`, `resolutions(key)` (the resolutions an edge has),
   `books(key, range)`, `bookAt(key, time)`, `announcements`, `actions`, and
   `events(instrument)` for the datasets that say anything about an instrument.
 - Series come back as `Seq<T>` (an immer `flex_vector`): slices share storage
   with the snapshot, and a reference into one is valid as long as it is held.
-  Time ranges are half-open `[from, to)`; time is UTC milliseconds.
+  Time ranges are half-open `[from, to)`, in seconds or in day numbers as the series is keyed.
 - Appending at the end of a series is effectively constant time; a correction or
   late item in the middle is logarithmic. Tested with readers and writers on
   several threads, and clean under ThreadSanitizer.
@@ -138,19 +156,33 @@ for a frame. The UI never waits on a source.
   the small `Http` interface, so tests give them canned responses. httpclient has
   no build system of its own, so `CMakeLists.txt` compiles the two backend
   sources it needs.
-- **Universe** (`src/source/Universe.cpp`, `data/universe/*.csv`): the
-  instruments of the presets, as lists on disk, one file per market, with each
-  provider's symbol for them (a source reads its own column). The lists are
-  checked against Yahoo by `tools/universe/build_universe.py`, and are not
-  complete: about 100 Helsinki shares, 30 commodity futures, 88 currency pairs.
-  This is the simple form of the "identity across sources" question below.
-- **Yahoo** (`YahooSource`, dataset `yahoo-1d`): one chart request per
+- **Yahoo's instrument lists** (`src/source/InstrumentLists.cpp`, `data/yahoo/*.csv`):
+  Yahoo has no discovery, so its adapter has lists of its own, one file per market,
+  with Yahoo's ticker for each instrument, and reads them when it loads. They stand in
+  until every adapter finds its own instruments, and then they go; the synthetic source
+  follows them meanwhile. They are checked against Yahoo by
+  `tools/yahoo/build_lists.py` and are not complete: about 100 Helsinki shares, 30
+  commodity futures, 88 currency pairs. No other part of the program knows them.
+- **Yahoo** (`YahooSource`, dataset `yahoo`): one chart request per
   instrument (`range`, daily bars, `events=div|split`), second host as a
   fallback, a pause between requests, a stop on rate limiting. Days without a
   price are skipped; dividends and splits become corporate actions (a split is
   new shares per old). Unofficial, no key, for personal use. Yahoo's history is
   already adjusted for splits, so the series does not show a split's jump; the
   action is stored beside it.
+- **Nordnet** (`NordnetSource`, no key, no login): discovery from Nordnet's
+  unofficial instrument search. It loads every list it knows in the same way, with no
+  category of its own for each: the ETFs (about 2300) and the certificates of type PTC
+  (about 1100), as 7 requests, a page at a time into the store, and again every five
+  minutes (`Source::refreshInterval`, run by `SourceRunner`). Each listing is an
+  instrument (a node, with its ISIN and Nordnet's own type) and, from the price block
+  of the listing, today's daily bar under the dataset `nordnet`, replaced at each
+  reload and added at a new day. **An edge exists only when it has data**: a node with
+  no edge is not seen, and a listing that has not traded has no bar. An instrument
+  listed on two markets is one instrument and two edges (an instrument with an ISIN is
+  found by it, and by nothing else). Edges can be selected by the base instrument's
+  type or kind (`Snapshot::edges(market, filter)`). The history step loads the earlier
+  bars. Its endpoints are described in [server.md](server.md).
 - **Synthetic**: made-up prices, for runs without a network.
 
 Not done:
@@ -168,6 +200,14 @@ Not done:
   exchanges are the free ones).
 
 ## Decided
+
+- **One vocabulary of instrument types.** `InstrumentKind` (company, currency,
+  commodity, index, ETF, certificate, other) is the combined vocabulary: each adapter
+  maps its provider's types onto it (`src/source/InstrumentTypes.cpp`: Nordnet's UETF
+  and KETF are ETFs and PTC are certificates; Yahoo's EQUITY, ETF, INDEX, FUTURE and
+  CURRENCY), and keeps the provider's own type beside it (`Instrument::type`) as what
+  the mapping came from. A certificate is a certificate whoever lists it. Selecting
+  edges by type is not used yet (see server.md for what is hard about it).
 
 - Prices are `double`. Nothing here settles trades.
 - The model has a slot for corporate actions and announcements, kept as their

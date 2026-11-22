@@ -1,0 +1,104 @@
+[
+ {
+  "instrumentId": "e1e837ae-f1c2-4bd7-ac5f-960eb99a3b68",
+  "name": "EUR/USD",
+  "orderBookId": "6834e817-8f91-4c78-9d41-b8029e670f19",
+  "price": {
+   "absoluteDevelopment": -0.0006,
+   "accessType": "REALTIME",
+   "close": 1.0973,
+   "development": -0.05,
+   "high": 1.0973,
+   "last": 1.0967,
+   "low": 1.0967,
+   "orderBookId": "6834e817-8f91-4c78-9d41-b8029e670f19",
+   "orderBookStatus": "CONTINUOUS_TRADING",
+   "priceSource": "MORNINGSTAR",
+   "timestamp": 1795255303000
+  },
+  "slug": {
+   "displaySlug": "eur-usd",
+   "instrumentClass": "INDICATOR",
+   "instrumentId": "e1e837ae-f1c2-4bd7-ac5f-960eb99a3b68",
+   "isNordnetMarkets": false,
+   "orderBookId": "6834e817-8f91-4c78-9d41-b8029e670f19"
+  },
+  "sparkGraph": {
+   "development": [
+    0,
+    0,
+    0,
+    0,
+    -0.04,
+    -0.04,
+    -0.04,
+    -0.04,
+    -0.05,
+    -0.05,
+    -0.05,
+    -0.05,
+    -0.05,
+    -0.05,
+    -0.05,
+    -0.05,
+    -0.05,
+    -0.05,
+    -0.05,
+    -0.05
+   ]
+  },
+  "symbol": "EURUSD",
+  "type": "CURRENCY"
+ },
+ {
+  "instrumentId": "8ed09e38-7ce0-4718-b2a4-e51683aa02d6",
+  "name": "USD/JPY",
+  "orderBookId": "a7069c40-dbc4-4b94-bce3-7442dad07c9c",
+  "price": {
+   "absoluteDevelopment": -0.009,
+   "accessType": "REALTIME",
+   "close": 158.549,
+   "development": -0.01,
+   "high": 158.61,
+   "last": 158.54,
+   "low": 158.54,
+   "orderBookId": "a7069c40-dbc4-4b94-bce3-7442dad07c9c",
+   "orderBookStatus": "CONTINUOUS_TRADING",
+   "priceSource": "MORNINGSTAR",
+   "timestamp": 1795255303000
+  },
+  "slug": {
+   "displaySlug": "usd-jpy",
+   "instrumentClass": "INDICATOR",
+   "instrumentId": "8ed09e38-7ce0-4718-b2a4-e51683aa02d6",
+   "isNordnetMarkets": false,
+   "orderBookId": "a7069c40-dbc4-4b94-bce3-7442dad07c9c"
+  },
+  "sparkGraph": {
+   "development": [
+    0,
+    0,
+    0,
+    0,
+    -0.01,
+    -0.01,
+    -0.01,
+    -0.01,
+    -0.01,
+    -0.01,
+    -0.01,
+    -0.01,
+    -0.01,
+    -0.01,
+    -0.01,
+    -0.01,
+    -0.01,
+    -0.01,
+    -0.01,
+    -0.01
+   ]
+  },
+  "symbol": "USDJPY",
+  "type": "CURRENCY"
+ }
+]

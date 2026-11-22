@@ -1,0 +1,341 @@
+{
+ "rows": 3,
+ "total_hits": 12246,
+ "results": [
+  {
+   "instrument_info": {
+    "instrument_id": 19459205,
+    "name": "AVERDION SE INH. O.N.",
+    "long_name": "AVERDION SE INH. O.N.",
+    "symbol": "0M0",
+    "instrument_group_type": "EQ",
+    "instrument_type_hierarchy": "EQ/ESH",
+    "instrument_type": "ESH",
+    "isin": "DE000A3ESL51",
+    "currency": "EUR",
+    "price_unit": "EUR",
+    "clearing_place": "PERS_DE",
+    "is_tradable": true,
+    "is_shortable": false,
+    "is_monthly_saveable": false,
+    "is_monthly_save_dask": false,
+    "mifid2_id": 0
+   },
+   "status_info": {
+    "trading_status": "CLOSED",
+    "translated_trading_status": "Suljettu",
+    "tick_timestamp": 1795208715000
+   },
+   "market_info": {
+    "market_id": 4,
+    "market_sub_id": 50,
+    "identifier": "0M0",
+    "tick_size_id": 34831519
+   },
+   "price_info": {
+    "last": {
+     "price": 1.55,
+     "decimals": 2
+    },
+    "open": {
+     "price": 1.55,
+     "decimals": 2
+    },
+    "close": {
+     "price": 1.55,
+     "decimals": 2
+    },
+    "turnover": 0,
+    "turnover_normalized": 0,
+    "turnover_volume": 0,
+    "bid": {
+     "price": 1.51,
+     "decimals": 2
+    },
+    "ask": {
+     "price": 1.58,
+     "decimals": 2
+    },
+    "bid_volume": 0,
+    "ask_volume": 0,
+    "high": {
+     "price": 1.55,
+     "decimals": 2
+    },
+    "low": {
+     "price": 1.55,
+     "decimals": 2
+    },
+    "diff": {
+     "diff": 0,
+     "decimals": 2
+    },
+    "diff_pct": 0,
+    "spread": {
+     "price": 0.07,
+     "decimals": 4
+    },
+    "spread_pct": 4.43,
+    "tick_timestamp": 1795195800000,
+    "realtime": false
+   },
+   "exchange_info": {
+    "exchange_country": "DE",
+    "exchanges": []
+   },
+   "key_ratios_info": {},
+   "historical_returns_info": {
+    "yield_1d": 0,
+    "yield_1w": 1.31,
+    "yield_1m": 1.97,
+    "yield_3m": -1.9,
+    "yield_max": 0.65,
+    "realtime": false
+   },
+   "company_info": {},
+   "statistical_info": {
+    "statistics_timestamp": 1795200518472,
+    "number_of_owners": 0
+   },
+   "nnx_info": {
+    "nnx_instrument_id": "23464516-120d-45a0-a4d0-8cdfbd71caad",
+    "trading_order_book_id": "14035f61-7718-4639-ae36-61f1ef1b6c3b",
+    "market_data_order_book_id": "de83a98c-a9e6-4e29-b087-f5e05bb606a0",
+    "display_slug": "averdion-se-inh0-o0n0-0m0-xetb",
+    "instrument_class": "STOCK"
+   }
+  },
+  {
+   "instrument_info": {
+    "instrument_id": 19825108,
+    "name": "AbbVie",
+    "long_name": "AbbVie",
+    "symbol": "1ABBVm",
+    "instrument_group_type": "EQ",
+    "instrument_type_hierarchy": "EQ/ESH",
+    "instrument_type": "ESH",
+    "isin": "US00287Y1091",
+    "currency": "EUR",
+    "price_unit": "EUR",
+    "clearing_place": "CITI_IT",
+    "is_tradable": true,
+    "instrument_pawn_percentage": 0,
+    "is_shortable": false,
+    "is_monthly_saveable": false,
+    "is_monthly_save_dask": false,
+    "mifid2_id": 0,
+    "instrument_icon_url": "https://cdn.prod.nntech.io/cms-proxy/6xe8ehctp75g/4dCEjrMqFsSEhMLB6R0Dsd/b67070fd704829fea354c4f415c230a1/image.png"
+   },
+   "status_info": {
+    "trading_status": "CLOSED",
+    "translated_trading_status": "Suljettu",
+    "tick_timestamp": 1795197600000
+   },
+   "market_info": {
+    "market_id": 77,
+    "market_sub_id": 77,
+    "identifier": "1ABBVm",
+    "tick_size_id": 34832975
+   },
+   "price_info": {
+    "last": {
+     "price": 0,
+     "decimals": 4
+    },
+    "open": {
+     "price": 0,
+     "decimals": 4
+    },
+    "close": {
+     "price": 0,
+     "decimals": 4
+    },
+    "turnover": 0,
+    "turnover_normalized": 0,
+    "turnover_volume": 0,
+    "bid": {
+     "price": 0,
+     "decimals": 4
+    },
+    "ask": {
+     "price": 0,
+     "decimals": 4
+    },
+    "bid_volume": 0,
+    "ask_volume": 0,
+    "high": {
+     "price": 0,
+     "decimals": 4
+    },
+    "low": {
+     "price": 0,
+     "decimals": 4
+    },
+    "spread": {
+     "price": 0,
+     "decimals": 4
+    },
+    "spread_pct": 0,
+    "tick_timestamp": 1795192200000,
+    "realtime": false
+   },
+   "exchange_info": {
+    "exchange_country": "IT",
+    "exchanges": []
+   },
+   "key_ratios_info": {
+    "pe": 48.8,
+    "ps": 7.61,
+    "eps": 2.36,
+    "dividend_per_share": 6.65,
+    "dividend_yield": 2.44
+   },
+   "historical_returns_info": {
+    "yield_1d": -2.21,
+    "yield_1w": -4.14,
+    "yield_1m": 0.9,
+    "yield_3m": 13.77,
+    "yield_ytd": 31.26,
+    "yield_1y": 29.21,
+    "yield_3y": 100.94,
+    "realtime": false
+   },
+   "company_info": {
+    "dividend_date": 1802732400000,
+    "dividend_amount": 1.66,
+    "dividend_currency": "EUR",
+    "excluding_date": 1799967600000,
+    "report_date": 1801609200000,
+    "report_type": "FOURTH_QUARTER_EARNINGS_RESULTS",
+    "report_description": "Q4-osavuosiraportti",
+    "market_cap": 456283309908
+   },
+   "statistical_info": {
+    "statistics_timestamp": 1795202356526,
+    "number_of_owners": 1
+   },
+   "nnx_info": {
+    "nnx_instrument_id": "0dc541bb-3745-41e7-8def-f301209b8b5a",
+    "trading_order_book_id": "82ed51aa-1b14-47be-aa04-ff72e253ce02",
+    "market_data_order_book_id": "ff1de6e3-ed6d-40cc-84fa-f64f3ac1f207",
+    "display_slug": "abb-vie-1abbvm-ceux",
+    "instrument_class": "STOCK"
+   }
+  },
+  {
+   "instrument_info": {
+    "instrument_id": 19842329,
+    "name": "Abbott Laboratories",
+    "long_name": "Abbott Laboratories",
+    "symbol": "1ABTm",
+    "instrument_group_type": "EQ",
+    "instrument_type_hierarchy": "EQ/ESH",
+    "instrument_type": "ESH",
+    "isin": "US0028241000",
+    "currency": "EUR",
+    "price_unit": "EUR",
+    "clearing_place": "CITI_IT",
+    "is_tradable": true,
+    "instrument_pawn_percentage": 0,
+    "is_shortable": false,
+    "is_monthly_saveable": false,
+    "is_monthly_save_dask": false,
+    "mifid2_id": 0,
+    "instrument_icon_url": "https://cdn.prod.nntech.io/cms-proxy/6xe8ehctp75g/4lhmUbnUBXKFU20Q5dW1rC/e89317f5e4ce30ea2110cd720f4ec7e4/image.png"
+   },
+   "status_info": {
+    "trading_status": "CLOSED",
+    "translated_trading_status": "Suljettu",
+    "tick_timestamp": 1795197600000
+   },
+   "market_info": {
+    "market_id": 77,
+    "market_sub_id": 77,
+    "identifier": "1ABTm",
+    "tick_size_id": 34832975
+   },
+   "price_info": {
+    "last": {
+     "price": 0,
+     "decimals": 4
+    },
+    "open": {
+     "price": 0,
+     "decimals": 4
+    },
+    "close": {
+     "price": 92.1,
+     "decimals": 2
+    },
+    "turnover": 0,
+    "turnover_normalized": 0,
+    "turnover_volume": 0,
+    "bid": {
+     "price": 0,
+     "decimals": 4
+    },
+    "ask": {
+     "price": 0,
+     "decimals": 4
+    },
+    "bid_volume": 0,
+    "ask_volume": 0,
+    "high": {
+     "price": 0,
+     "decimals": 4
+    },
+    "low": {
+     "price": 0,
+     "decimals": 4
+    },
+    "spread": {
+     "price": 0,
+     "decimals": 4
+    },
+    "spread_pct": 0,
+    "tick_timestamp": 1795192200000,
+    "realtime": false
+   },
+   "exchange_info": {
+    "exchange_country": "IT",
+    "exchanges": []
+   },
+   "key_ratios_info": {
+    "pe": 38.57,
+    "ps": 3.76,
+    "eps": 3.72,
+    "pb": 3.55,
+    "dividend_per_share": 2.4,
+    "dividend_yield": 2.41
+   },
+   "historical_returns_info": {
+    "yield_1d": 0.18,
+    "yield_1w": -4.6,
+    "yield_1m": 2.89,
+    "yield_3m": -3.27,
+    "yield_ytd": -10.27,
+    "yield_1y": -14.44,
+    "yield_3y": 9.53,
+    "yield_max": -0.93,
+    "realtime": false
+   },
+   "company_info": {
+    "report_date": 1800486000000,
+    "report_type": "FOURTH_QUARTER_EARNINGS_RESULTS",
+    "report_description": "Q4-osavuosiraportti",
+    "market_cap": 164739846513
+   },
+   "statistical_info": {
+    "statistics_timestamp": 1795202355331,
+    "number_of_owners": 0
+   },
+   "nnx_info": {
+    "nnx_instrument_id": "7a65efbd-fe7e-45e9-bacd-c46118e31acc",
+    "trading_order_book_id": "a76ad6ac-8d8b-4df8-af4a-76cfbf692a8d",
+    "market_data_order_book_id": "9dc28335-201e-4f2b-abb3-8db9f5a30bb5",
+    "display_slug": "abbott-laboratories-1abtm-ceux",
+    "instrument_class": "STOCK"
+   }
+  }
+ ]
+}
