@@ -1,7 +1,5 @@
 # market: Indices
 # kind,base,quote,name,yahoo,isin: what one unit of `base` costs in `quote`; `yahoo` is Yahoo's ticker; an index is quoted in points
-# The ISINs are Nordnet's, or given by the owner (S&P 500); the other indices Yahoo has (FTSE 100, Nikkei 225, VIX, EURO
-# STOXX 50, OMX Helsinki 25) wait until their ISINs are known. Yahoo has no MOEX Russia Index.
 kind,base,quote,name,yahoo,isin
 index,DJIA,pts,Dow Jones Industrial Average,^DJI,US2605661048
 index,COMP,pts,NASDAQ Composite Index,^IXIC,XC0009694271

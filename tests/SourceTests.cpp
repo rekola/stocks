@@ -16,7 +16,7 @@
 namespace {
 
 std::string fixture(const std::string & name) {
-  std::ifstream in(std::string(STOCKS_FIXTURES_DIR) + "/yahoo/" + name);
+  std::ifstream in(std::string(STOCKS_FIXTURES_DIR) + "/candles/" + name);
   std::stringstream s;
   s << in.rdbuf();
   return s.str();
