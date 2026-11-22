@@ -89,6 +89,7 @@ fs::path defaultIconCacheDir() {
 
 IconLoader::IconLoader(std::unique_ptr<Http> http, Options options, std::function<void()> loaded)
     : http_(std::move(http)), options_(std::move(options)), loaded_(std::move(loaded)) {
+  burst_size_ = std::max<size_t>(1, options_.burst);
   thread_ = std::thread([this] { run(); });
 }
 
@@ -155,8 +156,13 @@ void IconLoader::run() {
     if (arrived && loaded_) loaded_();
     lock.lock();
     busy_ = false;
-    // A pause after a request, which a destructor cuts short.
-    if (used_network && options_.pause.count() > 0) wake_.wait_for(lock, options_.pause, [&] { return stop_; });
+    // Requests come in bursts of about `burst`, each followed by a pause (both a little random); a destructor cuts it short.
+    if (used_network && ++sent_ >= burst_size_) {
+      sent_ = 0;
+      burst_size_ = std::max<size_t>(1, options_.burst * (80 + random_() % 41) / 100);
+      const auto pause = options_.burst_pause * (50 + random_() % 101) / 100;
+      if (pause.count() > 0) wake_.wait_for(lock, pause, [&] { return stop_; });
+    }
     if (queue_.empty()) idle_.notify_all();
   }
 }
