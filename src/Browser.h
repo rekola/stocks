@@ -9,6 +9,7 @@
 #include <cellui/Table.h>
 #include <cellui/TagBar.h>
 
+#include <chrono>
 #include <memory>
 
 // The screen: preset tags on the top row, the table filling what is between them
@@ -25,14 +26,19 @@ class Browser {
   cellui::Table & table() { return table_; }
   cellui::TagBar & tags() { return tags_; }
   cellui::StatusLine & statusLine() { return status_; }
+  // How soon the table follows the store again: a source that writes a page a second, or a store of tens of thousands of
+  // rows that changes all the time, is shown at most this often (default a quarter of a second).
+  void setMinRefreshInterval(double seconds) { min_refresh_ = seconds; }
 
  private:
   // The rows of preset `i` from the store's current snapshot.
   void showPreset(int i);
   // Tells the icon loader which rows are on screen and near it: those first, then the screens after and before.
   void requestIcons();
-  // Shows what the store holds now, keeping the sort and the selected row.
+  // Shows what the store holds now, keeping the sort, the scroll position and the selected row.
   void refresh();
+  // Does so unless it did lately, in which case it does when it is time.
+  void requestRefresh();
   void layout(int rows, int cols);
   // The info line's help: the keys as this display's keymap binds them.
   void showHelp();
@@ -51,5 +57,8 @@ class Browser {
   cellui::StatusLine status_;
   uint64_t shown_version_ = 0;  // of the snapshot the table shows
   int shown_preset_ = -1;       // the preset the table shows
+  double min_refresh_ = 0.25;
+  std::chrono::steady_clock::time_point last_refresh_{};
+  bool pending_ = false;        // the store changed and the table does not show it yet
   cellui::Connection resized_, display_, tag_, message_, frame_, changed_, said_, loaded_;
 };

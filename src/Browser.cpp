@@ -17,7 +17,14 @@ struct Preset {
   const char * command;
 };
 constexpr Preset kPresets[] = {{"Commodities", "show-commodities"}, {"Nasdaq Helsinki", "show-nasdaq-helsinki"}, {"Currencies", "show-currencies"},
-                              {"Indices", "show-indices"}};
+                              {"Indices", "show-indices"}, {"All", "show-all"}};
+
+// The edges of a preset: a market's, or everything.
+std::vector<EdgeKey> edgesOf(const Snapshot & snapshot, const Preset & preset) {
+  if (std::string(preset.tag) == "All") return allQuoteEdges(snapshot);
+  std::optional<Market> market = snapshot.findMarket(preset.tag);
+  return market ? quoteEdges(snapshot, market->id) : std::vector<EdgeKey>{};
+}
 
 // Wide enough for "Link: Full speed, 480 kB/s, RTT 38 ms (pinned)".
 constexpr int kLinkCols = 52;
@@ -41,7 +48,8 @@ Browser::Browser(Application & app, std::shared_ptr<Store> store, std::shared_pt
                      {.title = "Base", .width = 8},
                      {.title = "Quote", .width = 6},
                      {.title = "Name", .width = 0},
-                     {.title = "Dataset", .width = 12},
+                     {.title = "Market", .width = 16},
+                     {.title = "Dataset", .width = 10},
                      {.title = "Price", .width = 10, .align = Align::RIGHT},
                      {.title = "Change", .width = 9, .align = Align::RIGHT},
                      {.title = "60 days", .width = 22, .sortable = false, .trace = true}});
@@ -69,7 +77,7 @@ Browser::Browser(Application & app, std::shared_ptr<Store> store, std::shared_pt
     status_.setMessage(std::string("Showing ") + kPresets[i].tag);
   });
   changed_ = table_.on<StoreChanged>([this](const StoreChanged &, EventContext &) {
-    refresh();
+    requestRefresh();
     app_.requestFrame();  // the data came from another thread, not from an input
     return Handled::no;
   });
@@ -91,16 +99,28 @@ Browser::Browser(Application & app, std::shared_ptr<Store> store, std::shared_pt
   // The table eases to a scroll position where the display scrolls smoothly: it moves with each frame, and asks for the next.
   frame_ = app.frame_started.connect([this](double seconds) {
     requestIcons();
-    if (table_.tick(seconds)) app_.requestFrame();
+    if (pending_) requestRefresh();
+    if (table_.tick(seconds) || pending_) app_.requestFrame();
   });
 }
 
 void Browser::showPreset(int i) {
   auto snapshot = store_->snapshot();
-  std::optional<Market> market = snapshot->findMarket(kPresets[i].tag);
-  table_.setModel(std::make_shared<Quotes>(market ? makeRows(*snapshot, market->id) : std::vector<QuoteRow>{}, icons_));
+  table_.setModel(std::make_shared<Quotes>(snapshot, edgesOf(*snapshot, kPresets[i]), icons_));
   shown_version_ = snapshot->version();
   shown_preset_ = i;
+  last_refresh_ = std::chrono::steady_clock::now();
+}
+
+void Browser::requestRefresh() {
+  const auto now = std::chrono::steady_clock::now();
+  if (std::chrono::duration<double>(now - last_refresh_).count() < min_refresh_) {
+    pending_ = true;  // the next frame asks again
+    return;
+  }
+  pending_ = false;
+  last_refresh_ = now;
+  refresh();
 }
 
 void Browser::requestIcons() {
@@ -110,7 +130,9 @@ void Browser::requestIcons() {
   std::vector<std::string> urls;
   auto add = [&](int position) {
     const int row = table_.rowAt(position);
-    if (row >= 0 && !quotes->rows[static_cast<size_t>(row)].icon_url.empty()) urls.push_back(quotes->rows[static_cast<size_t>(row)].icon_url);
+    if (row < 0) return;
+    std::string url = quotes->iconUrl(row);
+    if (!url.empty()) urls.push_back(std::move(url));
   };
   const int margin = 3 * view;
   for (int p = first; p < std::min(count, first + view + margin); p++) add(p);  // on screen, then the screens after
@@ -129,8 +151,7 @@ void Browser::refresh() {
   if (quotes && preset == shown_preset_) {
     // The same preset with new data: change the rows in place, which keeps the scroll position, the sort and the selection
     // (setModel would put the table back at the top).
-    std::optional<Market> market = snapshot->findMarket(kPresets[preset].tag);
-    quotes->rows = market ? makeRows(*snapshot, market->id) : std::vector<QuoteRow>{};
+    quotes->reset(snapshot, edgesOf(*snapshot, kPresets[preset]));
     shown_version_ = snapshot->version();
     table_.modelChanged();
   } else {

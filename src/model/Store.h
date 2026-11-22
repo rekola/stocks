@@ -53,6 +53,8 @@ class Snapshot {
   CandleSeries candles(const EdgeKey &, Resolution resolution, TimeRange range = {}) const;
   // The newest `n` bars at `resolution`, oldest first: the table's latest price, change and trace.
   CandleSeries lastCandles(const EdgeKey &, Resolution resolution, size_t n) const;
+  // Whether the edge has any bars at `resolution`: cheap, for listing.
+  bool hasCandles(const EdgeKey &, Resolution) const;
   // The resolutions the edge has bars in, shortest first.
   std::vector<Resolution> resolutions(const EdgeKey &) const;
 
