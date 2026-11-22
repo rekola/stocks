@@ -80,6 +80,9 @@ bool OpSource::parseList(const std::string & body, std::vector<Product> & produc
       continue;
     }
     if (pricedLessOften(p.fund.isin)) continue;
+    // The page is a path on the bank's site in the answer.
+    if (std::string link = text(i, "link"); !link.empty())
+      p.fund.url = link.rfind("http", 0) == 0 ? link : "https://www.op.fi" + (link[0] == '/' ? link : "/" + link);
     p.fund.symbol = p.fund.isin;
     p.fund.identifier = p.notation;
     p.fund.managementFee = looseNumber(i, "management_fee");

@@ -132,7 +132,8 @@ TEST(an_op_list_leaves_out_the_less_often_priced_and_the_ones_without_an_isin) {
   CHECK(products[0].fund.isin == "FI0008800511" && products[0].notation == "111");
   CHECK_NEAR(*products[0].fund.managementFee, 1.5, 1e-9);  // a string of a number
   CHECK(*products[0].fund.risk == 5 && *products[0].fund.rating == 4 && *products[0].fund.esg == 3);
-  CHECK(products[1].notation == "333");  // a number
+  CHECK(products[0].fund.url == "https://www.op.fi/henkiloasiakkaat/saastot-ja-sijoitukset/rahastot/kaikki-rahastot/op-maailma/");
+  CHECK(products[1].notation == "333" && products[1].fund.url.empty());  // a number
   CHECK(!OpSource::parseList("[]", products, unnamed, error));
 }
 
@@ -154,6 +155,10 @@ TEST(the_op_source_writes_funds_under_its_own_dataset_and_market) {
   CHECK(edge.has_value());
   if (edge) CHECK(s->candles(*edge, Resolution::Day).candles.size() == 3);
   CHECK(edgeOf(*s, "FI0008801238", "OP Funds", "op").has_value());  // the wrapped series
+  if (edge) {
+    auto url = s->attribute(NodeRef(edge->base), predicate::webUrl);
+    CHECK(url && asText(*url) && asText(*url)->find("https://www.op.fi/") == 0);
+  }
   CHECK(!edgeOf(*s, "FI4000439971", "OP Funds", "op"));
   CHECK(!http.headers.empty() && http.headers[0].size() == 2);  // the page is asked for with a Referer and an Origin
 }

@@ -111,6 +111,7 @@ bool writeFund(Store & store, const std::string & datasetName, const std::string
   Instrument base = store.addInstrument({{}, "", f.name, InstrumentKind::Fund, f.isin, "FUND"});
   Instrument quote = currencyNode(store, "EUR");
   std::vector<Attribute> said;
+  if (!f.url.empty()) said.push_back({predicate::webUrl, f.url});
   if (f.managementFee) said.push_back({"management-fee", *f.managementFee});
   if (f.subscriptionFee) said.push_back({"subscription-fee", *f.subscriptionFee});
   if (f.redemptionFee) said.push_back({"redemption-fee", *f.redemptionFee});

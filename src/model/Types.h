@@ -89,6 +89,7 @@ inline constexpr const char * nordnetInstrument = "nordnet-instrument";  // an i
 inline constexpr const char * country = "country";  // a market's country (ISO 3166 alpha-2)
 inline constexpr const char * timezone = "timezone";  // a market's time zone (IANA name)
 inline constexpr const char * iconUrl = "icon-url";
+inline constexpr const char * webUrl = "web-url";  // the instrument's page on its provider's website
 inline constexpr const char * firstTradeDay = "first-trade-day";  // a day number: where an instrument's history begins
 inline constexpr const char * mic = "mic";  // a market's ISO 10383 code, the way an ISIN identifies an instrument
 }  // namespace predicate

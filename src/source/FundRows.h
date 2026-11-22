@@ -15,6 +15,7 @@
 struct FundRow {
   std::string isin, name;
   std::string symbol;      // what the company calls it (its ticker, else the ISIN)
+  std::string url;         // the fund's page on the company's website, if the list gives it
   std::string identifier;  // the company's own id for it: what its price history is asked for by
   std::optional<double> managementFee, subscriptionFee, redemptionFee;  // per cent
   std::optional<int64_t> risk, rating, esg;                              // the risk class, the Morningstar rating, the ESG rating
