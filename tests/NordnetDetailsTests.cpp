@@ -149,25 +149,29 @@ namespace {
 // A source with details: three batches, as the runner asks for them.
 class DetailsSource : public Source {
  public:
-  std::atomic<int> batches{0}, loads{0};
+  // Counted where the test can read them after the runner has ended and taken the source with it.
+  struct Counts {
+    std::atomic<int> batches{0}, loads{0};
+  };
+  explicit DetailsSource(std::shared_ptr<Counts> counts) : c(std::move(counts)) {}
+  std::shared_ptr<Counts> c;
   std::string name() const override { return "details"; }
   std::string description() const override { return "test"; }
-  void load(Store &, Http &, SourceListener &) override { loads++; }
-  bool loadDetails(Store &, Http &, SourceListener &) override { return ++batches < 3; }
+  void load(Store &, Http &, SourceListener &) override { c->loads++; }
+  bool loadDetails(Store &, Http &, SourceListener &) override { return ++c->batches < 3; }
   std::chrono::milliseconds detailsInterval() const override { return std::chrono::milliseconds(0); }
 };
 
 }  // namespace
 
 TEST(the_runner_asks_a_source_for_its_details_in_batches_until_it_has_none_left) {
-  auto source = std::make_unique<DetailsSource>();
-  DetailsSource * raw = source.get();
+  auto counts = std::make_shared<DetailsSource::Counts>();
   std::vector<std::unique_ptr<Source>> sources;
-  sources.push_back(std::move(source));
+  sources.push_back(std::make_unique<DetailsSource>(counts));
   {
     SourceRunner runner(makeMemoryStore(), std::move(sources), [] {}, [](std::string) {});
     runner.wait();  // nothing is refreshed, so it ends when the last batch has been asked for
   }
-  CHECK(raw->loads == 1);
-  CHECK(raw->batches == 3);
+  CHECK(counts->loads == 1);
+  CHECK(counts->batches == 3);
 }

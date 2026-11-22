@@ -1,7 +1,14 @@
 #include "model/Store.h"
 
+#include "model/NodeIdentity.h"
+
 #include <algorithm>
 #include <atomic>
+#include <chrono>
+#include <cstdio>
+#include <map>
+#include <random>
+#include <set>
 #include <memory>
 #include <functional>
 #include <mutex>
@@ -87,6 +94,13 @@ std::optional<Value> Snapshot::attribute(NodeRef n, const std::string & predicat
   if (!all) return std::nullopt;
   for (const Attribute & a : *all)
     if (a.predicate == predicate) return a.value;
+  return std::nullopt;
+}
+std::optional<Attribute> Snapshot::fact(NodeRef n, const std::string & predicate) const {
+  const std::vector<Attribute> * all = attributes_.find(n);
+  if (!all) return std::nullopt;
+  for (const Attribute & a : *all)
+    if (a.predicate == predicate) return a;
   return std::nullopt;
 }
 std::optional<Instrument> Snapshot::findInstrumentByIsin(const std::string & isin) const {
@@ -209,36 +223,188 @@ std::string textOf(const Value & v) {
 
 void Snapshot::setAttribute(NodeRef n, const Attribute & a) { setAttributes(n, {a}); }
 
+namespace {
+std::string heldKey(StoredType t, const std::string & key) { return std::string(1, static_cast<char>('0' + static_cast<int>(t))) + key; }
+std::string heldKey(const StoredNode & n) { return heldKey(n.type, n.key); }
+
+StoredFact stored(const StoredNode & n, const Attribute & a) { return StoredFact{n.type, n.key, a.predicate, a.value, a.updated}; }
+}  // namespace
+
+void Snapshot::hold(const std::vector<StoredFact> & facts) {
+  std::map<std::string, std::vector<Attribute>> grouped;
+  for (const StoredFact & f : facts) {
+    if (!says(f.value) || f.predicate.empty() || f.node.empty()) continue;
+    Attribute a(f.predicate, f.value);
+    a.updated = f.updated;
+    grouped[heldKey(f.type, f.node)].push_back(std::move(a));
+  }
+  for (auto & [key, attrs] : grouped) {
+    const auto * old = held_.find(key);
+    if (old) attrs.insert(attrs.begin(), old->begin(), old->end());
+    if (key[0] == static_cast<char>('0' + static_cast<int>(StoredType::Market)))
+      for (const Attribute & a : attrs)
+        if (const auto * text = std::get_if<std::string>(&a.value)) {
+          const std::string said = indexKey(NodeType::Market, a.predicate, *text);
+          const auto * keys = heldMarkets_.find(said);
+          heldMarkets_ = heldMarkets_.set(said, (keys ? *keys : immer::set<std::string>{}).insert(key.substr(1)));
+        }
+    held_ = held_.set(key, std::move(attrs));
+  }
+  for (const auto & [said, keys] : heldMarkets_) {
+    const size_t at = said.find('\0');
+    if (keys.size() > 1 && at != std::string::npos && isUnique(NodeType::Market, said.substr(1, at - 1)))
+      notices_.push_back("market: the file says " + said.substr(1, at - 1) + " " + said.substr(at + 1) + " of " + std::to_string(keys.size()) +
+                         " markets");
+  }
+}
+
 void Snapshot::setAttributes(NodeRef n, const std::vector<Attribute> & in) {
   const size_t count = n.type == NodeType::Instrument ? instruments_.size()
                        : n.type == NodeType::Market   ? markets_.size()
                                                       : datasets_.size();
   if (n.id == 0 || n.id > count) return;
+  std::vector<Attribute> said;
+  for (const Attribute & a : in)
+    if (says(a.value) && !a.predicate.empty()) said.push_back(a);
+  if (said.empty()) return;
+
+  // What says which node is meant is not said of two: another node that has it keeps it, and the second is refused.
+  const auto refuse = [&](const Attribute & a) {
+    notices_.push_back(std::string(n.type == NodeType::Market ? "market" : n.type == NodeType::Instrument ? "instrument"
+                                                                                                          : "dataset") +
+                       ": " +
+                       a.predicate + " " + textOf(a.value) + " is already said of another, not said of this one too");
+  };
+  std::erase_if(said, [&](const Attribute & a) {
+    const auto * text = std::get_if<std::string>(&a.value);
+    if (!text || !isUnique(n.type, a.predicate)) return false;
+    const auto * ids = byAttribute_.find(indexKey(n.type, a.predicate, *text));
+    if (!ids || !std::any_of(ids->begin(), ids->end(), [&](uint32_t id) { return id != n.id; })) return false;
+    refuse(a);
+    return true;
+  });
+  if (said.empty()) return;
+
   std::vector<Attribute> attrs = attributes(n);
-  bool changed = false;
-  for (const Attribute & a : in) {
-    if (!says(a.value) || a.predicate.empty()) continue;
-    auto at = std::find_if(attrs.begin(), attrs.end(), [&](const Attribute & x) { return x.predicate == a.predicate; });
-    if (at != attrs.end() && at->value == a.value) continue;
-    // The old text no longer says it of this node; the new, if it is text, does.
-    if (at != attrs.end() && std::holds_alternative<std::string>(at->value)) {
-      const std::string key = indexKey(n.type, a.predicate, textOf(at->value));
-      if (const auto * ids = byAttribute_.find(key)) {
-        auto rest = ids->erase(n.id);
-        byAttribute_ = rest.size() ? byAttribute_.set(key, rest) : byAttribute_.erase(key);
+  const auto find = [&](const std::string & predicate) {
+    return std::find_if(attrs.begin(), attrs.end(), [&](const Attribute & x) { return x.predicate == predicate; });
+  };
+  const auto unindex = [&](const Attribute & a) {
+    if (!std::holds_alternative<std::string>(a.value)) return;
+    const std::string key = indexKey(n.type, a.predicate, textOf(a.value));
+    if (const auto * ids = byAttribute_.find(key)) {
+      auto rest = ids->erase(n.id);
+      byAttribute_ = rest.size() ? byAttribute_.set(key, rest) : byAttribute_.erase(key);
+    }
+  };
+  const auto index = [&](const Attribute & a) {
+    if (!std::holds_alternative<std::string>(a.value)) return;
+    const std::string key = indexKey(n.type, a.predicate, textOf(a.value));
+    const auto * ids = byAttribute_.find(key);
+    byAttribute_ = byAttribute_.set(key, (ids ? *ids : immer::set<uint32_t>{}).insert(n.id));
+  };
+
+  // The key the node's facts are kept under, once it has one. An instrument or a dataset has what identifies it; a market has
+  // a key of its own, which is that of the held market (what an earlier run kept) that says it is what this one is said to be
+  // (its MIC, its id at a source, its name), else one made new. A market that has its key keeps it whatever is said of it.
+  StoredNode key;
+  {
+    std::vector<Attribute> after = attrs;
+    for (const Attribute & a : said) {
+      auto at = std::find_if(after.begin(), after.end(), [&](const Attribute & x) { return x.predicate == a.predicate; });
+      if (at != after.end()) at->value = a.value;
+      else after.push_back(a);
+    }
+    if (n.type != NodeType::Market) {
+      key = nodeKey(n.type, after);
+    } else if (const StoredNode * known = keyOf_.find(n)) {
+      key = *known;
+    } else if (const auto recognised = recognisedBy(n.type, after); !recognised.empty()) {
+      for (const auto & [p, text] : recognised) {
+        const auto * keys = heldMarkets_.find(indexKey(n.type, p, text));
+        if (!keys || keys->size() == 0) continue;
+        key = {StoredType::Market, *std::min_element(keys->begin(), keys->end())};
+        break;
       }
+      if (key.key.empty() && mint_ && *mint_) key = {StoredType::Market, (*mint_)()};
     }
-    if (at != attrs.end()) at->value = a.value;
-    else attrs.push_back(a);
-    if (std::holds_alternative<std::string>(a.value)) {
-      const std::string key = indexKey(n.type, a.predicate, textOf(a.value));
-      const auto * ids = byAttribute_.find(key);
-      byAttribute_ = byAttribute_.set(key, (ids ? *ids : immer::set<uint32_t>{}).insert(n.id));
-    }
-    changed = true;
   }
-  if (!changed) return;
+
+  // The same of the held markets, which another run kept: those of a market that is not this one.
+  std::erase_if(said, [&](const Attribute & a) {
+    const auto * text = std::get_if<std::string>(&a.value);
+    if (!text || n.type != NodeType::Market || !isUnique(n.type, a.predicate)) return false;
+    const auto * keys = heldMarkets_.find(indexKey(n.type, a.predicate, *text));
+    if (!keys || !std::any_of(keys->begin(), keys->end(), [&](const std::string & k) { return k != key.key; })) return false;
+    refuse(a);
+    return true;
+  });
+  if (said.empty()) return;
+
+  // What an earlier run said of this node, now that it is known by what it was kept under: it stands where this run has
+  // not said otherwise, with the times it had, so a value said again changes nothing but its time.
+  bool adopted = false;
+  if (!key.key.empty())
+    if (const auto * held = held_.find(heldKey(key))) {
+      for (const Attribute & h : *held) {
+        if (const auto * text = std::get_if<std::string>(&h.value); text && n.type == NodeType::Market) {
+          const std::string said_key = indexKey(n.type, h.predicate, *text);
+          if (const auto * keys = heldMarkets_.find(said_key)) {
+            auto rest = keys->erase(key.key);
+            heldMarkets_ = rest.size() ? heldMarkets_.set(said_key, rest) : heldMarkets_.erase(said_key);
+          }
+        }
+        if (find(h.predicate) != attrs.end()) continue;
+        attrs.push_back(h);
+        index(h);
+        adopted = true;
+      }
+      held_ = held_.erase(heldKey(key));
+    }
+
+  std::vector<size_t> changed, rechecked;  // positions in attrs
+  for (const Attribute & a : said) {
+    auto at = find(a.predicate);
+    if (at == attrs.end()) {
+      Attribute fresh = a;
+      fresh.updated = now_;
+      attrs.push_back(fresh);
+      index(fresh);
+      changed.push_back(attrs.size() - 1);
+    } else if (at->value == a.value) {
+      if (at->updated != now_) {
+        at->updated = now_;
+        rechecked.push_back(static_cast<size_t>(at - attrs.begin()));
+      }
+    } else {
+      // The old text no longer says it of this node; the new, if it is text, does.
+      unindex(*at);
+      at->value = a.value;
+      at->updated = now_;
+      index(*at);
+      changed.push_back(static_cast<size_t>(at - attrs.begin()));
+    }
+  }
+  if (changed.empty() && rechecked.empty() && !adopted) return;
+
+  // What goes to the disk: the facts of this write under the node's key; and where the node has just got a key, or a
+  // stronger one, all of its facts under it, and none under the old.
+  const StoredNode * known = keyOf_.find(n);
+  if (!key.key.empty()) {
+    if (!known || *known != key) {
+      if (known) outbox_.forget.push_back(*known);
+      for (const Attribute & a : attrs) outbox_.changed.push_back(stored(key, a));
+      keyOf_ = keyOf_.set(n, key);
+    } else {
+      for (size_t i : changed) outbox_.changed.push_back(stored(key, attrs[i]));
+      for (size_t i : rechecked) outbox_.rechecked.push_back(stored(key, attrs[i]));
+    }
+  }
   attributes_ = attributes_.set(n, attrs);
+  if (changed.empty() && !adopted) {
+    checks_++;  // only times moved: no new version
+    return;
+  }
 
   // The view the app reads is made from the attributes.
   auto value = [&](const char * p) {
@@ -273,8 +439,8 @@ Instrument Snapshot::resolveInstrument(const std::vector<Attribute> & identifyin
     instruments_ = instruments_.push_back(Instrument{{n.id}, {}, {}, InstrumentKind::Other, {}, {}});
     version_++;
   }
-  for (const Attribute & a : identifying) setAttribute(n, a);
-  for (const Attribute & a : rest) setAttribute(n, a);
+  setAttributes(n, identifying);  // together, so the node is known by the strongest of them from the first
+  setAttributes(n, rest);
   return *instrument({n.id});
 }
 Instrument Snapshot::add(Instrument i) {
@@ -299,7 +465,7 @@ Market Snapshot::resolve(const std::vector<Attribute> & attributes) {
     markets_ = markets_.push_back(Market{{n.id}, {}});
     version_++;
   }
-  for (const Attribute & a : attributes) setAttribute(n, a);
+  setAttributes(n, attributes);
   return *market({n.id});
 }
 Dataset Snapshot::add(Dataset d) {
@@ -410,7 +576,38 @@ class SnapshotSlot {
 
 class MemoryStore : public Store {
  public:
-  MemoryStore() : current_(std::make_shared<const Snapshot>()) {}
+  explicit MemoryStore(StoreOptions options)
+      : current_(std::make_shared<const Snapshot>()),
+        clock_(std::move(options.clock)),
+        mint_(std::move(options.mint)),
+        notice_(std::move(options.notice)) {
+    if (!mint_)
+      mint_ = [] {
+        static std::mutex m;
+        static std::mt19937_64 random{std::random_device{}()};
+        std::lock_guard lock(m);
+        char out[17];
+        std::snprintf(out, sizeof out, "%016llx", static_cast<unsigned long long>(random()));
+        return std::string(out);
+      };
+    if (!clock_)
+      clock_ = [] {
+        return static_cast<TimestampMs>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
+      };
+    if (options.facts) {
+      // What was kept is held until its nodes are made; it makes none. Read before any source can write.
+      Snapshot first;
+      first.hold(options.facts->loadAll());
+      tell(first.takeNotices());
+      current_.store(std::make_shared<const Snapshot>(std::move(first)));
+      writer_ = std::make_unique<FactWriter>(std::move(options.facts), options.writer);
+    }
+  }
+
+  void flush() override {
+    if (writer_) writer_->flush();
+  }
 
   std::shared_ptr<const Snapshot> snapshot() const override { return current_.load(); }
 
@@ -452,26 +649,48 @@ class MemoryStore : public Store {
   }
 
  private:
-  // Change a copy of the current snapshot and publish it if the version moved.
+  void tell(const std::vector<std::string> & notices) {
+    for (const std::string & text : notices)
+      if (notice_ && told_.insert(text).second) notice_(text);
+  }
+
+  // Change a copy of the current snapshot and publish it if the version moved, or if only the times of facts said again did
+  // (the version is the same then, so nothing that watches it wakes). What the change asks of the disk is handed on
+  // in the order the writes were made.
   template <class F>
   std::invoke_result_t<F, Snapshot &> write(F change) {
-    std::lock_guard lock(writer_);
+    std::lock_guard lock(mutex_);
     std::shared_ptr<const Snapshot> old = current_.load();
     Snapshot next = *old;
+    next.setTime(clock_());
+    next.setKeyMaker(&mint_);
+    const auto finish = [&] {
+      next.setKeyMaker(nullptr);
+      tell(next.takeNotices());
+      FactBatch facts = next.takeFacts();
+      if (writer_) writer_->post(std::move(facts));
+      if (next.revision() != old->revision()) current_.store(std::make_shared<const Snapshot>(std::move(next)));
+    };
     if constexpr (std::is_void_v<decltype(change(next))>) {
       change(next);
-      if (next.version() != old->version()) current_.store(std::make_shared<const Snapshot>(std::move(next)));
+      finish();
     } else {
       auto result = change(next);
-      if (next.version() != old->version()) current_.store(std::make_shared<const Snapshot>(std::move(next)));
+      finish();
       return result;
     }
   }
 
-  std::mutex writer_;
+  std::mutex mutex_;
   SnapshotSlot current_;
+  std::function<TimestampMs()> clock_;
+  std::function<std::string()> mint_;  // the keys of markets
+  std::function<void(const std::string &)> notice_;
+  std::set<std::string> told_;          // what notice_ has been told, which it is told once
+  std::unique_ptr<FactWriter> writer_;  // last: its thread ends first, with everything written
 };
 
 }  // namespace
 
-std::unique_ptr<Store> makeMemoryStore() { return std::make_unique<MemoryStore>(); }
+std::unique_ptr<Store> makeMemoryStore() { return std::make_unique<MemoryStore>(StoreOptions{}); }
+std::unique_ptr<Store> makeMemoryStore(StoreOptions options) { return std::make_unique<MemoryStore>(std::move(options)); }

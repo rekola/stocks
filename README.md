@@ -65,6 +65,10 @@ from their candidate lists, the other countries from the largest companies of a 
 that has ISINs (each found by its ISIN, so the ticker is certainly the same company).
 Asia-Pacific and Latin America are not covered: there is no source of their ISINs yet.
 
+What the sources say of instruments, markets and datasets (names, icons, a market's country) is kept between runs in a
+SQLite file, `facts.sqlite` in the user's data directory (`--facts FILE` chooses another, `--no-facts` runs without it); see
+[plans/data-model.md](plans/data-model.md).
+
 The data model is planned in [plans/data-model.md](plans/data-model.md), the server, its API and the bars in [plans/server.md](plans/server.md), and the market calendars in [plans/calendars.md](plans/calendars.md).
 
 The market regime embeddings are planned in [plans/embeddings.md](plans/embeddings.md).

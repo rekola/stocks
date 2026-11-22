@@ -5,6 +5,8 @@
 //   stocks --source NAME   the data source (several, comma-separated, run one after another): auto (the default: nordnet, and yahoo if nordnet gives nothing),
 //                          nordnet, yahoo, funds:SCHEMA (a fund company: a schema in data/funds, or a schema file) or synthetic
 //   stocks --lists DIR     the instrument lists of the yahoo and synthetic sources (default: data/lists)
+//   stocks --facts FILE    where what the sources said of instruments, markets and datasets is kept between runs (default: facts.sqlite in the
+//                          user's data directory); --no-facts runs without it
 //   stocks --market NAME   of those lists, load only that market, e.g. "Nasdaq Helsinki" (repeatable)
 // Keys: arrows, PgUp/PgDn, Home/End move; Tab moves between the tags and the
 // table; M-x (Ctrl+Shift+P)
@@ -14,6 +16,7 @@
 #include "Synthetic.h"
 #include "history/HistoryLoader.h"
 #include "icons/IconLoader.h"
+#include "model/SqliteFactStore.h"
 #include "source/AutoSource.h"
 #include "source/SourceRunner.h"
 #include "source/NordnetSource.h"
@@ -25,7 +28,9 @@
 
 #include <cstdio>
 #include <filesystem>
+#include <functional>
 #include <memory>
+#include <mutex>
 #include <string>
 
 namespace {
@@ -66,17 +71,22 @@ int main(int argc, char ** argv) {
   std::string source_name = "auto";
   std::string list_directory;
   std::vector<std::string> market_names;
+  std::string facts_file;
+  bool keep_facts = true;
   const auto & args = app->arguments();
   for (size_t i = 0; i < args.size(); i++) {
     if (args[i] == "--source" && i + 1 < args.size()) source_name = args[++i];
     else if (args[i].rfind("--source=", 0) == 0) source_name = args[i].substr(9);
     else if (args[i] == "--market" && i + 1 < args.size()) market_names.push_back(args[++i]);
     else if (args[i].rfind("--market=", 0) == 0) market_names.push_back(args[i].substr(9));
+    else if (args[i] == "--facts" && i + 1 < args.size()) facts_file = args[++i];
+    else if (args[i].rfind("--facts=", 0) == 0) facts_file = args[i].substr(8);
+    else if (args[i] == "--no-facts") keep_facts = false;
     else if (args[i] == "--lists" && i + 1 < args.size()) list_directory = args[++i];
     else if (args[i].rfind("--lists=", 0) == 0) list_directory = args[i].substr(8);
     else {
       return fail(2, std::string("usage: ") + argv[0] + " [--ui auto|terminal|window] [--theme original|dark|light] [--source " +
-                         kSourceNames + "] [--lists DIR] [--market NAME]...");
+                         kSourceNames + "] [--facts FILE | --no-facts] [--lists DIR] [--market NAME]...");
     }
   }
   // One source, for now: the instrument lists are the yahoo source's own (and the synthetic one follows them); each reads
@@ -95,9 +105,43 @@ int main(int argc, char ** argv) {
     from = comma + 1;
   }
 
-  std::shared_ptr<Store> store = makeMemoryStore();
+  // What the sources said of the nodes is read from the file before they run. What goes wrong with the file is a message on
+  // the status line once the display is up.
+  struct FactMessages {
+    std::mutex mutex;
+    std::vector<std::string> early;         // said before the display is up
+    std::function<void(std::string)> post;  // once it is: to the status line, from any thread
+    void say(std::string text) {
+      std::lock_guard lock(mutex);
+      if (post) post(std::move(text));
+      else early.push_back(std::move(text));
+    }
+  };
+  auto fact_messages = std::make_shared<FactMessages>();
+  StoreOptions store_options;
+  // What the store refuses (a MIC that two markets would have) is said once, on the status line.
+  store_options.notice = [fact_messages](const std::string & text) { fact_messages->say("facts: " + text); };
+  if (keep_facts) {
+    const std::filesystem::path file = facts_file.empty() ? defaultFactsFile() : std::filesystem::path(facts_file);
+    if (!file.empty()) store_options.facts = openSqliteFactStore(file, [fact_messages](const std::string & text) { fact_messages->say("facts: " + text); });
+  }
+  std::shared_ptr<Store> store = makeMemoryStore(std::move(store_options));
   // The loader and the sources run on threads of their own and tell the UI thread what happened.
   cellui::ThreadInbox inbox(app->backend().eventLoop(), app->widgets());
+  {
+    std::lock_guard lock(fact_messages->mutex);
+    fact_messages->post = [&inbox](std::string text) { inbox.post(SourceMessage{std::move(text)}); };
+    for (std::string & text : fact_messages->early) fact_messages->post(std::move(text));
+    fact_messages->early.clear();
+  }
+  // Declared after the inbox, so gone before it: nothing says anything to a display that is gone.
+  struct StopPosting {
+    FactMessages & messages;
+    ~StopPosting() {
+      std::lock_guard lock(messages.mutex);
+      messages.post = nullptr;
+    }
+  } stop_posting{*fact_messages};
   auto icons = std::make_shared<IconLoader>(makeHttp(), IconLoader::Options{.cache_dir = defaultIconCacheDir()}, [&inbox] { inbox.post(IconsLoaded{}); });
   auto history = std::make_shared<HistoryLoader>(
       store, makeHttp(), HistoryLoader::Options{}, [&inbox] { inbox.post(StoreChanged{}); },
@@ -106,5 +150,7 @@ int main(int argc, char ** argv) {
   SourceRunner runner(
       store, std::move(sources), [&inbox] { inbox.post(StoreChanged{}); },
       [&inbox](std::string text) { inbox.post(SourceMessage{std::move(text)}); });
-  return app->run();
+  const int status = app->run();
+  store->flush();  // what the sources last said is on disk before the program ends
+  return status;
 }
