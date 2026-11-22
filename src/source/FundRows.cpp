@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <charconv>
+#include <cstdio>
 #include <cmath>
 
 using nlohmann::json;
@@ -37,6 +38,20 @@ std::optional<double> looseNumber(const json & o, const char * key) {
 std::optional<int64_t> looseInteger(const json & o, const char * key) {
   auto it = o.find(key);
   return it == o.end() ? std::nullopt : looseInteger(*it);
+}
+
+std::optional<int64_t> looseDay(const json & v) {
+  if (v.is_string()) {
+    const std::string s = v.get<std::string>();
+    int y = 0;
+    unsigned m = 0, d = 0;
+    if (s.size() >= 10 && s[4] == '-' && s[7] == '-' && std::sscanf(s.c_str(), "%d-%u-%u", &y, &m, &d) == 3 && m >= 1 && m <= 12 && d >= 1 && d <= 31)
+      return dayNumber(y, m, d);
+  }
+  auto n = looseNumber(v);
+  if (!n || *n <= 0) return std::nullopt;
+  const int64_t seconds = *n > 1e11 ? static_cast<int64_t>(*n / 1000) : static_cast<int64_t>(*n);  // milliseconds are the larger numbers
+  return dayNumberOfInstant(seconds, 12 * 3600);
 }
 
 int64_t navDay(int64_t ms) { return dayNumberOfInstant(ms / 1000, 12 * 3600); }
@@ -111,13 +126,7 @@ bool tooSparse(const std::vector<Candle> & bars) {
   return gaps[gaps.size() / 2] > kMaxDays;
 }
 
-bool writeFund(Store & store, const std::string & datasetName, const std::string & marketName, const FundRow & f,
-               const std::vector<Candle> & bars) {
-  if (bars.empty() || !isValidIsin(f.isin)) return false;
-  Dataset dataset = store.addDataset({{}, datasetName});
-  Market market = store.addMarket({{}, marketName});
-  Instrument base = store.addInstrument({{}, "", f.name, InstrumentKind::Fund, f.isin, "FUND"});
-  Instrument quote = currencyNode(store, "EUR");
+std::vector<Attribute> attributesOf(const FundRow & f) {
   std::vector<Attribute> said;
   if (!f.url.empty()) said.push_back({predicate::webUrl, f.url});
   if (f.managementFee) said.push_back({"management-fee", *f.managementFee});
@@ -126,9 +135,19 @@ bool writeFund(Store & store, const std::string & datasetName, const std::string
   if (f.risk) said.push_back({"fund-risk-class", *f.risk});
   if (f.rating) said.push_back({"fund-morningstar-rating", *f.rating});
   if (f.esg) said.push_back({"fund-esg-rating", *f.esg});
-  store.setAttributes(base.id, said);
+  return said;
+}
+
+std::optional<EdgeKey> writeFund(Store & store, const std::string & datasetName, const std::string & marketName, const FundRow & f,
+                                 const std::vector<Candle> & bars) {
+  if (bars.empty() || !isValidIsin(f.isin)) return std::nullopt;
+  Dataset dataset = store.addDataset({{}, datasetName});
+  Market market = store.addMarket({{}, marketName});
+  Instrument base = store.addInstrument({{}, "", f.name, InstrumentKind::Fund, f.isin, "FUND"});
+  Instrument quote = currencyNode(store, "EUR");
+  store.setAttributes(base.id, attributesOf(f));
   const EdgeKey edge{base.id, quote.id, market.id, dataset.id};
   store.appendCandles(edge, Resolution::Day, bars);
   store.setListing({edge, f.symbol.empty() ? f.isin : f.symbol, f.identifier, "", "FUND", f.name});
-  return true;
+  return edge;
 }

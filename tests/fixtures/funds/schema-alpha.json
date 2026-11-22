@@ -13,13 +13,17 @@
    "name": "/productNameEn",
    "risk": "/riskClass",
    "rating": "/morningstarRating",
-   "managementFee": "/runningCosts"
+   "managementFee": "/runningCosts",
+   "price": "/rateLast",
+   "date": "/rateDate",
+   "change": "/lastRateChange",
+   "esg": "/esgRating"
   },
   "scale": {
    "managementFee": 100
   }
  },
- "isinFromId": "^(LU\\d{10})EUR$",
+ "isinFromId": "^([A-Z]{2}[A-Z0-9]{9}[0-9])EUR$",
  "isins": {
   "ALPHANORDIC": "FI0008810569",
   "ALPHAMICRO": "FI4000297817",
@@ -41,5 +45,6 @@
  },
  "history": {
   "url": "https://alpha.example/rates/{id}"
- }
+ },
+ "maxAgeDays": 14
 }

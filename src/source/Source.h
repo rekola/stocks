@@ -1,9 +1,11 @@
 #pragma once
 
 #include "model/Store.h"
+#include "history/HistoryProvider.h"
 #include "source/Http.h"
 
 #include <chrono>
+#include <memory>
 #include <string>
 
 // What a source tells whoever runs it. Called on the source's thread.
@@ -25,6 +27,8 @@ class Source {
   virtual void load(Store &, Http &, SourceListener &) = 0;
   // How often to load again, measured from when the last load ended; zero (the default) is once.
   virtual std::chrono::milliseconds refreshInterval() const { return std::chrono::milliseconds(0); }
+  // What loads the history of this source's edges when they are wanted, if it does not load it with the rest (null: it does).
+  virtual std::shared_ptr<HistoryProvider> historyProvider() { return nullptr; }
 };
 
 // Posted to the UI thread when a source has changed the store, and when it has something to say.

@@ -34,11 +34,14 @@
    "managementFee": "/management_fee",
    "subscriptionFee": "/subs_fee",
    "redemptionFee": "/redemption_fee",
-   "link": "/link"
+   "link": "/link",
+   "price": "/price",
+   "date": "/datetime_price"
   },
   "linkPrefix": "https://beta.example"
  },
  "history": {
   "url": "https://beta.example/chart?id={id}&type=line&{token}"
- }
+ },
+ "maxAgeDays": 14
 }

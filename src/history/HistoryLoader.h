@@ -1,5 +1,6 @@
 #pragma once
 
+#include "history/HistoryProvider.h"
 #include "model/Period.h"
 #include "model/Store.h"
 #include "source/Http.h"
@@ -16,7 +17,7 @@
 #include <vector>
 
 // One request of one edge: the edge and which of the requests there are (0 the three months daily, 1 the day, 2 the week, 3 the
-// year).
+// year; 100 whatever the edge's dataset has a provider for).
 struct HistoryAsk {
   EdgeKey edge;
   int request = 0;
@@ -73,6 +74,10 @@ class HistoryLoader {
   // or was answered, is left out. (Full depth loads the whole history, whatever the period.)
   void want(const std::vector<EdgeKey> & edges, Period period = kDefaultPeriod);
 
+  // Another dataset's history: the edges of the provider's dataset that are wanted are loaded by it, in the same queue (one at a time, the most
+  // wanted first), once each per session, whatever the period. A refusal stops that provider and not the others.
+  void addProvider(std::shared_ptr<HistoryProvider>);
+
   // Whether a refusal has stopped the network for this session.
   bool refused() const;
   // Blocks until nothing is queued or being loaded (for tests).
@@ -93,6 +98,8 @@ class HistoryLoader {
   void run();
   // Loads one edge; returns whether bars were written. `network` is set if a request was made.
   bool load(const Ask & ask, bool & network);
+  bool loadProvided(const Ask & ask, bool & network);
+  std::shared_ptr<HistoryProvider> providerOf(const std::string & dataset) const;  // under the lock
   // One request; false if it did not give an answer (`outcome` says why).
   enum class Outcome { Ok, Missing, Refused, Offline };
   Outcome request(const std::string & book, const std::string & period, const std::string & resolution, bool nav, Series & out);
@@ -106,6 +113,9 @@ class HistoryLoader {
   std::condition_variable wake_, idle_;
   std::list<Ask> queue_;
   std::unordered_set<Ask> done_, failed_;
+  std::vector<std::shared_ptr<HistoryProvider>> providers_;
+  std::unordered_set<std::string> blocked_;  // the datasets whose provider has refused
+  std::chrono::milliseconds extra_pause_{0};  // a provider's own, after its request (the loader's thread only)
   bool busy_ = false, stop_ = false, refused_ = false;
   std::chrono::steady_clock::time_point offline_until_{};
   std::thread thread_;  // last: it starts in the constructor
