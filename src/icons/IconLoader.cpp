@@ -13,8 +13,6 @@ using cellui::TableIcon;
 
 namespace {
 
-constexpr char kMagic[4] = {'I', 'C', 'N', '2'};  // 1 was 32 pixels wide: such a file is read as no icon
-constexpr size_t kPixelBytes = static_cast<size_t>(kIconSize) * kIconSize * 4;
 
 // A hash that is the same in every run, for the file name and the picture's id.
 uint64_t hashOf(const std::string & s) {
@@ -30,16 +28,25 @@ std::string hex(uint64_t v) {
   return out;
 }
 
-std::shared_ptr<const TableIcon> makeIcon(const std::string & url, std::vector<uint32_t> pixels) {
+// A picture as it came, straight RGBA at its own size.
+struct Decoded {
+  int width = 0, height = 0;
+  std::vector<uint32_t> pixels;
+};
+
+std::shared_ptr<const TableIcon> makeIcon(const std::string & url, Decoded picture) {
   auto icon = std::make_shared<TableIcon>();
   icon->id = hashOf(url);
-  icon->width = icon->height = kIconSize;
-  icon->pixels = std::make_shared<const std::vector<uint32_t>>(std::move(pixels));
+  icon->width = picture.width;
+  icon->height = picture.height;
+  icon->pixels = std::make_shared<const std::vector<uint32_t>>(std::move(picture.pixels));
   return icon;
 }
 
-// An image's bytes as kIconSize x kIconSize straight RGBA, the picture fitted and centred; empty if it is no image.
-std::vector<uint32_t> decode(const std::string & bytes) {
+size_t bytesOf(const TableIcon & icon) { return icon.pixels->size() * sizeof(uint32_t); }
+
+// The bytes of an image file as RGBA at its own size; empty (no pixels) if it is no image.
+Decoded decode(const std::string & bytes) {
   std::unique_ptr<canvas::ImageData> source;
   try {
     canvas::Image image(1.0f);
@@ -50,27 +57,19 @@ std::vector<uint32_t> decode(const std::string & bytes) {
   }
   if (!source || !source->isValid() || source->getPixelType() != canvas::PixelType::UINT8) return {};
   const unsigned w = source->getWidth(), h = source->getHeight(), channels = source->getNumChannels();
-  if (w > 8192 || h > 8192 || channels > 4) return {};
-  // Four channels first: grey, grey and alpha and colour all become RGBA.
-  std::vector<unsigned char> rgba(static_cast<size_t>(w) * h * 4);
+  if (w > 4096 || h > 4096 || channels > 4) return {};
+  Decoded out;
+  out.width = static_cast<int>(w);
+  out.height = static_cast<int>(h);
+  out.pixels.resize(static_cast<size_t>(w) * h);
   const unsigned char * in = source->getData();
-  for (size_t i = 0; i < static_cast<size_t>(w) * h; i++) {
+  for (size_t i = 0; i < out.pixels.size(); i++) {
     const unsigned char * p = in + i * channels;
-    unsigned char * q = &rgba[i * 4];
-    if (channels >= 3) q[0] = p[0], q[1] = p[1], q[2] = p[2], q[3] = channels == 4 ? p[3] : 255;
+    unsigned char q[4];
+    if (channels >= 3) q[0] = p[0], q[1] = p[1], q[2] = p[2], q[3] = channels == 4 ? p[3] : 255;  // grey, grey and alpha, colour
     else q[0] = q[1] = q[2] = p[0], q[3] = channels == 2 ? p[1] : 255;
+    std::memcpy(&out.pixels[i], q, 4);
   }
-  canvas::ImageData straight(rgba.data(), w, h, 4);
-  const double fit = std::min(static_cast<double>(kIconSize) / w, static_cast<double>(kIconSize) / h);
-  const unsigned tw = std::clamp(static_cast<unsigned>(w * fit + 0.5), 1u, static_cast<unsigned>(kIconSize));
-  const unsigned th = std::clamp(static_cast<unsigned>(h * fit + 0.5), 1u, static_cast<unsigned>(kIconSize));
-  auto scaled = straight.scale(tw, th);
-  if (!scaled || scaled->getNumChannels() != 4) return {};
-  std::vector<uint32_t> out(static_cast<size_t>(kIconSize) * kIconSize, 0);  // transparent
-  const unsigned x0 = (kIconSize - tw) / 2, y0 = (kIconSize - th) / 2;
-  const unsigned char * s = scaled->getData();
-  for (unsigned y = 0; y < th; y++)
-    for (unsigned x = 0; x < tw; x++) std::memcpy(&out[(y0 + y) * kIconSize + x0 + x], s + (static_cast<size_t>(y) * tw + x) * 4, 4);
   return out;
 }
 
@@ -134,9 +133,11 @@ void IconLoader::waitIdle() {
 void IconLoader::remember(const std::string & url, std::shared_ptr<const TableIcon> icon) {
   std::lock_guard lock(mutex_);
   if (in_memory_.count(url)) return;
+  memory_bytes_ += bytesOf(*icon);
   memory_.emplace_front(url, std::move(icon));
   in_memory_[url] = memory_.begin();
-  while (memory_.size() > options_.max_memory_icons) {
+  while (memory_bytes_ > options_.max_memory_bytes && memory_.size() > 1) {  // the newest stays, however large
+    memory_bytes_ -= bytesOf(*memory_.back().second);
     in_memory_.erase(memory_.back().first);
     memory_.pop_back();
   }
@@ -183,8 +184,8 @@ bool IconLoader::load(const std::string & url, bool & used_network) {
   used_network = true;
   HttpResult r = http_->get(url, {{"Accept", "image/*"}});
   // The mutex is held only to change state: decoding and the disk are the thread's own, so get() never waits for them.
-  std::vector<uint32_t> pixels;
-  if (r.ok()) pixels = decode(r.body);
+  Decoded picture;
+  if (r.ok()) picture = decode(r.body);
   {
     std::lock_guard lock(mutex_);
     if (r.status == 403 || r.status == 429) {
@@ -195,42 +196,42 @@ bool IconLoader::load(const std::string & url, bool & used_network) {
       offline_until_ = std::chrono::steady_clock::now() + options_.offline_pause;
       return false;
     }
-    if (pixels.empty()) {  // a 404 or other refusal, or no image
+    if (picture.pixels.empty()) {  // a 404 or other refusal, or no image
       failed_.insert(url);
       return false;
     }
   }
-  auto icon = makeIcon(url, std::move(pixels));
-  toDisk(url, *icon);
-  remember(url, std::move(icon));
+  toDisk(url, r.body);  // the file as it came: nothing is lost to the cache
+  remember(url, makeIcon(url, std::move(picture)));
   return true;
 }
 
 std::shared_ptr<const TableIcon> IconLoader::fromDisk(const std::string & url) {
   if (options_.cache_dir.empty()) return nullptr;
-  const fs::path path = options_.cache_dir / (hex(hashOf(url)) + ".icn");
-  std::ifstream in(path, std::ios::binary);
-  char magic[4];
-  if (!in.read(magic, 4) || std::memcmp(magic, kMagic, 4) != 0) return nullptr;
-  std::vector<uint32_t> pixels(static_cast<size_t>(kIconSize) * kIconSize);
-  if (!in.read(reinterpret_cast<char *>(pixels.data()), static_cast<std::streamsize>(kPixelBytes))) return nullptr;
-  in.close();
+  const fs::path path = options_.cache_dir / (hex(hashOf(url)) + ".img");
+  std::string bytes;
+  {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) return nullptr;
+    bytes.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+  }
+  Decoded picture = decode(bytes);
+  if (picture.pixels.empty()) return nullptr;  // damaged: fetched again
   std::error_code ec;
   fs::last_write_time(path, fs::file_time_type::clock::now(), ec);  // used now: the last to be trimmed
-  return makeIcon(url, std::move(pixels));
+  return makeIcon(url, std::move(picture));
 }
 
 // Only the loader's thread touches the disk.
-void IconLoader::toDisk(const std::string & url, const TableIcon & icon) {
+void IconLoader::toDisk(const std::string & url, const std::string & bytes) {
   if (options_.cache_dir.empty()) return;
   std::error_code ec;
   fs::create_directories(options_.cache_dir, ec);
-  const fs::path path = options_.cache_dir / (hex(hashOf(url)) + ".icn");
+  const fs::path path = options_.cache_dir / (hex(hashOf(url)) + ".img");
   const fs::path part = path.string() + ".part";
   {
     std::ofstream out(part, std::ios::binary | std::ios::trunc);
-    out.write(kMagic, 4);
-    out.write(reinterpret_cast<const char *>(icon.pixels->data()), static_cast<std::streamsize>(kPixelBytes));
+    out.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
     if (!out) {
       out.close();
       fs::remove(part, ec);
@@ -252,7 +253,7 @@ void IconLoader::trimDisk() {
   std::vector<File> files;
   uintmax_t total = 0;
   for (const auto & entry : fs::directory_iterator(options_.cache_dir, ec)) {
-    if (!entry.is_regular_file(ec) || entry.path().extension() != ".icn") continue;
+    if (!entry.is_regular_file(ec) || entry.path().extension() != ".img" && entry.path().extension() != ".icn") continue;
     files.push_back({entry.path(), entry.last_write_time(ec), entry.file_size(ec)});
     total += files.back().size;
   }
