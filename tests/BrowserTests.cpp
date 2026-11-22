@@ -518,3 +518,15 @@ TEST(values_are_shown_by_what_they_are_without_the_locale) {
   CHECK(showValue("dividend-amount", 0.7).text == "0.7");
   std::setlocale(LC_NUMERIC, before.c_str());
 }
+
+TEST(the_viewer_is_drawn_by_the_loop_without_another_input) {
+  Fixture f(false);
+  addNokia(*f.store);
+  f.app->execute("show-nasdaq-helsinki");
+  f.text();
+  f.backend->setFrameHandler([&](int64_t) { f.app->present(); });  // as run() sets it
+  size_t before = 0, during = 0;
+  f.inModal([&] { before = f.backend->frameCount(), f.press('i'); },
+            {[&] { during = f.backend->frameCount(); }, [&] { f.press(Key::Escape); }});
+  CHECK(during > before);  // the input that opened it has not returned, so no frame follows it: the dialog asks for one
+}

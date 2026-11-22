@@ -214,6 +214,9 @@ void Browser::showInfo() {
     if (auto base = snapshot->instrument(edge.base)) label = base->name;
   std::string title = "Info: " + label;
   AttributeModal modal(app_.widgets(), app_.root(), app_.backend().eventLoop(), std::move(title), snapshot, buildInfo(*snapshot, edge));
+  // The input that got us here does not return until the modal closes, so no frame follows it: ask for the one that shows
+  // the new selection and the dialog.
+  app_.requestFrame();
   modal.showModal();
   app_.requestFrame();
 }
