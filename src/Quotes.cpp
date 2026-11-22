@@ -6,12 +6,12 @@
 std::vector<QuoteRow> makeRows(const Snapshot & snapshot, MarketId market, size_t bars) {
   std::vector<QuoteRow> rows;
   for (const EdgeKey & key : snapshot.edges(market)) {
-    CandleSeries series = snapshot.lastCandles(key, bars);
-    if (series.candles.empty()) continue;  // a book alone has no price to show
+    CandleSeries series = snapshot.lastCandles(key, Resolution::Day, bars);  // the table shows daily bars
+    if (series.candles.empty()) continue;  // no daily bars: a book alone, or only intraday, has no row
     QuoteRow r;
     r.key = key;
     if (auto base = snapshot.instrument(key.base)) {
-      r.base = base->symbol;
+      r.base = snapshot.symbol(key);
       r.name = base->name;
     }
     if (auto quote = snapshot.instrument(key.quote)) r.quote = quote->symbol;

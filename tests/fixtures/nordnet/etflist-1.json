@@ -1,0 +1,399 @@
+{
+ "rows": 3,
+ "total_hits": 5,
+ "results": [
+  {
+   "instrument_info": {
+    "instrument_id": 17059750,
+    "name": "Franklin FTSE Korea UCITS ETF",
+    "long_name": "Franklin FTSE Korea UCITS ETF",
+    "symbol": "FLXK",
+    "instrument_group_type": "PAR",
+    "instrument_type_hierarchy": "WNT/PAR/UETF",
+    "instrument_type": "UETF",
+    "isin": "IE00BHZRR030",
+    "currency": "EUR",
+    "price_unit": "EUR",
+    "clearing_place": "PERS_DE",
+    "is_tradable": true,
+    "instrument_pawn_percentage": 70,
+    "is_shortable": false,
+    "issuer_id": 257377,
+    "issuer_name": "Franklin Templeton",
+    "is_monthly_saveable": true,
+    "is_monthly_save_dask": false,
+    "mifid2_id": 0,
+    "instrument_icon_url": "https://cdn.prod.nntech.io/cms-proxy/6xe8ehctp75g/3wU9p6OtTC9F4NMiOA0fcw/a1d1cda01a183a12a6336179b86ddafc/image.png"
+   },
+   "market_info": {
+    "market_id": 4,
+    "market_sub_id": 51,
+    "identifier": "FLXK",
+    "tick_size_id": 34832655
+   },
+   "price_info": {
+    "last": {
+     "price": 65.03,
+     "decimals": 2
+    },
+    "open": {
+     "price": 68.39,
+     "decimals": 2
+    },
+    "close": {
+     "price": 70.84,
+     "decimals": 2
+    },
+    "turnover": 5632518.09,
+    "turnover_normalized": 63157988.59,
+    "turnover_volume": 84150,
+    "bid": {
+     "price": 64.7,
+     "decimals": 2
+    },
+    "ask": {
+     "price": 64.96,
+     "decimals": 2
+    },
+    "bid_volume": 0,
+    "ask_volume": 0,
+    "high": {
+     "price": 68.48,
+     "decimals": 2
+    },
+    "low": {
+     "price": 65.03,
+     "decimals": 2
+    },
+    "diff": {
+     "diff": -5.81,
+     "decimals": 2
+    },
+    "diff_pct": -8.2,
+    "spread": {
+     "price": 0.26,
+     "decimals": 4
+    },
+    "spread_pct": 0.4,
+    "tick_timestamp": 1795201623000,
+    "realtime": false
+   },
+   "historical_returns_info": {
+    "yield_1d": -8.2,
+    "yield_1w": -12.49,
+    "yield_1m": -18.37,
+    "yield_3m": -22.26,
+    "yield_ytd": 45.04,
+    "yield_1y": 59.31,
+    "yield_3y": 123.05,
+    "yield_5y": 90.2,
+    "yield_max": 185.72,
+    "realtime": false
+   },
+   "fund_info": {
+    "fund_type": "Stock",
+    "fund_category": "Korea Equity",
+    "fund_universe_ids": [],
+    "fund_admin_company": "Franklin Templeton International Services S.à r.l.",
+    "fund_low_carbon": true,
+    "fund_nordnet_selection": false,
+    "fund_ms_rating": 4,
+    "fund_total_market_value": 4179051141,
+    "fund_esg_score": 18,
+    "fund_yearly_fee": 0.09,
+    "fund_calculated_fee": 0.09,
+    "fund_total_fee": 0.24,
+    "fund_raw_risk": 6,
+    "fund_risk_group": "High",
+    "fund_start_date": 1559649600000,
+    "fund_branding_company": "Franklin Templeton",
+    "fund_dividend_strategy": "Accumulated",
+    "fund_raw_sfdr": 6,
+    "fund_sfdr_article": "Article 6"
+   },
+   "exchange_info": {
+    "exchange_country": "DE",
+    "exchanges": []
+   },
+   "annual_growth_info": {
+    "annual_growth_1y": 59.31,
+    "annual_growth_3y": 30.66,
+    "annual_growth_5y": 13.72
+   },
+   "statistical_info": {
+    "statistics_timestamp": 1795200537004,
+    "number_of_owners": 4402
+   },
+   "key_ratios_info": {},
+   "nnx_info": {
+    "nnx_instrument_id": "e9cab3b7-681a-4676-9790-6cdcdd9e7527",
+    "trading_order_book_id": "0cb2ea2c-3682-45c2-a8e4-148d49efff3f",
+    "market_data_order_book_id": "bce7bfd3-e211-4e49-9b99-e47f5c2e5f0c",
+    "display_slug": "franklin-ftse-korea-ucits-flxk-xeta",
+    "instrument_class": "EXCHANGE_TRADED_FUND"
+   }
+  },
+  {
+   "instrument_info": {
+    "instrument_id": 16102078,
+    "name": "XACT Bull (ETF)",
+    "long_name": "XACT BULL",
+    "symbol": "XACT BULL",
+    "instrument_group_type": "KO",
+    "instrument_type_hierarchy": "WNT/KO/KETF",
+    "instrument_type": "KETF",
+    "isin": "SE0001342395",
+    "currency": "SEK",
+    "price_unit": "SEK",
+    "clearing_place": "VPC",
+    "is_tradable": true,
+    "instrument_pawn_percentage": 70,
+    "is_shortable": false,
+    "issuer_id": 259907,
+    "issuer_name": "XACT Bull",
+    "is_monthly_saveable": false,
+    "is_monthly_save_dask": false,
+    "mifid2_id": 407,
+    "instrument_icon_url": "https://cdn.prod.nntech.io/cms-proxy/6xe8ehctp75g/lg7fBZCU9VgVg4oFYsDzA/1043396b197fe5dd3c87ddae7b4ea835/XACT.png"
+   },
+   "market_info": {
+    "market_id": 11,
+    "market_sub_id": 4693,
+    "identifier": "28770",
+    "tick_size_id": 14736
+   },
+   "price_info": {
+    "last": {
+     "price": 1104.4,
+     "decimals": 2
+    },
+    "open": {
+     "price": 1124.6,
+     "decimals": 2
+    },
+    "close": {
+     "price": 1150.8,
+     "decimals": 2
+    },
+    "turnover": 12414777.2,
+    "turnover_normalized": 12414777.2,
+    "turnover_volume": 11166,
+    "bid": {
+     "price": 0,
+     "decimals": 4
+    },
+    "ask": {
+     "price": 0,
+     "decimals": 4
+    },
+    "bid_volume": 0,
+    "ask_volume": 0,
+    "high": {
+     "price": 1125.2,
+     "decimals": 2
+    },
+    "low": {
+     "price": 1102.2,
+     "decimals": 2
+    },
+    "diff": {
+     "diff": -46.4,
+     "decimals": 2
+    },
+    "diff_pct": -4.03,
+    "spread": {
+     "price": 0,
+     "decimals": 4
+    },
+    "spread_pct": 0,
+    "tick_timestamp": 1795191900000,
+    "realtime": false
+   },
+   "historical_returns_info": {
+    "yield_1d": -4.03,
+    "yield_1w": -8.53,
+    "yield_1m": -4.38,
+    "yield_3m": -3.76,
+    "yield_ytd": 14.89,
+    "yield_1y": 27.63,
+    "yield_3y": 72.32,
+    "yield_5y": 57.1,
+    "yield_10y": 266.61,
+    "yield_max": 1012.19,
+    "realtime": false
+   },
+   "fund_info": {
+    "fund_type": "Other",
+    "fund_category": "Trading Tools",
+    "fund_universe_ids": [],
+    "fund_admin_company": "Handelsbanken Fonder AB",
+    "fund_low_carbon": false,
+    "fund_nordnet_selection": false,
+    "fund_total_market_value": 637055632,
+    "fund_yearly_fee": 0.61,
+    "fund_calculated_fee": 0.61,
+    "fund_total_fee": 0.69,
+    "fund_raw_risk": 6,
+    "fund_risk_group": "High",
+    "fund_start_date": 1107864000000,
+    "fund_branding_company": "Handelsbanken",
+    "fund_dividend_strategy": "Accumulated",
+    "fund_raw_sfdr": 6,
+    "fund_sfdr_article": "Article 6"
+   },
+   "exchange_info": {
+    "exchange_country": "SE",
+    "exchanges": []
+   },
+   "annual_growth_info": {
+    "annual_growth_1y": 27.63,
+    "annual_growth_3y": 19.89,
+    "annual_growth_5y": 9.45,
+    "annual_growth_10y": 13.87
+   },
+   "statistical_info": {
+    "statistics_timestamp": 1795200564336,
+    "number_of_owners": 289
+   },
+   "key_ratios_info": {},
+   "nnx_info": {
+    "nnx_instrument_id": "466d42b1-41e7-48cc-b9e2-23837c320810",
+    "trading_order_book_id": "dd7199f0-208a-4471-a8d3-8ed2de2da652",
+    "market_data_order_book_id": "dd7199f0-208a-4471-a8d3-8ed2de2da652",
+    "display_slug": "xact-bull-etf-xact-bull-xsto",
+    "instrument_class": "EXCHANGE_TRADED_FUND"
+   }
+  },
+  {
+   "instrument_info": {
+    "instrument_id": 16996723,
+    "name": "XACT OMXC25 ESG (UCITS ETF) (A1 DKK)",
+    "long_name": "XACT OMXC25 ESG (UCITS ETF)",
+    "symbol": "XACTC25",
+    "instrument_group_type": "PAR",
+    "instrument_type_hierarchy": "WNT/PAR/UETF",
+    "instrument_type": "UETF",
+    "isin": "SE0011452127",
+    "currency": "DKK",
+    "price_unit": "DKK",
+    "clearing_place": "VP",
+    "is_tradable": true,
+    "instrument_pawn_percentage": 80,
+    "is_shortable": false,
+    "issuer_id": 262370,
+    "issuer_name": "XACT OMXC25 ESG",
+    "is_monthly_saveable": false,
+    "is_monthly_save_dask": false,
+    "mifid2_id": 0,
+    "instrument_icon_url": "https://cdn.prod.nntech.io/cms-proxy/6xe8ehctp75g/lg7fBZCU9VgVg4oFYsDzA/1043396b197fe5dd3c87ddae7b4ea835/XACT.png"
+   },
+   "market_info": {
+    "market_id": 14,
+    "market_sub_id": 4812,
+    "identifier": "168454",
+    "tick_size_id": 14736
+   },
+   "price_info": {
+    "last": {
+     "price": 213.05,
+     "decimals": 2
+    },
+    "open": {
+     "price": 215.35,
+     "decimals": 2
+    },
+    "close": {
+     "price": 217.35,
+     "decimals": 2
+    },
+    "turnover": 15171260.05,
+    "turnover_normalized": 22762958.58,
+    "turnover_volume": 70906,
+    "bid": {
+     "price": 0,
+     "decimals": 4
+    },
+    "ask": {
+     "price": 0,
+     "decimals": 4
+    },
+    "bid_volume": 0,
+    "ask_volume": 0,
+    "high": {
+     "price": 215.95,
+     "decimals": 2
+    },
+    "low": {
+     "price": 212.55,
+     "decimals": 2
+    },
+    "diff": {
+     "diff": -4.3,
+     "decimals": 2
+    },
+    "diff_pct": -1.98,
+    "spread": {
+     "price": 0,
+     "decimals": 4
+    },
+    "spread_pct": 0,
+    "tick_timestamp": 1795191600000,
+    "realtime": false
+   },
+   "historical_returns_info": {
+    "yield_1d": -1.98,
+    "yield_1w": -4.89,
+    "yield_1m": 3.62,
+    "yield_3m": 1.77,
+    "yield_ytd": 7.76,
+    "yield_1y": 15.39,
+    "yield_3y": 20.91,
+    "yield_5y": 8.46,
+    "yield_max": 110.44,
+    "realtime": false
+   },
+   "fund_info": {
+    "fund_type": "Stock",
+    "fund_category": "Europe Equity Large Cap",
+    "fund_universe_ids": [],
+    "fund_admin_company": "Handelsbanken Fonder AB",
+    "fund_low_carbon": true,
+    "fund_nordnet_selection": false,
+    "fund_ms_rating": 2,
+    "fund_total_market_value": 5785157254,
+    "fund_esg_score": 18,
+    "fund_yearly_fee": 0.21,
+    "fund_calculated_fee": 0.21,
+    "fund_total_fee": 0.22,
+    "fund_raw_risk": 4,
+    "fund_risk_group": "Medium",
+    "fund_start_date": 1549281600000,
+    "fund_branding_company": "Handelsbanken",
+    "fund_dividend_strategy": "Accumulated",
+    "fund_raw_sfdr": 8,
+    "fund_sfdr_article": "Article 8"
+   },
+   "exchange_info": {
+    "exchange_country": "DK",
+    "exchanges": []
+   },
+   "annual_growth_info": {
+    "annual_growth_1y": 15.39,
+    "annual_growth_3y": 6.53,
+    "annual_growth_5y": 1.64
+   },
+   "statistical_info": {
+    "statistics_timestamp": 1795200863853,
+    "number_of_owners": 13266
+   },
+   "key_ratios_info": {},
+   "nnx_info": {
+    "nnx_instrument_id": "6654db35-47f9-46a9-a796-3bb6540a04f9",
+    "trading_order_book_id": "a082601b-60b3-4bd4-abfc-59c77eba5253",
+    "market_data_order_book_id": "a082601b-60b3-4bd4-abfc-59c77eba5253",
+    "display_slug": "xact-omxc25-esg-ucits-xactc25-xcse",
+    "instrument_class": "EXCHANGE_TRADED_FUND"
+   }
+  }
+ ]
+}

@@ -1,0 +1,417 @@
+{
+ "rows": 4,
+ "total_hits": 4,
+ "results": [
+  {
+   "instrument_info": {
+    "instrument_id": 16127916,
+    "name": "Xetra-Gold ETC",
+    "long_name": "Xetra-Gold ETC",
+    "symbol": "4GLD",
+    "instrument_group_type": "PAR",
+    "instrument_type_hierarchy": "WNT/PAR/PTC",
+    "instrument_type": "PTC",
+    "isin": "DE000A0S9GB0",
+    "currency": "EUR",
+    "price_unit": "EUR",
+    "clearing_place": "PERS_DE",
+    "is_tradable": true,
+    "instrument_pawn_percentage": 70,
+    "is_shortable": false,
+    "issuer_id": 261250,
+    "issuer_name": "Deutsche Börse Commodities",
+    "is_monthly_saveable": false,
+    "is_monthly_save_dask": false,
+    "mifid2_id": 401,
+    "instrument_icon_url": "https://cdn.prod.nntech.io/cms-proxy/6xe8ehctp75g/mVmQ2umsR8ggqhdMAqlUH/6cb526b6e214bf6febe5f541e064940a/image.png"
+   },
+   "status_info": {
+    "trading_status": "CLOSED",
+    "translated_trading_status": "Closed",
+    "tick_timestamp": 1795208745000
+   },
+   "market_info": {
+    "market_id": 4,
+    "market_sub_id": 51,
+    "identifier": "4GLD",
+    "tick_size_id": 34832656
+   },
+   "price_info": {
+    "last": {
+     "price": 103.78,
+     "decimals": 2
+    },
+    "open": {
+     "price": 104.78,
+     "decimals": 2
+    },
+    "close": {
+     "price": 107.94,
+     "decimals": 2
+    },
+    "turnover": 86135253.99,
+    "turnover_normalized": 965843216.52,
+    "turnover_volume": 825020,
+    "bid": {
+     "price": 103.23,
+     "decimals": 2
+    },
+    "ask": {
+     "price": 103.29,
+     "decimals": 2
+    },
+    "bid_volume": 0,
+    "ask_volume": 0,
+    "high": {
+     "price": 105.42,
+     "decimals": 2
+    },
+    "low": {
+     "price": 103.3,
+     "decimals": 2
+    },
+    "diff": {
+     "diff": -4.16,
+     "decimals": 2
+    },
+    "diff_pct": -3.85,
+    "spread": {
+     "price": 0.06,
+     "decimals": 4
+    },
+    "spread_pct": 0.06,
+    "tick_timestamp": 1795192200000,
+    "realtime": false
+   },
+   "exchange_info": {
+    "exchange_country": "DE",
+    "exchanges": []
+   },
+   "etp_info": {
+    "direction": "Long",
+    "nordnet_markets": false,
+    "market_view": "U",
+    "management_fee": 0
+   },
+   "statistical_info": {
+    "statistics_timestamp": 1795200538455,
+    "number_of_owners": 4462
+   },
+   "certificate_info": {
+    "static_leverage": 1,
+    "static_high_risk": false
+   },
+   "historical_returns_info": {
+    "yield_1d": -3.85,
+    "yield_1w": -7.73,
+    "yield_1m": -12.68,
+    "yield_3m": -16.1,
+    "yield_ytd": -13.78,
+    "yield_1y": -8.64,
+    "yield_3y": 77.17,
+    "yield_5y": 96.66,
+    "yield_10y": 183.01,
+    "yield_max": 466.48,
+    "realtime": false
+   },
+   "nnx_info": {
+    "nnx_instrument_id": "913076a5-b2c4-47d0-ae25-81e40c0ec266",
+    "trading_order_book_id": "6347917f-5c05-46c9-8ef0-10c6098f651a",
+    "market_data_order_book_id": "c3a7d13a-dd10-4a4f-b969-beeb9bfb12d1",
+    "display_slug": "xetra-gold-etc-4gld-xeta",
+    "instrument_class": "TRACKER"
+   }
+  },
+  {
+   "instrument_info": {
+    "instrument_id": 17375126,
+    "name": "BULL OMX X1 NN",
+    "long_name": "BULL OMXS30 X1 NN",
+    "symbol": "BULL OMXS30 X1 NN",
+    "instrument_group_type": "PAR",
+    "instrument_type_hierarchy": "WNT/PAR/PTC",
+    "instrument_type": "PTC",
+    "isin": "NO0010903685",
+    "currency": "NOK",
+    "price_unit": "NOK",
+    "clearing_place": "VPS",
+    "is_tradable": true,
+    "is_shortable": false,
+    "issuer_id": 252116,
+    "issuer_name": "Nordea Bank",
+    "is_monthly_saveable": false,
+    "is_monthly_save_dask": false,
+    "mifid2_id": 401
+   },
+   "status_info": {},
+   "market_info": {
+    "market_id": 53,
+    "market_sub_id": 5035,
+    "identifier": "206579",
+    "tick_size_id": 14113
+   },
+   "price_info": {
+    "realtime": false
+   },
+   "exchange_info": {
+    "exchange_country": "SE",
+    "exchanges": []
+   },
+   "etp_info": {
+    "direction": "Long",
+    "underlying_instrument_id": 16104939,
+    "underlying_name": "OMX Stockholm 30 Index",
+    "nordnet_markets": false,
+    "market_view": "U",
+    "first_trading_date": 1603926000000
+   },
+   "statistical_info": {
+    "statistics_timestamp": 1795201803049,
+    "number_of_owners": 0
+   },
+   "certificate_info": {
+    "static_leverage": 1,
+    "static_high_risk": false
+   },
+   "historical_returns_info": {
+    "realtime": false
+   },
+   "nnx_info": {
+    "nnx_instrument_id": "c1b5606f-01b8-4c42-9a1d-8e95a1a8174c",
+    "trading_order_book_id": "e4ded8a1-d983-409e-be1c-f06bc43619f7",
+    "market_data_order_book_id": "e4ded8a1-d983-409e-be1c-f06bc43619f7",
+    "display_slug": "bull-omxs30-x1-nn-onse",
+    "instrument_class": "TRACKER"
+   }
+  },
+  {
+   "instrument_info": {
+    "instrument_id": 18231377,
+    "name": "TRACK VIX SG",
+    "long_name": "TRACK VIX SG",
+    "symbol": "TRACK VIX SG",
+    "instrument_group_type": "PAR",
+    "instrument_type_hierarchy": "WNT/PAR/PTC",
+    "instrument_type": "PTC",
+    "isin": "DE000SU696R4",
+    "currency": "SEK",
+    "price_unit": "SEK",
+    "clearing_place": "VPC",
+    "is_tradable": true,
+    "instrument_pawn_percentage": 0,
+    "is_shortable": false,
+    "issuer_id": 257790,
+    "issuer_name": "Société Générale",
+    "is_monthly_saveable": false,
+    "is_monthly_save_dask": false,
+    "mifid2_id": 401
+   },
+   "status_info": {
+    "trading_status": "CLOSED",
+    "translated_trading_status": "Closed",
+    "tick_timestamp": 1795209300000
+   },
+   "market_info": {
+    "market_id": 61,
+    "market_sub_id": 4874,
+    "identifier": "DY54",
+    "tick_size_id": 34832519
+   },
+   "price_info": {
+    "last": {
+     "price": 3.44,
+     "decimals": 2
+    },
+    "open": {
+     "price": 0,
+     "decimals": 4
+    },
+    "close": {
+     "price": 2.91,
+     "decimals": 2
+    },
+    "turnover": 375456.19,
+    "turnover_normalized": 375456.19,
+    "turnover_volume": 123699,
+    "bid": {
+     "price": 2.95,
+     "decimals": 2
+    },
+    "ask": {
+     "price": 4.0,
+     "decimals": 2
+    },
+    "bid_volume": 700,
+    "ask_volume": 2795,
+    "high": {
+     "price": 3.47,
+     "decimals": 2
+    },
+    "low": {
+     "price": 2.85,
+     "decimals": 2
+    },
+    "diff": {
+     "diff": 0.53,
+     "decimals": 2
+    },
+    "diff_pct": 18.21,
+    "spread": {
+     "price": 1.05,
+     "decimals": 2
+    },
+    "spread_pct": 26.25,
+    "tick_timestamp": 1795208400000,
+    "realtime": false
+   },
+   "exchange_info": {
+    "exchange_country": "SE",
+    "exchanges": []
+   },
+   "etp_info": {
+    "direction": "Long",
+    "underlying_instrument_id": 16475402,
+    "underlying_name": "VIX Volatility Index Future",
+    "nordnet_markets": false,
+    "market_view": "U",
+    "first_trading_date": 1706050800000
+   },
+   "statistical_info": {
+    "statistics_timestamp": 1795202115928,
+    "number_of_owners": 9
+   },
+   "certificate_info": {
+    "static_leverage": 1,
+    "static_high_risk": false
+   },
+   "historical_returns_info": {
+    "yield_1d": 20.7,
+    "yield_1w": 54.96,
+    "yield_1m": 57.8,
+    "yield_3m": 54.96,
+    "yield_ytd": 12.79,
+    "yield_1y": -25.54,
+    "yield_max": -67.27,
+    "realtime": false
+   },
+   "nnx_info": {
+    "nnx_instrument_id": "48d55c00-c329-45e2-9030-9bedad3fb350",
+    "trading_order_book_id": "867cb26f-e1e2-4a27-b849-5b516f04ca87",
+    "market_data_order_book_id": "867cb26f-e1e2-4a27-b849-5b516f04ca87",
+    "display_slug": "track-vix-sg-nmtf",
+    "instrument_class": "TRACKER"
+   }
+  },
+  {
+   "instrument_info": {
+    "instrument_id": 19480359,
+    "name": "TRACKER SP500 NORDNET FI1",
+    "long_name": "TRACKER SP500 NORDNET FI1",
+    "symbol": "TRACKER SP500 NORDNET FI1",
+    "instrument_group_type": "PAR",
+    "instrument_type_hierarchy": "WNT/PAR/PTC",
+    "instrument_type": "PTC",
+    "isin": "DE000JE06Y19",
+    "currency": "EUR",
+    "price_unit": "EUR",
+    "clearing_place": "VPC",
+    "is_tradable": true,
+    "instrument_pawn_percentage": 0,
+    "is_shortable": false,
+    "issuer_id": 268465,
+    "issuer_name": "J.P. Morgan SE",
+    "is_monthly_saveable": false,
+    "is_monthly_save_dask": false,
+    "mifid2_id": 401
+   },
+   "status_info": {
+    "trading_status": "CLOSED",
+    "translated_trading_status": "Closed",
+    "tick_timestamp": 1795209900000
+   },
+   "market_info": {
+    "market_id": 54,
+    "market_sub_id": 4974,
+    "identifier": "495071",
+    "tick_size_id": 14115
+   },
+   "price_info": {
+    "last": {
+     "price": 11.14,
+     "decimals": 2
+    },
+    "open": {
+     "price": 11.14,
+     "decimals": 2
+    },
+    "close": {
+     "price": 12.15,
+     "decimals": 2
+    },
+    "turnover": 7998.52,
+    "turnover_normalized": 89688.2,
+    "turnover_volume": 718,
+    "bid": {
+     "price": 0,
+     "decimals": 3
+    },
+    "ask": {
+     "price": 0,
+     "decimals": 3
+    },
+    "bid_volume": 0,
+    "ask_volume": 0,
+    "high": {
+     "price": 11.14,
+     "decimals": 2
+    },
+    "low": {
+     "price": 11.14,
+     "decimals": 2
+    },
+    "diff": {
+     "diff": -1.01,
+     "decimals": 2
+    },
+    "diff_pct": -8.31,
+    "spread": {
+     "price": 0,
+     "decimals": 3
+    },
+    "spread_pct": 0,
+    "tick_timestamp": 1795209900000,
+    "realtime": false
+   },
+   "exchange_info": {
+    "exchange_country": "FI",
+    "exchanges": []
+   },
+   "etp_info": {
+    "direction": "Long",
+    "underlying_instrument_id": 16103729,
+    "underlying_name": "S&P 500 Index",
+    "nordnet_markets": true,
+    "market_view": "U",
+    "first_trading_date": 1774566000000
+   },
+   "statistical_info": {
+    "statistics_timestamp": 1795201843594,
+    "number_of_owners": 6
+   },
+   "certificate_info": {
+    "static_leverage": 1,
+    "static_high_risk": false
+   },
+   "historical_returns_info": {
+    "realtime": false
+   },
+   "nnx_info": {
+    "nnx_instrument_id": "ccfe6e89-b0b5-4f24-ac31-670bd3da7e17",
+    "trading_order_book_id": "ff923520-37cf-4da7-be96-b419c4636de8",
+    "market_data_order_book_id": "ff923520-37cf-4da7-be96-b419c4636de8",
+    "display_slug": "tracker-sp500-nordnet-fi1-fnfi",
+    "instrument_class": "TRACKER"
+   }
+  }
+ ]
+}

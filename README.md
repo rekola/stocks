@@ -21,6 +21,7 @@ own; the table follows as the data arrives. The default source is Yahoo Finance
     build/stocks --ui window     # in a window, when cellui is built with GTK
     build/stocks --source synthetic   # made-up prices, no network
     build/stocks --market "Nasdaq Helsinki"   # load only that list
+    build/stocks --source nordnet     # Nordnet's ETFs and certificates (about 3400), reloaded every 5 minutes
 
 Keys: arrows, PgUp/PgDn, Home/End move; Tab moves between the tags and the table; `M-x` (`Ctrl+Shift+P` on
 the desktop keymap) opens the command palette, where every command is listed with
@@ -40,17 +41,17 @@ that is installed), fetched at a pinned commit
 like [immer](https://github.com/arximboldi/immer) and
 [nlohmann/json](https://github.com/nlohmann/json).
 
-The instruments the tags show are lists on disk, `data/universe/*.csv`, one file
+The instruments the tags show are lists on disk, `data/yahoo/*.csv`, one file
 per market (Nasdaq Helsinki, Currencies, Commodities: about 220 instruments, not
 complete). A file starts with `# market: NAME`, then rows of
 `kind,base,quote,name,yahoo` (what one unit of `base` costs in `quote`, and the
-ticker Yahoo uses for it); `--universe DIR` reads another directory. Yahoo is
+ticker Yahoo uses for it); `--lists DIR` reads another directory. Yahoo is
 asked for one instrument at a time, so loading all of them takes over a minute
 and about 6 MB: `--market NAME` (repeatable) loads one list, and
-`--source synthetic` loads none. `tools/universe/build_universe.py` rebuilds the
+`--source synthetic` loads none. `tools/yahoo/build_lists.py` rebuilds the
 files from its candidate lists, keeping the tickers Yahoo answers for.
 
-The data model is planned in [plans/data-model.md](plans/data-model.md), and the server, its API and the bars in [plans/server.md](plans/server.md).
+The data model is planned in [plans/data-model.md](plans/data-model.md), the server, its API and the bars in [plans/server.md](plans/server.md), and the market calendars in [plans/calendars.md](plans/calendars.md).
 
 ## Tests
 

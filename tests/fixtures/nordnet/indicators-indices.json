@@ -1,0 +1,128 @@
+[
+ {
+  "instrumentId": "3a5990e5-17e5-455c-901f-d67e4ae6750a",
+  "isin": "XC0006975012",
+  "name": "Dow Jones World Index",
+  "orderBookId": "b5dd0c9b-2f7c-4a2b-9a19-a3b17abe7ec1",
+  "price": {
+   "absoluteDevelopment": -25.77,
+   "accessType": "DELAYED",
+   "close": 791.03,
+   "development": -3.26,
+   "high": 790.71,
+   "last": 765.26,
+   "low": 763.02,
+   "orderBookId": "b5dd0c9b-2f7c-4a2b-9a19-a3b17abe7ec1",
+   "orderBookStatus": "CONTINUOUS_TRADING",
+   "priceSource": "MORNINGSTAR",
+   "timestamp": 1795214339429
+  },
+  "slug": {
+   "displaySlug": "w1dow",
+   "instrumentClass": "INDICATOR",
+   "instrumentId": "3a5990e5-17e5-455c-901f-d67e4ae6750a",
+   "isNordnetMarkets": false,
+   "orderBookId": "b5dd0c9b-2f7c-4a2b-9a19-a3b17abe7ec1"
+  },
+  "sparkGraph": {
+   "development": []
+  },
+  "symbol": "W1DOW",
+  "type": "INDEX"
+ },
+ {
+  "countryCode": "FI",
+  "instrumentId": "ce9b0111-d272-454a-80f6-aa9711ed988b",
+  "isin": "FI0008900006",
+  "name": "OMX Helsinki PI",
+  "orderBookId": "70940104-51fe-4c38-adf0-fe2cfc699e59",
+  "price": {
+   "absoluteDevelopment": -418.72,
+   "accessType": "DELAYED",
+   "close": 12790.93,
+   "development": -3.27,
+   "high": 12642.08,
+   "last": 12372.2,
+   "low": 12372.2,
+   "orderBookId": "70940104-51fe-4c38-adf0-fe2cfc699e59",
+   "orderBookStatus": "CONTINUOUS_TRADING",
+   "priceSource": "MORNINGSTAR",
+   "timestamp": 1795192252236
+  },
+  "slug": {
+   "displaySlug": "omxhpi",
+   "instrumentClass": "INDICATOR",
+   "instrumentId": "ce9b0111-d272-454a-80f6-aa9711ed988b",
+   "isNordnetMarkets": false,
+   "orderBookId": "70940104-51fe-4c38-adf0-fe2cfc699e59"
+  },
+  "sparkGraph": {
+   "development": []
+  },
+  "symbol": "OMXHPI",
+  "type": "INDEX"
+ },
+ {
+  "countryCode": "DE",
+  "instrumentId": "fb3a1496-6a78-44bc-b42e-214ab07e63b1",
+  "isin": "DE0008469008",
+  "name": "DAX Index (Germany)",
+  "orderBookId": "dd5ccb41-53bd-4ef8-97ef-364861479aa2",
+  "price": {
+   "absoluteDevelopment": -661.03,
+   "accessType": "DELAYED",
+   "close": 25463.81,
+   "development": -2.6,
+   "high": 25194.64,
+   "last": 24802.78,
+   "low": 24801.22,
+   "orderBookId": "dd5ccb41-53bd-4ef8-97ef-364861479aa2",
+   "orderBookStatus": "CONTINUOUS_TRADING",
+   "priceSource": "MORNINGSTAR",
+   "timestamp": 1795193400000
+  },
+  "slug": {
+   "displaySlug": "dax",
+   "instrumentClass": "INDICATOR",
+   "instrumentId": "fb3a1496-6a78-44bc-b42e-214ab07e63b1",
+   "isNordnetMarkets": false,
+   "orderBookId": "dd5ccb41-53bd-4ef8-97ef-364861479aa2"
+  },
+  "sparkGraph": {
+   "development": []
+  },
+  "symbol": "DAX",
+  "type": "INDEX"
+ },
+ {
+  "countryCode": "IN",
+  "instrumentId": "77e21142-fe36-4c5e-a02a-098e9b0db46a",
+  "name": "Dow Jones BRIC 50 India Subindex",
+  "orderBookId": "37ff11c6-b1ac-4bbd-bf83-48fdc7103a47",
+  "price": {
+   "absoluteDevelopment": -1.37,
+   "accessType": "DELAYED",
+   "close": 575.79,
+   "development": -0.24,
+   "high": 575.78,
+   "last": 574.42,
+   "low": 569.71,
+   "orderBookId": "37ff11c6-b1ac-4bbd-bf83-48fdc7103a47",
+   "orderBookStatus": "CLOSED",
+   "priceSource": "MORNINGSTAR",
+   "timestamp": 1795218609328
+  },
+  "slug": {
+   "displaySlug": "bric50d",
+   "instrumentClass": "INDICATOR",
+   "instrumentId": "77e21142-fe36-4c5e-a02a-098e9b0db46a",
+   "isNordnetMarkets": false,
+   "orderBookId": "37ff11c6-b1ac-4bbd-bf83-48fdc7103a47"
+  },
+  "sparkGraph": {
+   "development": []
+  },
+  "symbol": "BRIC50D",
+  "type": "INDEX"
+ }
+]
