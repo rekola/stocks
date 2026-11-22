@@ -12,9 +12,10 @@ A row of preset tags (commodities, Nasdaq Helsinki, currencies, indices, and all
 scrollable table with a price trace per row. The rows are the edges of a
 [data model](plans/data-model.md) that data sources fill on a thread of their
 own; the table follows as the data arrives, a few times a second at most, and reads
-only the rows it draws, so it stays quick with tens of thousands. One data source runs at
-a time; the default, `auto`, picks one, and falls back to another for the rest of the
-session if the first gives nothing (no network, a refusal).
+only the rows it draws, so it stays quick with tens of thousands. The instruments come
+from one source at a time; the default, `auto`, picks one, and falls back to another for the rest of
+the session if the first gives nothing (no network, a refusal). Open, official data (exchange
+rates) is loaded beside it, and each dataset says whose it is.
 
     cmake -B build
     cmake --build build -j

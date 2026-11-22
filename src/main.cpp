@@ -2,8 +2,8 @@
 // candles that data sources fill on a thread of their own.
 //   stocks                 on the display cellui picks, with Nordnet's data, or Yahoo's if Nordnet gives nothing
 //   stocks --ui terminal   in the terminal;  --ui window  in a window
-//   stocks --source NAME   the data source, one at a time: auto (the default: nordnet, and yahoo if nordnet gives nothing),
-//                          nordnet, yahoo or synthetic
+//   stocks --source NAME   the data source: auto (the default: nordnet, and yahoo if nordnet gives nothing, beside the open
+//                          data, the ECB's exchange rates), or one alone: nordnet, yahoo, ecb or synthetic
 //   stocks --lists DIR     the instrument lists of the yahoo and synthetic sources (default: data/lists)
 //   stocks --market NAME   of those lists, load only that market, e.g. "Nasdaq Helsinki" (repeatable)
 // Keys: arrows, PgUp/PgDn, Home/End move; Tab moves between the tags and the
@@ -15,6 +15,7 @@
 #include "history/HistoryLoader.h"
 #include "icons/IconLoader.h"
 #include "source/AutoSource.h"
+#include "source/EcbSource.h"
 #include "source/SourceRunner.h"
 #include "source/NordnetSource.h"
 #include "source/YahooSource.h"
@@ -33,13 +34,14 @@ namespace {
 // gives nothing.
 std::unique_ptr<Source> makeSource(const std::string & name, const ListSpec & lists) {
   if (name == "auto") return std::make_unique<AutoSource>(std::make_unique<NordnetSource>(), std::make_unique<YahooSource>(lists));
+  if (name == "ecb") return std::make_unique<EcbSource>();
   if (name == "yahoo") return std::make_unique<YahooSource>(lists);
   if (name == "nordnet") return std::make_unique<NordnetSource>();
   if (name == "synthetic") return std::make_unique<SyntheticSource>(lists);
   return nullptr;
 }
 
-constexpr const char * kSourceNames = "auto, nordnet, yahoo, synthetic";
+constexpr const char * kSourceNames = "auto, nordnet, yahoo, ecb, synthetic";
 
 }  // namespace
 
@@ -78,6 +80,9 @@ int main(int argc, char ** argv) {
   std::unique_ptr<Source> source = makeSource(source_name, lists);
   if (!source) return fail(2, "stocks: unknown --source " + source_name + " (there are " + kSourceNames + ")");
   std::vector<std::unique_ptr<Source>> sources;
+  // The open data goes with the default: the official sources (the ECB's exchange rates, small and quick, so first) beside
+  // the one source that gives the instruments. Another `--source` is that one alone.
+  if (source_name == "auto") sources.push_back(std::make_unique<EcbSource>());
   sources.push_back(std::move(source));
 
   std::shared_ptr<Store> store = makeMemoryStore();
