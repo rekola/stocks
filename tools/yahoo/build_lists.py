@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""Builds data/universe/*.csv: the instruments the presets show, each checked against Yahoo's chart endpoint.
+"""Builds data/yahoo/nasdaq-helsinki.csv and currencies.csv: the instruments Yahoo is asked for (it has no discovery), each checked
+against its chart endpoint. The stocks carry their ISIN from Nordnet's stock list. indices.csv is kept by hand. There are no commodities: Yahoo's are futures contracts,
+not the commodity's price (and in other units: copper is dollars a pound).
 
-usage: build_universe.py [OUTPUT_DIR]      (default: data/universe next to this script's repository root)
+usage: build_lists.py [OUTPUT_DIR]      (default: data/yahoo in this script's repository)
 
 The candidates are listed below; a candidate Yahoo does not know, or has no recent price for, is left out and reported, so the files hold only
 tickers that answered. The lists are not meant to be complete. One request per candidate, paused between them: run it
@@ -17,6 +19,8 @@ import urllib.request
 HOSTS = ["query1.finance.yahoo.com", "query2.finance.yahoo.com"]
 PAUSE = 0.25
 
+NORDNET_SYMBOL = {"NDA-FI": "NDA FI"}
+
 # ---- Nasdaq Helsinki: Yahoo tickers (the Helsinki exchange suffix is .HE) ----
 HELSINKI = """
 NOKIA FORTUM SAMPO KNEBV UPM NESTE STERV WRT1V ELISA ORNBV ORNAV NDA-FI METSO OUT1V KESKOB KESKOA KCR TIETO TYRES
@@ -26,20 +30,6 @@ EEZY ELEAV ENENTO ETTE FODELIA GLA1V HARVIA HONBS MUSTI OMASP ORTHEX PIHLIS QPR1
 TOKMAN TRH1V TULAV ATRAV AIFORIA APETIT CTH1V LUMI MARAS NANOFH SAGCV SUY1V TEM1V TTALO VINCIT
 HIAB PNA1V VERK TNOM NXTMH SIILI KREATE AFAGR SOLTQ INVEST LOIHDE ALISA
 """.split()
-
-# ---- Commodities: Yahoo futures, with the symbol and name shown ----
-COMMODITIES = [
-    ("XAU", "Gold", "GC=F"), ("XAG", "Silver", "SI=F"), ("XPT", "Platinum", "PL=F"), ("XPD", "Palladium", "PA=F"),
-    ("HG", "Copper", "HG=F"), ("ALI", "Aluminum", "ALI=F"),
-    ("WTI", "WTI Crude", "CL=F"), ("BRENT", "Brent Crude", "BZ=F"), ("NG", "Natural Gas", "NG=F"),
-    ("HO", "Heating Oil", "HO=F"), ("RB", "RBOB Gasoline", "RB=F"), ("TTF", "Dutch TTF Gas", "TTF=F"),
-    ("EH", "Ethanol", "EH=F"),
-    ("ZC", "Corn", "ZC=F"), ("ZW", "Wheat", "ZW=F"), ("KE", "KC HRW Wheat", "KE=F"), ("ZS", "Soybeans", "ZS=F"),
-    ("ZM", "Soybean Meal", "ZM=F"), ("ZL", "Soybean Oil", "ZL=F"), ("ZO", "Oats", "ZO=F"), ("ZR", "Rough Rice", "ZR=F"),
-    ("KC", "Coffee", "KC=F"), ("SB", "Sugar", "SB=F"), ("CC", "Cocoa", "CC=F"), ("CT", "Cotton", "CT=F"),
-    ("OJ", "Orange Juice", "OJ=F"), ("LBR", "Lumber", "LBR=F"),
-    ("LE", "Live Cattle", "LE=F"), ("GF", "Feeder Cattle", "GF=F"), ("HE", "Lean Hogs", "HE=F"), ("DC", "Class III Milk", "DC=F"),
-]
 
 # ---- Currencies: the pairs, base first, in market convention ----
 CURRENCY_NAMES = {
@@ -56,6 +46,24 @@ CURRENCY_NAMES = {
 MAJORS = ["EUR", "GBP", "AUD", "NZD", "USD", "CAD", "CHF", "JPY", "SEK", "NOK", "DKK"]  # base before quote
 OTHERS = ["PLN", "CZK", "HUF", "RON", "TRY", "ZAR", "MXN", "BRL", "INR", "CNY", "HKD", "SGD", "KRW", "THB", "ILS",
           "AED", "SAR", "IDR", "PHP", "MYR", "TWD", "CLP", "COP", "ARS", "ISK", "BGN"]
+
+
+def nordnet_isins(market_id):
+    """symbol -> ISIN of the stocks Nordnet lists on one market (Yahoo gives no ISIN, so the data does)."""
+    base = "https://www.nordnet.fi/api/2/instrument_search/query/stocklist?sort_order=asc&sort_attribute=symbol&limit=1000"
+    headers = {"Accept": "application/json", "Origin": "https://www.nordnet.fi", "Referer": "https://www.nordnet.fi/",
+               "Client-Id": "NEXT"}
+    out, offset = {}, 0
+    while True:
+        with urllib.request.urlopen(urllib.request.Request(base + "&offset=%d" % offset, headers=headers), timeout=60) as r:
+            doc = json.load(r)
+        for row in doc["results"]:
+            if row["market_info"]["market_id"] == market_id and row["instrument_info"].get("isin"):
+                out[row["instrument_info"]["symbol"]] = row["instrument_info"]["isin"]
+        offset += len(doc["results"])
+        if not doc["results"] or offset >= doc["total_hits"]:
+            return out
+        time.sleep(0.5)
 
 
 def currency_pairs():
@@ -91,17 +99,18 @@ def fresh(meta, days=14):
 def write(path, market, rows):
     with open(path, "w", newline="", encoding="utf-8") as f:
         f.write("# market: %s\n" % market)
-        f.write("# kind,base,quote,name,yahoo: what one unit of `base` costs in `quote`; `yahoo` is Yahoo's ticker\n")
+        f.write("# kind,base,quote,name,yahoo,isin: what one unit of `base` costs in `quote`; `yahoo` is Yahoo's ticker\n")
         w = csv.writer(f, lineterminator="\n")
-        w.writerow(["kind", "base", "quote", "name", "yahoo"])
+        w.writerow(["kind", "base", "quote", "name", "yahoo", "isin"])
         w.writerows(rows)
 
 
 def main():
-    out = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(__file__), "..", "..", "data", "universe")
+    out = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(__file__), "..", "..", "data", "yahoo")
     os.makedirs(out, exist_ok=True)
     missing = []
 
+    isins = nordnet_isins(24)  # Nasdaq Helsinki
     rows = []
     seen = set()
     for t in HELSINKI:
@@ -115,22 +124,19 @@ def main():
             missing.append(ticker)
             continue
         name = (meta.get("longName") or meta.get("shortName") or t).strip()
-        rows.append(["company", t, meta.get("currency", "EUR"), name, ticker])
+        # The base is the symbol Nordnet calls it on this market (the Yahoo adapter finds the instrument by it): the same,
+        # but for the few that Yahoo spells with a hyphen where Nordnet has a space.
+        isin = isins.get(NORDNET_SYMBOL.get(t, t))
+        if not isin:
+            missing.append(ticker + " (no ISIN at Nordnet)")
+            continue
+        rows.append(["company", NORDNET_SYMBOL.get(t, t), meta.get("currency", "EUR"), name, ticker, isin])
     rows.sort(key=lambda r: r[1])
     write(os.path.join(out, "nasdaq-helsinki.csv"), "Nasdaq Helsinki", rows)
     print("Nasdaq Helsinki: %d of %d" % (len(rows), len(seen)), flush=True)
 
     rows = []
-    for symbol, name, ticker in COMMODITIES:
-        meta = chart(ticker)
-        time.sleep(PAUSE)
-        if not meta or not fresh(meta):
-            missing.append(ticker)
-            continue
-        rows.append(["commodity", symbol, meta.get("currency", "USD"), name, ticker])
-    write(os.path.join(out, "commodities.csv"), "Commodities", rows)
-    print("Commodities: %d of %d" % (len(rows), len(COMMODITIES)), flush=True)
-
+    rows = []
     rows = []
     pairs = currency_pairs()
     for base, quote in pairs:
@@ -140,7 +146,7 @@ def main():
         if not meta or not fresh(meta):
             missing.append(ticker)
             continue
-        rows.append(["currency", base, quote, CURRENCY_NAMES[base], ticker])
+        rows.append(["currency", base, quote, CURRENCY_NAMES[base], ticker, ""])
     write(os.path.join(out, "currencies.csv"), "Currencies", rows)
     print("Currencies: %d of %d" % (len(rows), len(pairs)), flush=True)
 

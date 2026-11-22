@@ -4,7 +4,7 @@
 #include "Quotes.h"
 #include "Synthetic.h"
 #include "source/Source.h"
-#include "source/Universe.h"
+#include "source/InstrumentLists.h"
 
 #include <cellui/Application.h>
 #include <cellui/TestBackend.h>
@@ -14,11 +14,11 @@ using namespace cellui;
 namespace {
 
 // The lists on disk, which the made-up data follows.
-const Universe & universe() {
-  static const Universe u = [] {
+const InstrumentList & instrumentList() {
+  static const InstrumentList u = [] {
     std::string error;
-    Universe loaded = loadUniverse(std::filesystem::path(STOCKS_DATA_DIR) / "universe", error);
-    if (loaded.empty()) std::fprintf(stderr, "  universe: %s\n", error.c_str());
+    InstrumentList loaded = loadInstrumentLists(std::filesystem::path(STOCKS_DATA_DIR) / "yahoo", error);
+    if (loaded.empty()) std::fprintf(stderr, "  lists: %s\n", error.c_str());
     return loaded;
   }();
   return u;
@@ -26,7 +26,7 @@ const Universe & universe() {
 
 size_t countInMarket(const std::string & market) {
   size_t n = 0;
-  for (const UniverseEntry & e : universe()) n += e.market == market;
+  for (const ListEntry & e : instrumentList()) n += e.market == market;
   return n;
 }
 
@@ -37,7 +37,7 @@ struct Fixture {
   std::unique_ptr<Browser> browser;
   // Over the made-up data, or over a store the test has filled.
   explicit Fixture(bool synthetic = true) {
-    if (synthetic) fillSyntheticData(*store, universe());
+    if (synthetic) fillSyntheticData(*store, instrumentList());
     auto owned = std::make_unique<test::TestBackend>(24, 100);
     backend = owned.get();
     app = Application::adopt(std::move(owned));
@@ -200,8 +200,8 @@ TEST(a_preset_shows_one_row_per_edge_with_its_dataset) {
   Instrument usd = f.store->addInstrument({{}, "USD", "US dollar", InstrumentKind::Currency});
   Market currencies = f.store->addMarket({{}, "Currencies"});
   Dataset a = f.store->addDataset({{}, "provider-a"}), b = f.store->addDataset({{}, "provider-b"});
-  f.store->appendCandles({eur.id, usd.id, currencies.id, a.id}, 1000, {{0, 1, 1, 1, 1.00, 1}, {1000, 1, 1, 1, 1.10, 1}});
-  f.store->appendCandles({eur.id, usd.id, currencies.id, b.id}, 1000, {{0, 1, 1, 1, 2.00, 1}, {1000, 1, 1, 1, 1.00, 1}});
+  f.store->appendCandles({eur.id, usd.id, currencies.id, a.id}, Resolution::Day, {{0, 1, 1, 1, 1.00, 1}, {1000, 1, 1, 1, 1.10, 1}});
+  f.store->appendCandles({eur.id, usd.id, currencies.id, b.id}, Resolution::Day, {{0, 1, 1, 1, 2.00, 1}, {1000, 1, 1, 1, 1.00, 1}});
   f.app->execute("show-currencies");
   Table & t = f.browser->table();
   CHECK(t.model()->rowCount() == 2);  // the same pair on the same market from two datasets: two rows
@@ -227,9 +227,9 @@ TEST(a_preset_whose_market_has_no_data_shows_no_rows_and_a_book_alone_is_not_a_r
 
 TEST(the_made_up_data_fills_every_preset_with_what_the_lists_hold) {
   Fixture f;
-  const char * markets[] = {"Commodities", "Nasdaq Helsinki", "Currencies"};
+  const char * markets[] = {"Nasdaq Helsinki", "Currencies", "Indices"};  // the commodities come from Nordnet, not the lists
   int i = 0;
-  for (const char * command : {"show-commodities", "show-nasdaq-helsinki", "show-currencies"}) {
+  for (const char * command : {"show-nasdaq-helsinki", "show-currencies", "show-indices"}) {
     f.app->execute(command);
     CHECK(f.browser->table().model()->rowCount() > 0);
     CHECK(static_cast<size_t>(f.browser->table().model()->rowCount()) == countInMarket(markets[i++]));
@@ -245,20 +245,20 @@ TEST(the_table_follows_the_store_when_told_it_changed_and_keeps_the_sort_and_the
   Market currencies = f.store->addMarket({{}, "Currencies"});
   Dataset a = f.store->addDataset({{}, "provider-a"});
   EdgeKey eurusd{eur.id, usd.id, currencies.id, a.id}, gbpusd{gbp.id, usd.id, currencies.id, a.id};
-  f.store->appendCandles(eurusd, 1000, {{0, 1, 1, 1, 1.0, 1}, {1000, 1, 1, 1, 1.1, 1}});
+  f.store->appendCandles(eurusd, Resolution::Day, {{0, 1, 1, 1, 1.0, 1}, {1000, 1, 1, 1, 1.1, 1}});
   f.app->execute("show-currencies");
   Table & t = f.browser->table();
   CHECK(t.model()->rowCount() == 1);
   t.sortBy(Quotes::PRICE, SortOrder::ASCENDING);
 
-  f.store->appendCandles(gbpusd, 1000, {{0, 1, 1, 1, 1.2, 1}, {1000, 1, 1, 1, 1.3, 1}});
+  f.store->appendCandles(gbpusd, Resolution::Day, {{0, 1, 1, 1, 1.2, 1}, {1000, 1, 1, 1, 1.3, 1}});
   f.app->widgets().postToRoot(StoreChanged{});  // what the source thread's post turns into
   CHECK(t.model()->rowCount() == 2);
   CHECK(t.sortColumn() == Quotes::PRICE);
   CHECK(t.model()->text(t.rowAt(0), Quotes::BASE) == "EUR" && t.model()->text(t.rowAt(1), Quotes::BASE) == "GBP");
 
   t.select(t.rowAt(1));  // GBP; new data for EUR must not move the selection
-  f.store->appendCandles(eurusd, 1000, {{2000, 1, 1, 1, 1.5, 1}});
+  f.store->appendCandles(eurusd, Resolution::Day, {{2000, 1, 1, 1, 1.5, 1}});
   f.app->widgets().postToRoot(StoreChanged{});
   CHECK(t.model()->text(t.selectedRow(), Quotes::BASE) == "GBP");
   CHECK(t.model()->text(t.rowAt(1), Quotes::BASE) == "EUR");  // 1.5 sorts after 1.3

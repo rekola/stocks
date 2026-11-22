@@ -1,0 +1,264 @@
+{
+ "rows": 2,
+ "total_hits": 5,
+ "results": [
+  {
+   "instrument_info": {
+    "instrument_id": 18949854,
+    "name": "Xtrackers Artificial Intelligence & Big Data UCITS ETF 1C",
+    "long_name": "Levler AI & Big Data by Xtrackers UCITS ETF",
+    "symbol": "XAIX",
+    "instrument_group_type": "PAR",
+    "instrument_type_hierarchy": "WNT/PAR/UETF",
+    "instrument_type": "UETF",
+    "isin": "IE00BGV5VN51",
+    "currency": "SEK",
+    "price_unit": "SEK",
+    "clearing_place": "VPC",
+    "is_tradable": true,
+    "instrument_pawn_percentage": 70,
+    "is_shortable": false,
+    "issuer_id": 269746,
+    "issuer_name": "Xtrackers AI & Big Data UCITS ETF",
+    "is_monthly_saveable": false,
+    "is_monthly_save_dask": false,
+    "mifid2_id": 0,
+    "instrument_icon_url": "https://cdn.prod.nntech.io/cms-proxy/6xe8ehctp75g/5WkcchQEO1QoWzIKuqBDeu/eca06317e610ce0146bf5c2c5ceab655/xtrackers-logo.png"
+   },
+   "market_info": {
+    "market_id": 11,
+    "market_sub_id": 4693,
+    "identifier": "419021",
+    "tick_size_id": 14736
+   },
+   "price_info": {
+    "last": {
+     "price": 2080.5,
+     "decimals": 2
+    },
+    "open": {
+     "price": 2110.5,
+     "decimals": 2
+    },
+    "close": {
+     "price": 2191.5,
+     "decimals": 2
+    },
+    "turnover": 1665377.0,
+    "turnover_normalized": 1665377.0,
+    "turnover_volume": 791,
+    "bid": {
+     "price": 0,
+     "decimals": 4
+    },
+    "ask": {
+     "price": 0,
+     "decimals": 4
+    },
+    "bid_volume": 0,
+    "ask_volume": 0,
+    "high": {
+     "price": 2124.0,
+     "decimals": 2
+    },
+    "low": {
+     "price": 2080.0,
+     "decimals": 2
+    },
+    "diff": {
+     "diff": -111.0,
+     "decimals": 2
+    },
+    "diff_pct": -5.07,
+    "spread": {
+     "price": 0,
+     "decimals": 4
+    },
+    "spread_pct": 0,
+    "tick_timestamp": 1795191900000,
+    "realtime": false
+   },
+   "historical_returns_info": {
+    "yield_1d": -5.07,
+    "yield_1w": -6.93,
+    "yield_1m": -12.44,
+    "yield_3m": -6.98,
+    "yield_ytd": 23.4,
+    "yield_1y": 25.51,
+    "yield_max": 34.12,
+    "realtime": false
+   },
+   "fund_info": {
+    "fund_type": "Stock",
+    "fund_category": "Technology Sector Equity",
+    "fund_universe_ids": [],
+    "fund_admin_company": "DWS Investment S.A. (ETF)",
+    "fund_low_carbon": true,
+    "fund_nordnet_selection": false,
+    "fund_ms_rating": 5,
+    "fund_total_market_value": 8734536415,
+    "fund_esg_score": 16,
+    "fund_yearly_fee": 0.35,
+    "fund_calculated_fee": 0.35,
+    "fund_total_fee": 0.47,
+    "fund_raw_risk": 5,
+    "fund_risk_group": "Medium",
+    "fund_start_date": 1548763200000,
+    "fund_branding_company": "Xtrackers",
+    "fund_dividend_strategy": "Accumulated",
+    "fund_raw_sfdr": 8,
+    "fund_sfdr_article": "Article 8"
+   },
+   "exchange_info": {
+    "exchange_country": "SE",
+    "exchanges": []
+   },
+   "annual_growth_info": {
+    "annual_growth_1y": 25.51
+   },
+   "statistical_info": {
+    "statistics_timestamp": 1795200564850,
+    "number_of_owners": 150
+   },
+   "key_ratios_info": {},
+   "nnx_info": {
+    "nnx_instrument_id": "92793e81-0c45-4047-803a-49863faafab1",
+    "trading_order_book_id": "d59f6b52-8ffa-45e6-b1e2-ace2aec4464e",
+    "market_data_order_book_id": "d59f6b52-8ffa-45e6-b1e2-ace2aec4464e",
+    "display_slug": "xtrackers-artificial-intelligence-xaix-xsto",
+    "instrument_class": "EXCHANGE_TRADED_FUND"
+   }
+  },
+  {
+   "instrument_info": {
+    "instrument_id": 16995529,
+    "name": "Xtrackers Artificial Intelligence & Big Data UCITS ETF 1C",
+    "long_name": "Xtrackers Artificial Intelligence & Big Data UCITS ETF 1C",
+    "symbol": "XAIX",
+    "instrument_group_type": "PAR",
+    "instrument_type_hierarchy": "WNT/PAR/UETF",
+    "instrument_type": "UETF",
+    "isin": "IE00BGV5VN51",
+    "currency": "EUR",
+    "price_unit": "EUR",
+    "clearing_place": "PERS_DE",
+    "is_tradable": true,
+    "instrument_pawn_percentage": 70,
+    "is_shortable": false,
+    "issuer_id": 260330,
+    "issuer_name": "DWS",
+    "is_monthly_saveable": true,
+    "is_monthly_save_dask": true,
+    "mifid2_id": 0,
+    "instrument_icon_url": "https://cdn.prod.nntech.io/cms-proxy/6xe8ehctp75g/5WkcchQEO1QoWzIKuqBDeu/eca06317e610ce0146bf5c2c5ceab655/xtrackers-logo.png"
+   },
+   "market_info": {
+    "market_id": 4,
+    "market_sub_id": 51,
+    "identifier": "XAIX",
+    "tick_size_id": 34832655
+   },
+   "price_info": {
+    "last": {
+     "price": 184.42,
+     "decimals": 2
+    },
+    "open": {
+     "price": 188.94,
+     "decimals": 2
+    },
+    "close": {
+     "price": 195.72,
+     "decimals": 2
+    },
+    "turnover": 14052210.74,
+    "turnover_normalized": 157568844.25,
+    "turnover_volume": 75161,
+    "bid": {
+     "price": 183.4,
+     "decimals": 2
+    },
+    "ask": {
+     "price": 183.84,
+     "decimals": 2
+    },
+    "bid_volume": 0,
+    "ask_volume": 0,
+    "high": {
+     "price": 189.56,
+     "decimals": 2
+    },
+    "low": {
+     "price": 184.42,
+     "decimals": 2
+    },
+    "diff": {
+     "diff": -11.3,
+     "decimals": 2
+    },
+    "diff_pct": -5.77,
+    "spread": {
+     "price": 0.44,
+     "decimals": 4
+    },
+    "spread_pct": 0.24,
+    "tick_timestamp": 1795192200000,
+    "realtime": false
+   },
+   "historical_returns_info": {
+    "yield_1d": -5.77,
+    "yield_1w": -9.53,
+    "yield_1m": -13.88,
+    "yield_3m": -9.04,
+    "yield_ytd": 18.55,
+    "yield_1y": 22.75,
+    "yield_3y": 95.48,
+    "yield_5y": 102.86,
+    "yield_max": 302.49,
+    "realtime": false
+   },
+   "fund_info": {
+    "fund_type": "Stock",
+    "fund_category": "Technology Sector Equity",
+    "fund_universe_ids": [],
+    "fund_admin_company": "DWS Investment S.A. (ETF)",
+    "fund_low_carbon": true,
+    "fund_nordnet_selection": false,
+    "fund_ms_rating": 5,
+    "fund_total_market_value": 8734536415,
+    "fund_esg_score": 16,
+    "fund_yearly_fee": 0.35,
+    "fund_calculated_fee": 0.35,
+    "fund_total_fee": 0.47,
+    "fund_raw_risk": 5,
+    "fund_risk_group": "Medium",
+    "fund_start_date": 1548763200000,
+    "fund_branding_company": "Xtrackers",
+    "fund_dividend_strategy": "Accumulated",
+    "fund_raw_sfdr": 8,
+    "fund_sfdr_article": "Article 8"
+   },
+   "exchange_info": {
+    "exchange_country": "DE",
+    "exchanges": []
+   },
+   "annual_growth_info": {
+    "annual_growth_1y": 22.75,
+    "annual_growth_3y": 25.04,
+    "annual_growth_5y": 15.2
+   },
+   "statistical_info": {
+    "statistics_timestamp": 1795200519843,
+    "number_of_owners": 10816
+   },
+   "key_ratios_info": {},
+   "nnx_info": {
+    "nnx_instrument_id": "92793e81-0c45-4047-803a-49863faafab1",
+    "trading_order_book_id": "464db345-a740-4119-ae69-f5281b18280c",
+    "market_data_order_book_id": "b200233a-f864-4596-8513-7ddb8c6ae6ff",
+    "display_slug": "xtrackers-artificial-intelligence-xaix-xeta",
+    "instrument_class": "EXCHANGE_TRADED_FUND"
+   }
+  }
+ ]
+}

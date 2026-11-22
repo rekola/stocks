@@ -1,0 +1,288 @@
+{
+ "rows": 3,
+ "total_hits": 675,
+ "results": [
+  {
+   "instrument_info": {
+    "instrument_id": 16802790,
+    "name": "abrdn-All China Sustainable Eq A AccUSD",
+    "display_name": "abrdn-All China Sustainable Eq A AccUSD",
+    "long_name": "abrdn-All China Sustainable Eq A AccUSD",
+    "symbol": "abrdn-All China Sus Eq A AccUSD",
+    "instrument_group_type": "FND",
+    "instrument_type_hierarchy": "FND/FUCITS",
+    "instrument_type": "FUCITS",
+    "isin": "LU0231483743",
+    "currency": "USD",
+    "price_unit": "USD",
+    "clearing_place": "FUND",
+    "is_tradable": true,
+    "instrument_pawn_percentage": 70,
+    "is_shortable": false,
+    "is_monthly_saveable": true,
+    "is_monthly_save_dask": false,
+    "mifid2_id": 0,
+    "instrument_icon_url": "https://cdn.prod.nntech.io/cms-proxy/6xe8ehctp75g/4qSYm6ERx3jWR0f3Y0KdxT/df285c3d5d8b4ee39f82003b6b0d02a6/image.png"
+   },
+   "market_info": {
+    "market_id": 78,
+    "market_sub_id": 0,
+    "identifier": "NBJUN00248",
+    "tick_size_id": 14729
+   },
+   "price_info": {
+    "last": {
+     "price": 22.76,
+     "decimals": 2
+    },
+    "tick_timestamp": 1795132800000,
+    "realtime": true
+   },
+   "historical_returns_info": {
+    "yield_1d": -1.38,
+    "yield_1w": -4.21,
+    "yield_1m": -7.71,
+    "yield_3m": -15.48,
+    "yield_ytd": -15.63,
+    "yield_1y": -14.89,
+    "yield_3y": 2.88,
+    "yield_5y": -39.02,
+    "yield_10y": -1.23,
+    "realtime": true
+   },
+   "fund_info": {
+    "fund_type": "Osake",
+    "fund_category": "Greater China Equity",
+    "fund_universe_country": "FI",
+    "fund_universe_currency": "EUR",
+    "fund_universe_ids": [
+     1,
+     2
+    ],
+    "fund_admin_company": "abrdn Investments Luxembourg S.A.",
+    "fund_low_carbon": true,
+    "fund_nordnet_selection": false,
+    "fund_ms_rating": 2,
+    "fund_total_market_value": 255946937,
+    "fund_yearly_fee": 1.93,
+    "fund_calculated_fee": 1.93,
+    "fund_total_fee": 2.22,
+    "fund_raw_risk": 5,
+    "fund_risk_group": "Keskim.",
+    "fund_start_date": 704376000000,
+    "fund_trading_frequency": "Päivittäin",
+    "fund_branding_company": "abrdn",
+    "fund_min_investment": 15,
+    "fund_dividend_strategy": "Kasvuosuus",
+    "fund_raw_sfdr": 8,
+    "fund_sfdr_article": "Artikla 8"
+   },
+   "annual_growth_info": {
+    "annual_growth_1y": -14.89,
+    "annual_growth_3y": 0.95,
+    "annual_growth_5y": -9.42,
+    "annual_growth_10y": -0.12
+   },
+   "statistical_info": {
+    "statistics_timestamp": 1795202555310,
+    "number_of_owners": 95
+   },
+   "key_ratios_info": {},
+   "nnx_info": {
+    "nnx_instrument_id": "b6379ad4-9c1e-4809-807b-f23de7edc00c",
+    "trading_order_book_id": "e285806b-491d-4251-9015-0321eb37b8c1",
+    "market_data_order_book_id": "ee5e3ee2-1406-4df7-8d7e-68ee3f6b1b95",
+    "display_slug": "abrdn-all-china-sustainable-eq-usd-ee5e3ee2",
+    "instrument_class": "MUTUAL_FUND"
+   }
+  },
+  {
+   "instrument_info": {
+    "instrument_id": 16802011,
+    "name": "abrdn-Asia Pac Sustainable Eq A Acc USD",
+    "display_name": "abrdn-Asia Pac Sustainable Eq A Acc USD",
+    "long_name": "abrdn-Asia Pac Sustainable Eq A Acc USD",
+    "symbol": "abrdn-Asia Pac Sust Eq A Acc USD",
+    "instrument_group_type": "FND",
+    "instrument_type_hierarchy": "FND/FUCITS",
+    "instrument_type": "FUCITS",
+    "isin": "LU0011963245",
+    "currency": "USD",
+    "price_unit": "USD",
+    "clearing_place": "FUND",
+    "is_tradable": true,
+    "instrument_pawn_percentage": 75,
+    "is_shortable": false,
+    "is_monthly_saveable": true,
+    "is_monthly_save_dask": false,
+    "mifid2_id": 0,
+    "instrument_icon_url": "https://cdn.prod.nntech.io/cms-proxy/6xe8ehctp75g/4qSYm6ERx3jWR0f3Y0KdxT/df285c3d5d8b4ee39f82003b6b0d02a6/image.png"
+   },
+   "market_info": {
+    "market_id": 78,
+    "market_sub_id": 0,
+    "identifier": "FXLUX01630",
+    "tick_size_id": 14729
+   },
+   "price_info": {
+    "last": {
+     "price": 112.99,
+     "decimals": 2
+    },
+    "tick_timestamp": 1795132800000,
+    "realtime": true
+   },
+   "historical_returns_info": {
+    "yield_1d": -3.49,
+    "yield_1w": -6.76,
+    "yield_1m": -6.54,
+    "yield_3m": -10.7,
+    "yield_ytd": 8.93,
+    "yield_1y": 10.19,
+    "yield_3y": 36.32,
+    "yield_5y": 3.67,
+    "yield_10y": 72.21,
+    "realtime": true
+   },
+   "fund_info": {
+    "fund_type": "Osake",
+    "fund_category": "Asia ex-Japan Equity",
+    "fund_universe_country": "FI",
+    "fund_universe_currency": "EUR",
+    "fund_universe_ids": [
+     1,
+     2
+    ],
+    "fund_admin_company": "abrdn Investments Luxembourg S.A.",
+    "fund_low_carbon": true,
+    "fund_nordnet_selection": false,
+    "fund_ms_rating": 2,
+    "fund_total_market_value": 1219406866,
+    "fund_yearly_fee": 1.94,
+    "fund_calculated_fee": 1.94,
+    "fund_total_fee": 2.33,
+    "fund_raw_risk": 4,
+    "fund_risk_group": "Keskim.",
+    "fund_start_date": 578059200000,
+    "fund_trading_frequency": "Päivittäin",
+    "fund_branding_company": "abrdn",
+    "fund_min_investment": 15,
+    "fund_dividend_strategy": "Kasvuosuus",
+    "fund_raw_sfdr": 8,
+    "fund_sfdr_article": "Artikla 8"
+   },
+   "annual_growth_info": {
+    "annual_growth_1y": 10.19,
+    "annual_growth_3y": 10.88,
+    "annual_growth_5y": 0.72,
+    "annual_growth_10y": 5.59
+   },
+   "statistical_info": {
+    "statistics_timestamp": 1795202555853,
+    "number_of_owners": 104
+   },
+   "key_ratios_info": {},
+   "nnx_info": {
+    "nnx_instrument_id": "e2cc486b-8eeb-412b-9017-081f885a1973",
+    "trading_order_book_id": "d407883f-53e6-4350-a093-741978084885",
+    "market_data_order_book_id": "a3d87763-0028-483e-a253-7448b5e4a019",
+    "display_slug": "abrdn-asia-pac-sustainable-eq-usd-a3d87763",
+    "instrument_class": "MUTUAL_FUND"
+   }
+  },
+  {
+   "instrument_info": {
+    "instrument_id": 16802795,
+    "name": "abrdn-Asian Smaller Companies A Acc USD",
+    "display_name": "abrdn-Asian Smaller Companies A Acc USD",
+    "long_name": "abrdn-Asian Smaller Companies A Acc USD",
+    "symbol": "abrdn-Asian Sm Comp A Acc USD",
+    "instrument_group_type": "FND",
+    "instrument_type_hierarchy": "FND/FUCITS",
+    "instrument_type": "FUCITS",
+    "isin": "LU0231459107",
+    "currency": "USD",
+    "price_unit": "USD",
+    "clearing_place": "FUND",
+    "is_tradable": true,
+    "instrument_pawn_percentage": 70,
+    "is_shortable": false,
+    "is_monthly_saveable": true,
+    "is_monthly_save_dask": false,
+    "mifid2_id": 0,
+    "instrument_icon_url": "https://cdn.prod.nntech.io/cms-proxy/6xe8ehctp75g/4qSYm6ERx3jWR0f3Y0KdxT/df285c3d5d8b4ee39f82003b6b0d02a6/image.png"
+   },
+   "market_info": {
+    "market_id": 78,
+    "market_sub_id": 0,
+    "identifier": "F0GBR06X7H",
+    "tick_size_id": 14729
+   },
+   "price_info": {
+    "last": {
+     "price": 66.8,
+     "decimals": 2
+    },
+    "tick_timestamp": 1795132800000,
+    "realtime": true
+   },
+   "historical_returns_info": {
+    "yield_1d": -3.56,
+    "yield_1w": -7.66,
+    "yield_1m": -12.27,
+    "yield_3m": -14.18,
+    "yield_ytd": 1.74,
+    "yield_1y": 0.49,
+    "yield_3y": 37.22,
+    "yield_5y": 11.12,
+    "yield_10y": 66.53,
+    "realtime": true
+   },
+   "fund_info": {
+    "fund_type": "Osake",
+    "fund_category": "Asia ex-Japan Equity",
+    "fund_universe_country": "FI",
+    "fund_universe_currency": "EUR",
+    "fund_universe_ids": [
+     1,
+     2
+    ],
+    "fund_admin_company": "abrdn Investments Luxembourg S.A.",
+    "fund_low_carbon": false,
+    "fund_nordnet_selection": false,
+    "fund_ms_rating": 4,
+    "fund_total_market_value": 430744076,
+    "fund_yearly_fee": 1.93,
+    "fund_calculated_fee": 1.93,
+    "fund_total_fee": 2.67,
+    "fund_raw_risk": 4,
+    "fund_risk_group": "Keskim.",
+    "fund_start_date": 1084536000000,
+    "fund_trading_frequency": "Päivittäin",
+    "fund_branding_company": "abrdn",
+    "fund_min_investment": 15,
+    "fund_dividend_strategy": "Kasvuosuus",
+    "fund_raw_sfdr": 8,
+    "fund_sfdr_article": "Artikla 8"
+   },
+   "annual_growth_info": {
+    "annual_growth_1y": 0.49,
+    "annual_growth_3y": 11.12,
+    "annual_growth_5y": 2.13,
+    "annual_growth_10y": 5.23
+   },
+   "statistical_info": {
+    "statistics_timestamp": 1795202553191,
+    "number_of_owners": 299
+   },
+   "key_ratios_info": {},
+   "nnx_info": {
+    "nnx_instrument_id": "e270c6e0-cfa1-4a88-b17f-e3114106d1cf",
+    "trading_order_book_id": "b5a49744-7a36-4863-8ceb-8a9c2592323e",
+    "market_data_order_book_id": "27ffa8b6-b233-4f9b-802c-d241c4260b28",
+    "display_slug": "abrdn-asian-smaller-companies-a-usd-27ffa8b6",
+    "instrument_class": "MUTUAL_FUND"
+   }
+  }
+ ]
+}

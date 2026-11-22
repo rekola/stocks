@@ -23,8 +23,15 @@ class HttpClientHttp : public Http {
     client_->setConnectionTimeout(30);
   }
 
-  HttpResult get(const std::string & url) override {
-    httpclient::HTTPResponse response = client_->Get(url);
+  HttpResult get(const std::string & url, const HttpHeaders & headers) override {
+    httpclient::HTTPRequest request(httpclient::Method::GET, url);
+    request.setFollowLocation(true);
+    request.setConnectTimeout(client_->getConnectTimeout());
+    request.setReadTimeout(client_->getReadTimeout());
+    request.setConnectionTimeout(client_->getConnectionTimeout());
+    for (const auto & [name, value] : headers) request.addHeader(name, value);
+    httpclient::HTTPResponse response;
+    client_->request(request, client_->noAuth, response);
     HttpResult r;
     r.status = response.getResultCode();
     r.body = response.getContent();

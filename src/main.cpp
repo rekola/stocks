@@ -1,10 +1,11 @@
 // The stock browser: cellui's Table, TagBar and trace chart over a store of
 // candles that data sources fill on a thread of their own.
-//   stocks                 on the display cellui picks, with prices from Yahoo
+//   stocks                 on the display cellui picks, with Nordnet's instruments and prices from Yahoo for them
 //   stocks --ui terminal   in the terminal;  --ui window  in a window
-//   stocks --source NAME   pick the data source (yahoo, synthetic); more than one may be given
-//   stocks --universe DIR  the instrument lists (default: data/universe)
-//   stocks --market NAME   load only the instruments of that market, e.g. "Nasdaq Helsinki" (repeatable)
+//   stocks --source NAME   pick the data source (yahoo, nordnet, synthetic); more than one may be given, run in that order
+//                          (default: nordnet, yahoo; yahoo only loads the instruments nordnet has made)
+//   stocks --lists DIR     the instrument lists of the yahoo and synthetic sources (default: data/yahoo)
+//   stocks --market NAME   of those lists, load only that market, e.g. "Nasdaq Helsinki" (repeatable)
 // Keys: arrows, PgUp/PgDn, Home/End move; Tab moves between the tags and the
 // table; M-x (Ctrl+Shift+P)
 // opens the command palette; q quits. Clicking a heading sorts, clicking a tag
@@ -12,6 +13,7 @@
 #include "Browser.h"
 #include "Synthetic.h"
 #include "source/SourceRunner.h"
+#include "source/NordnetSource.h"
 #include "source/YahooSource.h"
 
 #include <cellui/Application.h>
@@ -25,13 +27,14 @@
 namespace {
 
 // The adapters there are, by the name the user picks them with.
-std::unique_ptr<Source> makeSource(const std::string & name, const Universe & universe) {
-  if (name == "yahoo") return std::make_unique<YahooSource>(universe);
-  if (name == "synthetic") return std::make_unique<SyntheticSource>(universe);
+std::unique_ptr<Source> makeSource(const std::string & name, const ListSpec & lists) {
+  if (name == "yahoo") return std::make_unique<YahooSource>(lists);
+  if (name == "nordnet") return std::make_unique<NordnetSource>();
+  if (name == "synthetic") return std::make_unique<SyntheticSource>(lists);
   return nullptr;
 }
 
-constexpr const char * kSourceNames = "yahoo, synthetic";
+constexpr const char * kSourceNames = "yahoo, nordnet, synthetic";
 
 }  // namespace
 
@@ -49,7 +52,7 @@ int main(int argc, char ** argv) {
     return status;
   };
   std::vector<std::string> source_names;
-  std::string universe_directory;
+  std::string list_directory;
   std::vector<std::string> market_names;
   const auto & args = app->arguments();
   for (size_t i = 0; i < args.size(); i++) {
@@ -57,28 +60,21 @@ int main(int argc, char ** argv) {
     else if (args[i].rfind("--source=", 0) == 0) source_names.push_back(args[i].substr(9));
     else if (args[i] == "--market" && i + 1 < args.size()) market_names.push_back(args[++i]);
     else if (args[i].rfind("--market=", 0) == 0) market_names.push_back(args[i].substr(9));
-    else if (args[i] == "--universe" && i + 1 < args.size()) universe_directory = args[++i];
-    else if (args[i].rfind("--universe=", 0) == 0) universe_directory = args[i].substr(11);
+    else if (args[i] == "--lists" && i + 1 < args.size()) list_directory = args[++i];
+    else if (args[i].rfind("--lists=", 0) == 0) list_directory = args[i].substr(8);
     else {
       return fail(2, std::string("usage: ") + argv[0] + " [--ui auto|terminal|window] [--theme original|dark|light] [--source " +
-                         kSourceNames + "]... [--universe DIR] [--market NAME]...");
+                         kSourceNames + "]... [--lists DIR] [--market NAME]...");
     }
   }
-  if (source_names.empty()) source_names.push_back("yahoo");
+  // Yahoo makes no instruments (it has no ISIN): it waits for the ones Nordnet's discovery makes, so Nordnet goes first.
+  if (source_names.empty()) source_names = {"nordnet", "yahoo"};
 
-  // The instruments the presets show: lists on disk (data/universe), one file per market.
-  std::filesystem::path directory = findUniverseDirectory(universe_directory);
-  Universe universe = directory.empty() ? Universe{} : loadUniverse(directory, error);
-  if (universe.empty()) {
-    return fail(1, std::string("stocks: ") + (directory.empty() ? "no instrument lists (data/universe); --universe DIR names them" : error));
-  }
-  universe = onlyMarkets(universe, market_names);
-  if (universe.empty()) {
-    return fail(1, "stocks: no instruments in the --market given (the lists' markets are named in their files)");
-  }
+  // The instrument lists are the yahoo source's own (and the synthetic one follows them); each reads them when it loads.
+  ListSpec lists{list_directory, market_names};
   std::vector<std::unique_ptr<Source>> sources;
   for (const std::string & name : source_names) {
-    std::unique_ptr<Source> source = makeSource(name, universe);
+    std::unique_ptr<Source> source = makeSource(name, lists);
     if (!source) {
       return fail(2, "stocks: unknown --source " + name + " (there are " + kSourceNames + ")");
     }
