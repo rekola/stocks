@@ -73,11 +73,11 @@ class Snapshot {
   // can call them, because it holds it const. Each one that changes something bumps the version.
   Instrument add(Instrument);
   Instrument resolveInstrument(const std::vector<Attribute> & identifying, const std::vector<Attribute> & rest);
-  void setListing(const EdgeKey &, const Listing &);
-  void setFacts(const FactKey &, const InstrumentFacts &);
-  void setFacts(const FactKey &, const CompanyFacts &);
-  void setFacts(const FactKey &, const FundFacts &);
-  void setFacts(const FactKey &, const CertificateFacts &);
+  void setListing(const Listing &);
+  void setFacts(const InstrumentFacts &);
+  void setFacts(const CompanyFacts &);
+  void setFacts(const FundFacts &);
+  void setFacts(const CertificateFacts &);
   Market resolve(const std::vector<Attribute> &);
   void setAttribute(NodeRef, const Attribute &);
   Dataset add(Dataset);
@@ -139,12 +139,12 @@ class Store {
   virtual void setAttribute(NodeRef, const Attribute &) = 0;
   // The listing of an edge, replacing the one it had. An edge exists once it has data, so one that has none yet takes
   // nothing.
-  virtual void setListing(const EdgeKey &, const Listing &) = 0;
+  virtual void setListing(const Listing &) = 0;
   // Facts about an instrument from a dataset, one record of each type, replacing the one it had.
-  virtual void setFacts(const FactKey &, const InstrumentFacts &) = 0;
-  virtual void setFacts(const FactKey &, const CompanyFacts &) = 0;
-  virtual void setFacts(const FactKey &, const FundFacts &) = 0;
-  virtual void setFacts(const FactKey &, const CertificateFacts &) = 0;
+  virtual void setFacts(const InstrumentFacts &) = 0;
+  virtual void setFacts(const CompanyFacts &) = 0;
+  virtual void setFacts(const FundFacts &) = 0;
+  virtual void setFacts(const CertificateFacts &) = 0;
   virtual Dataset addDataset(Dataset) = 0;
 
   // Candles. An edge has a series for each resolution it has data in, as the provider gives it: nothing is derived from

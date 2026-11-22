@@ -126,15 +126,13 @@ TEST(the_lists_on_disk_are_consistent) {
         if (c == ' ') c = '-';
       CHECK(e.kind == InstrumentKind::Company && e.yahoo == stem + ".HE");
     }
-    // Only a currency is without an ISIN, and an ISIN is one instrument: a real one, or one of ours with a right check digit.
+    // Only a currency is without an ISIN, and an ISIN is one instrument with a right check digit.
     CHECK(e.kind == InstrumentKind::Currency ? e.isin.empty() : isValidIsin(e.isin));
     if (!e.isin.empty()) CHECK(isins.insert(e.market + "|" + e.isin).second);
-    if (e.isin.rfind("ZZ", 0) == 0) CHECK(e.isin == privateIsin("YF", e.base));  // ours: Yahoo's futures
-    if (e.market == "Commodities") CHECK(e.kind == InstrumentKind::Commodity && e.yahoo.size() > 2 && e.yahoo.substr(e.yahoo.size() - 2) == "=F");
     if (e.market == "Indices") CHECK(e.kind == InstrumentKind::Index && e.quote == "pts");
   }
-  CHECK(perMarket.size() == 4);
-  CHECK(perMarket["Nasdaq Helsinki"] >= 90 && perMarket["Indices"] >= 5 && perMarket["Commodities"] >= 28);
+  CHECK(perMarket.size() == 3);  // no commodities: Yahoo's are futures contracts, not the commodity's price
+  CHECK(perMarket["Nasdaq Helsinki"] >= 90 && perMarket["Indices"] >= 5);
   CHECK(perMarket["Currencies"] >= 80);
   // Every currency that is a quote has a name, shown beside the pair.
   for (const ListEntry & e : u) CHECK(std::string(currencyName(e.quote)) != "" || e.kind != InstrumentKind::Currency);

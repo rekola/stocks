@@ -531,10 +531,10 @@ TEST(the_indicator_lists_make_indices_in_points_currency_pairs_and_commodities_i
   CHECK(s->instrumentFacts({dax.id, nordnet})->country == "DE");
 
   // One with no ISIN gets one of ours, in the private namespace, from its symbol.
-  const std::string bric = privateIsin("NN", "BRIC50D");
-  CHECK(bric == "ZZNNBRIC50D" + std::string(1, bric.back()) && isValidIsin(bric));
+  const std::string bric = privateIsin("BRIC50D");
+  CHECK(bric == "ZZBRIC50D00" + std::string(1, bric.back()) && isValidIsin(bric));
   CHECK(s->findInstrumentByIsin(bric) && s->findInstrumentByIsin(bric)->kind == InstrumentKind::Index);
-  CHECK(s->findInstrumentByIsin(privateIsin("NN", "LEAD"))->kind == InstrumentKind::Commodity);
+  CHECK(s->findInstrumentByIsin(privateIsin("LEAD"))->kind == InstrumentKind::Commodity);
 
   // A pair is an edge between two currency nodes.
   const EdgeKey eurusd{s->findInstrument("EUR")->id, s->findInstrument("USD")->id, s->findMarket("Currencies")->id, nordnet};
@@ -612,14 +612,14 @@ TEST(the_facts_reach_the_store_as_thin_edges_of_the_dataset) {
   CHECK(store->snapshot()->version() > version);  // today's bars are written again
 }
 
-TEST(a_private_isin_is_in_a_namespace_nobody_issues_from_and_has_a_valid_check_digit) {
+TEST(a_private_isin_is_made_from_what_the_thing_is_in_a_namespace_nobody_issues_from) {
   // The algorithm, on ISINs that exist.
   for (const char * isin : {"DE0008469008", "US78378X1072", "RU000A0JP7K5", "XC0009655157", "FI0009000681", "US12573F1084"})
     CHECK(isValidIsin(isin));
   CHECK(!isValidIsin("DE0008469009") && !isValidIsin("DE000846900") && !isValidIsin(""));
-  const std::string zinc = privateIsin("NN", "ZINC");
-  CHECK(zinc == "ZZNNZINC0002" && isValidIsin(zinc));  // the same as the Python in tools/yahoo/build_lists.py
-  CHECK(privateIsin("YF", "GC") != privateIsin("NN", "GC"));  // another source, another instrument
-  CHECK(privateIsin("NN", "zinc") == zinc && privateIsin("NN", "Z-I NC") == zinc);  // case and punctuation do not matter
-  CHECK(privateIsin("NN", "TOOLONGSYM").empty() && privateIsin("N", "ZINC").empty());
+  const std::string zinc = privateIsin("ZINC");
+  CHECK(zinc.substr(0, 11) == "ZZZINC00000" && isValidIsin(zinc));  // there is one zinc: no source in it
+  CHECK(privateIsin("zinc") == zinc && privateIsin("Z-I NC") == zinc);  // case and punctuation do not matter
+  CHECK(privateIsin("LEAD") != zinc);
+  CHECK(privateIsin("TOOLONGNAME").empty() && privateIsin("").empty());
 }

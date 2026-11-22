@@ -291,7 +291,8 @@ bool hasData(const immer::map<MarketId, immer::set<EdgeKey>> & byMarket, const E
 }
 }  // namespace
 
-void Snapshot::setListing(const EdgeKey & k, const Listing & l) {
+void Snapshot::setListing(const Listing & l) {
+  const EdgeKey & k = l.key;
   if (!hasData(edgesByMarket_, k)) return;  // no data yet: no edge
   const Listing * old = listings_.find(k);
   if (old && *old == l) return;
@@ -315,10 +316,10 @@ bool setFact(immer::map<FactKey, T> & map, const FactKey & k, const T & v) {
 }
 }  // namespace
 
-void Snapshot::setFacts(const FactKey & k, const InstrumentFacts & f) { version_ += setFact(instrumentFacts_, k, f); }
-void Snapshot::setFacts(const FactKey & k, const CompanyFacts & f) { version_ += setFact(companyFacts_, k, f); }
-void Snapshot::setFacts(const FactKey & k, const FundFacts & f) { version_ += setFact(fundFacts_, k, f); }
-void Snapshot::setFacts(const FactKey & k, const CertificateFacts & f) { version_ += setFact(certificateFacts_, k, f); }
+void Snapshot::setFacts(const InstrumentFacts & f) { version_ += setFact(instrumentFacts_, f.key, f); }
+void Snapshot::setFacts(const CompanyFacts & f) { version_ += setFact(companyFacts_, f.key, f); }
+void Snapshot::setFacts(const FundFacts & f) { version_ += setFact(fundFacts_, f.key, f); }
+void Snapshot::setFacts(const CertificateFacts & f) { version_ += setFact(certificateFacts_, f.key, f); }
 
 void Snapshot::appendCandles(const EdgeKey & k, Resolution r, const std::vector<Candle> & in) {
   if (in.empty()) return;
@@ -405,20 +406,20 @@ class MemoryStore : public Store {
   Market resolveMarket(const std::vector<Attribute> & a) override {
     return write([&](Snapshot & s) { return s.resolve(a); });
   }
-  void setListing(const EdgeKey & k, const Listing & l) override {
-    write([&](Snapshot & s) { s.setListing(k, l); });
+  void setListing(const Listing & l) override {
+    write([&](Snapshot & s) { s.setListing(l); });
   }
-  void setFacts(const FactKey & k, const InstrumentFacts & f) override {
-    write([&](Snapshot & s) { s.setFacts(k, f); });
+  void setFacts(const InstrumentFacts & f) override {
+    write([&](Snapshot & s) { s.setFacts(f); });
   }
-  void setFacts(const FactKey & k, const CompanyFacts & f) override {
-    write([&](Snapshot & s) { s.setFacts(k, f); });
+  void setFacts(const CompanyFacts & f) override {
+    write([&](Snapshot & s) { s.setFacts(f); });
   }
-  void setFacts(const FactKey & k, const FundFacts & f) override {
-    write([&](Snapshot & s) { s.setFacts(k, f); });
+  void setFacts(const FundFacts & f) override {
+    write([&](Snapshot & s) { s.setFacts(f); });
   }
-  void setFacts(const FactKey & k, const CertificateFacts & f) override {
-    write([&](Snapshot & s) { s.setFacts(k, f); });
+  void setFacts(const CertificateFacts & f) override {
+    write([&](Snapshot & s) { s.setFacts(f); });
   }
   void setAttribute(NodeRef n, const Attribute & a) override {
     write([&](Snapshot & s) { s.setAttribute(n, a); });

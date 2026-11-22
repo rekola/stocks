@@ -317,8 +317,8 @@ size_t NordnetSource::loadIndicators(const List & list, Store & store, Http & ht
       base = currencyNode(store, row.name.substr(0, slash));
       quote = currencyNode(store, row.name.substr(slash + 1));
     } else {
-      // An index or a commodity is its ISIN; where Nordnet has none it gets one of ours (Zinc, Lead, ...).
-      const std::string isin = row.isin.empty() ? privateIsin("NN", row.symbol) : row.isin;
+      // An index or a commodity is its ISIN; where Nordnet has none it gets one of ours, from what it is (Zinc, Lead, ...).
+      const std::string isin = row.isin.empty() ? privateIsin(row.symbol) : row.isin;
       if (isin.empty()) continue;
       std::vector<Attribute> identifying = {{predicate::isin, isin}};
       const InstrumentKind kind = row.type == "INDEX" ? InstrumentKind::Index
@@ -329,15 +329,16 @@ size_t NordnetSource::loadIndicators(const List & list, Store & store, Http & ht
       if (kind != InstrumentKind::Other) rest.push_back({predicate::kind, kindName(kind)});
       base = store.resolveInstrument(identifying, rest);
       InstrumentFacts facts;
+      facts.key = {base.id, dataset.id};
       facts.country = row.country;
-      store.setFacts(FactKey{base.id, dataset.id}, facts);
+      store.setFacts(facts);
       // An index is in points. The answer gives a commodity no currency; the owner's table has them all in dollars.
       quote = row.type == "INDEX" ? quoteNode(store, "pts") : currencyNode(store, "USD");
     }
     if (row.hasBar) {
       const EdgeKey edge{base.id, quote.id, market.id, dataset.id};
       store.appendCandles(edge, Resolution::Day, {row.bar});
-      store.setListing(edge, {row.symbol, "", row.orderBookId, row.type});
+      store.setListing({edge, row.symbol, "", row.orderBookId, row.type});
     }
     written++;
   }
@@ -403,16 +404,26 @@ void NordnetSource::load(Store & store, Http & http, SourceListener & listener) 
         Instrument quote = currencyNode(store, l.currency);
         // What Nordnet says of the instrument itself: thin edges, of the types it has.
         const FactKey facts{base.id, dataset.id};
-        store.setFacts(facts, l.facts);
-        if (l.company) store.setFacts(facts, *l.company);
-        if (l.fund) store.setFacts(facts, *l.fund);
-        if (l.certificate) store.setFacts(facts, *l.certificate);
+        l.facts.key = facts;
+        store.setFacts(l.facts);
+        if (l.company) {
+          l.company->key = facts;
+          store.setFacts(*l.company);
+        }
+        if (l.fund) {
+          l.fund->key = facts;
+          store.setFacts(*l.fund);
+        }
+        if (l.certificate) {
+          l.certificate->key = facts;
+          store.setFacts(*l.certificate);
+        }
         // Today's bar makes the edge; a listing with none stays a node nothing selects.
         if (l.hasBar) {
           const EdgeKey edge{base.id, quote.id, market.id, dataset.id};
           store.appendCandles(edge, Resolution::Day, {l.bar});
           // What the market says of it: what it calls it, its own id for it and the order book its history is asked for by.
-          store.setListing(edge, {l.symbol, l.identifier, l.bookId, l.type});
+          store.setListing({edge, l.symbol, l.identifier, l.bookId, l.type});
         }
       }
       found += page.listings.size();

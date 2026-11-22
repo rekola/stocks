@@ -11,9 +11,8 @@ char isinCheckDigit(const std::string & first11);
 // Whether `isin` is twelve characters with the right check digit.
 bool isValidIsin(const std::string & isin);
 
-// An instrument that has no ISIN gets one of our own, in a namespace nobody else issues from: the prefix `ZZ`, which
-// ISO 3166-1 leaves for private use (it is the "user-assigned" code element, and no numbering agency issues ISINs
-// under it). The nine-character national number is a two-letter code for who it is from ("NN" Nordnet, "YF" Yahoo's
-// continuous futures) and the provider's symbol, upper case, letters and digits only, up to seven characters, padded
-// with zeros. Empty if the symbol does not fit or the prefix is not two letters.
-std::string privateIsin(const std::string & source, const std::string & symbol);
+// A thing that has no ISIN gets one of our own, in a namespace nobody else issues from: the prefix `ZZ`, which ISO 3166-1
+// leaves for private use (the "user-assigned" code element; no numbering agency issues ISINs under it). It is made from
+// what the thing is, not from who says it: there is one Zinc, whoever lists it. The nine-character national number is its
+// name, upper case, letters and digits only, padded with zeros. Empty if the name does not fit in nine.
+std::string privateIsin(const std::string & name);

@@ -147,13 +147,15 @@ struct EventKey {
   }
 };
 
-// Edges are typed and their fields fixed: a new kind of edge is a new type here, not a new attribute. A **fat edge** is the
-// listing of an instrument on a market in a quote currency, as one dataset says it (EdgeKey): it is small, and carries the
-// price series; a **thin edge** is a fact about the instrument itself, from one dataset (FactKey), of one of the types below.
-// The fields are optional: a number a dataset does not give is undefined (NaN), a day or an id that it does not give is 0.
+// Edges are typed records and their fields fixed: a new kind of edge is a new type here. Each record carries its own key (the
+// foreign keys). A **fat edge** is a Listing: an instrument on a market in a quote currency, as one dataset says it. It is
+// small, and the price series (candles, books) are beside it under the same key. A **thin edge** is a fact about the
+// instrument itself, from one dataset, of one of the types below (`*Facts`), one record of each type per instrument and
+// dataset. The fields are optional: a number a dataset does not give is undefined (NaN), a day or an id that it does not
+// give is 0.
 
-// What a dataset says of an instrument on a market. The series (candles, books) are beside it, under the same key.
 struct Listing {
+  EdgeKey key;
   std::string symbol;      // what the market calls the instrument
   std::string identifier;  // the market's own id for it (Nordnet's, on its market)
   std::string orderBook;   // the id the price history is asked for by
@@ -161,7 +163,7 @@ struct Listing {
   friend bool operator==(const Listing &, const Listing &) = default;
 };
 
-// The key of a thin edge: one record of each type per instrument and dataset.
+// The key of a thin edge.
 struct FactKey {
   InstrumentId instrument;
   DatasetId dataset;
@@ -172,6 +174,7 @@ inline bool sameNumber(double a, double b) { return a == b || (a != a && b != b)
 
 // What a dataset says of any instrument.
 struct InstrumentFacts {
+  FactKey key;
   std::string issuer;
   int64_t issuerId = 0;  // the provider's own id for the issuer
   std::string country;   // of an index or a listing
@@ -186,6 +189,7 @@ struct InstrumentFacts {
 // A company's figures and calendar, as the provider gives them. Day numbers; amounts as given (the market cap in the
 // provider's unit).
 struct CompanyFacts {
+  FactKey key;
   double marketCap = kUndefined, eps = kUndefined, pe = kUndefined, pb = kUndefined, ps = kUndefined;
   double dividendPerShare = kUndefined, dividendYield = kUndefined;
   int64_t reportDay = 0;  // the next report
@@ -195,7 +199,7 @@ struct CompanyFacts {
   std::string dividendCurrency;
   int64_t meetingDay = 0;  // the next general meeting
   friend bool operator==(const CompanyFacts & a, const CompanyFacts & b) {
-    return sameNumber(a.marketCap, b.marketCap) && sameNumber(a.eps, b.eps) && sameNumber(a.pe, b.pe) &&
+    return a.key == b.key && sameNumber(a.marketCap, b.marketCap) && sameNumber(a.eps, b.eps) && sameNumber(a.pe, b.pe) &&
            sameNumber(a.pb, b.pb) && sameNumber(a.ps, b.ps) && sameNumber(a.dividendPerShare, b.dividendPerShare) &&
            sameNumber(a.dividendYield, b.dividendYield) && a.reportDay == b.reportDay && a.reportType == b.reportType &&
            a.reportDescription == b.reportDescription && a.exDay == b.exDay && a.payDay == b.payDay &&
@@ -206,6 +210,7 @@ struct CompanyFacts {
 
 // A fund's or an ETF's.
 struct FundFacts {
+  FactKey key;
   std::string adminCompany, brandingCompany, category, type, dividendStrategy, tradingFrequency, sfdrArticle, riskGroup;
   std::string universeCountry, universeCurrency;
   std::optional<int> esgScore, msRating, rawRisk, rawSfdr;
@@ -214,7 +219,7 @@ struct FundFacts {
   double totalFee = kUndefined, calculatedFee = kUndefined, yearlyFee = kUndefined;
   double totalMarketValue = kUndefined, minInvestment = kUndefined, dividendYield = kUndefined;
   friend bool operator==(const FundFacts & a, const FundFacts & b) {
-    return a.adminCompany == b.adminCompany && a.brandingCompany == b.brandingCompany && a.category == b.category &&
+    return a.key == b.key && a.adminCompany == b.adminCompany && a.brandingCompany == b.brandingCompany && a.category == b.category &&
            a.type == b.type && a.dividendStrategy == b.dividendStrategy && a.tradingFrequency == b.tradingFrequency &&
            a.sfdrArticle == b.sfdrArticle && a.riskGroup == b.riskGroup && a.universeCountry == b.universeCountry &&
            a.universeCurrency == b.universeCurrency && a.esgScore == b.esgScore && a.msRating == b.msRating &&
@@ -228,6 +233,7 @@ struct FundFacts {
 
 // A certificate's or other exchange-traded product's.
 struct CertificateFacts {
+  FactKey key;
   std::optional<int> leverage;
   std::optional<bool> highRisk;
   std::string direction, marketView;  // "Long" or "Short"; the provider's code for the view
@@ -236,7 +242,7 @@ struct CertificateFacts {
   int64_t underlyingId = 0;  // the provider's own id for the underlying
   std::string underlyingName;
   friend bool operator==(const CertificateFacts & a, const CertificateFacts & b) {
-    return a.leverage == b.leverage && a.highRisk == b.highRisk && a.direction == b.direction &&
+    return a.key == b.key && a.leverage == b.leverage && a.highRisk == b.highRisk && a.direction == b.direction &&
            a.marketView == b.marketView && sameNumber(a.managementFee, b.managementFee) &&
            a.firstTradingDay == b.firstTradingDay && a.underlyingId == b.underlyingId &&
            a.underlyingName == b.underlyingName;

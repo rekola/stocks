@@ -41,12 +41,11 @@ bool isValidIsin(const std::string & isin) {
   return isin.size() == 12 && isinCheckDigit(isin.substr(0, 11)) == isin[11];
 }
 
-std::string privateIsin(const std::string & source, const std::string & symbol) {
-  if (source.size() != 2) return {};
-  std::string code = source;
-  for (char c : symbol)
+std::string privateIsin(const std::string & name) {
+  std::string code;
+  for (char c : name)
     if (std::isalnum(static_cast<unsigned char>(c))) code += static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-  if (code.size() > 9) return {};
+  if (code.empty() || code.size() > 9) return {};
   code.resize(9, '0');
   std::string first11 = "ZZ" + code;
   const char check = isinCheckDigit(first11);

@@ -82,8 +82,9 @@ bool YahooSource::parse(const std::string & body, const ListEntry & e, Store & s
   Instrument quote = quoteNode(store, e.quote);
   const EdgeKey edge{base.id, quote.id, market.id, dataset.id};
   store.appendCandles(edge, Resolution::Day, bars);
-  Listing listing{e.yahoo, "", "", ""};  // what Yahoo calls it, and its own type
+  Listing listing{edge, e.yahoo, "", "", ""};  // what Yahoo calls it, and its own type
   InstrumentFacts facts;
+  facts.key = {base.id, dataset.id};
   if (auto meta = result.find("meta"); meta != result.end() && meta->is_object()) {
     auto t = meta->find("instrumentType");
     if (t != meta->end() && t->is_string()) listing.type = t->get<std::string>();
@@ -94,8 +95,8 @@ bool YahooSource::parse(const std::string & body, const ListEntry & e, Store & s
     auto zone = meta->find("exchangeTimezoneName");
     if (zone != meta->end() && zone->is_string()) store.setAttribute(market.id, {predicate::timezone, zone->get<std::string>()});
   }
-  store.setListing(edge, listing);
-  store.setFacts(FactKey{base.id, dataset.id}, facts);
+  store.setListing(listing);
+  store.setFacts(facts);
 
   if (result.contains("events") && result["events"].is_object()) {
     const json & events = result["events"];
