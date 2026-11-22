@@ -266,3 +266,54 @@ TEST(the_table_follows_the_store_when_told_it_changed_and_keeps_the_sort_and_the
   f.app->widgets().postToRoot(SourceMessage{"yahoo: NOKIA.HE: HTTP 404"});
   CHECK(f.text().find("yahoo: NOKIA.HE: HTTP 404") != std::string::npos);
 }
+
+TEST(a_row_shows_what_the_dataset_calls_the_listing_so_the_rows_of_one_base_are_told_apart) {
+  Fixture f(false);
+  Instrument eur = f.store->addInstrument({{}, "EUR", "Euro", InstrumentKind::Currency});
+  Instrument usd = f.store->addInstrument({{}, "USD", "US dollar", InstrumentKind::Currency});
+  Instrument gbp = f.store->addInstrument({{}, "GBP", "British pound", InstrumentKind::Currency});
+  Market currencies = f.store->addMarket({{}, "Currencies"});
+  Dataset a = f.store->addDataset({{}, "provider-a"});
+  EdgeKey eurusd{eur.id, usd.id, currencies.id, a.id}, eurgbp{eur.id, gbp.id, currencies.id, a.id};
+  for (const EdgeKey & k : {eurusd, eurgbp}) f.store->appendCandles(k, Resolution::Day, {{0, 1, 1, 1, 1.0, 1}});
+  f.store->setListing({eurusd, "EURUSD", "", "", "CURRENCY", "EUR/USD"});
+  f.store->setListing({eurgbp, "EURGBP", "", "", "CURRENCY", "EUR/GBP"});
+  f.app->execute("show-currencies");
+  Table & t = f.browser->table();
+  std::set<std::string> names;
+  for (int r = 0; r < t.model()->rowCount(); r++) names.insert(t.model()->text(r, Quotes::NAME));
+  CHECK((names == std::set<std::string>{"EUR/USD", "EUR/GBP"}));  // not "Euro" on both
+
+  // An instrument listed on two markets: each market's own name for it; one with no name of its own shows the instrument's.
+  Instrument fund = f.store->addInstrument({{}, "", "Fund (instrument)", InstrumentKind::Etf, "IE00BGV5VN51"});
+  Market hel = f.store->addMarket({{}, "Nasdaq Helsinki"}), sto = f.store->addMarket({{}, "Nasdaq Stockholm"});
+  EdgeKey onHel{fund.id, eur.id, hel.id, a.id}, onSto{fund.id, usd.id, sto.id, a.id};
+  for (const EdgeKey & k : {onHel, onSto}) f.store->appendCandles(k, Resolution::Day, {{0, 1, 1, 1, 1.0, 1}});
+  f.store->setListing({onHel, "XAIX", "", "", "UETF", "Fund (Helsinki)"});
+  f.store->setListing({onSto, "XAIX", "", "", "UETF", ""});
+  auto snapshot = f.store->snapshot();
+  CHECK(makeRows(*snapshot, hel.id)[0].name == "Fund (Helsinki)");
+  CHECK(makeRows(*snapshot, sto.id)[0].name == "Fund (instrument)");
+}
+
+TEST(the_table_keeps_its_scroll_position_when_the_store_changes) {
+  Fixture f;  // the made-up data: more currency pairs than rows on the screen
+  f.app->execute("show-currencies");
+  Table & t = f.browser->table();
+  CHECK(t.model()->rowCount() > t.visibleRows() * 2);
+  // Scrolled with the wheel, which leaves the selection at the top: a refresh that rebuilt the table would put the view
+  // back where the selected row is.
+  Wheel wheel;
+  wheel.dy = -20;
+  t.post(wheel);
+  f.app->present();
+  const int first = t.firstVisiblePosition(), selected = t.selectedRow();
+  CHECK(first > 0 && selected >= 0);
+
+  auto snapshot = f.store->snapshot();
+  const EdgeKey k = snapshot->edges(snapshot->findMarket("Currencies")->id)[0];
+  f.store->appendCandles(k, Resolution::Day, {{99999, 1, 1, 1, 2.0, 1}});
+  f.app->widgets().postToRoot(StoreChanged{});  // what the source thread's post turns into
+  CHECK(t.firstVisiblePosition() == first);      // not back at the first row
+  CHECK(t.selectedRow() == selected);
+}
