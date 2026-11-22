@@ -42,6 +42,7 @@ struct Fixture {
     backend = owned.get();
     app = Application::adopt(std::move(owned));
     browser = std::make_unique<Browser>(*app, store);
+    browser->setMinRefreshInterval(0);  // a test posts one change after another, and looks at once
   }
   void press(int key, unsigned mods = 0) {
     app->handle(BackendEvent::makeInput(keyInput(key, mods, Input::Kind::PRESS)));
@@ -143,7 +144,7 @@ TEST(a_click_on_a_heading_sorts_and_prices_sort_by_value) {
   const Table & table = f.browser->table();
   CHECK(table.sortColumn() == Quotes::PRICE && table.sortOrder() == SortOrder::ASCENDING);
   auto & quotes = static_cast<const Quotes &>(*table.model());
-  for (int p = 1; p < quotes.rowCount(); p++) CHECK(quotes.rows[static_cast<size_t>(table.rowAt(p - 1))].price <= quotes.rows[static_cast<size_t>(table.rowAt(p))].price);
+  for (int p = 1; p < quotes.rowCount(); p++) CHECK(*quotes.number(table.rowAt(p - 1), Quotes::PRICE) <= *quotes.number(table.rowAt(p), Quotes::PRICE));
 }
 
 TEST(numbers_are_written_with_a_point_and_rounded) {
@@ -316,4 +317,72 @@ TEST(the_table_keeps_its_scroll_position_when_the_store_changes) {
   f.app->widgets().postToRoot(StoreChanged{});  // what the source thread's post turns into
   CHECK(t.firstVisiblePosition() == first);      // not back at the first row
   CHECK(t.selectedRow() == selected);
+}
+
+TEST(the_all_preset_shows_every_market_and_the_market_column_tells_the_rows_apart) {
+  Fixture f;
+  f.app->execute("show-all");
+  Table & t = f.browser->table();
+  auto snapshot = f.store->snapshot();
+  CHECK(static_cast<size_t>(t.model()->rowCount()) == allQuoteEdges(*snapshot).size());
+  CHECK(t.model()->rowCount() > 100);
+  std::set<std::string> markets;
+  for (int r = 0; r < t.model()->rowCount(); r++) markets.insert(t.model()->text(r, Quotes::MARKET));
+  CHECK((markets == std::set<std::string>{"Currencies", "Indices", "Nasdaq Helsinki"}));  // the made-up data's markets
+
+  // A market with no name yet is told by Nordnet's id for it, and one with neither by its number.
+  Fixture g(false);
+  Instrument eur = g.store->addInstrument({{}, "EUR", "Euro", InstrumentKind::Currency});
+  Instrument usd = g.store->addInstrument({{}, "USD", "US dollar", InstrumentKind::Currency});
+  Market unnamed = g.store->resolveMarket({{predicate::nordnetId, "61"}});
+  Dataset a = g.store->addDataset({{}, "nordnet"});
+  g.store->appendCandles({eur.id, usd.id, unnamed.id, a.id}, Resolution::Day, {{0, 1, 1, 1, 1.0, 1}});
+  g.app->execute("show-all");
+  CHECK(g.browser->table().model()->text(0, Quotes::MARKET) == "Nordnet 61");
+}
+
+TEST(a_currency_pair_shows_its_first_currency_as_the_base_and_not_the_listing_symbol) {
+  Fixture f(false);
+  Instrument eur = f.store->addInstrument({{}, "EUR", "Euro", InstrumentKind::Currency});
+  Instrument usd = f.store->addInstrument({{}, "USD", "US dollar", InstrumentKind::Currency});
+  Market currencies = f.store->addMarket({{}, "Currencies"});
+  Dataset a = f.store->addDataset({{}, "nordnet"});
+  EdgeKey k{eur.id, usd.id, currencies.id, a.id};
+  f.store->appendCandles(k, Resolution::Day, {{0, 1, 1, 1, 1.0, 1}});
+  f.store->setListing({k, "EURUSD", "", "", "CURRENCY", "EUR/USD"});
+  f.app->execute("show-currencies");
+  Table & t = f.browser->table();
+  CHECK(t.model()->text(0, Quotes::BASE) == "EUR" && t.model()->text(0, Quotes::QUOTE) == "USD");
+  CHECK(t.model()->text(0, Quotes::NAME) == "EUR/USD");
+
+  // What a market calls anything else stays the base: its symbol there.
+  Instrument fund = f.store->addInstrument({{}, "", "Fund", InstrumentKind::Etf, "IE00BGV5VN51"});
+  Market hel = f.store->addMarket({{}, "Nasdaq Helsinki"});
+  EdgeKey onHel{fund.id, eur.id, hel.id, a.id};
+  f.store->appendCandles(onHel, Resolution::Day, {{0, 1, 1, 1, 1.0, 1}});
+  f.store->setListing({onHel, "XAIX", "", "", "UETF", "Fund"});
+  f.app->execute("show-nasdaq-helsinki");
+  CHECK(t.model()->text(0, Quotes::BASE) == "XAIX");
+}
+
+TEST(a_busy_source_is_shown_at_most_so_often_and_the_last_change_is_shown_when_it_is_time) {
+  Fixture f(false);
+  Instrument eur = f.store->addInstrument({{}, "EUR", "Euro", InstrumentKind::Currency});
+  Instrument usd = f.store->addInstrument({{}, "USD", "US dollar", InstrumentKind::Currency});
+  Instrument gbp = f.store->addInstrument({{}, "GBP", "British pound", InstrumentKind::Currency});
+  Market currencies = f.store->addMarket({{}, "Currencies"});
+  Dataset a = f.store->addDataset({{}, "provider-a"});
+  f.store->appendCandles({eur.id, usd.id, currencies.id, a.id}, Resolution::Day, {{0, 1, 1, 1, 1.0, 1}});
+  f.app->execute("show-currencies");
+  Table & t = f.browser->table();
+  CHECK(t.model()->rowCount() == 1);
+
+  f.browser->setMinRefreshInterval(3600);  // not for an hour
+  f.store->appendCandles({eur.id, gbp.id, currencies.id, a.id}, Resolution::Day, {{0, 1, 1, 1, 0.9, 1}});
+  f.app->widgets().postToRoot(StoreChanged{});
+  CHECK(t.model()->rowCount() == 1);  // asked for, and not yet shown
+
+  f.browser->setMinRefreshInterval(0);
+  f.app->present();  // the next frame shows it
+  CHECK(t.model()->rowCount() == 2);
 }
