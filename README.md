@@ -51,7 +51,7 @@ and about 6 MB: `--market NAME` (repeatable) loads one list, and
 `--source synthetic` loads none. `tools/yahoo/build_lists.py` rebuilds the
 files from its candidate lists, keeping the tickers Yahoo answers for.
 
-The data model is planned in [plans/data-model.md](plans/data-model.md), and the market calendars in [plans/calendars.md](plans/calendars.md).
+The data model is planned in [plans/data-model.md](plans/data-model.md), the server, its API and the bars in [plans/server.md](plans/server.md), and the market calendars in [plans/calendars.md](plans/calendars.md).
 
 The market regime embeddings are planned in [plans/embeddings.md](plans/embeddings.md).
 
