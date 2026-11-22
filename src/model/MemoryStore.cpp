@@ -224,7 +224,7 @@ namespace {
 std::string heldKey(NodeType t, const std::string & key) { return std::string(1, static_cast<char>('0' + static_cast<int>(t))) + key; }
 
 StoredFact stored(NodeType t, const std::string & key, const Attribute & a) {
-  return StoredFact{t, key, a.predicate, a.value, a.updated, a.checked};
+  return StoredFact{t, key, a.predicate, a.value, a.updated};
 }
 }  // namespace
 
@@ -234,7 +234,6 @@ void Snapshot::hold(const std::vector<StoredFact> & facts) {
     if (!says(f.value) || f.predicate.empty() || f.node.empty()) continue;
     Attribute a(f.predicate, f.value);
     a.updated = f.updated;
-    a.checked = f.checked;
     grouped[heldKey(f.type, f.node)].push_back(std::move(a));
   }
   for (auto & [key, attrs] : grouped) {
@@ -301,20 +300,20 @@ void Snapshot::setAttributes(NodeRef n, const std::vector<Attribute> & in) {
     auto at = find(a.predicate);
     if (at == attrs.end()) {
       Attribute fresh = a;
-      fresh.updated = fresh.checked = now_;
+      fresh.updated = now_;
       attrs.push_back(fresh);
       index(fresh);
       changed.push_back(attrs.size() - 1);
     } else if (at->value == a.value) {
-      if (at->checked != now_) {
-        at->checked = now_;
+      if (at->updated != now_) {
+        at->updated = now_;
         rechecked.push_back(static_cast<size_t>(at - attrs.begin()));
       }
     } else {
       // The old text no longer says it of this node; the new, if it is text, does.
       unindex(*at);
       at->value = a.value;
-      at->updated = at->checked = now_;
+      at->updated = now_;
       index(*at);
       changed.push_back(static_cast<size_t>(at - attrs.begin()));
     }

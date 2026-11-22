@@ -92,7 +92,7 @@ TEST(every_value_alternative_round_trips_through_the_file) {
     auto facts = openSqliteFactStore(t.file);
     FactBatch batch;
     for (size_t i = 0; i < values.size(); i++)
-      batch.changed.push_back({NodeType::Market, "mic:XHEL", "p" + std::to_string(i), values[i], 11 + static_cast<TimestampMs>(i), 22});
+      batch.changed.push_back({NodeType::Market, "mic:XHEL", "p" + std::to_string(i), values[i], 11 + static_cast<TimestampMs>(i)});
     facts->apply(batch);
   }
   auto loaded = byPredicate(openSqliteFactStore(t.file)->loadAll());
@@ -101,7 +101,7 @@ TEST(every_value_alternative_round_trips_through_the_file) {
     const StoredFact & f = loaded["mic:XHEL/p" + std::to_string(i)];
     CHECK(f.value.index() == values[i].index());
     CHECK(f.value == values[i]);
-    CHECK(f.updated == 11 + static_cast<TimestampMs>(i) && f.checked == 22 && f.type == NodeType::Market);
+    CHECK(f.updated == 11 + static_cast<TimestampMs>(i) && f.type == NodeType::Market);
   }
 }
 
@@ -109,38 +109,38 @@ TEST(a_batch_replaces_by_key_and_forgets_whole_nodes) {
   TempFile t;
   auto facts = openSqliteFactStore(t.file);
   FactBatch a;
-  a.changed = {{NodeType::Instrument, "isin:A", "name", std::string("one"), 1, 1},
-               {NodeType::Instrument, "isin:A", "kind", std::string("company"), 1, 1},
-               {NodeType::Instrument, "isin:B", "name", std::string("two"), 1, 1}};
+  a.changed = {{NodeType::Instrument, "isin:A", "name", std::string("one"), 1},
+               {NodeType::Instrument, "isin:A", "kind", std::string("company"), 1},
+               {NodeType::Instrument, "isin:B", "name", std::string("two"), 1}};
   facts->apply(a);
   FactBatch b;
-  b.rechecked = {{NodeType::Instrument, "isin:A", "name", std::string("uno"), 1, 9}};
+  b.rechecked = {{NodeType::Instrument, "isin:A", "name", std::string("uno"), 9}};
   b.forget = {{NodeType::Instrument, "isin:B"}};
   facts->apply(b);
   auto loaded = byPredicate(facts->loadAll());
-  CHECK(loaded.size() == 2 && std::get<std::string>(loaded["isin:A/name"].value) == "uno" && loaded["isin:A/name"].checked == 9);
+  CHECK(loaded.size() == 2 && std::get<std::string>(loaded["isin:A/name"].value) == "uno" && loaded["isin:A/name"].updated == 9);
 }
 
-TEST(an_unchanged_write_moves_checked_only_and_makes_no_version) {
+TEST(an_unchanged_write_moves_updated_and_makes_no_version) {
   Clock clock;
   auto store = makeMemoryStore(optionsFor(nullptr, clock));
   Instrument nokia = store->addInstrument({{}, "NOKIA", "Nokia", InstrumentKind::Company, kIsin});
   store->setAttribute(nokia.id, {predicate::iconUrl, "http://icons/nokia.png"});
   const uint64_t version = store->snapshot()->version();
   auto first = store->snapshot()->fact(nokia.id, predicate::iconUrl);
-  CHECK(first && first->updated == 1000 && first->checked == 1000);
+  CHECK(first && first->updated == 1000);
 
   clock.now = 2000;
   store->setAttribute(nokia.id, {predicate::iconUrl, "http://icons/nokia.png"});
   auto again = store->snapshot()->fact(nokia.id, predicate::iconUrl);
   CHECK(store->snapshot()->version() == version);
-  CHECK(again && again->updated == 1000 && again->checked == 2000);
+  CHECK(again && again->updated == 2000);  // said again: stored again, whatever the value
   CHECK(std::get<std::string>(valueOf(*store->snapshot(), nokia.id, predicate::iconUrl)) == "http://icons/nokia.png");
 
   // The times are on what attributes() returns too, and do not take part in equality.
   bool found = false;
   for (const Attribute & a : store->snapshot()->attributes(nokia.id))
-    if (a.predicate == predicate::iconUrl) found = a.updated == 1000 && a.checked == 2000;
+    if (a.predicate == predicate::iconUrl) found = a.updated == 2000;
   CHECK(found);
   Attribute x(predicate::iconUrl, "x"), y = x;
   y.updated = 5;
@@ -150,7 +150,7 @@ TEST(an_unchanged_write_moves_checked_only_and_makes_no_version) {
   store->setAttribute(nokia.id, {predicate::iconUrl, "http://icons/new.png"});
   auto changed = store->snapshot()->fact(nokia.id, predicate::iconUrl);
   CHECK(store->snapshot()->version() == version + 1);
-  CHECK(changed && changed->updated == 3000 && changed->checked == 3000);
+  CHECK(changed && changed->updated == 3000);
 }
 
 TEST(a_value_nobody_can_say_is_not_said_or_kept) {
@@ -165,7 +165,7 @@ TEST(a_value_nobody_can_say_is_not_said_or_kept) {
   for (const StoredFact & f : openSqliteFactStore(t.file)->loadAll()) CHECK(f.predicate != "shares");
 }
 
-TEST(a_restart_shows_what_was_said_and_keeps_when_it_changed) {
+TEST(a_restart_shows_what_was_said_and_when_it_was_last_stored) {
   TempFile t;
   Clock clock;
   {
@@ -175,24 +175,26 @@ TEST(a_restart_shows_what_was_said_and_keeps_when_it_changed) {
     Market hel = store->resolveMarket({{predicate::mic, "XHEL"}, {predicate::name, "Nasdaq Helsinki"}});
     store->setAttribute(hel.id, {predicate::country, "FI"});
     clock.now = 1500;
-    store->setAttribute(nokia.id, {"shares", int64_t{5'600'000'000}});  // said again: only checked moves, and is kept without a version
+    store->setAttribute(nokia.id, {"shares", int64_t{5'600'000'000}});  // said again: only updated moves, and is kept without a version
   }  // the store's end writes everything
 
   clock.now = 9000;
   auto store = makeMemoryStore(optionsFor(openSqliteFactStore(t.file), clock));
   Instrument nokia = store->addInstrument({{}, "NOKIA", "Nokia", InstrumentKind::Company, kIsin});
   Attribute shares = factOf(*store->snapshot(), nokia.id, "shares");
-  CHECK(std::get<int64_t>(shares.value) == 5'600'000'000 && shares.updated == 1000 && shares.checked == 1500);
+  CHECK(std::get<int64_t>(shares.value) == 5'600'000'000 && shares.updated == 1500);
   CHECK(std::get<double>(valueOf(*store->snapshot(), nokia.id, "free-float")) == 0.75);
   CHECK(std::get<bool>(valueOf(*store->snapshot(), nokia.id, "halal")) == true);
 
-  // The same said again is a check, whatever the run: the change is when the value changed, not when it was last heard.
+  // Said again after a restart: stored again, and no new version, since the value is what was kept.
+  const uint64_t version = store->snapshot()->version();
   store->setAttribute(nokia.id, {"shares", int64_t{5'600'000'000}});
+  CHECK(store->snapshot()->version() == version);
   shares = factOf(*store->snapshot(), nokia.id, "shares");
-  CHECK(shares.updated == 1000 && shares.checked == 9000);
+  CHECK(shares.updated == 9000);
   store->setAttribute(nokia.id, {"shares", int64_t{5'500'000'000}});
   shares = factOf(*store->snapshot(), nokia.id, "shares");
-  CHECK(shares.updated == 9000 && shares.checked == 9000);
+  CHECK(shares.updated == 9000);
 
   Market hel = store->resolveMarket({{predicate::name, "Nasdaq Helsinki"}, {predicate::mic, "XHEL"}});
   CHECK(std::get<std::string>(valueOf(*store->snapshot(), hel.id, predicate::country)) == "FI");
@@ -273,7 +275,7 @@ TEST(a_file_that_is_no_database_is_moved_aside_and_replaced) {
   CHECK(said.size() == 1 && t.movedAside() == 1);
   CHECK(facts->loadAll().empty());
   FactBatch b;
-  b.changed = {{NodeType::Dataset, "name:x", "name", std::string("x"), 1, 1}};
+  b.changed = {{NodeType::Dataset, "name:x", "name", std::string("x"), 1}};
   facts->apply(b);
   CHECK(facts->loadAll().size() == 1);
 }
@@ -283,7 +285,7 @@ TEST(a_file_of_a_newer_schema_is_moved_aside_and_replaced) {
   {
     auto facts = openSqliteFactStore(t.file);
     FactBatch b;
-    b.changed = {{NodeType::Dataset, "name:x", "name", std::string("x"), 1, 1}};
+    b.changed = {{NodeType::Dataset, "name:x", "name", std::string("x"), 1}};
     facts->apply(b);
   }  // closed: the log is folded into the file
   {
@@ -305,7 +307,7 @@ TEST(a_file_that_cannot_be_made_keeps_nothing_and_does_not_throw) {
   std::vector<std::string> said;
   auto facts = openSqliteFactStore(t.dir / "in-the-way" / "facts.sqlite", [&](const std::string & s) { said.push_back(s); });
   FactBatch b;
-  b.changed = {{NodeType::Dataset, "name:x", "name", std::string("x"), 1, 1}};
+  b.changed = {{NodeType::Dataset, "name:x", "name", std::string("x"), 1}};
   facts->apply(b);
   CHECK(facts->loadAll().empty() && !said.empty());
 }
@@ -325,8 +327,8 @@ struct CountingFacts : FactStore {
   }
 };
 
-StoredFact fact(const std::string & node, const std::string & predicate, int64_t value, TimestampMs checked) {
-  return {NodeType::Instrument, node, predicate, value, 1, checked};
+StoredFact fact(const std::string & node, const std::string & predicate, int64_t value, TimestampMs updated) {
+  return {NodeType::Instrument, node, predicate, value, updated};
 }
 
 }  // namespace
@@ -348,7 +350,7 @@ TEST(facts_said_again_are_written_together_and_not_one_by_one) {
     CHECK(counting->applies == 0);  // nothing is in a hurry, and nothing blocked
     writer.flush();
     CHECK(counting->applies == 1 && counting->batches[0].changed.size() == 100);  // one fact per key, the last said
-    for (const StoredFact & f : counting->batches[0].changed) CHECK(f.checked == 49);
+    for (const StoredFact & f : counting->batches[0].changed) CHECK(f.updated == 49);
   }
   CHECK(counting->applies == 1);
 }

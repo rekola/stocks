@@ -31,8 +31,8 @@ class Snapshot {
   std::optional<EdgeKey> findEdge(const std::string & symbol, MarketId) const;
   // The object of one predicate of a node, if it is said: an instrument's icon, its number of shares, a market's country.
   std::optional<Value> attribute(NodeRef, const std::string & predicate) const;
-  // The same with its times: when the value last changed (`updated`) and when a source last said it, even when it was the
-  // same (`checked`), in milliseconds UTC as the store took them where the write happened.
+  // The same with its time: when a source last said it (`updated`), whether or not the value was the same as before, in
+  // milliseconds UTC as the store took it where the write happened.
   std::optional<Attribute> fact(NodeRef, const std::string & predicate) const;
   std::optional<Instrument> findInstrumentByIsin(const std::string & isin) const;
   std::optional<Market> market(MarketId) const;
@@ -93,8 +93,8 @@ class Snapshot {
   void appendActions(const EventKey &, const std::vector<CorporateAction> &);
 
   // For a store to make on its own copy, with the changes above. `setTime` is the time of the write in progress: what
-  // `updated` and `checked` become. `hold` gives it what an earlier run said, kept until its node is made (a node is not
-  // made by it). `revision` is the version plus the times of facts that were only said again, which no version counts: a
+  // `updated` becomes. `hold` gives it what an earlier run said, kept until its node is made (a node is not
+  // made by it). `revision` is the version plus the writes of facts that were only said again, which no version counts: a
   // store publishes a copy when it moves. `takeFacts` is what the writes since the last call ask of the disk.
   void setTime(TimestampMs now) { now_ = now; }
   void hold(const std::vector<StoredFact> &);
@@ -184,7 +184,7 @@ struct StoreOptions {
   // change and every fact said again is written through on a thread of its own. None: nothing is kept.
   std::shared_ptr<FactStore> facts;
   FactWriter::Options writer;
-  // The time of a write, for `updated` and `checked`. The wall clock by default; a test sets its own.
+  // The time of a write, for `updated`. The wall clock by default; a test sets its own.
   std::function<TimestampMs()> clock;
 };
 

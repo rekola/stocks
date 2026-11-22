@@ -52,7 +52,7 @@ class SqliteFactStore : public FactStore {
     std::vector<StoredFact> out;
     if (!db_) return out;
     try {
-      SQLite::Statement q(*db_, "SELECT node_type, node_key, predicate, value, is_bool, updated, checked FROM facts");
+      SQLite::Statement q(*db_, "SELECT node_type, node_key, predicate, value, is_bool, updated FROM facts");
       while (q.executeStep()) {
         StoredFact f;
         const int type = q.getColumn(0).getInt();
@@ -75,7 +75,6 @@ class SqliteFactStore : public FactStore {
         } else
           continue;  // a blob: not ours
         f.updated = q.getColumn(5).getInt64();
-        f.checked = q.getColumn(6).getInt64();
         out.push_back(std::move(f));
       }
     } catch (const std::exception & e) {
@@ -97,10 +96,10 @@ class SqliteFactStore : public FactStore {
         forget.reset();
       }
       SQLite::Statement put(*db_,
-                            "INSERT INTO facts (node_type, node_key, predicate, value, is_bool, updated, checked) "
-                            "VALUES (?, ?, ?, ?, ?, ?, ?) "
+                            "INSERT INTO facts (node_type, node_key, predicate, value, is_bool, updated) "
+                            "VALUES (?, ?, ?, ?, ?, ?) "
                             "ON CONFLICT (node_type, node_key, predicate) DO UPDATE SET "
-                            "value = excluded.value, is_bool = excluded.is_bool, updated = excluded.updated, checked = excluded.checked");
+                            "value = excluded.value, is_bool = excluded.is_bool, updated = excluded.updated");
       for (const auto * list : {&batch.changed, &batch.rechecked})
         for (const StoredFact & f : *list) {
           put.bind(1, static_cast<int32_t>(f.type));
@@ -120,7 +119,6 @@ class SqliteFactStore : public FactStore {
             put.bind(4);
           put.bind(5, is_bool);
           put.bind(6, static_cast<int64_t>(f.updated));
-          put.bind(7, static_cast<int64_t>(f.checked));
           put.exec();
           put.reset();
         }
@@ -152,7 +150,7 @@ class SqliteFactStore : public FactStore {
     db_->exec(
         "CREATE TABLE IF NOT EXISTS facts ("
         "node_type INTEGER NOT NULL, node_key TEXT NOT NULL, predicate TEXT NOT NULL, "
-        "value, is_bool INTEGER NOT NULL DEFAULT 0, updated INTEGER NOT NULL, checked INTEGER NOT NULL, "
+        "value, is_bool INTEGER NOT NULL DEFAULT 0, updated INTEGER NOT NULL, "
         "PRIMARY KEY (node_type, node_key, predicate)) WITHOUT ROWID");
     if (version < kSchemaVersion) db_->exec("PRAGMA user_version = " + std::to_string(kSchemaVersion));
   }

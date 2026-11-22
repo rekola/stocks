@@ -20,8 +20,8 @@ struct StoredFact {
   NodeType type = NodeType::Instrument;
   std::string node;  // the node's key: "isin:FI0009000681", "mic:XHEL", "name:..." (NodeIdentity.h)
   std::string predicate;
-  Value value;  // never NaN: an undefined number is not said, so it is not kept
-  TimestampMs updated = 0, checked = 0;
+  Value value;              // never NaN: an undefined number is not said, so it is not kept
+  TimestampMs updated = 0;  // when a source last said it (milliseconds UTC), whether or not the value changed
 };
 
 // The key of a node's facts: what to forget when its identity changes.
@@ -36,7 +36,7 @@ struct StoredNode {
 struct FactBatch {
   std::vector<StoredNode> forget;     // all the facts of these nodes go (a node found by a stronger identity moves its facts)
   std::vector<StoredFact> changed;    // a new value: kept soon
-  std::vector<StoredFact> rechecked;  // the same value said again, only `checked` moved: may wait and be written with others
+  std::vector<StoredFact> rechecked;  // the same value said again, only `updated` moved: may wait and be written with others
   bool empty() const { return forget.empty() && changed.empty() && rechecked.empty(); }
 };
 

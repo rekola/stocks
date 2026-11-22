@@ -134,11 +134,11 @@ country) are kept in a local SQLite file, so a restart shows what an earlier run
 are not kept (a node exists when it has edges, and the edges, the bars and everything else on them are not kept), and
 there is no server in this step.
 
-- **A fact** is `(node, predicate, value, updated, checked)`. `updated` is when the value last *changed*; `checked` is
-  when a source last *said* it, even unchanged. Both are taken by the store where the write happens (UTC, milliseconds).
-  `Snapshot::attributes()` and `Snapshot::fact()` return them (`Attribute::updated`/`checked`); `Attribute` equality
-  ignores them. A write of an unchanged value moves `checked` only and makes **no new version**, so nothing that watches the
-  version (the table) wakes; a changed value moves both and makes one.
+- **A fact** is `(node, predicate, value, updated)`. `updated` is when a source last *said* it, whether or not the value
+  was the same as before, taken by the store where the write happens (UTC, milliseconds). It is not when the value last
+  changed: the data is loaded too seldom to know that, so no such claim is made. `Snapshot::attributes()` and
+  `Snapshot::fact()` return it (`Attribute::updated`); `Attribute` equality ignores it. A write of an unchanged value moves
+  `updated` and makes **no new version**, so nothing that watches the version (the table) wakes; a changed value makes one.
 - **The key of a node** is not its id, which belongs to one run, but what identifies it (`src/model/NodeIdentity.cpp`, the
   one place): an instrument's ISIN, or its symbol where it has none; a market's MIC, else the id a source gives it, else its
   name; a dataset's name. Facts of a node that has none of these yet are not written until it has, and when a stronger one is
@@ -146,7 +146,7 @@ there is no server in this step.
 - **Restoring makes no node.** The file is read into the store before the sources run and kept as *held* facts under their
   node keys. A node that is made again (a source resolves it by its ISIN, MIC or name) takes what is held for it, for the
   predicates that have not been said in this run; so a source that loads some predicates leaves the others as an earlier
-  run left them, and a value said again with the same value is only a check, with its old `updated`. A node with no edges
+  run left them, and a value said again with the same value changes nothing but its `updated`. A node with no edges
   is still not seen: `instruments()` of a fresh store is empty, and nothing selects a node that has none.
 - **Layers** (`src/model/`): `Facts.h` has the plain `StoredFact`/`FactBatch` and the `FactStore` interface (`loadAll()`,
   `apply(batch)`), which a server-backed store can implement instead. `FactWriter` takes batches from the store's writers
@@ -154,7 +154,7 @@ there is no server in this step.
   after a short delay, facts only said again wait up to ten seconds and go with other batches, one fact per key, so a source
   that says ten thousand known things again costs one transaction. The destructor flushes. `SqliteFactStore` (SQLiteCpp,
   behind `openSqliteFactStore()`, in no header) is the SQLite one.
-- **The file**: one table `facts(node_type, node_key, predicate, value, is_bool, updated, checked)` keyed by
+- **The file**: one table `facts(node_type, node_key, predicate, value, is_bool, updated)` keyed by
   `(node_type, node_key, predicate)`, WAL mode, a transaction per batch, the schema version in `PRAGMA user_version` (1).
   `value` has no declared type, so SQLite's own null, integer, real and text are kept as given (a real that is whole stays a
   real) and a truth value is an integer with `is_bool` set. An undefined number is not said, so it is not kept. A file that

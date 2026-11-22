@@ -70,13 +70,14 @@ inline std::optional<bool> asBoolean(const Value & v) {
 // that changes replaces the one there (the last said stands, until a rule picks the authoritative source). What predicates
 // there are is data. Edges are not nodes: a fat edge is a Listing, below, which has the dataset.
 //
-// A fact also says when it was learned: `updated` is when its value last changed and `checked` when a source last said it,
-// even when it was the same (both set by the store, 0 on one a source has just made). Two attributes are equal when they say
-// the same, whatever the times: "did it change" never looks at them.
+// A fact also says when it was stored: `updated` is when a source last said it, whether or not the value was the same as
+// before (set by the store where the write happens, 0 on one a source has just made). It does not say when the value
+// last changed: sources are read too seldom to know that. Two attributes are equal when they say the same, whatever the
+// time: "did it change" never looks at it.
 struct Attribute {
   std::string predicate;
   Value value;
-  TimestampMs updated = 0, checked = 0;
+  TimestampMs updated = 0;
   Attribute(std::string p, std::string v) : predicate(std::move(p)), value(std::move(v)) {}
   Attribute(std::string p, const char * v) : predicate(std::move(p)), value(std::string(v)) {}
   Attribute(std::string p, int64_t v) : predicate(std::move(p)), value(v) {}
