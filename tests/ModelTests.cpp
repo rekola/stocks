@@ -310,50 +310,46 @@ TEST(a_fat_edge_has_a_typed_listing_and_only_once_it_has_data) {
   CHECK(w.snap()->symbol(other) == "XAIX.HE" && *w.snap()->findEdge("XAIX2", w.hel.id) == onHel);
 }
 
-TEST(a_thin_edge_is_a_typed_record_of_facts_about_an_instrument_from_a_dataset) {
+TEST(a_thin_edge_is_a_triple_with_its_dataset_and_a_value_that_changes_replaces_it) {
   World w;
-  const FactKey key{w.nokia.id, w.a.id};
-  CHECK(!w.snap()->companyFacts(key) && !w.snap()->instrumentFacts(key));
+  CHECK(!w.snap()->fact(w.nokia.id, "icon-url") && w.snap()->facts(w.nokia.id).empty());
 
-  CompanyFacts c;
-  c.marketCap = 25e9;
-  c.pe = 12.5;
-  c.exDay = dayNumber(2026, 12, 1);
-  c.dividendCurrency = "EUR";
-  c.key = key;
-  w.store->setFacts(c);
-  auto got = w.snap()->companyFacts(key);
-  CHECK(got && got->marketCap == 25e9 && got->exDay == dayNumber(2026, 12, 1) && !isDefined(got->eps));  // undefined stays so
+  // (subject, predicate, object, dataset): text, a whole number, a real number, a truth value, a day.
+  w.store->setFacts({{w.nokia.id, "icon-url", std::string("https://x/nokia.png"), w.a.id},
+                     {w.nokia.id, "owners", int64_t(1234), w.a.id},
+                     {w.nokia.id, "pe", 12.5, w.a.id},
+                     {w.nokia.id, "tradable", false, w.a.id},
+                     {w.nokia.id, "dividend-ex-day", dayNumber(2026, 12, 1), w.a.id}});
+  auto s = w.snap();
+  CHECK(asText(s->fact(w.nokia.id, "icon-url")->object) == "https://x/nokia.png");
+  CHECK(asInteger(s->fact(w.nokia.id, "owners")->object) == 1234 && asReal(s->fact(w.nokia.id, "owners")->object) == 1234.0);
+  CHECK(asReal(s->fact(w.nokia.id, "pe")->object) == 12.5 && !asInteger(s->fact(w.nokia.id, "pe")->object));
+  CHECK(asBoolean(s->fact(w.nokia.id, "tradable")->object) == false);  // false is a fact too
+  CHECK(asInteger(s->fact(w.nokia.id, "dividend-ex-day")->object) == dayNumber(2026, 12, 1));
+  CHECK(s->facts(w.nokia.id).size() == 5 && !s->fact(w.nokia.id, "eps"));  // what is not said is not there
 
-  // One record of each type per instrument and dataset; another dataset has its own.
-  InstrumentFacts i;
-  i.key = key;
-  i.issuer = "Nokia Oyj";
-  i.owners = 1234;
-  w.store->setFacts(i);
-  CHECK(w.snap()->instrumentFacts(key)->owners == 1234 && w.snap()->companyFacts(key));
-  CHECK(!w.snap()->companyFacts({w.nokia.id, w.b.id}));
+  // One row per subject, predicate and dataset: another dataset says its own, and `fact` can ask for one's.
+  w.store->setFacts({{w.nokia.id, "icon-url", std::string("https://y/nokia.png"), w.b.id}});
+  s = w.snap();
+  CHECK(s->facts(w.nokia.id).size() == 6);
+  CHECK(asText(s->fact(w.nokia.id, "icon-url", w.b.id)->object) == "https://y/nokia.png");
+  CHECK(asText(s->fact(w.nokia.id, "icon-url", w.a.id)->object) == "https://x/nokia.png");
+  CHECK(asText(s->fact(w.nokia.id, "icon-url")->object) == "https://x/nokia.png");  // none asked for: the first there
 
-  // An unchanged record, with its undefined numbers, makes no new version; a changed one does.
-  const uint64_t version = w.snap()->version();
-  w.store->setFacts(c);
+  // A value that changes replaces the one there; one that does not makes no new version.
+  const uint64_t version = s->version();
+  w.store->setFacts({{w.nokia.id, "pe", 12.5, w.a.id}, {w.nokia.id, "owners", int64_t(1234), w.a.id}});
   CHECK(w.snap()->version() == version);
-  c.pe = 13.0;
-  w.store->setFacts(c);
-  CHECK(w.snap()->version() == version + 1 && w.snap()->companyFacts(key)->pe == 13.0);
+  w.store->setFacts({{w.nokia.id, "pe", 13.0, w.a.id}});
+  CHECK(w.snap()->version() == version + 1 && asReal(w.snap()->fact(w.nokia.id, "pe")->object) == 13.0);
+  CHECK(w.snap()->facts(w.nokia.id).size() == 6);
 
-  FundFacts f;
-  f.key = key;
-  f.category = "Greater China Equity";
-  f.rawRisk = 5;
-  CertificateFacts t;
-  t.key = key;
-  t.leverage = 3;
-  t.direction = "Short";
-  w.store->setFacts(f);
-  w.store->setFacts(t);
-  CHECK(w.snap()->fundFacts(key)->rawRisk == 5 && !w.snap()->fundFacts(key)->msRating);
-  CHECK(w.snap()->certificateFacts(key)->leverage == 3 && w.snap()->certificateFacts(key)->direction == "Short");
+  // Empty, undefined and unknown say nothing.
+  w.store->setFacts({{w.nokia.id, "x", std::string(), w.a.id},
+                     {w.nokia.id, "y", std::numeric_limits<double>::quiet_NaN(), w.a.id},
+                     {w.nokia.id, "z", Value{}, w.a.id},
+                     {InstrumentId{999}, "pe", 1.0, w.a.id}});
+  CHECK(w.snap()->facts(w.nokia.id).size() == 6 && w.snap()->version() == version + 1);
 }
 
 TEST(edges_can_be_selected_by_the_type_of_their_base_instrument) {

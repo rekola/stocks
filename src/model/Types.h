@@ -8,6 +8,7 @@
 #include <immer/flex_vector.hpp>
 #include <optional>
 #include <string>
+#include <variant>
 #include <vector>
 
 // The data model's plain values. Nothing here knows the screen or where data comes from.
@@ -147,12 +148,11 @@ struct EventKey {
   }
 };
 
-// Edges are typed records and their fields fixed: a new kind of edge is a new type here. Each record carries its own key (the
-// foreign keys). A **fat edge** is a Listing: an instrument on a market in a quote currency, as one dataset says it. It is
-// small, and the price series (candles, books) are beside it under the same key. A **thin edge** is a fact about the
-// instrument itself, from one dataset, of one of the types below (`*Facts`), one record of each type per instrument and
-// dataset. The fields are optional: a number a dataset does not give is undefined (NaN), a day or an id that it does not
-// give is 0.
+// Edges are rows of a fixed shape, each carrying its own key. A **fat edge** is a Listing: an instrument on a market in a
+// quote currency, as one dataset says it. It is small, and the price series (candles, books) are beside it under the same
+// key. A **thin edge** is a Fact: a triple with the dataset that says it, (subject, predicate, object, dataset): the
+// instrument, what is said of it, the value. One row of each per subject, predicate and dataset; a value that changes
+// replaces the one there. What predicates there are is data, not types: a new kind of fact is a new predicate.
 
 struct Listing {
   EdgeKey key;
@@ -163,91 +163,39 @@ struct Listing {
   friend bool operator==(const Listing &, const Listing &) = default;
 };
 
-// The key of a thin edge.
-struct FactKey {
-  InstrumentId instrument;
+// The object of a fact: text, a whole number (a day is a day number), a real number or a truth value. A number a dataset does
+// not give is not written at all: there is no undefined value in a fact.
+using Value = std::variant<std::monostate, std::string, int64_t, double, bool>;
+
+inline std::optional<std::string> asText(const Value & v) {
+  return std::holds_alternative<std::string>(v) ? std::optional<std::string>(std::get<std::string>(v)) : std::nullopt;
+}
+inline std::optional<int64_t> asInteger(const Value & v) {
+  return std::holds_alternative<int64_t>(v) ? std::optional<int64_t>(std::get<int64_t>(v)) : std::nullopt;
+}
+inline std::optional<double> asReal(const Value & v) {  // a whole number is a real one too
+  if (std::holds_alternative<double>(v)) return std::get<double>(v);
+  if (std::holds_alternative<int64_t>(v)) return static_cast<double>(std::get<int64_t>(v));
+  return std::nullopt;
+}
+inline std::optional<bool> asBoolean(const Value & v) {
+  return std::holds_alternative<bool>(v) ? std::optional<bool>(std::get<bool>(v)) : std::nullopt;
+}
+
+struct Fact {
+  InstrumentId subject;
+  std::string predicate;
+  Value object;
   DatasetId dataset;
-  friend bool operator==(const FactKey &, const FactKey &) = default;
+  friend bool operator==(const Fact &, const Fact &) = default;
 };
 
-inline bool sameNumber(double a, double b) { return a == b || (a != a && b != b); }  // undefined equals undefined
-
-// What a dataset says of any instrument.
-struct InstrumentFacts {
-  FactKey key;
-  std::string issuer;
-  int64_t issuerId = 0;  // the provider's own id for the issuer
-  std::string country;   // of an index or a listing
-  std::string iconUrl;
-  std::optional<bool> tradable, shortable;  // at the provider
-  std::optional<int> pawnPercent;           // the provider's collateral value, per cent
-  std::optional<int> owners;                // how many of the provider's accounts hold it
-  int64_t firstTradeDay = 0;                // a day number: where the history begins
-  friend bool operator==(const InstrumentFacts &, const InstrumentFacts &) = default;
-};
-
-// A company's figures and calendar, as the provider gives them. Day numbers; amounts as given (the market cap in the
-// provider's unit).
-struct CompanyFacts {
-  FactKey key;
-  double marketCap = kUndefined, eps = kUndefined, pe = kUndefined, pb = kUndefined, ps = kUndefined;
-  double dividendPerShare = kUndefined, dividendYield = kUndefined;
-  int64_t reportDay = 0;  // the next report
-  std::string reportType, reportDescription;
-  int64_t exDay = 0, payDay = 0;  // the next dividend
-  double dividendAmount = kUndefined;
-  std::string dividendCurrency;
-  int64_t meetingDay = 0;  // the next general meeting
-  friend bool operator==(const CompanyFacts & a, const CompanyFacts & b) {
-    return a.key == b.key && sameNumber(a.marketCap, b.marketCap) && sameNumber(a.eps, b.eps) && sameNumber(a.pe, b.pe) &&
-           sameNumber(a.pb, b.pb) && sameNumber(a.ps, b.ps) && sameNumber(a.dividendPerShare, b.dividendPerShare) &&
-           sameNumber(a.dividendYield, b.dividendYield) && a.reportDay == b.reportDay && a.reportType == b.reportType &&
-           a.reportDescription == b.reportDescription && a.exDay == b.exDay && a.payDay == b.payDay &&
-           sameNumber(a.dividendAmount, b.dividendAmount) && a.dividendCurrency == b.dividendCurrency &&
-           a.meetingDay == b.meetingDay;
-  }
-};
-
-// A fund's or an ETF's.
-struct FundFacts {
-  FactKey key;
-  std::string adminCompany, brandingCompany, category, type, dividendStrategy, tradingFrequency, sfdrArticle, riskGroup;
-  std::string universeCountry, universeCurrency;
-  std::optional<int> esgScore, msRating, rawRisk, rawSfdr;
-  std::optional<bool> lowCarbon, nordnetSelection;
-  int64_t startDay = 0;
-  double totalFee = kUndefined, calculatedFee = kUndefined, yearlyFee = kUndefined;
-  double totalMarketValue = kUndefined, minInvestment = kUndefined, dividendYield = kUndefined;
-  friend bool operator==(const FundFacts & a, const FundFacts & b) {
-    return a.key == b.key && a.adminCompany == b.adminCompany && a.brandingCompany == b.brandingCompany && a.category == b.category &&
-           a.type == b.type && a.dividendStrategy == b.dividendStrategy && a.tradingFrequency == b.tradingFrequency &&
-           a.sfdrArticle == b.sfdrArticle && a.riskGroup == b.riskGroup && a.universeCountry == b.universeCountry &&
-           a.universeCurrency == b.universeCurrency && a.esgScore == b.esgScore && a.msRating == b.msRating &&
-           a.rawRisk == b.rawRisk && a.rawSfdr == b.rawSfdr && a.lowCarbon == b.lowCarbon &&
-           a.nordnetSelection == b.nordnetSelection && a.startDay == b.startDay && sameNumber(a.totalFee, b.totalFee) &&
-           sameNumber(a.calculatedFee, b.calculatedFee) && sameNumber(a.yearlyFee, b.yearlyFee) &&
-           sameNumber(a.totalMarketValue, b.totalMarketValue) && sameNumber(a.minInvestment, b.minInvestment) &&
-           sameNumber(a.dividendYield, b.dividendYield);
-  }
-};
-
-// A certificate's or other exchange-traded product's.
-struct CertificateFacts {
-  FactKey key;
-  std::optional<int> leverage;
-  std::optional<bool> highRisk;
-  std::string direction, marketView;  // "Long" or "Short"; the provider's code for the view
-  double managementFee = kUndefined;
-  int64_t firstTradingDay = 0;
-  int64_t underlyingId = 0;  // the provider's own id for the underlying
-  std::string underlyingName;
-  friend bool operator==(const CertificateFacts & a, const CertificateFacts & b) {
-    return a.key == b.key && a.leverage == b.leverage && a.highRisk == b.highRisk && a.direction == b.direction &&
-           a.marketView == b.marketView && sameNumber(a.managementFee, b.managementFee) &&
-           a.firstTradingDay == b.firstTradingDay && a.underlyingId == b.underlyingId &&
-           a.underlyingName == b.underlyingName;
-  }
-};
+// The predicates that code outside an adapter reads; an adapter's own are in its table.
+namespace fact {
+inline constexpr const char * iconUrl = "icon-url";
+inline constexpr const char * country = "country";  // of an index
+inline constexpr const char * firstTradeDay = "first-trade-day";  // a day number: where the history begins
+}  // namespace fact
 
 // How big the bars of a series are, as a code. The intraday resolutions are fixed lengths and are keyed by their slot
 // number: the UTC Unix seconds of the start of the bar divided by the length (the hour number is the seconds divided by
@@ -365,12 +313,6 @@ template <>
 struct std::hash<SeriesKey> {
   size_t operator()(const SeriesKey & k) const {
     return hashCombine(std::hash<EdgeKey>()(k.edge), std::hash<int>()(static_cast<int>(k.resolution)));
-  }
-};
-template <>
-struct std::hash<FactKey> {
-  size_t operator()(const FactKey & k) const {
-    return hashCombine(std::hash<InstrumentId>()(k.instrument), std::hash<DatasetId>()(k.dataset));
   }
 };
 template <>

@@ -528,7 +528,7 @@ TEST(the_indicator_lists_make_indices_in_points_currency_pairs_and_commodities_i
   CHECK(s->lastCandles(onDax, Resolution::Day, 1).candles.size() == 1);
   CHECK(s->symbol(onDax) == "DAX");
   CHECK(!s->listing(onDax)->orderBook.empty() && s->listing(onDax)->type == "INDEX");  // what its history is asked for by
-  CHECK(s->instrumentFacts({dax.id, nordnet})->country == "DE");
+  CHECK(asText(s->fact(dax.id, "country", nordnet)->object) == "DE");
 
   // One with no ISIN gets one of ours, in the private namespace, from its symbol.
   const std::string bric = privateIsin("BRIC50D");
@@ -555,41 +555,51 @@ TEST(the_indicator_lists_make_indices_in_points_currency_pairs_and_commodities_i
   CHECK(store->snapshot()->instruments().size() == instruments);
 }
 
-TEST(what_a_row_says_of_the_instrument_becomes_typed_facts_of_the_kinds_it_has) {
+// The object of a predicate among the facts a parsed row has.
+const Value * said(const NordnetListing & l, const char * predicate) {
+  for (const Fact & f : l.facts)
+    if (f.predicate == predicate) return &f.object;
+  return nullptr;
+}
+
+TEST(what_a_row_says_of_the_instrument_becomes_facts_of_the_predicates_it_has) {
   NordnetSource::Page stocks, funds, certificates;
   std::string error;
   CHECK(NordnetSource::parsePage(fixture("stocklist-1.json"), stocks, error));
   CHECK(NordnetSource::parsePage(fixture("fundlist-1.json"), funds, error));
   CHECK(NordnetSource::parsePage(fixture("certificatelist-1.json"), certificates, error));
 
-  // A stock with figures and a calendar; one with none says nothing of the kind.
-  CHECK(!stocks.listings[0].company);  // empty company and key ratio blocks
+  // A stock with figures and a calendar; one with none says nothing of them.
+  CHECK(!said(stocks.listings[0], "pe") && !said(stocks.listings[0], "market-cap"));  // empty blocks: no facts
   const NordnetListing & abbvie = stocks.listings[1];
-  CHECK(abbvie.company && abbvie.company->pe == 48.8 && abbvie.company->eps == 2.36 && abbvie.company->marketCap == 456283309908.0);
-  CHECK(abbvie.company->dividendAmount == 1.66 && abbvie.company->dividendCurrency == "EUR");
-  CHECK(abbvie.company->exDay != 0 && abbvie.company->exDay < abbvie.company->payDay);  // the ex-date comes first
-  CHECK(abbvie.company->reportType == "FOURTH_QUARTER_EARNINGS_RESULTS" && !isDefined(abbvie.company->pb));
-  CHECK(!abbvie.fund && !abbvie.certificate);
-  CHECK(abbvie.facts.tradable == true && abbvie.facts.owners == 1);
+  CHECK(asReal(*said(abbvie, "pe")) == 48.8 && asReal(*said(abbvie, "eps")) == 2.36);
+  CHECK(asReal(*said(abbvie, "market-cap")) == 456283309908.0);
+  CHECK(asReal(*said(abbvie, "dividend-amount")) == 1.66 && asText(*said(abbvie, "dividend-currency")) == "EUR");
+  CHECK(*asInteger(*said(abbvie, "dividend-ex-day")) < *asInteger(*said(abbvie, "dividend-pay-day")));  // the ex-date first
+  CHECK(asText(*said(abbvie, "report-type")) == "FOURTH_QUARTER_EARNINGS_RESULTS" && !said(abbvie, "pb"));
+  CHECK(!said(abbvie, "fund-category") && !said(abbvie, "leverage"));
+  CHECK(asBoolean(*said(abbvie, "tradable")) == true && asInteger(*said(abbvie, "owners")) == 1);
 
   // A fund.
   const NordnetListing & fund = funds.listings[0];
-  CHECK(fund.fund && fund.fund->category == "Greater China Equity" && fund.fund->rawRisk == 5 && fund.fund->msRating == 2);
-  CHECK(fund.fund->yearlyFee == 1.93 && fund.fund->totalMarketValue == 255946937.0 && fund.fund->lowCarbon == true);
-  CHECK(fund.fund->universeCountry == "FI" && fund.fund->universeCurrency == "EUR" && fund.fund->sfdrArticle == "Artikla 8");
-  CHECK(fund.fund->startDay == dayNumberOfInstant(704376000) && !fund.company);
-  CHECK(fund.facts.owners == 95 && fund.facts.pawnPercent == 70);
+  CHECK(asText(*said(fund, "fund-category")) == "Greater China Equity" && asInteger(*said(fund, "fund-risk-class")) == 5);
+  CHECK(asInteger(*said(fund, "fund-morningstar-rating")) == 2);
+  CHECK(asReal(*said(fund, "fund-yearly-fee")) == 1.93 && asReal(*said(fund, "fund-assets")) == 255946937.0);
+  CHECK(asBoolean(*said(fund, "fund-low-carbon")) == true && asText(*said(fund, "fund-universe-currency")) == "EUR");
+  CHECK(asInteger(*said(fund, "fund-start-day")) == dayNumberOfInstant(704376000) && !said(fund, "pe"));
+  CHECK(asInteger(*said(fund, "owners")) == 95 && asInteger(*said(fund, "collateral-percent")) == 70);
+  CHECK(asText(*said(fund, "fund-sfdr-article")) == "Artikla 8");
 
   // A certificate: leverage, direction, the underlying.
   const NordnetListing & bull = certificates.listings[1];
-  CHECK(bull.certificate && bull.certificate->leverage == 1 && bull.certificate->direction == "Long" && bull.certificate->highRisk == false);
-  CHECK(bull.certificate->underlyingName == "OMX Stockholm 30 Index" && bull.certificate->underlyingId == 16104939);
-  CHECK(bull.certificate->firstTradingDay != 0 && !isDefined(bull.certificate->managementFee));
-  CHECK(bull.facts.issuer == "Nordea Bank");
-  CHECK(certificates.listings[0].certificate->managementFee == 0.0);
+  CHECK(asInteger(*said(bull, "leverage")) == 1 && asText(*said(bull, "direction")) == "Long" && asBoolean(*said(bull, "high-risk")) == false);
+  CHECK(asText(*said(bull, "underlying-name")) == "OMX Stockholm 30 Index" && asInteger(*said(bull, "underlying-id")) == 16104939);
+  CHECK(said(bull, "first-trading-day") && !said(bull, "management-fee"));
+  CHECK(asText(*said(bull, "issuer")) == "Nordea Bank");
+  CHECK(asReal(*said(certificates.listings[0], "management-fee")) == 0.0);  // zero is a fact; none is not
 }
 
-TEST(the_facts_reach_the_store_as_thin_edges_of_the_dataset) {
+TEST(the_facts_reach_the_store_with_their_dataset_and_a_reload_changes_nothing) {
   auto store = makeMemoryStore();
   FakeHttp http;
   http.answer = pages;
@@ -598,18 +608,16 @@ TEST(the_facts_reach_the_store_as_thin_edges_of_the_dataset) {
   auto s = store->snapshot();
   const DatasetId nordnet = s->findDataset("nordnet")->id;
   const InstrumentId xaix = s->findInstrumentByIsin("IE00BGV5VN51")->id;
-  CHECK(s->instrumentFacts({xaix, nordnet})->tradable.has_value());
-  CHECK(s->fundFacts({xaix, nordnet}) && !s->companyFacts({xaix, nordnet}));  // an ETF has fund facts and no company's
+  CHECK(s->fact(xaix, "tradable", nordnet) && s->fact(xaix, "fund-category") && !s->fact(xaix, "pe"));  // an ETF has no P/E
   const InstrumentId gold = s->findInstrumentByIsin("DE000A0S9GB0")->id;
-  CHECK(s->certificateFacts({gold, nordnet})->leverage == 1);
-  // Loading again changes nothing, undefined numbers and all.
-  const uint64_t version = s->version();
-  const size_t instruments = s->instruments().size();
+  CHECK(asInteger(s->fact(gold, "leverage", nordnet)->object) == 1);
+
+  // Loading again changes no fact: only today's bars are written again.
+  const size_t facts = s->facts(xaix).size();
   FakeHttp again;
   again.answer = pages;
   quick().load(*store, again, listener);
-  CHECK(store->snapshot()->instruments().size() == instruments);
-  CHECK(store->snapshot()->version() > version);  // today's bars are written again
+  CHECK(store->snapshot()->facts(xaix).size() == facts);
 }
 
 TEST(a_private_isin_is_made_from_what_the_thing_is_in_a_namespace_nobody_issues_from) {

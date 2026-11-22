@@ -303,6 +303,9 @@ TEST(yahoo_makes_the_instrument_from_the_isin_in_its_list_and_the_same_node_as_a
   EdgeKey k = edgeOf(*s, kNokia, "EUR", "Nasdaq Helsinki", "yahoo");
   CHECK(k.base == made.id && s->instruments().size() == 2);  // the one instrument, and the euro
   CHECK(s->symbol(k) == "NOKIA.HE");                          // what Yahoo calls it
+  // Where Yahoo's history begins is a fact of the instrument from the dataset.
+  auto first = s->fact(k.base, fact::firstTradeDay, k.dataset);
+  CHECK(first && *asInteger(first->object) >= dayNumber(2000, 1, 1) && *asInteger(first->object) < dayNumber(2000, 1, 10));
 
   // Run first, Yahoo makes the instrument itself: the ISIN is in the data.
   auto alone = makeMemoryStore();

@@ -42,22 +42,102 @@ std::optional<double> number(const json & o, const char * key) {
   return it != o.end() && it->is_number() ? std::optional<double>(it->get<double>()) : std::nullopt;
 }
 
-double numberOrUndefined(const json & o, const char * key) { return number(o, key).value_or(kUndefined); }
+// What a row says of the instrument itself, as facts: a table of where each is in the row and what it is called. The
+// table is the registry of Nordnet's predicates; a field the row does not have is not a fact.
+enum class Kind { Text, Integer, Real, Boolean, Day };
+struct FactField {
+  const char * section;
+  const char * key;
+  const char * predicate;
+  Kind kind;
+};
+const FactField kFactFields[] = {
+    // every instrument
+    {"instrument_info", "issuer_name", "issuer", Kind::Text},
+    {"instrument_info", "issuer_id", "issuer-id", Kind::Integer},
+    {"instrument_info", "instrument_icon_url", fact::iconUrl, Kind::Text},
+    {"instrument_info", "is_tradable", "tradable", Kind::Boolean},
+    {"instrument_info", "is_shortable", "shortable", Kind::Boolean},
+    {"instrument_info", "instrument_pawn_percentage", "collateral-percent", Kind::Integer},
+    {"statistical_info", "number_of_owners", "owners", Kind::Integer},  // Nordnet accounts that hold it
+    // a stock: the figures and the calendar
+    {"company_info", "market_cap", "market-cap", Kind::Real},
+    {"company_info", "report_date", "report-day", Kind::Day},
+    {"company_info", "report_type", "report-type", Kind::Text},
+    {"company_info", "report_description", "report-description", Kind::Text},
+    {"company_info", "excluding_date", "dividend-ex-day", Kind::Day},
+    {"company_info", "dividend_date", "dividend-pay-day", Kind::Day},
+    {"company_info", "dividend_amount", "dividend-amount", Kind::Real},
+    {"company_info", "dividend_currency", "dividend-currency", Kind::Text},
+    {"company_info", "general_meeting_date", "meeting-day", Kind::Day},
+    {"key_ratios_info", "eps", "eps", Kind::Real},
+    {"key_ratios_info", "pe", "pe", Kind::Real},
+    {"key_ratios_info", "pb", "pb", Kind::Real},
+    {"key_ratios_info", "ps", "ps", Kind::Real},
+    {"key_ratios_info", "dividend_per_share", "dividend-per-share", Kind::Real},
+    {"key_ratios_info", "dividend_yield", "dividend-yield", Kind::Real},
+    // a fund or an ETF
+    {"fund_info", "fund_admin_company", "fund-admin-company", Kind::Text},
+    {"fund_info", "fund_branding_company", "fund-brand", Kind::Text},
+    {"fund_info", "fund_category", "fund-category", Kind::Text},
+    {"fund_info", "fund_type", "fund-type", Kind::Text},
+    {"fund_info", "fund_dividend_strategy", "fund-dividend-strategy", Kind::Text},
+    {"fund_info", "fund_trading_frequency", "fund-trading-frequency", Kind::Text},
+    {"fund_info", "fund_sfdr_article", "fund-sfdr-article", Kind::Text},
+    {"fund_info", "fund_risk_group", "fund-risk-group", Kind::Text},
+    {"fund_info", "fund_universe_country", "fund-universe-country", Kind::Text},
+    {"fund_info", "fund_universe_currency", "fund-universe-currency", Kind::Text},
+    {"fund_info", "fund_esg_score", "fund-esg-score", Kind::Integer},
+    {"fund_info", "fund_ms_rating", "fund-morningstar-rating", Kind::Integer},
+    {"fund_info", "fund_raw_risk", "fund-risk-class", Kind::Integer},
+    {"fund_info", "fund_raw_sfdr", "fund-sfdr-class", Kind::Integer},
+    {"fund_info", "fund_low_carbon", "fund-low-carbon", Kind::Boolean},
+    {"fund_info", "fund_nordnet_selection", "fund-nordnet-selection", Kind::Boolean},
+    {"fund_info", "fund_start_date", "fund-start-day", Kind::Day},
+    {"fund_info", "fund_total_fee", "fund-total-fee", Kind::Real},
+    {"fund_info", "fund_calculated_fee", "fund-calculated-fee", Kind::Real},
+    {"fund_info", "fund_yearly_fee", "fund-yearly-fee", Kind::Real},
+    {"fund_info", "fund_total_market_value", "fund-assets", Kind::Real},
+    {"fund_info", "fund_min_investment", "fund-min-investment", Kind::Real},
+    // a certificate or other exchange-traded product
+    {"certificate_info", "static_leverage", "leverage", Kind::Integer},
+    {"certificate_info", "static_high_risk", "high-risk", Kind::Boolean},
+    {"etp_info", "direction", "direction", Kind::Text},
+    {"etp_info", "market_view", "market-view", Kind::Text},
+    {"etp_info", "management_fee", "management-fee", Kind::Real},
+    {"etp_info", "first_trading_date", "first-trading-day", Kind::Day},
+    {"etp_info", "underlying_instrument_id", "underlying-id", Kind::Integer},
+    {"etp_info", "underlying_name", "underlying-name", Kind::Text},
+};
 
-std::optional<int> optionalInt(const json & o, const char * key) {
-  auto it = o.find(key);
-  return it != o.end() && it->is_number_integer() ? std::optional<int>(it->get<int>()) : std::nullopt;
-}
-
-std::optional<bool> optionalBool(const json & o, const char * key) {
-  auto it = o.find(key);
-  return it != o.end() && it->is_boolean() ? std::optional<bool>(it->get<bool>()) : std::nullopt;
-}
-
-// A date the answer gives as milliseconds: a day number, 0 if there is none.
-int64_t dayOf(const json & o, const char * key) {
-  const int64_t ms = integer(o, key);
-  return ms > 0 ? dayNumberOfInstant(ms / 1000) : 0;
+std::vector<Fact> factsOf(const json & row) {
+  std::vector<Fact> out;
+  for (const FactField & f : kFactFields) {
+    auto section = row.find(f.section);
+    if (section == row.end() || !section->is_object()) continue;
+    auto it = section->find(f.key);
+    if (it == section->end()) continue;
+    Value v;
+    switch (f.kind) {
+      case Kind::Text:
+        if (it->is_string()) v = it->get<std::string>();
+        break;
+      case Kind::Integer:
+        if (it->is_number_integer()) v = it->get<int64_t>();
+        break;
+      case Kind::Real:
+        if (it->is_number()) v = it->get<double>();
+        break;
+      case Kind::Boolean:
+        if (it->is_boolean()) v = it->get<bool>();
+        break;
+      case Kind::Day:
+        if (it->is_number_integer() && it->get<int64_t>() > 0) v = dayNumberOfInstant(it->get<int64_t>() / 1000);
+        break;
+    }
+    if (!std::holds_alternative<std::monostate>(v)) out.push_back({{}, f.predicate, v, {}});
+  }
+  return out;
 }
 
 // A price in the price block: {"price": 65.03, "decimals": 2}.
@@ -131,88 +211,6 @@ bool NordnetSource::parsePage(const std::string & body, Page & page, std::string
       l.type = text(i, "instrument_type");
       l.issuer = text(i, "issuer_name");
       l.clearingPlace = text(i, "clearing_place");
-      l.facts.issuer = l.issuer;
-      l.facts.issuerId = integer(i, "issuer_id");
-      l.facts.iconUrl = text(i, "instrument_icon_url");
-      l.facts.tradable = optionalBool(i, "is_tradable");
-      l.facts.shortable = optionalBool(i, "is_shortable");
-      l.facts.pawnPercent = optionalInt(i, "instrument_pawn_percentage");
-    }
-    if (row.is_object() && row.contains("statistical_info") && row["statistical_info"].is_object())
-      l.facts.owners = optionalInt(row["statistical_info"], "number_of_owners");
-    // Stocks: the figures and the calendar.
-    if (row.is_object()) {
-      const json empty = json::object();
-      const json & c = row.contains("company_info") && row["company_info"].is_object() ? row["company_info"] : empty;
-      const json & k = row.contains("key_ratios_info") && row["key_ratios_info"].is_object() ? row["key_ratios_info"] : empty;
-      if (!c.empty() || (!k.empty() && !row.contains("fund_info"))) {
-        CompanyFacts f;
-        f.marketCap = numberOrUndefined(c, "market_cap");
-        f.reportDay = dayOf(c, "report_date");
-        f.reportType = text(c, "report_type");
-        f.reportDescription = text(c, "report_description");
-        f.exDay = dayOf(c, "excluding_date");
-        f.payDay = dayOf(c, "dividend_date");
-        f.dividendAmount = numberOrUndefined(c, "dividend_amount");
-        f.dividendCurrency = text(c, "dividend_currency");
-        f.meetingDay = dayOf(c, "general_meeting_date");
-        f.eps = numberOrUndefined(k, "eps");
-        f.pe = numberOrUndefined(k, "pe");
-        f.pb = numberOrUndefined(k, "pb");
-        f.ps = numberOrUndefined(k, "ps");
-        f.dividendPerShare = numberOrUndefined(k, "dividend_per_share");
-        f.dividendYield = numberOrUndefined(k, "dividend_yield");
-        l.company = f;
-      }
-      // Funds and ETFs.
-      if (row.contains("fund_info") && row["fund_info"].is_object()) {
-        const json & f = row["fund_info"];
-        FundFacts x;
-        x.adminCompany = text(f, "fund_admin_company");
-        x.brandingCompany = text(f, "fund_branding_company");
-        x.category = text(f, "fund_category");
-        x.type = text(f, "fund_type");
-        x.dividendStrategy = text(f, "fund_dividend_strategy");
-        x.tradingFrequency = text(f, "fund_trading_frequency");
-        x.sfdrArticle = text(f, "fund_sfdr_article");
-        x.riskGroup = text(f, "fund_risk_group");
-        x.universeCountry = text(f, "fund_universe_country");
-        x.universeCurrency = text(f, "fund_universe_currency");
-        x.esgScore = optionalInt(f, "fund_esg_score");
-        x.msRating = optionalInt(f, "fund_ms_rating");
-        x.rawRisk = optionalInt(f, "fund_raw_risk");
-        x.rawSfdr = optionalInt(f, "fund_raw_sfdr");
-        x.lowCarbon = optionalBool(f, "fund_low_carbon");
-        x.nordnetSelection = optionalBool(f, "fund_nordnet_selection");
-        x.startDay = dayOf(f, "fund_start_date");
-        x.totalFee = numberOrUndefined(f, "fund_total_fee");
-        x.calculatedFee = numberOrUndefined(f, "fund_calculated_fee");
-        x.yearlyFee = numberOrUndefined(f, "fund_yearly_fee");
-        x.totalMarketValue = numberOrUndefined(f, "fund_total_market_value");
-        x.minInvestment = numberOrUndefined(f, "fund_min_investment");
-        x.dividendYield = numberOrUndefined(k, "dividend_yield");
-        l.fund = x;
-      }
-      // Certificates and other exchange-traded products.
-      const bool hasCertificate = row.contains("certificate_info") && row["certificate_info"].is_object();
-      const bool hasEtp = row.contains("etp_info") && row["etp_info"].is_object();
-      if (hasCertificate || hasEtp) {
-        CertificateFacts x;
-        if (hasCertificate) {
-          x.leverage = optionalInt(row["certificate_info"], "static_leverage");
-          x.highRisk = optionalBool(row["certificate_info"], "static_high_risk");
-        }
-        if (hasEtp) {
-          const json & e = row["etp_info"];
-          x.direction = text(e, "direction");
-          x.marketView = text(e, "market_view");
-          x.managementFee = numberOrUndefined(e, "management_fee");
-          x.firstTradingDay = dayOf(e, "first_trading_date");
-          x.underlyingId = integer(e, "underlying_instrument_id");
-          x.underlyingName = text(e, "underlying_name");
-        }
-        l.certificate = x;
-      }
     }
     if (row.is_object() && row.contains("market_info") && row["market_info"].is_object()) {
       const json & m = row["market_info"];
@@ -243,6 +241,7 @@ bool NordnetSource::parsePage(const std::string & body, Page & page, std::string
     }
     if (row.is_object() && row.contains("exchange_info") && row["exchange_info"].is_object())
       l.country = text(row["exchange_info"], "exchange_country");
+    if (row.is_object()) l.facts = factsOf(row);
     if (l.instrumentId == 0 || l.symbol.empty() || l.isin.empty() || l.currency.empty() || l.marketId == 0) {
       page.skipped++;
       continue;
@@ -328,10 +327,7 @@ size_t NordnetSource::loadIndicators(const List & list, Store & store, Http & ht
                                      {predicate::nordnetInstrument, row.instrumentId}};
       if (kind != InstrumentKind::Other) rest.push_back({predicate::kind, kindName(kind)});
       base = store.resolveInstrument(identifying, rest);
-      InstrumentFacts facts;
-      facts.key = {base.id, dataset.id};
-      facts.country = row.country;
-      store.setFacts(facts);
+      if (!row.country.empty()) store.setFacts({{base.id, fact::country, row.country, dataset.id}});
       // An index is in points. The answer gives a commodity no currency; the owner's table has them all in dollars.
       quote = row.type == "INDEX" ? quoteNode(store, "pts") : currencyNode(store, "USD");
     }
@@ -403,21 +399,11 @@ void NordnetSource::load(Store & store, Http & http, SourceListener & listener) 
         Instrument base = store.addInstrument({{}, "", l.name, kindOfNordnetType(l.type), l.isin, l.type});
         Instrument quote = currencyNode(store, l.currency);
         // What Nordnet says of the instrument itself: thin edges, of the types it has.
-        const FactKey facts{base.id, dataset.id};
-        l.facts.key = facts;
+        for (Fact & f : l.facts) {
+          f.subject = base.id;
+          f.dataset = dataset.id;
+        }
         store.setFacts(l.facts);
-        if (l.company) {
-          l.company->key = facts;
-          store.setFacts(*l.company);
-        }
-        if (l.fund) {
-          l.fund->key = facts;
-          store.setFacts(*l.fund);
-        }
-        if (l.certificate) {
-          l.certificate->key = facts;
-          store.setFacts(*l.certificate);
-        }
         // Today's bar makes the edge; a listing with none stays a node nothing selects.
         if (l.hasBar) {
           const EdgeKey edge{base.id, quote.id, market.id, dataset.id};

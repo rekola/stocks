@@ -26,11 +26,10 @@ class Snapshot {
   std::string symbol(const EdgeKey &) const;
   // The first edge made that a market's `symbol` is for: the instrument a market calls "NOKIA", whoever said it.
   std::optional<EdgeKey> findEdge(const std::string & symbol, MarketId) const;
-  // The thin edges: facts about an instrument from a dataset, of each type.
-  std::optional<InstrumentFacts> instrumentFacts(const FactKey &) const;
-  std::optional<CompanyFacts> companyFacts(const FactKey &) const;
-  std::optional<FundFacts> fundFacts(const FactKey &) const;
-  std::optional<CertificateFacts> certificateFacts(const FactKey &) const;
+  // The thin edges: what datasets say of an instrument, as facts. `fact` is the object of one predicate, from `dataset` or,
+  // if none is given, from the first dataset that says it; `facts` is every fact about the instrument, as said.
+  std::optional<Fact> fact(InstrumentId, const std::string & predicate, DatasetId dataset = {}) const;
+  std::vector<Fact> facts(InstrumentId) const;
   std::optional<Instrument> findInstrumentByIsin(const std::string & isin) const;
   std::optional<Market> market(MarketId) const;
   std::optional<Market> findMarket(const std::string & name) const;  // by its name attribute
@@ -74,10 +73,7 @@ class Snapshot {
   Instrument add(Instrument);
   Instrument resolveInstrument(const std::vector<Attribute> & identifying, const std::vector<Attribute> & rest);
   void setListing(const Listing &);
-  void setFacts(const InstrumentFacts &);
-  void setFacts(const CompanyFacts &);
-  void setFacts(const FundFacts &);
-  void setFacts(const CertificateFacts &);
+  void setFacts(const std::vector<Fact> &);
   Market resolve(const std::vector<Attribute> &);
   void setAttribute(NodeRef, const Attribute &);
   Dataset add(Dataset);
@@ -94,10 +90,7 @@ class Snapshot {
   Seq<Dataset> datasets_;
   immer::map<EdgeKey, Listing> listings_;
   immer::map<std::string, EdgeKey> edgeBySymbol_;  // "market \0 symbol" to the first edge there that has it
-  immer::map<FactKey, InstrumentFacts> instrumentFacts_;
-  immer::map<FactKey, CompanyFacts> companyFacts_;
-  immer::map<FactKey, FundFacts> fundFacts_;
-  immer::map<FactKey, CertificateFacts> certificateFacts_;
+  immer::map<InstrumentId, std::vector<Fact>> facts_;
   immer::map<NodeRef, std::vector<Attribute>> attributes_;
   immer::map<std::string, immer::set<uint32_t>> byAttribute_;  // "type predicate \0 value" to the ids that say it
   immer::map<SeriesKey, Seq<Candle>> series_;
@@ -140,11 +133,9 @@ class Store {
   // The listing of an edge, replacing the one it had. An edge exists once it has data, so one that has none yet takes
   // nothing.
   virtual void setListing(const Listing &) = 0;
-  // Facts about an instrument from a dataset, one record of each type, replacing the one it had.
-  virtual void setFacts(const InstrumentFacts &) = 0;
-  virtual void setFacts(const CompanyFacts &) = 0;
-  virtual void setFacts(const FundFacts &) = 0;
-  virtual void setFacts(const CertificateFacts &) = 0;
+  // Facts, in one write: each replaces the one with the same subject, predicate and dataset, or is added. An empty object
+  // or an unknown subject is left out; one that changes nothing makes no new version.
+  virtual void setFacts(const std::vector<Fact> &) = 0;
   virtual Dataset addDataset(Dataset) = 0;
 
   // Candles. An edge has a series for each resolution it has data in, as the provider gives it: nothing is derived from

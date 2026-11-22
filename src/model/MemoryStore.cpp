@@ -82,16 +82,17 @@ std::optional<EdgeKey> Snapshot::findEdge(const std::string & symbol, MarketId m
   const EdgeKey * k = edgeBySymbol_.find(symbolKey(m, symbol));
   return k ? std::optional<EdgeKey>(*k) : std::nullopt;
 }
-#define STOCKS_FACTS(NAME, MEMBER, TYPE)                             \
-  std::optional<TYPE> Snapshot::NAME(const FactKey & k) const {      \
-    const TYPE * f = MEMBER.find(k);                                 \
-    return f ? std::optional<TYPE>(*f) : std::nullopt;               \
-  }
-STOCKS_FACTS(instrumentFacts, instrumentFacts_, InstrumentFacts)
-STOCKS_FACTS(companyFacts, companyFacts_, CompanyFacts)
-STOCKS_FACTS(fundFacts, fundFacts_, FundFacts)
-STOCKS_FACTS(certificateFacts, certificateFacts_, CertificateFacts)
-#undef STOCKS_FACTS
+std::optional<Fact> Snapshot::fact(InstrumentId subject, const std::string & predicate, DatasetId dataset) const {
+  const std::vector<Fact> * all = facts_.find(subject);
+  if (!all) return std::nullopt;
+  for (const Fact & f : *all)
+    if (f.predicate == predicate && (!dataset.valid() || f.dataset == dataset)) return f;
+  return std::nullopt;
+}
+std::vector<Fact> Snapshot::facts(InstrumentId subject) const {
+  const std::vector<Fact> * all = facts_.find(subject);
+  return all ? *all : std::vector<Fact>{};
+}
 std::optional<Instrument> Snapshot::findInstrumentByIsin(const std::string & isin) const {
   auto n = findByAttribute(NodeType::Instrument, predicate::isin, isin);
   return n ? instrument({n->id}) : std::nullopt;
@@ -306,20 +307,27 @@ void Snapshot::setListing(const Listing & l) {
   version_++;
 }
 
-namespace {
-template <class T>
-bool setFact(immer::map<FactKey, T> & map, const FactKey & k, const T & v) {
-  const T * old = map.find(k);
-  if (old && *old == v) return false;
-  map = map.set(k, v);
-  return true;
+void Snapshot::setFacts(const std::vector<Fact> & in) {
+  bool changed = false;
+  for (const Fact & f : in) {
+    if (!f.subject.valid() || f.subject.value > instruments_.size() || f.predicate.empty() ||
+        std::holds_alternative<std::monostate>(f.object) ||
+        (std::holds_alternative<double>(f.object) && std::isnan(std::get<double>(f.object))) ||
+        (std::holds_alternative<std::string>(f.object) && std::get<std::string>(f.object).empty()))
+      continue;
+    std::vector<Fact> all = facts_.find(f.subject) ? *facts_.find(f.subject) : std::vector<Fact>{};
+    auto at = std::find_if(all.begin(), all.end(), [&](const Fact & x) { return x.predicate == f.predicate && x.dataset == f.dataset; });
+    if (at != all.end()) {
+      if (*at == f) continue;
+      *at = f;
+    } else {
+      all.push_back(f);
+    }
+    facts_ = facts_.set(f.subject, std::move(all));
+    changed = true;
+  }
+  if (changed) version_++;
 }
-}  // namespace
-
-void Snapshot::setFacts(const InstrumentFacts & f) { version_ += setFact(instrumentFacts_, f.key, f); }
-void Snapshot::setFacts(const CompanyFacts & f) { version_ += setFact(companyFacts_, f.key, f); }
-void Snapshot::setFacts(const FundFacts & f) { version_ += setFact(fundFacts_, f.key, f); }
-void Snapshot::setFacts(const CertificateFacts & f) { version_ += setFact(certificateFacts_, f.key, f); }
 
 void Snapshot::appendCandles(const EdgeKey & k, Resolution r, const std::vector<Candle> & in) {
   if (in.empty()) return;
@@ -406,20 +414,11 @@ class MemoryStore : public Store {
   Market resolveMarket(const std::vector<Attribute> & a) override {
     return write([&](Snapshot & s) { return s.resolve(a); });
   }
+  void setFacts(const std::vector<Fact> & f) override {
+    write([&](Snapshot & s) { s.setFacts(f); });
+  }
   void setListing(const Listing & l) override {
     write([&](Snapshot & s) { s.setListing(l); });
-  }
-  void setFacts(const InstrumentFacts & f) override {
-    write([&](Snapshot & s) { s.setFacts(f); });
-  }
-  void setFacts(const CompanyFacts & f) override {
-    write([&](Snapshot & s) { s.setFacts(f); });
-  }
-  void setFacts(const FundFacts & f) override {
-    write([&](Snapshot & s) { s.setFacts(f); });
-  }
-  void setFacts(const CertificateFacts & f) override {
-    write([&](Snapshot & s) { s.setFacts(f); });
   }
   void setAttribute(NodeRef n, const Attribute & a) override {
     write([&](Snapshot & s) { s.setAttribute(n, a); });
