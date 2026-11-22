@@ -1,0 +1,6 @@
+{"inst":[
+ {"id_instrument":"1","isin":"FI0008800511","name":"OP-Maailma","risk_level":"5","morningstar":4,"id_notation":"111","esg_rating":3,"management_fee":"1.50","redemption_fee":"0","subs_fee":0.5,"link":"\/henkiloasiakkaat\/saastot-ja-sijoitukset\/rahastot\/kaikki-rahastot\/op-maailma\/"},
+ {"id_instrument":"2","isin":"FI4000439971","name":"OP Monthly","risk_level":3,"morningstar":3,"id_notation":"222"},
+ {"id_instrument":"3","isin":"FI0008801238","name":"OP Quarterly Priced","risk_level":3,"morningstar":3,"id_notation":333},
+ {"id_instrument":"4","name":"No ISIN","id_notation":"444"}
+]}
