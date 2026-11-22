@@ -4,8 +4,9 @@
 #include "model/Isin.h"
 #include "source/InstrumentLists.h"
 
+#include <cellui/NumberParse.h>
+
 #include <algorithm>
-#include <charconv>
 #include <cmath>
 
 using nlohmann::json;
@@ -18,7 +19,7 @@ std::optional<double> looseNumber(const json & v) {
   if (v.is_string()) {
     const std::string s = v.get<std::string>();
     double d = 0;
-    auto [end, ec] = std::from_chars(s.data(), s.data() + s.size(), d);
+    auto [end, ec] = cellui::parseFloat(s.data(), s.data() + s.size(), d);
     if (ec == std::errc() && end == s.data() + s.size() && std::isfinite(d)) return d;
   }
   return std::nullopt;
