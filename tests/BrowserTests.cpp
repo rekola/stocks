@@ -49,7 +49,7 @@ Rows periodWorld(Store & store) {
 const InstrumentList & instrumentList() {
   static const InstrumentList u = [] {
     std::string error;
-    InstrumentList loaded = loadInstrumentLists(std::filesystem::path(STOCKS_DATA_DIR) / "yahoo", error);
+    InstrumentList loaded = loadInstrumentLists(std::filesystem::path(STOCKS_DATA_DIR) / "lists", error);
     if (loaded.empty()) std::fprintf(stderr, "  lists: %s\n", error.c_str());
     return loaded;
   }();

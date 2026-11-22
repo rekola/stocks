@@ -10,7 +10,7 @@
 class YahooSource : public Source {
  public:
   // Loads `list`: one request per entry. `range` is how far back to ask (1y, 5y, max, ...); `pause` is the wait between
-  // requests. Yahoo has no discovery, so the instruments are lists of its own (data/yahoo), read when it loads.
+  // requests. Yahoo has no discovery, so the instruments are lists of its own (data/lists), read when it loads.
   explicit YahooSource(InstrumentList list, std::string range = "1y",
                        std::chrono::milliseconds pause = std::chrono::milliseconds(100))
       : list_(std::move(list)), range_(std::move(range)), pause_(pause) {}

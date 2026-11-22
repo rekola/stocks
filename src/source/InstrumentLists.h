@@ -8,7 +8,7 @@
 
 // One instrument a preset shows: what one unit of `base` costs in `quote`, on `market`, with the symbol each provider
 // uses for it. These are the instrument lists of the Yahoo adapter (Yahoo has no discovery), which stand in until every
-// adapter finds its own instruments; the synthetic source follows them too. They are files (data/yahoo/*.csv), not code.
+// adapter finds its own instruments; the synthetic source follows them too. They are files (data/lists/*.csv), not code.
 struct ListEntry {
   std::string market, base, quote, name, yahoo;
   InstrumentKind kind = InstrumentKind::Other;  // of the base
@@ -29,7 +29,7 @@ InstrumentList loadInstrumentLists(const std::filesystem::path & directory, std:
 // The entries of `list` whose market is one of `markets` (all of them if `markets` is empty), in the same order.
 InstrumentList onlyMarkets(const InstrumentList & list, const std::vector<std::string> & markets);
 
-// Where the lists are: `given` if it is not empty, else data/yahoo here, else the source tree's. Empty if none is.
+// Where the lists are: `given` if it is not empty, else data/lists here, else the source tree's. Empty if none is.
 std::filesystem::path findListsDirectory(const std::string & given);
 
 // The name of a currency that only appears as a quote ("" if unknown).

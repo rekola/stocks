@@ -8,8 +8,8 @@ and what they must watch, not the mathematics.
 ## Why the data needs calendars
 
 - **Dates from instants.** A daily bar is keyed by its trading date (a day number), and
-  some providers give only an instant. Today the Nordnet adapter takes the UTC date of the
-  last tick, and the Yahoo adapter reads the date from the nearest local midnight of a
+  some providers give only an instant. Today the discovery adapter takes the UTC date of the
+  last tick, and the candle adapter reads the date from the nearest local midnight of a
   stamp (see server.md). A calendar says which trading date an instant belongs to.
 - **Checking the data.** A session of a given length should hold a given number of bars
   at a given resolution; fewer means a gap in the data. Without the calendar a gap in a
@@ -33,7 +33,7 @@ and what they must watch, not the mathematics.
   defines the label.
 - A **calendar** is the set of sessions of one market (or one convention) over time,
   with an id. Markets have calendars; a dataset states which calendar its daily bars
-  follow, which is not always its market's (Yahoo's currency days run from London
+  follow, which is not always its market's (a currency's days may run from London
   midnight whatever the venue). In the graph of statements in server.md, "market has
   calendar" and "dataset's day is cut by calendar" are statements.
 - A **day definition** is therefore the calendar that cuts a daily bar. Two daily bars are
@@ -43,10 +43,10 @@ and what they must watch, not the mathematics.
 ## What was measured
 
 All of this was read from the data, not assumed. Sources: the Python library
-`exchange_calendars` (MIT licence, version 4.13), Yahoo's one-minute bars and chart
-metadata, and Nordnet's history.
+`exchange_calendars` (MIT licence, version 4.13), one-minute bars and chart
+metadata from a candle source, and a discovery source's history.
 
-Regular hours of the exchanges that matter first (Nordnet's markets and the Yahoo lists):
+Regular hours of the exchanges that matter first (the discovered markets and the lists on disk):
 
 | Calendar | Market | Time zone | Regular hours (local) | UTC in winter | UTC in summer |
 |---|---|---|---|---|---|
@@ -59,14 +59,14 @@ Regular hours of the exchanges that matter first (Nordnet's markets and the Yaho
 | `XNYS` | New York | America/New_York | 09:30 to 16:00 | 14:30 to 21:00 | 13:30 to 20:00 |
 | `XTKS` | Tokyo | Asia/Tokyo | 09:00 to 15:30 (lunch break) | 00:00 to 06:30 | 00:00 to 06:30 |
 
-- **Checked against one-minute bars**, 2026-11-20: Yahoo's NOKIA.HE has 510 bars from 08:00
+- **Checked against one-minute bars**, 2026-11-20: NOKIA.HE has 510 bars from 08:00
   to 16:29 UTC (a bar is labelled by its start, so the last one is 16:29 for a 16:30
   close), which is `XHEL`; AAPL has 391 bars from 14:30 to 21:00 UTC, which is `XNYS`
   (390 minutes of trading and the bar of the 16:00 closing print). Both agree with the
   library to the minute.
-- **Yahoo also gives today's sessions**: the chart metadata has `currentTradingPeriod`
+- **The candle source also gives today's sessions**: the chart metadata has `currentTradingPeriod`
   with the pre, regular and post periods as UTC instants (for AAPL pre-market 09:00 to
-  14:30 and post-market 21:00 to 01:00 UTC), and the exchange's time zone name. Yahoo's
+  14:30 and post-market 21:00 to 01:00 UTC), and the exchange's time zone name. Its
   intraday bars leave out the extended hours unless asked.
 - **Holidays**: `XHEL` is closed on 10 weekdays in 2026 (1 January, 6 January, Good
   Friday 3 April, Easter Monday 6 April, 1 May, Ascension 14 May, Midsummer Eve 19 June,
@@ -87,14 +87,14 @@ Regular hours of the exchanges that matter first (Nordnet's markets and the Yaho
 ## Where calendars come from
 
 - **A generator, not a runtime library.** A tool (Python, in `tools/calendars/`, like
-  `tools/yahoo/`) builds the calendars from `exchange_calendars` (holidays, special
+  `tools/lists/`) builds the calendars from `exchange_calendars` (holidays, special
   opens and closes, breaks) and the IANA time zone database (the daylight saving rules),
   and writes plain data files into the repository. The C++ code only reads files. So it
   needs neither Python nor a time zone database at run time, the result is reviewable
   and the same on every platform. (C++20's time zone support in `<chrono>` is not
   portable enough yet: it depends on the standard library, and on Windows on a time
   zone database file being present.)
-- **Measured data as a check.** Yahoo's one-minute bars and Nordnet's intraday history
+- **Measured data as a check.** One-minute bars from the candle source and the discovery source's intraday history
   are compared with the files to find where they disagree: a changed time, a closure the
   library did not know, an early close.
 - **24-hour markets are written by hand** (see below), from the venues' own rules.
@@ -139,7 +139,7 @@ memory and not yet checked against data):
 
 - **Currencies** trade from Sunday evening to Friday evening, around the clock. The
   week is cut at 17:00 in New York, which moves in UTC with New York's daylight saving;
-  Yahoo cuts the *day* at London midnight (measured: its daily stamps are at 23:00 UTC
+  one candle source cuts the *day* at London midnight (measured: its daily stamps are at 23:00 UTC
   in summer and 00:00 in winter). Holidays barely close the market, but the providers'
   data thins out.
 - **Futures** (the commodities lists) trade nearly 24 hours with a daily break of about an
@@ -154,7 +154,7 @@ break) plus the holiday overrides, expanded into the same session rows as the ot
 ## Using the calendars on the data
 
 - **Trading date of an instant** replaces the guesses in the adapters (the UTC date of
-  Nordnet's tick, which is wrong for a market east of UTC+9 around its open).
+  a discovery tick, which is wrong for a market east of UTC+9 around its open).
 - **Expected bars and gaps.** From the sessions and the resolution, the bars that should
   exist; the missing ones are reported, and the loader can ask for exactly those.
 - **US hourly bars on the hour**: from finer bars, onto the UTC hour grid, with the
@@ -192,7 +192,7 @@ elsewhere.
   at 14:30 UTC in winter and 13:30 in summer); the calendars can give local time of day
   and the weekday of the trading date.
 - **Adjusted prices.** Returns across a split are wrong unless the prices are adjusted, and
-  Yahoo adjusts its history afterwards, so a series changes when a split happens (see
+  a candle source adjusts its history afterwards, so a series changes when a split happens (see
   server.md). The embeddings must be built from a pinned version of the data (the
   server can answer "as of version N") or recomputed when it changes.
 - **Different grids**: daily bars from markets with different day definitions are not on
@@ -206,14 +206,14 @@ elsewhere.
   trading hours comes from (the exchanges' notices, other libraries, the legacy data), and
   how it is checked. The daily history back to 1987 needs the dates of sessions more than
   their hours, but the intraday work and the "same hours" comparison need the hours.
-- **Which calendars first**: Nordnet's markets are numbered, not named (4 is Xetra, 11
+- **Which calendars first**: the discovery source's markets are numbered, not named (4 is Xetra, 11
   Nasdaq Stockholm, 24 Nasdaq Helsinki; 53 to 55 appear to be First North in Sweden,
   Finland and Denmark; 52, 58 and 61 to 64 are unknown). Whether First North, Spotlight and
   the multilateral venues keep the hours of the main exchange needs checking.
 - **Auctions, pre-market and post-market**: in the session or separate; the data providers
-  differ (Yahoo leaves extended hours out of its intraday bars by default).
-- **The calendar of a daily bar** when a provider's day is not its market's (Yahoo's
-  currencies cut at London midnight): where it is recorded and who checks it.
+  differ (a candle source leaves extended hours out of its intraday bars by default).
+- **The calendar of a daily bar** when a provider's day is not its market's (currencies
+  cut at London midnight): where it is recorded and who checks it.
 - **Who regenerates the files**, how often, and how a disagreement between the files and
   the measured data is handled.
 - **Time zone changes in the past** (a country that changed its rules): the IANA database
@@ -223,7 +223,7 @@ elsewhere.
 
 1. `tools/calendars/build_calendars.py`: the generator for a first set of exchanges (the
    table above), the files for about 2000 to a year ahead, and a script that compares them
-   with Yahoo's one-minute bars.
+   with one-minute bars from the candle source.
 2. The C++ reader and the functions above, with tests (the sessions of known days, the
    trading date of an instant on both sides of a daylight saving change, the expected
    bars of a session, the open mask).

@@ -26,9 +26,8 @@ Decided:
   The catalog of the new system lives in MariaDB too (see Catalog).
 - **Intraday for every instrument, for a few years** (1 hour, 15 minute and
   5 minute bars; see Bars). Daily bars go back as far as there is data.
-- **Next adapter: Nordnet**, which has unofficial endpoints for both discovery
-  (the instruments) and history. The endpoints are already researched; ETF
-  discovery is the first part (see Adapters).
+- **A discovery adapter** with unofficial endpoints for both discovery (the
+  instruments) and history; its discovery is built (see Adapters).
 
 Later, and the reason the reads have to be good: market regime embeddings and
 their visualizations, which read long histories of many instruments at once.
@@ -36,7 +35,7 @@ their visualizations, which read long histories of many instruments at once.
 ## Overview
 
     server side only:
-    adapters (Nordnet, Yahoo, ECB, ...)
+    adapters (a discovery source, a candle source, central bank rates, ...)
         -> ingest (dedupe, version, write directly)
             -> catalog        instruments, markets, datasets, edges, aliases   (MariaDB)
             -> bars           candles, every interval                          (ClickHouse)
@@ -138,7 +137,7 @@ Decided:
 - **Every instrument gets intraday**, not a selection.
 - **The interval is not part of the edge key.** An edge (an instrument on a market in
   a currency, as a dataset gives it) has its data in different forms: a series per
-  interval. So datasets are named for the provider (`nordnet`, `yahoo`), not for an
+  interval. So datasets are named for the provider, not for an
   interval, and `bars` is keyed by edge, then resolution. The app's `Store` does this
   now: `candles(edge, interval, range)` and `intervals(edge)`.
 
@@ -157,7 +156,7 @@ Open:
   store a level only when a read is too slow.
 - **Time, decided.** An instant is **whole Unix seconds, UTC; never milliseconds** (the
   Unix habit: whole seconds when they are enough, floating-point seconds otherwise, as
-  for order book snapshots and any ticks). A provider that gives milliseconds (Nordnet)
+  for order book snapshots and any ticks). A provider that gives milliseconds
   is converted where it comes in. A date is a day number (see Calendars and resolutions).
   A provider's intraday bars follow its own session times, so the bar's start is what
   the provider says, converted. Sessions, holidays and time zones belong to the market
@@ -175,8 +174,8 @@ Daylight saving gives days of 23 and 25 hours, and sessions, weeks and holidays 
 the exchange's calendar.
 
 - A series' **resolution** says how big its bars are: `min1`, `min2`, `min5`, `min15`,
-  `min30`, `hour1`, `hour4`, `day`, `week`, `month`, `quarter` (Nordnet's vocabulary;
-  Yahoo's maps onto it). It is a symbolic **code** (a small number or an enum naming
+  `min30`, `hour1`, `hour4`, `day`, `week`, `month`, `quarter` (one provider's vocabulary;
+  the others' map onto it). It is a symbolic **code** (a small number or an enum naming
   one of these), not a number of seconds: a day is not `86 400` s. The app's
   `Store` already takes this code (`Resolution`), not a length.
 - **Two kinds of time axis** (proposed, after the owner's earlier system):
@@ -190,7 +189,7 @@ the exchange's calendar.
     1970-01-01 is 719163 (so a Unix day number is this minus 719163). A day bar is keyed
     by its trading date; a week, month or quarter bar by the day number of its first day.
   - A daily bar is not an instant. Trading does not start at midnight, and the 00:00
-    UTC that Nordnet puts on its daily bars is only a marker for the date, so the date is
+    UTC that a provider may put on its daily bars is only a marker for the date, so the date is
     what is stored; storing 00:00 UTC would invent a time and a time zone. With dates,
     daylight saving and time zones do not enter at all, and bars of different markets
     line up by date, which is what comparing instruments needs.
@@ -209,8 +208,8 @@ the exchange's calendar.
   details of the plan; they include resolutions the providers do not have (10 minutes),
   and the providers' own (5 and 15 minutes, 4 hours) are added to them. In the app
   (`Dates.h`): `slotOfInstant`, `instantOfSlot`, `onSlotBoundary`.
-- **The old Nordnet data comes from the legacy system.** Its history is imported from
-  there, so the old bars need not be fetched from Nordnet; the import has to map the
+- **The old data of the discovery source comes from the legacy system.** Its history is imported from
+  there, so the old bars need not be fetched again; the import has to map the
   legacy codes and numbers onto these, and say which dataset the bars belong to.
 - **Coarser date levels follow from day bars by date arithmetic alone**: the week of a
   date, its month and its quarter need no calendar of the market, so the pyramid of
@@ -225,8 +224,8 @@ the exchange's calendar.
   convention, using the same convention here means no conversion when they are served
   or migrated. To be checked against its schema.
 - **From an instant to a trading date** (where a provider gives only instants, such as
-  Nordnet's discovery tick time) needs the market's time zone: the date of the instant
-  there. Yahoo's chart meta carries the exchange's UTC offset (`gmtoffset`). Until a
+  a discovery tick time) needs the market's time zone: the date of the instant
+  there. A chart's meta may carry the exchange's UTC offset. Until a
   market has a calendar, the app takes the UTC date, which is right for the European
   markets seen so far and wrong for markets east of UTC+9 around their open.
 - **24-hour markets** (currencies, many commodity futures): the owner recalls that
@@ -248,18 +247,18 @@ the exchange's calendar.
 **Built** (in the app's `Store`, `Dates.h`): `Resolution` codes; seconds for instants and
 floating-point seconds for order book snapshots; day numbers for the date resolutions
 with weekday, week, month and quarter starts and the date of an instant in a time zone;
-Nordnet's millisecond tick times converted on the way in. Two provider facts found on the
+millisecond tick times converted on the way in. Two provider facts found on the
 way:
 
-- **Yahoo stamps a daily bar at the start of the trading day in the exchange's time
+- **A candle source may stamp a daily bar at the start of the trading day in the exchange's time
   zone**: the open for Helsinki (07:00 or 08:00 UTC), local midnight for gold futures in
   New York (04:00 UTC in summer, 05:00 in winter) and for currencies in London (23:00 UTC
-  of the day before in summer, 00:00 in winter; so a Yahoo FX day runs from London
+  of the day before in summer, 00:00 in winter; so its FX day runs from London
   midnight, not from UTC midnight). Its meta gives only today's offset from UTC
   (`gmtoffset`), which is an hour off for half the year, so reading the stamp in that
   offset puts summer bars on the day before (330 of the 500 gold bars). The date taken
   is the one of the **nearest** local midnight, which absorbs the hour.
-- Nordnet's discovery gives an instant (the last tick), so its bar's date is the UTC date
+- A discovery gives an instant (the last tick), so its bar's date is the UTC date
   of that tick, which is right for the European markets seen so far.
 
 ### Comparing across markets: the day is not the same window
@@ -269,7 +268,7 @@ must be explicit, because bars of different markets are not always comparable:
 
 - A **day** is a window defined by its market's calendar. A Nasdaq Helsinki day is the
   trading session of that date (about 09:00 to 18:30 Helsinki time). A day of a 24-hour
-  market is 24 hours, cut by a convention (London midnight for Yahoo's currencies,
+  market is 24 hours, cut by a convention (London midnight for some currency series,
   17:00 New York or Chicago for some futures, UTC midnight for others). So **a 24-hour
   market's day is not directly comparable to a Nasdaq Helsinki day**: they cover
   different hours.
@@ -291,7 +290,7 @@ must be explicit, because bars of different markets are not always comparable:
 
 ### Open: bars that do not start on the hour (the US exchanges)
 
-Measured on Yahoo: the hourly, 30-minute and 5-minute bars of a US share (AAPL) start at
+Measured on one candle source: the hourly, 30-minute and 5-minute bars of a US share (AAPL) start at
 **09:30 New York time** (14:30 UTC in winter, 13:30 in summer), because the exchange
 opens at 09:30; Helsinki's hourly bars start on the hour. A bar that starts at :30
 does not fall on an hour number (`onSlotBoundary` says so), and bars of the US and of
@@ -302,8 +301,8 @@ Kept as an open question. The owner's idea: **reconstruct the US hourly bars on 
 from 30-minute bars (or finer), onto the hour grid, instead of storing what the provider
 calls hourly. What it brings and what to decide:
 
-- The finer bars are only available for a short window (Yahoo: 30 and 5 minutes 60 days
-  back; Nordnet: a week), so the hourly history of the US shares that can be
+- The finer bars are only available for a short window (30 and 5 minutes 60 days
+  back at one provider, a week at another), so the hourly history of the US shares that can be
   reconstructed is as deep as the 30-minute history we have collected.
 - An hour slot on the UTC grid then holds two half-hours that belong to different
   session hours: 14:00 to 15:00 UTC in winter holds only 14:30 to 15:00 (the open) of the
@@ -318,17 +317,17 @@ calls hourly. What it brings and what to decide:
 - Whether a provider's own coarse bars and bars reconstructed from finer ones are
   different series (they are different data, as noted for the pyramid).
 
-### Yahoo's history is adjusted afterwards
+### A provider's history is adjusted afterwards: retroactive split adjustment is required
 
-Measured: Yahoo **adjusts the history retroactively for splits**, in the prices and in
+Measured at a candle source: it **adjusts the history retroactively for splits**, in the prices and in
 the volume. AAPL's 4-for-1 split on 2020-08-31: the close of 2020-08-28 is returned as
 124.81 (it was 499.23 on the day) and its volume multiplied by 4; the split is listed in
 the chart's events (`date`, `numerator`, `denominator`, here 4 and 1) and the same for
 NESTE.HE's 3-for-1 in April 2019. The separate `adjclose` series is also adjusted for
-dividends (114.54 against 118.28 for 2020-08-20). Yahoo has no unadjusted prices to ask
-for. What this means:
+dividends (114.54 against 118.28 for 2020-08-20). It has no unadjusted prices to ask
+for, so handling retroactive adjustment is a **necessary feature** of the collector. What this means:
 
-- "Stored as reported" cannot hold for Yahoo's prices: what is stored is **adjusted as
+- "Stored as reported" cannot hold for such a provider's prices: what is stored is **adjusted as
   of the time it was fetched**. A bar fetched before a split and the same day's bar
   fetched after differ.
 - A collector that only appends new days leaves old bars on the old scale after a split
@@ -340,7 +339,7 @@ for. What this means:
 - Dividends are not applied to the OHLC prices (only to `adjclose`); the dividend events
   are stored as corporate actions as before.
 - Whether the intraday bars are adjusted the same way is not measured.
-- Whether Nordnet's history is adjusted is not known; the legacy import will show
+- Whether the discovery source's history is adjusted is not known; the legacy import will show
   how the old data was handled.
 
 ### Rough size (to be measured)
@@ -369,7 +368,7 @@ Snapshots of bids and asks at a moment, as in the app's model. Proposed: one row
 per snapshot with the levels as arrays (prices and sizes), ordered by
 `(edge_id, ts)`, versioned like bars.
 
-Open: where books come from (Nordnet may offer market depth; crypto exchanges
+Open: where books come from (a provider may offer market depth; crypto exchanges
 publish theirs openly), how often, retention and downsampling, and the
 "fill price for a quantity" series the prediction models want (stored or computed;
 see data-model.md).
@@ -385,11 +384,11 @@ see data-model.md).
   of the universe exist in the catalog, and an edge exists only when it has data. A
   node with no edge is invisible, because every preset selects edges, so there is
   nothing to show for it. There is no empty edge: discovery finds nodes and, where it
-  can, data that makes edges (see Nordnet). Nodes are instruments today and may be
+  can, data that makes edges (see Adapters). Nodes are instruments today and may be
   other kinds later (the model's `EdgeKey` has instruments at both ends, which would
   then widen).
-- **One vocabulary of instrument types, decided.** Nordnet's types (`UETF`, `KETF`,
-  `PTC`) and Yahoo's (`EQUITY`, `FUTURE`, `CURRENCY`, ...) are combined into one
+- **One vocabulary of instrument types, decided.** The providers' types (`UETF`, `KETF`,
+  `PTC`, `EQUITY`, `FUTURE`, `CURRENCY`, ...) are combined into one
   vocabulary, which names certificates: company, ETF, certificate, currency, commodity,
   index, other (`InstrumentKind`). Each adapter maps its provider's types onto it and
   keeps the provider's own type beside it (`Instrument::type`), which is what the
@@ -407,7 +406,7 @@ see data-model.md).
   in the model; stored like bars (rows, versioned).
 - **Identity across providers**: an internal instrument id, plus the **ISIN** where
   there is one (an ETF listed on two markets is one instrument with two edges: 16
-  such pairs among Nordnet's ETFs), plus aliases (each provider's ids and symbol,
+  such pairs among a few thousand ETFs), plus aliases (each provider's ids and symbol,
   FIGI). Open: how aliases are matched when a new provider is added, and what
   identifies instruments with no ISIN (currency pairs, futures).
 
@@ -416,15 +415,15 @@ see data-model.md).
 The idea: the catalog is a **semantic graph**, like Wikidata's. A node is universal (an
 instrument, a currency, a market, an issuer, an index, ...), and what is known about it
 is a set of **statements** that say who says them, such as "this node has the type PTC,
-according to Nordnet" and "its ticker is NOKIA.HE, according to Yahoo".
+according to one provider" and "its ticker is NOKIA.HE, according to another".
 
 - **A statement** is (subject node, predicate, value or object node, dataset, optional
   qualifiers: valid from and to, market, rank). The dataset is the reference: who says
   it. Statements from different datasets about the same predicate sit side by side,
   never merged, as the bars of two providers do.
-- **What goes in**: the provider-specific type, the provider's identifiers (Nordnet's
-  instrument id and the order book id its history is asked for by, Yahoo's ticker),
-  labels and descriptions (per language and per dataset: Yahoo and Nordnet name the same
+- **What goes in**: the provider-specific type, the provider's identifiers (the
+  instrument id and the order book id its history is asked for by, the ticker),
+  labels and descriptions (per language and per dataset: providers name the same
   instrument differently), the ISIN, the issuer, a fund's category and fees.
 - **Edges** are the statements whose value is another node. The price-history edge
   (base, quote, market, dataset) is the special case whose payload is a series of bars
@@ -438,7 +437,7 @@ according to Nordnet" and "its ticker is NOKIA.HE, according to Yahoo".
 - **Types become classes with a hierarchy** (bull certificate, certificate, ETF, fund,
   ...), so a vocabulary that has to grow does so by adding a subclass, selecting by a
   class includes its subclasses, and the mapping from a provider's type to ours is
-  itself a statement ("Nordnet's PTC is a certificate").
+  itself a statement ("a provider's PTC is a certificate").
 - **Currencies need no provider's opinion.** A currency is identified by its ISO 4217
   code, and being the quote of an edge makes it a currency; its class is asserted by the
   system, not by a dataset. (Today the quote currencies are added by the adapters, and
@@ -474,359 +473,258 @@ according to Nordnet" and "its ticker is NOKIA.HE, according to Yahoo".
 
 - **In a client** (the app) an adapter never reads a database. The app has a
   `server` adapter that reads the HTTP API and fills its store, and it can still
-  run the provider adapters directly (Yahoo, Nordnet) when there is no server.
+  run the provider adapters directly when there is no server.
 
 ### Adapters
 
 | Adapter | Gives | Status |
 |---|---|---|
-| **Nordnet** | Discovery (instruments) and history, by unofficial endpoints | Endpoints researched by the owner. **Discovery of the ETFs and the PTC certificates is built** (see below); next: the stocks endpoint, currencies and commodities by hand, metadata endpoints, history and intraday (see "Nordnet: what comes next"). |
+| **Discovery source** | Instruments and today's bar of each, then history, by unofficial endpoints | Discovery of ETFs, certificates, funds, stocks, indices, currencies and commodities is built, and daily and coarser history for the rows on screen; intraday history and the server's full backfill are next. |
 | Legacy MariaDB | The existing bars (one row per bar), served by the server | Later. To learn: its schema, and how its instruments map to ours; whether the API reads it in place or it is copied into ClickHouse. |
-| Yahoo | Daily candles, dividends, splits; no discovery, so its adapter has instrument lists of its own (`data/yahoo`), which go when every adapter has discovery | Built in the app (`YahooSource`, dataset `yahoo`); slow one by one, for development and personal use. |
-| ECB | Daily reference rates, every currency since 1999, in one file | Candidate. |
+| **Candle source** | Daily candles, dividends, splits; no discovery, so its adapter has instrument lists of its own (`data/lists`), which go when every adapter has discovery | Built in the app; slow one instrument at a time, for development and personal use. |
+| Central bank rates | Daily reference rates, every currency since 1999, in one file | Candidate. |
 | A paid bulk provider | Discovery and a whole exchange per request | Open: which, and what its licence allows to be shown. |
 
-**Nordnet discovery** (`NordnetSource`), from the endpoints' behaviour as observed.
-Every list is loaded the same way, with no category per endpoint: an instrument is
-whatever its list holds, keeping its own `instrument_type`. Discovery **repeats every
-five minutes** (about 7 requests and 20 MB of JSON each time), and **each listing's
-price block is today's bar**, stored in the daily series: that is what makes the edge,
-and a reload replaces the bar. The
-lists so far are the ETFs (`etflist`) and the certificates of type PTC
-(`certificatelist?apply_filters=instrument_type=PTC`). **Without that filter the
-certificate list holds 64,861 instruments** (almost all bull and bear certificates),
-which is not worth loading; the filter gives 1,097. More lists are one entry each.
+**Discovery**, from the endpoints' behaviour as observed. Every list is loaded the same
+way, with no category per endpoint: an instrument is whatever its list holds, keeping its
+own type. Discovery **repeats every few minutes** (a few dozen requests and tens of MB of
+JSON per round), and **each listing's price block is today's bar**, stored in the daily
+series: that is what makes the edge, and a reload replaces the bar. A list is worth loading
+only if it is not mostly noise (an unfiltered list of leveraged certificates is 64,000
+instruments, nearly all of them bull and bear products; a filter by type leaves about a
+thousand). More lists are one entry each.
 
-- **Pacing**: requests are made one at a time, with 500 ms between them, a page of
-  500 (ETFs) or 1000 (certificates). Both lists together are 7 requests and about
-  10 seconds, most of it the server's own time (about 2 to 3 seconds a page). A 403
-  or 429 stops everything; another failure ends only that list. There is no retry,
-  no backoff and no cache yet: every load repeats all 7 requests. On the server
-  discovery runs on a schedule (a day is plenty), not on every start.
-- **Results go to the store a page at a time**, as they arrive, not all at the end:
-  each page is written and the UI told, so rows can appear while the rest loads.
-- **Markets** have only a numeric id in the answer. They are named from the id where
-  it is known (4 Xetra, 11 Nasdaq Stockholm, 14 Nasdaq Copenhagen, 24 Nasdaq
-  Helsinki, 53 to 55 First North Sweden, Finland and Denmark; inferred from the data)
-  and `Nordnet market N` otherwise. The slug's exchange code is not used: a listing
-  can carry the code of its home exchange while it trades on another market (a
-  Norwegian certificate on First North Sweden has the slug `onse`).
+- **Pacing**: requests one at a time with a pause between them, pages of 500 to 1000 rows.
+  A refusal (403, 429) stops everything; another failure ends only that list. No retry,
+  backoff or cache yet. On the server discovery runs on a schedule, not on every start,
+  and each list has **its own reload interval**: funds are priced once a day, a market's
+  stocks only matter while it is open (waits for the calendars).
+- **Results go to the store a page at a time**, as they arrive, so rows can appear while the
+  rest loads.
+- **Markets** may have only a numeric id in the answer. They are named from the id where it
+  is known (inferred from the data) and by a placeholder otherwise. The exchange code in a
+  listing's slug is not used: it can be the home exchange while the listing trades elsewhere.
+  A market is found by code, provider id or name, else made, with a surrogate id (a crypto
+  venue has no MIC); one with no name is named later and keeps its edges. The segment named
+  in a row's own venue list ("First North", "Spotlight") is a market of its own.
+- **What a row holds**: instrument info (id, name, symbol, ISIN, type, currency, issuer,
+  clearing place), market info, a price block with a timestamp, returns, fund info and
+  identifiers. Every row has an ISIN; the same ISIN listed on two markets is one instrument
+  with two edges; a symbol is never shared by two ISINs. A few rows (about 0.4%) have no
+  price or tick time: nodes without an edge.
+- **Stored**: an instrument (ISIN, name, type), the quote currency and, where the listing
+  has traded, today's bar (open, high, low, last, volume, tick time; its `close` is the
+  previous close). The daily bar is stamped at midnight UTC of its date, as the history's
+  are. The provider's own ids (instrument, market, listing identifier, the order book its
+  history is asked for by) are what history requests need: the adapter keeps them, and on
+  the server they become aliases in the catalog.
+- **Funds** are priced once a day (a NAV), at a time that differs by fund. As in the legacy
+  system a fund's bar has only the close, the NAV; its open, high, low and volume are
+  **undefined** (NaN in the store: a number a provider does not give is undefined, never
+  zero, so volume, which will weight the bars, is written when there is one and not as zero
+  otherwise). The bar is dated by the tick. Fund history is a different request flavour.
+  When a NAV is calculated and when the provider gets it is not known, so the fund list is
+  reloaded hourly; the first reload that shows a new tick time is when the provider had
+  it, to within the interval. **Idea of the owner: nowcast the NAV** shortly before the
+  order cut-off and trade fund shares without transaction fees, where a small edge might be
+  usable. It needs the cut-off and NAV times per fund and the market's close that day: a
+  calendar question (calendars.md) and a model one (a fund tracks its holdings, so the
+  nowcast is of the underlying).
+- **Indicator lists** (indices, currency pairs, commodities) are one answer each: a row has
+  the provider's id, an ISIN for some, a name, the order book id, a symbol, a type, a country
+  for most indices, and the price (high, low, last with a time, the previous close and the
+  development), **no open and no volume** (undefined in the bar). Their market is the list's
+  (`Indices`, `Currencies`, `Commodities`), a pair is an edge between two currency nodes
+  named "EUR/USD", an index is in points, and a commodity is in dollars (the rows give no
+  currency; the legacy table has them all in USD). Names may arrive in a local language only.
 
-The ETF list:
+**Intraday depth, as measured** (not as documented; these are the limits per request, and
+they decide how history has to be collected):
 
-- `GET https://www.nordnet.fi/api/2/instrument_search/query/etflist?sort_order=desc&sort_attribute=yield_1y&limit=N&offset=M`,
-  with the headers `Accept: application/json`, `Origin` and `Referer`
-  (`https://www.nordnet.fi`) and `Client-Id: NEXT`. **No cookie is needed**; the
-  browser cookie in the original script is not part of the request and must never
-  be committed.
-- The answer has `total_hits` (2304 ETFs when it was tried) and `results`. `limit`
-  100 pages it in 24 requests; 500 works too, in 5.
-- A result has `instrument_info` (id, name, symbol, ISIN, type, currency, issuer,
-  clearing place), `market_info` (market id and sub id, the identifier on that
-  market), `price_info` (last, open, high, low, change, volume, bid and ask, with a
-  timestamp), `historical_returns_info`, `fund_info` (category, fees, risk, ESG),
-  `exchange_info`, and `nnx_info` (ids and a slug that ends in the exchange code).
-- Observed: 2277 ETFs on market 4 (Xetra, EUR), 26 on market 11 (Stockholm, SEK),
-  1 on market 14 (Copenhagen, DKK). Every row has an ISIN; the same ISIN is listed
-  on two markets 16 times; a symbol is never shared by two ISINs. Market ids carry
-  no name in this answer; the slug suffix (`xeta`, `xsto`, `xcse`) does.
-- Stored: an instrument (with its ISIN, name and type) and the quote currency, and,
-  where the listing has traded, today's bar (`price_info`: open, high, low, last,
-  `turnover_volume`, `tick_timestamp`; its `close` is the previous close), under the
-  dataset `nordnet`. The daily bar starts at midnight UTC of its date, as the history's
-  do. 12 of 3401 listings had no price or tick time: they are nodes without an edge. Nordnet's own ids (instrument id, market id, identifier) are
-  what the history requests need: the adapter keeps them for the history step, and
-  on the server they become aliases in the catalog.
-
-**Intraday depth, as measured** (not as documented; these are the limits per request,
-and they decide how history has to be collected):
-
-| | 1 min | 5 min, 15 min | 1 hour | 1 day and coarser |
+| | 1 min | 5 to 30 min | 1 hour | 1 day and coarser |
 |---|---|---|---|---|
-| **Yahoo** (chart, NOKIA.HE) | last 8 days | last 60 days (2, 5, 15, 30 min) | last 2 years (3 years is refused) | from the first trade (2000 for this one) |
-| **Nordnet** (price-time-series, the ETC and a liquid ETF) | `MIN_1` for periods up to `WEEK_1` | `MIN_5` and `MIN_15` for periods up to `WEEK_1` (about a week) | `HOUR_1` up to `YEAR_1` | `DAY` back to the instrument's start (2019 for the ETC) |
+| **Candle source** | last 8 days | last 60 days | last 2 years | from the first trade |
+| **Discovery source** | up to a week | up to a week | up to a year | back to the instrument's start |
 
-- So both providers give only a window of fine bars: minute-level history is built by
-  **collecting regularly**, not by one deep request. A collector that asks often
-  enough (the window is days or weeks) and stores what it gets accumulates a history
-  longer than any request can return.
-- My first notes said Nordnet's 5 and 15 minute bars never came back; that was wrong.
-  They came back as hourly only because I asked for periods of a month and more. For
-  `DAY_1` and `WEEK_1` the valid resolutions are `MIN_1 MIN_2 MIN_5 MIN_15 MIN_30`
-  (and, for a week, also `HOUR_1 HOUR_4 DAY`). A second Nordnet endpoint, for stocks,
-  also has minute bars; the owner will supply it.
-- **Yahoo's `range=max` is a trap**: it returns monthly bars whatever the interval
-  asked for. Full daily history needs `period1=0&period2=<now>` (6825 daily bars for
-  NOKIA.HE); the same works for `1wk`, `1mo`, `5d` and `3mo`. Yahoo has its own weekly
-  and monthly bars, like Nordnet.
-
-**Nordnet history** (`api.prod.nntech.io`), as observed; the daily and coarser part is built
-(`HistoryLoader`, see "The history loader" below):
-
-- `GET https://api.prod.nntech.io/market-data/v3/price-time-series/period/<PERIOD>/identifier/<ID>?resolution=<RESOLUTION>`
-  with `Accept: */*`, `Origin` and `Referer` (`https://www.nordnet.fi`) and `x-locale: fi-FI`.
-  The other browser headers (`Sec-*`, `Priority`) and a cookie are not needed.
-- `<ID>` is the listing's **`nnx_info.market_data_order_book_id`** (checked with the
-  BNPP RICI ETC example). Whether the numeric instrument id also works is untested.
-- The answer has `pricePoints` (`timeStamp` in ms, `open`, `high`, `low`, `last`,
-  `volume`), the previous close, the period's high and low, `returns` per period, and
-  `validResolutionsForPeriod`, `availablePeriods`, `returnedPeriod`,
-  `returnedResolution`.
-- Periods: `DAY_1 WEEK_1 MONTH_1 MONTH_3 MONTH_6 YTD YEAR_1 YEAR_3 YEAR_5 ALL`.
-  Resolutions: `QUARTER`, `MONTH`, `WEEK`, `DAY`, `HOUR_4`, `HOUR_1`, `MIN_30`, `MIN_15`,
-  `MIN_5`, `MIN_2`, `MIN_1`; which are valid depends on the period.
-- **The endpoint substitutes a resolution that is not valid for the period, and says
-  so only in `returnedResolution`.** The loader must read that field, never trust the
-  one it asked for. For the BNPP ETC: `YEAR_1` gives `HOUR_1`, `HOUR_4`, `DAY`,
-  `WEEK` and `MONTH`; `YEAR_3` and `YEAR_5` give `DAY` and coarser; `ALL` gives `DAY`,
-  `WEEK`, `MONTH` and `QUARTER` (1543 daily bars back to 2019-07-29, 139 KB, 1.1 s);
-  hourly goes back one year; minute bars only for `DAY_1` and `WEEK_1` (see the table
-  above).
+- Providers give only a window of fine bars, so minute-level history is built by
+  **collecting regularly**, not by one deep request. A collector that asks often enough
+  (the window is days or weeks) and stores what it gets accumulates a history longer than
+  any request can return.
+- **A provider may substitute a resolution that is not valid for the period, and say so
+  only in a field of the answer.** The loader must read what the answer says it returned,
+  never trust the resolution it asked for. Likewise a "maximum range" request may return
+  coarse bars: full daily history needs an explicit period from zero to now.
 - Daily bars are stamped 00:00 UTC of the trading date, hourly bars on the hour in UTC
-  (the session hours differ between summer and winter time); `volume` was 0 for most
-  bars of the ETC, so it is not to be trusted yet.
-- **Nordnet gives the coarse levels itself** (`WEEK`, `MONTH`, `QUARTER`), which bears
-  on the pyramid question above: a provider's own coarse bars and ours made from finer
-  ones are different data.
-- Pacing is not decided: responses took 0.6 to 1.1 s each, and every instrument needs
-  one request per resolution.
+  (session hours differ between summer and winter time). A `volume` of 0 is not to be
+  trusted: a commodity or an ETC has none, so 0 is stored as undefined.
+- A provider may give the coarse levels (week, month, quarter) itself, which bears on the
+  pyramid question above: a provider's own coarse bars and ours made from finer ones are
+  different data.
+- Responses take 0.6 to 1.1 s each and every instrument needs one request per resolution,
+  so the pacing of history is its own decision.
 
-### Nordnet: what comes next
+### The catalog's shape, as built and as decided
 
-**Decided by the owner**, in this order of work:
+- **Every node keeps what is known about it as attributes, in the same way** (instruments,
+  markets and datasets alike; the first use of the statements below, without the dataset
+  yet): one value per predicate, `setAttribute(node, predicate, value)`, and a value can
+  change: the last said stands (with two providers saying different things it is whichever
+  wrote last, until statements say who says them), and an empty value says nothing.
+  `Instrument`, `Market` and `Dataset` are the resolved views the app reads, made from the
+  attributes. A node is found by an attribute: a market by the provider's id or its name,
+  tried in that order, and an instrument by its ISIN.
+- **Edges are rows of a fixed shape** (the owner's decision), plain C++ and kept apart from
+  the nodes. A **fat edge is a Listing**: an instrument on a market in a quote currency
+  from one dataset, a row carrying its own key, small, with the price series beside it
+  under the same key, and the fields the market says: the symbol it calls the instrument,
+  its own id for it ("XAIX" on one market and "419021" on another for one ETF), the order
+  book its history is asked for by, the provider's own type. An edge takes nothing before it
+  has data. `findEdge(symbol, market)` finds the edge by what a market calls it, whoever
+  said it.
+- A **thin edge is a triple of a node**, (subject, predicate, object): what is known of the
+  thing itself, which is not part of any market, so **no dataset says it** (an icon, the
+  number of shares, who runs the company; three fields are an implementation detail, more
+  may come). It is the same store as the nodes' own attributes (name, ISIN, kind, a
+  market's code and country): one value per predicate, a value that changes replacing it
+  (the last said stands until a rule picks the authoritative source), the object text, a
+  whole number (a day is a day number), a real number or a truth value, and what is not
+  given not said at all. What predicates there are is data: a new kind of fact is a new
+  predicate, not a new type (two earlier shapes, four wide record types and then triples
+  with a dataset, were the wrong ones). `attribute(node, predicate)` reads one and
+  `attributes(node)` all; text is found by its value. **The instruments need data**, so the
+  adapters say what a row says of the instrument, as a table of where each field is and
+  what it is called, and the fat edge stays light. A currency has no ISIN and is its code;
+  **nothing else is without an ISIN**.
+- **A currency is the node the store has for its symbol**: a provider that has a currency
+  gets that node (made, named as usually called, if none is there) and describes nothing.
+- **Links between nodes (planned, not built).** A value may refer to another node: a
+  company's `ceo` is the CEO's own node, a person, with attributes of its own. Issued by,
+  tracks (an ETF's index), underlying of (a certificate's asset), director, major owner and
+  index constituent are the same kind of link; today a certificate's underlying is only the
+  provider's number and name. It needs:
+  - a reference to a node as one more kind of `Value`, and a node type for what is linked
+    to (a person, an issuer, an index), made and found like the others, by attributes;
+  - an index on the node-valued objects, beside the one on text, so that "who is the CEO of
+    this" and "everything this person has run" are cheap;
+  - **a validity period on a link**: a CEO changes, and the history of who was is worth
+    keeping (valid from and to). So a row may have more than the three fields; "the latest
+    value replaces" then applies per period, and a plain value such as the market cap keeps
+    working as now;
+  - in the attribute viewer, a node-valued attribute shown as a link to the node it names,
+    with the reverse links ("is the CEO of") listed on the target.
+- **Private ISINs**: a thing that has none gets one of our own, made from what it is and
+  not from who says it (there is one zinc): `ZZ` (ISO 3166-1's user-assigned code element;
+  no numbering agency issues ISINs under it), its name, upper case, in nine characters
+  padded with zeros, and the check digit (`privateIsin()`, tested against real ISINs). Zinc
+  is `ZZZINC000006`. Used for indicator rows with no ISIN (some metals and indices).
+- **A source with no discovery carries the ISIN in its data files** next to the ticker: it
+  makes its instrument from the file, by its ISIN, which is the same node another source
+  made, and its own edge has its ticker as the symbol. Nothing waits on the load order. A
+  currency has no ISIN and is its code; any other row without one is refused by the list
+  loader, and a test checks every ISIN in the files. The ISINs of the shares come from a
+  discovery source's stock list (the list-building script fetches it).
+- **Commodities from a futures-based source stay off.** Every such series is a futures
+  contract (its chart names the contract: "Gold Dec 26"), not the commodity's price, and the
+  units differ (copper is 5.49 dollars a pound in one and 12,150 dollars a tonne in the
+  other). A spot-like series (quoted to four decimals, which a futures tick is not) is a
+  different instrument. So no ISIN of the commodity applies to a futures series; if one is
+  wanted it is an instrument of its own (a contract or a continuous series, with no ISIN),
+  for its long history, which a model may need.
+- **Indices** may have a pseudo-exchange in a source's data, which is the index's
+  calculator, not a place where it trades. So **an index is on a market named for the kind
+  (`Indices`, as the pairs are on `Currencies` and the commodities on `Commodities`) and is
+  quoted in points**, a unit node (kind Unit, symbol `pts`), not a currency: no price
+  conversion applies to it, and the currency an index is calculated in is a fact about the
+  instrument. An index with no ISIN of its own waits for one or gets a private one.
+- **What a row says, and where it goes.** Kept as thin edges: the issuer, the icon URL,
+  whether it is tradable or shortable, the collateral value, **how many accounts hold it** (a
+  retail signal: worth sampling as a series, now only the latest), for stocks the market cap,
+  P/E, P/B, P/S, EPS, dividend per share and yield, **the next report, the next dividend and
+  the next general meeting** (scheduled events: they belong in the corporate-action and
+  announcement model for prediction, once that is wired); for funds and ETFs the
+  administrator, brand, category, type, dividend strategy, trading frequency, SFDR article,
+  risk class, rating, ESG score, fees, assets under management, minimum investment, start
+  date and the universe country and currency; for certificates the leverage, direction (long
+  or short), the high-risk flag, the market view, management fee, first trading date and the
+  underlying. On the fat edge: symbol, the market's id for it, the order book, the type. On
+  the market: the country, from the rows. Not kept: the yields over periods and the annual
+  growth (derived from prices we will hold), a tick-size id (means nothing without a table),
+  a duplicate order book id, the slug, the clearing place. A source's chart metadata may
+  also give the first trade date (kept, as where the history begins) and the exchange's time
+  zone (kept on the market).
+- **Edges are undirected**: the legacy platform wrote a pair in both directions (`invert`:
+  the price of USD in gold beside gold in USD). One edge is stored, in one direction, and the
+  other is read from it: the reciprocal of the close, and a bar's high and low swap (the
+  high of the inverse is the reciprocal of the low); the volume has no inverse. Not built.
 
-1. **The stocks endpoint (built, with the fund list).** `stocklist` and `fundlist`, loaded the
-   same way as the ETFs and certificates, without the cookie; the instrument keeps its own
-   type (`ESH`, `PESH`, `ESHMTF`, `ESHOTC` are shares, kind Company; `FUCITS`, `FOTH` are
-   funds, a new kind Fund). Measured: 12,246 stocks on 27 markets (about 2 MB per 1,000
-   rows, so about 25 MB a reload) and 675 funds, all on market 78. Most of the markets
-   are not named yet (17, 18, 19 and 21 are US, 25 and 26 Canada, 70 UK, 72 France,
-   82 Spain, 83 Switzerland, and so on, by the country the rows give), which waits for the metadata
-   endpoints. The stocks have minute bars in the history endpoint, which the history
-   loader will use through the per-resolution store.
-   **Funds** are priced once a day (a NAV), at a time that differs by provider. As in the legacy
-   system a fund's bar has only the close, the NAV, which is also the last price while the slot
-   is still in progress; its open, high, low and volume are **undefined** (NaN in the store: a
-   number a provider does not give is undefined, never zero, so volume, which will weight the
-   bars, is written when there is one and is not a zero otherwise). The bar is dated by the
-   tick. The history url takes `&fundType=FUND_NAV`; the same order book id is believed to
-   serve all the history queries.
-   **When a NAV is calculated and when Nordnet gets it is not known**, so the fund list is reloaded
-   hourly, not on a schedule; learning the times is a measurement (see the suggestions: the
-   first reload that shows a new tick time is when Nordnet had it, to within the interval).
-   **Idea of the owner: nowcast the NAV** shortly before the order cut-off and buy or sell
-   fund shares without transaction fees, where a small edge might be usable. It needs
-   the cut-off and NAV times per fund (the `fund_info` block has the trading frequency, the
-   admin company and the category), and the market's close on that day: a calendar question
-   (calendars.md), and a model one (a fund tracks its holdings: the nowcast is of the underlying).
-   **Each list has its own reload interval** (`List::interval`; the source's refresh is the tick
-   that asks): now the funds hourly and the rest at every load. A stock list per market, loaded
-   only while the market is open, waits for the calendars.
-   **Every node keeps what is known about it as attributes, in the same way** (instruments,
-   markets and datasets alike; the first use of the statements below, without the dataset yet):
-   one value per predicate, `setAttribute(node, predicate, value)`, and a value can change: the
-   last said stands (with two providers saying different things it is whichever wrote last,
-   until statements say who says them), and an empty value says nothing. `Instrument`, `Market`
-   and `Dataset` are the resolved views the app reads, made from the attributes. A node is found
-   by an attribute: a market by Nordnet's id or by its name, tried in that order, and made
-   with a surrogate id if neither is there, so one Nordnet gives no name for is found by the id
-   and named later, keeping its edges; an instrument by its ISIN.
-   **Edges are rows of a fixed shape** (the owner's decision), plain C++ and kept apart from the
-   nodes. A **fat edge is a Listing**: an instrument on a market in a quote currency from one
-   dataset, a row carrying its own key, small, with the price series beside it under the same key,
-   and the fields the market says: the symbol it calls the instrument, its own id for it (Nordnet's
-   identifier: "XAIX" on Xetra and "419021" on Stockholm for one ETF), the order book its history
-   is asked for by, the provider's own type. An edge takes nothing before it has data.
-   `findEdge(symbol, market)` finds the edge by what a market calls it, whoever said it. A **thin
-   edge is a triple of a node**, (subject, predicate, object): what is known of the thing itself, which is
-   not part of any market, so **no dataset says it** (an icon, the number of shares, who runs the
-   company; three fields are an implementation detail, more may come). It is the same store as the
-   nodes' own attributes (name, ISIN, kind, a market's code and country): one value per predicate, a
-   value that changes replacing it (the last said stands until a rule picks the authoritative
-   source), the object text, a whole number (a day is a day number), a real number or a truth value,
-   and what is not given not said at all. What predicates there are is data: a new kind of fact is a new
-   predicate, not a new type (two earlier shapes, four wide record types and then triples with a
-   dataset, were the wrong ones). `attribute(node, predicate)` reads one and `attributes(node)`
-   all; text is found by its value. **The instruments need data**, so the adapters say what a row
-   says of the instrument, as a table of where each field is and what it is called (see the census
-   below), and the fat edge stays light. A currency has no ISIN and is its code; **nothing else is
-   without an ISIN**.
-   **Links between nodes (planned, not built).** A value may refer to another node: a company's
-   `ceo` is the CEO's own node, a person, with attributes of its own (name, birth year). Issued by,
-   tracks (an ETF's index), underlying of (a certificate's asset), director, major owner and index
-   constituent are the same kind of link; today a certificate's underlying is only Nordnet's number
-   and name. It needs:
-   - a reference to a node as one more kind of `Value`, and a node type for what is linked to
-     (a person, an issuer, an index), made and found like the others, by attributes;
-   - an index on the node-valued objects, beside the one on text, so that "who is the CEO of
-     this" and "everything this person has run" are cheap;
-   - **a validity period on a link**: a CEO changes, and the history of who was is worth keeping
-     (valid from and to). So a row may have more than the three fields; "the latest value
-     replaces" then applies per period, and a plain value such as the market cap keeps working as
-     now;
-   - in the attribute viewer, a node-valued attribute shown as a link to the node it names, with
-     the reverse links ("is the CEO of") listed on the target.
-   **Private ISINs**: a thing that has none gets one of our own, made from what it is and not
-   from who says it (there is one zinc): `ZZ` (ISO 3166-1's user-assigned code element; no
-   numbering agency issues ISINs under it), its name, upper case, in nine characters padded
-   with zeros, and the check digit (`privateIsin()`, tested against real ISINs). Zinc is
-   `ZZZINC000006`. Used for the Nordnet indicator rows with no ISIN (Lead, Zinc, BRIC 50 India,
-   Shanghai).
-   **Yahoo has no discovery, so its data files carry the ISIN** next to the ticker
-   (`kind,base,quote,name,yahoo,isin`): Yahoo makes its instrument from the file, by its ISIN, which
-   is the same node another source made, and its own edge has its ticker as the symbol. Nothing
-   waits on the load order. A currency has no ISIN and is its code; any other row without
-   an ISIN is refused by the list loader, and a test checks every ISIN in the files. The Helsinki
-   file's ISINs come from Nordnet's stock list (`tools/yahoo/build_lists.py` fetches it; 100 of 100
-   matched, Nordea being "NDA FI" at Nordnet).
-   **Yahoo's commodities stay off.** Every one is a futures contract (the chart names the
-   contract: "Gold Dec 26", "Crude Oil Jan 27", "Aluminum Futures, Feb-2027"), not the commodity's
-   price, and the units differ (copper is 5.49 dollars a pound at Yahoo and 12,150 dollars a
-   tonne at Nordnet; Yahoo's aluminium is 2,790 against Nordnet's 3,159); Nordnet's gold, WTI and Brent
-   look like spot-like or derived prices (WTI is quoted to four decimals, 83.0166, which a futures
-   tick is not). So no ISIN of the commodity applies to them; if a futures series is wanted
-   it is an instrument of its own (a contract or a continuous series), and Nordnet's commodity prices
-   are the ones loaded. If Nordnet's turn out to be futures contracts too, Yahoo's can be matched.
-   **Indices**: Yahoo has them (`^GSPC` S&P 500 from 1927, `^IXIC`, `^DJI`, `^FTSE`, `^GDAXI`,
-   `^N225`, `^VIX`, `^OMXH25`, `^OMXSPI`, `^STOXX50E`), each with its own pseudo-exchange (SNP, NIM,
-   DJI, FGI, GER, OSA, STO, CXI, ZRH), which is the index's calculator, not a place where it
-   trades; Yahoo puts OMX Helsinki 25 under Stockholm. Nordnet's indices have no market at all, only
-   a country. So **an index is on a market named for the kind (`Indices`, as the pairs are on
-   `Currencies` and the commodities on `Commodities`) and is quoted in points**, a unit node
-   (kind Unit, symbol `pts`), not a currency: no price conversion applies to it, and the
-   currency an index is calculated in is a fact about the instrument, where Yahoo gives it.
-   `data/yahoo/indices.csv` holds the five with ISINs: DJIA, Nasdaq Composite, DAX and OMX
-   Stockholm PI (Nordnet's) and S&P 500 (`US78378X1072`, the owner's); FTSE 100, Nikkei 225, VIX,
-   EURO STOXX 50 and OMX Helsinki 25 wait for theirs. The MOEX Russia Index
-   (`RU000A0JP7K5`) is not on Yahoo (`IMOEX.ME` is not found; `MOEX.ME` is the exchange's own
-   share, frozen in 2022), so it needs another source.
-   **Census of what Nordnet's rows say** (stocks 12,246, ETFs 2,304, funds 675, certificates 1,097),
-   and where it goes. Kept as thin edges: the issuer (and its id), the icon URL, whether it is
-   tradable or shortable, the collateral value, **how many Nordnet accounts hold it** (a retail
-   signal: worth sampling as a series, now only the latest), for stocks the market cap, P/E, P/B,
-   P/S, EPS, dividend per share and yield, **the next report (date and type), the next dividend
-   (ex-date, payment date, amount, currency) and the next general meeting** (scheduled events:
-   they belong in the corporate-action and announcement model for prediction, once that is
-   wired); for funds and ETFs the administrator, brand, category, type, dividend strategy, trading
-   frequency, SFDR article, risk class (1-7), Morningstar rating, ESG score, low-carbon flag, fees
-   (yearly, calculated, total), assets under management, minimum investment, start date and the
-   universe country and currency; for certificates the leverage, direction (long or short),
-   the high-risk flag, the market view, management fee, first trading date and the underlying
-   (Nordnet's id and name; 706 of 1,097). On the fat edge: symbol, the market's id for it,
-   the order book, the type. On the market: the country, from the rows. Not kept, and why: the
-   yields over 1 day to 10 years and the annual growth (derived from prices we will hold), the
-   tick-size id (a number that means nothing without a table), the order book of trading
-   (the same as the data one for 12,245 of 12,246 stocks), the slug, the clearing place and
-   the `exchanges` list. That list is worth a note: it names the real venue of a row ("First
-   North Stockholm", "Spotlight Stockholm") on Nordnet's market 11 and 52, which a market id
-   alone does not, so a market's sub id is a market of its own (a segment) with a name there.
-   Yahoo's chart meta gives the first trade date (kept, as where the history begins) and the
-   exchange's time zone (kept on the market); the rest is the day's quote.
-   **Edges are undirected**: the legacy platform wrote a pair in both directions (`invert`: the
-   price of USD in gold beside gold in USD). One edge is stored, in one direction, and the
-   other is read from it: the reciprocal of the close, and a bar's high and low swap (the high
-   of the inverse is the reciprocal of the low); the volume has no inverse. Not built.
-   **Markets are found by code, Nordnet id or name, else made**; a market with no MIC (a crypto
-   venue) is a surrogate id with the attributes it has.
-   **A currency is the node the store has for its symbol**: a provider that has a currency gets
-   that node (made, named as usually called, if none is there) and describes nothing.
-2. **Indices, currency pairs and commodities (built, from Nordnet's indicator lists).**
-   `instrument-screening/v1/indicator/web/list/WORLDMAP`, `CURRENCY_GLOBAL` and `COMMODITIES`
-   on `api.prod.nntech.io` (headers `Accept: */*`, `Origin`, `Referer` and `x-locale: fi-FI`;
-   only a Nordic locale is answered, so names come in Finnish or Swedish, not English;
-   `spark=true` adds the day's development in per cent, not used): 17 indices, 8 pairs and 9
-   commodities in one answer each. A row has Nordnet's instrument id, the ISIN where there is
-   one (indices and commodities; not the pairs, and not Lead, Zinc, BRIC 50 India and Shanghai),
-   the name, the order book id the history is asked for by, a symbol, a type
-   (INDEX, CURRENCY, COMMODITY), a country for most indices and the price: high, low and last
-   with a time, the previous close and the development; **no open and no volume** (undefined in
-   the bar). Their market is the list's (`Indices`, `Currencies`, `Commodities`; Nordnet gives
-   none), a pair is an edge between two currency nodes named "EUR/USD", an index is in points,
-   and a commodity is in dollars (the rows give no currency; the owner's legacy table has them
-   all in USD). An instrument without an ISIN is found by Nordnet's own id for it
-   (`nordnet-instrument`; the legacy table used the ticker). The ISINs of the metals are
-   Nordnet's own (`XC...`); whether the prices are spot-like or continuous futures is
-   still open, though Nordnet's gold (3,524 on the 21st) is not Yahoo's front-month futures
-   (3,515 on the 20th) and Morningstar is the stated source.
-   **What Yahoo's "gold" is**: `GC=F` is not the price of gold. It is the front-month
-   COMEX gold **futures contract** (the chart meta names it "Gold Dec 26", Yahoo's instrument
-   type is FUTURE), rolled to the next contract when the front one expires: a series that
-   follows the metal plus the cost of carry and jumps by the roll spread on roll days, a
-   different instrument. Yahoo has no spot gold (`XAUUSD=X` answers "not found"). So the
-   Yahoo commodities are dropped; they would need a node of their own (a continuous
-   contract, with no ISIN) if their long history (back to 2000) is wanted for modelling.
-3. **Metadata endpoints**, for getting ids and the like. The first use is the market list
-   (a market is a number in the discovery answers, and the names in the adapter are
-   inferred from the data: 4 Xetra, 11 Nasdaq Stockholm, 24 Nasdaq Helsinki, ...), and the
-   ids that the history endpoint wants for the instruments added by hand. The owner will
-   supply them with the details of the plan.
-4. **The history loader** (built for days and coarser, see below), then intraday, and the old
-   data imported from the legacy system.
+### The history loader
 
-   **The history loader** (`src/history/HistoryLoader`). A thread of its own, like the icon loader: the
-   table says which rows are on screen and a screen on either side (`want()`, most wanted first, replacing
-   what was wanted), and the loader fills those edges, one request at a time with a pause of 500 ms,
-   writing the bars to the store as they arrive (the table follows through the store's change). It does not
-   load 17,000 instruments at start: only what is looked at, once per session per edge; what a
-   persistent store keeps will make it once per edge ever. Only Nordnet's edges with an order book
-   id and without bars (fewer than 20 daily ones) are loaded. **How much**: the interactive program needs only a
-   small snapshot, the last 60 days a row's trace draws, so an edge is **one request**: `MONTH_3` daily (65 bars
-   for a stock, 92 for a commodity that trades every day, 62 for a fund's NAV; 3-10 KB). Nothing more is asked for
-   in the interactive use. **The whole history is a server's job**, loaded once and kept (a backfill), and the
-   loader has it as `Depth::Full`, tested and not used by the program: the whole period (`ALL`), daily, stored
-   under the resolution the answer **returned** (not what was asked for: a stock answers `DAY`, 1,596 bars back to
-   2020; a commodity's `ALL` comes back `WEEK`, 1,530 bars back to 1997, and a fund's too, 1,797 back to 1992), and
-   where that was not days the longest of `YEAR_10`, `YEAR_5`, `YEAR_3`, `YEAR_1` that gives days is asked for
-   next (a commodity: 3,485 daily bars; a fund's NAV: 2,377), with the pause between the requests. Weeks, months
-   and quarters are keyed by their first day. A fund's points are `{timeStamp, value}`: a bar with only a close. A `volume` of 0 is no
-   volume (undefined), since a commodity or an ETC has none. Intraday bars (1 to 30 minutes, 1 and 4 hours) are stored under their slot numbers, for the table's day and week
-   (periods, `Period.h`: each period names the series that feeds it and its base price), and the history's last bar replaces today's bar from the discovery, which the
-   next discovery reload replaces again. Failures: a 404 is remembered for the edge for the session; a 403 or 429
-   stops all requests for the session (said once in the status line); no answer or a 5xx pauses a minute and
-   asks again.
+A thread of its own, like the icon loader: the table says which rows are on screen and a
+screen on either side (`want()`, most wanted first, replacing what was wanted), and the
+loader fills those edges, one request at a time with a short pause, writing the bars to the
+store as they arrive (the table follows through the store's change). It does not load
+17,000 instruments at start: only what is looked at, once per session per edge; what a
+persistent store keeps will make it once per edge ever. Only edges with an order book id and
+without bars (fewer than 20 daily ones) are loaded.
 
-**Suggested, added to the plan** (not decided; in the order I would do them):
+- **How much**: the interactive program needs only a small snapshot, the last 60 days a
+  row's trace draws, so an edge is **one request** of about three months of daily bars
+  (65 for a stock, 92 for a commodity that trades every day, 62 for a fund's NAV; 3 to
+  10 KB). Nothing more is asked for in the interactive use.
+- **The whole history is a server's job**, loaded once and kept (a backfill). The loader has
+  it as `Depth::Full`, tested and not used by the program: the whole period, daily, stored
+  under the resolution the answer **returned**, not what was asked for (a stock's answer is
+  daily; a commodity's or a fund's comes back weekly, so the longest period that gives days
+  is asked for next, with the pause between the requests). Weeks, months and quarters are
+  keyed by their first day.
+- A fund's points are a time and a value: a bar with only a close. Intraday bars (1 to 30
+  minutes, 1 and 4 hours) are stored under their slot numbers, for the table's day and week
+  periods (`Period.h`: each period names the series that feeds it and its base price). The
+  history's last bar replaces today's bar from the discovery, which the next discovery
+  reload replaces again.
+- Failures: a 404 is remembered for the edge for the session; a 403 or 429 stops all
+  requests for the session (said once in the status line); no answer or a 5xx pauses a
+  minute and asks again.
 
-- **Keep every reload as a snapshot series.** The five-minute discovery reload replaces
-  today's bar each time and throws the snapshot away. Keeping each snapshot's last price
-  with its tick time, as a series per edge, collects an **intraday series for every
-  discovered instrument** without a single history request: by the afternoon dozens of
-  samples each, enough to estimate current correlations, which the regime embeddings
-  need for the present (embeddings.md, "A sketch of the present"). To decide: these are
-  samples, not bars (no high or low between them), so they belong in a dataset of their
-  own (`nordnet-snapshot`), and the true 5-minute bars from the history endpoint, when
-  they exist, are the better data for the same slots. To measure on a weekday, because the
-  markets were closed when this was written: how often the tick time and price change
-  between two reloads, how many instruments tick in five minutes, whether the prices are
-  delayed (the answers mark them as not real-time), and the storage (about 3,400
-  instruments by about 100 snapshots a day).
-- **Keep the facts the discovery already receives and drops**: `static_leverage` and the
-  direction (long or short) of a certificate, the issuer, a fund's category and fees. The
-  embeddings select the instruments that describe the market by leverage and direction
-  (embeddings.md), and names are not reliable for it. They are statements about the
-  instrument in the graph; until the graph exists, fields next to the type.
-- **Keep Nordnet's ids as aliases**: the instrument id, the market id and sub id, the
-  identifier on the market, the market-data and trading order book ids and the
-  `nnx_instrument_id`. The adapter holds them in memory for the history step, but they are
-  lost when it stops; they are catalog data (aliases per provider).
-- **Record when an instrument was first and last seen in discovery.** Every reload
-  sees which listings exist; a listing that disappears has been delisted or removed.
-  Recording the first and last time each was seen starts building the **listing and
-  delisting dates** the embeddings need against survivorship bias (embeddings.md) from
-  today, at no cost; the legacy data may have the earlier ones. Checking which
-  instruments in the legacy data no longer exist is a first step.
-- **Calendars for Nordnet's markets**: the generator and the reader for Xetra, Stockholm,
-  Copenhagen and Helsinki first (calendars.md), which gives the trading date of a tick
-  (now the UTC date) and the expected bars of a session for finding gaps in the history.
-- **Look at the traffic now that the stocks list is added.** A reload was about 7 requests and
-  20 MB of JSON every five minutes; the stocks list adds about 13 requests and 25 MB, so every five
-  minutes is now about 45 MB. Unlike the ETFs, most of the stocks are not open at the same time,
-  and the funds change once a day, so the lists could be reloaded at their own intervals (the
-  funds once a day, a market's stocks while it is open); not done yet. The prices are
-  in the same answers as the instruments, so reloading the lists is how prices are
-  refreshed. If the metadata endpoints include one that gives prices for many ids at once,
-  the lists could be reloaded rarely (daily) and the prices often and cheaply; to ask the
-  owner when the metadata endpoints are known.
+### Suggested, added to the plan
+
+Not decided; in the order I would do them.
+
+- **Keep every reload as a snapshot series.** A discovery reload replaces today's bar each
+  time and throws the snapshot away. Keeping each snapshot's last price with its tick time,
+  as a series per edge, collects an **intraday series for every discovered instrument**
+  without a single history request: by the afternoon dozens of samples each, enough to
+  estimate current correlations, which the regime embeddings need for the present
+  (embeddings.md, "A sketch of the present"). To decide: these are samples, not bars (no
+  high or low between them), so they belong in a dataset of their own, and the true
+  5-minute bars from the history endpoint, when they exist, are the better data for the same
+  slots. To measure on a weekday: how often the tick time and price change between two
+  reloads, how many instruments tick in five minutes, whether the prices are delayed, and
+  the storage (about 3,400 instruments by about 100 snapshots a day).
+- **Keep the facts the discovery already receives and drops**: a certificate's leverage and
+  direction, the issuer, a fund's category and fees. The embeddings select the instruments
+  that describe the market by leverage and direction (embeddings.md), and names are not
+  reliable for it. They are statements about the instrument in the graph; until the graph
+  exists, fields next to the type.
+- **Keep the provider's ids as aliases**: the instrument id, the market id and sub id, the
+  identifier on the market, the order book ids. The adapter holds them in memory for the
+  history step, but they are lost when it stops; they are catalog data (aliases per
+  provider).
+- **Record when an instrument was first and last seen in discovery.** Every reload sees which
+  listings exist; a listing that disappears has been delisted or removed. Recording the
+  first and last time each was seen starts building the **listing and delisting dates** the
+  embeddings need against survivorship bias (embeddings.md) from today, at no cost; the
+  legacy data may have the earlier ones. Checking which instruments in the legacy data no
+  longer exist is a first step.
+- **Calendars for the discovered markets**: the generator and the reader for the first few
+  exchanges (calendars.md), which gives the trading date of a tick (now the UTC date) and
+  the expected bars of a session for finding gaps in the history.
+- **Look at the traffic.** A full reload is dozens of requests and tens of MB of JSON every
+  few minutes. Most stocks are not open at the same time and funds change once a day, so
+  the lists should be reloaded at their own intervals; not done yet. The prices are in the
+  same answers as the instruments, so reloading the lists is how prices are refreshed. If
+  a metadata endpoint gives prices for many ids at once, the lists could be reloaded rarely
+  (daily) and the prices often and cheaply.
 
 Licences and terms matter for a service that shows the data to others: check what
 each provider allows before it is on by default.
@@ -876,11 +774,10 @@ when it outgrows the disk.
    summary, one series, a long scan across many).
 2. The schema, in a file in this repository, and the ingest service with one
    adapter writing to it.
-3. The Nordnet adapter: discovery of ETFs and certificates (built), then, as decided,
-   the stocks endpoint, currencies and commodities by hand, the metadata endpoints and
-   the history loader with the legacy import; and, suggested, the snapshot series, the
-   facts and ids kept, first and last seen, calendars for its markets and a look at the
-   traffic (see "Nordnet: what comes next").
+3. The discovery adapter: discovery of every list (built), then the metadata endpoints
+   and the history loader with the legacy import; and, suggested, the snapshot series,
+   the facts and ids kept, first and last seen, calendars for its markets and a look at
+   the traffic (see "Suggested, added to the plan").
 4. The API, and `RemoteStore` in the app.
 5. Serving the legacy MariaDB data.
 6. Order books, once the policy is decided.

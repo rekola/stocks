@@ -70,7 +70,7 @@ distorts what it is added to:
   functions of their underlying: they move with it, multiplied, flipped in sign, reset
   daily or wiped out when a barrier is hit. In an aggregate or a correlation matrix they
   count the underlying again, with the wrong sign or a fat tail, and they have finite
-  lives. Nordnet's unfiltered certificate list has 64,861 of them (in a sample of 300,
+  lives. One discovery source's unfiltered certificate list has 64,861 of them (in a sample of 300,
   all short, leverage 2 to 22, many flagged high-risk). The adapter loads only the `PTC`
   type, so they are not in the data.
 - **Plain trackers are another matter.** Of the first 1,000 `PTC` certificates, 993 have
@@ -141,18 +141,18 @@ the order book, announcements, calendars or other instruments.
 ## Data issues the embeddings must live with
 
 - **Adjusted history.** A return across a split is wrong unless the prices are adjusted, and
-  Yahoo adjusts its history *afterwards* (server.md), so a series changes when a split
+  a candle source adjusts its history *afterwards*, retroactively (server.md), so a series changes when a split
   happens. The legacy data never handled splits, so its old bars are raw and a split is a
   jump. Embeddings must be built from a **pinned version** of the data (the server answers
   "as of version N") and recomputed, or flagged, when the inputs they used change.
-  Returns should come from adjusted prices; volume must be adjusted too (Yahoo's is).
+  Returns should come from adjusted prices; volume must be adjusted too (that source's is).
 - **Survivorship.** The providers list the instruments that exist today. Everything that
   was delisted, merged or went bankrupt is missing from discovery, so a history built from
   the current lists flatters the past. The data side needs listing and delisting dates,
   and the legacy data may hold delisted instruments. Until then, the 1987-to-now
   embeddings are conditioned on survival, and should say so.
 - **A changing set of instruments.** Far fewer instruments have bars in 1987 than today
-  (Yahoo's Helsinki history for NOKIA.HE, for one, starts in 2000). A model needs the same
+  (a candle source's Helsinki history for NOKIA.HE, for one, starts in 2000). A model needs the same
   shape of input at every slot, so how to describe "the market" at a slot when the number of
   instruments goes from a few dozen to thousands is a real choice (see "Input: aggregates
   or a set").
@@ -277,7 +277,7 @@ The first product is a **map**, before any prediction (the owner's plan):
 The current slot is the hard one. The embeddings are built from windows of history,
 including correlations, and for the current day only the beginning of the window exists.
 
-- **What the discovery endpoints give now.** Every five minutes the Nordnet discovery
+- **What the discovery endpoints give now.** Every five minutes the discovery
   reloads about 3,400 instruments, each with its last price and the day's open, high and low,
   the previous close, the day's change and volume, the tick time, and its returns over a
   day, a week, a month, three months, the year to date, a year, three, five years and since
@@ -339,8 +339,8 @@ What a client needs from the server, and what it shows:
 
 1. Agree with the mathematics side on the slot grids, the input set (aggregates or sets) and
    the interface (the tensor export).
-2. Define the first aggregates from the data that exists (the Yahoo and Nordnet daily
-   bars, the currency pairs and the commodity futures), with the masks.
+2. Define the first aggregates from the data that exists (the daily
+   bars of the sources, the currency pairs and the commodity futures), with the masks.
 3. A baseline: hand-made features on the daily grid, a projection, and the checks above
    against the known crises.
 4. The calendars and the open masks for the intraday grid (calendars.md).
