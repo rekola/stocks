@@ -1,0 +1,14 @@
+# market: Ireland
+# kind,base,quote,name,yahoo,isin: what one unit of `base` costs in `quote`; `yahoo` is Yahoo's ticker
+kind,base,quote,name,yahoo,isin
+company,A5G.IR,EUR,AIB Group Plc,A5G.IR,IE00BF0L3536
+company,BIRG.IR,EUR,Bank Of Ireland Group,BIRG.IR,IE00BD1RP616
+company,EG7.IR,EUR,FBD Holdings Plc,EG7.IR,IE0003290289
+company,GL9.IR,EUR,Glanbia Plc,GL9.IR,IE0000669501
+company,GVR.IR,EUR,GLENVEAGH PROPERTIES PLC,GVR.IR,IE00BD6JX574
+company,IR5B.IR,EUR,Irish Continental Group Plc Units,IR5B.IR,IE00BLP58571
+company,IRES.IR,EUR,Irish Residential Properties REIT Plc,IRES.IR,IE00BJ34P519
+company,KRX.IR,EUR,Kingspan Group Plc,KRX.IR,IE0004927939
+company,KRZ.IR,EUR,Kerry Group Plc,KRZ.IR,IE0004906560
+company,PTSB.IR,EUR,PERMANENT TSB GROUP HOLDINGS,PTSB.IR,IE00BWB8X525
+company,RYA.IR,EUR,Ryanair Holdings Plc,RYA.IR,IE00BYTBXV33
