@@ -99,7 +99,7 @@ void Browser::requestIcons() {
     const int row = table_.rowAt(position);
     if (row >= 0 && !quotes->rows[static_cast<size_t>(row)].icon_url.empty()) urls.push_back(quotes->rows[static_cast<size_t>(row)].icon_url);
   };
-  const int margin = 3 * view;
+  const int margin = view;
   for (int p = first; p < std::min(count, first + view + margin); p++) add(p);  // on screen, then the screens after
   for (int p = first - 1; p >= std::max(0, first - margin); p--) add(p);        // then the ones before
   icons_->want(urls);

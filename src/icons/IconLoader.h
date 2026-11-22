@@ -38,9 +38,9 @@ class IconLoader {
  public:
   struct Options {
     std::filesystem::path cache_dir;                       // empty: no disk cache
-    size_t max_memory_icons = 3000;                        // least recently used leave first
-    uintmax_t max_disk_bytes = 32u * 1024 * 1024;          // least recently used files go first
-    std::chrono::milliseconds pause{500};                  // between two requests
+    size_t max_memory_icons = 16000;                       // about 66 MB; least recently used leave first
+    uintmax_t max_disk_bytes = 256u * 1024 * 1024;         // about 62000 icons; least recently used files go first
+    std::chrono::milliseconds pause{100};                  // between two requests (a static CDN, not the API)
     std::chrono::milliseconds offline_pause{60000};        // after no answer
   };
   // `loaded` runs on the loader's thread after icons have arrived; a program hands it to the UI thread.
