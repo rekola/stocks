@@ -115,14 +115,16 @@ TEST(an_op_page_gives_its_token_without_a_leading_ampersand) {
 
 TEST(an_op_list_leaves_out_the_less_often_priced_and_the_ones_without_an_isin) {
   std::vector<OpSource::Product> products;
+  std::vector<std::string> unnamed;
   std::string error;
-  CHECK(OpSource::parseList(fixture("op/fundlist.json"), products, error));
+  CHECK(OpSource::parseList(fixture("op/fundlist.json"), products, unnamed, error));
   CHECK(products.size() == 2);  // the monthly one and the one with no ISIN are out
+  CHECK(unnamed.size() == 1 && unnamed[0] == "No ISIN");  // reported, not stored
   CHECK(products[0].fund.isin == "FI0008800511" && products[0].notation == "111");
   CHECK_NEAR(*products[0].fund.managementFee, 1.5, 1e-9);  // a string of a number
   CHECK(*products[0].fund.risk == 5 && *products[0].fund.rating == 4 && *products[0].fund.esg == 3);
   CHECK(products[1].notation == "333");  // a number
-  CHECK(!OpSource::parseList("[]", products, error));
+  CHECK(!OpSource::parseList("[]", products, unnamed, error));
 }
 
 TEST(the_op_source_writes_funds_under_its_own_dataset_and_market) {
@@ -142,9 +144,20 @@ TEST(the_op_source_writes_funds_under_its_own_dataset_and_market) {
   auto edge = edgeOf(*s, "FI0008800511", "OP Funds", "op");
   CHECK(edge.has_value());
   if (edge) CHECK(s->candles(*edge, Resolution::Day).candles.size() == 3);
-  CHECK(edgeOf(*s, "FI0008801234", "OP Funds", "op").has_value());  // the wrapped series
+  CHECK(edgeOf(*s, "FI0008801238", "OP Funds", "op").has_value());  // the wrapped series
   CHECK(!edgeOf(*s, "FI4000439971", "OP Funds", "op"));
   CHECK(!http.headers.empty() && http.headers[0].size() == 2);  // the page is asked for with a Referer and an Origin
+}
+
+TEST(a_fund_with_a_wrong_isin_is_not_stored_and_is_reported) {
+  std::vector<OpSource::Product> products;
+  std::vector<std::string> unnamed;
+  std::string error;
+  CHECK(OpSource::parseList(R"({"inst":[{"isin":"FI0008800512","name":"Typo","id_notation":"1"}]})", products, unnamed, error));
+  CHECK(products.empty() && unnamed.size() == 1);
+  auto store = makeMemoryStore();
+  CHECK(!writeFund(*store, "op", "OP Funds", FundRow{.isin = "", .name = "x"}, {{1, 0, 0, 0, 1, 0}}));
+  CHECK(store->snapshot()->instruments().empty());
 }
 
 TEST(a_failed_op_page_says_so_and_writes_nothing) {

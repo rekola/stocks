@@ -1,5 +1,7 @@
 #include "source/AktiaSource.h"
 
+#include "model/Isin.h"
+
 #include <regex>
 #include <thread>
 
@@ -73,6 +75,10 @@ bool AktiaSource::parseList(const std::string & body, std::vector<Product> & pro
       continue;
     }
     if (!isin) continue;
+    if (!isValidIsin(*isin)) {
+      unknown.push_back(id + " (invalid ISIN " + *isin + ")");
+      continue;
+    }
     Product p;
     p.productId = id;
     p.fund.isin = *isin;

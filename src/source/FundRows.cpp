@@ -1,6 +1,7 @@
 #include "source/FundRows.h"
 
 #include "model/Dates.h"
+#include "model/Isin.h"
 #include "source/InstrumentLists.h"
 
 #include <algorithm>
@@ -104,7 +105,7 @@ bool tooSparse(const std::vector<Candle> & bars) {
 
 bool writeFund(Store & store, const std::string & datasetName, const std::string & marketName, const FundRow & f,
                const std::vector<Candle> & bars) {
-  if (bars.empty() || f.isin.empty()) return false;
+  if (bars.empty() || !isValidIsin(f.isin)) return false;
   Dataset dataset = store.addDataset({{}, datasetName});
   Market market = store.addMarket({{}, marketName});
   Instrument base = store.addInstrument({{}, "", f.name, InstrumentKind::Fund, f.isin, "FUND"});

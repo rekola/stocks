@@ -1,5 +1,7 @@
 #include "source/OpSource.h"
 
+#include "model/Isin.h"
+
 #include <regex>
 #include <thread>
 
@@ -55,7 +57,8 @@ std::string OpSource::chartUrl(const std::string & notation, const std::string &
   return "https://marketdata.op.fi/portal2/charts//fundchartdata.php?ID_NOTATION=" + notation + "&type=line&" + token;
 }
 
-bool OpSource::parseList(const std::string & body, std::vector<Product> & products, std::string & error) {
+bool OpSource::parseList(const std::string & body, std::vector<Product> & products, std::vector<std::string> & unnamed,
+                         std::string & error) {
   json doc = json::parse(body, nullptr, /*allow_exceptions=*/false);
   if (doc.is_discarded() || !doc.is_object() || !doc.contains("inst") || !doc["inst"].is_array()) {
     error = "not a fund list";
@@ -71,7 +74,12 @@ bool OpSource::parseList(const std::string & body, std::vector<Product> & produc
       if (it->is_string()) p.notation = it->get<std::string>();
       else if (it->is_number_integer()) p.notation = std::to_string(it->get<int64_t>());
     }
-    if (p.fund.isin.empty() || p.notation.empty() || pricedLessOften(p.fund.isin)) continue;
+    if (p.notation.empty()) continue;
+    if (!isValidIsin(p.fund.isin)) {
+      unnamed.push_back(p.fund.name.empty() ? "notation " + p.notation : p.fund.name);
+      continue;
+    }
+    if (pricedLessOften(p.fund.isin)) continue;
     p.fund.symbol = p.fund.isin;
     p.fund.identifier = p.notation;
     p.fund.managementFee = looseNumber(i, "management_fee");
@@ -106,10 +114,12 @@ void OpSource::load(Store & store, Http & http, SourceListener & listener) {
     return;
   }
   std::vector<Product> products;
-  if (!parseList(list.body, products, error)) {
+  std::vector<std::string> unnamed;
+  if (!parseList(list.body, products, unnamed, error)) {
     listener.message("op: the fund list: " + error);
     return;
   }
+  for (const std::string & u : unnamed) listener.message("op: no ISIN for " + u + ", left out");
   size_t loaded = 0, skippedSparse = 0;
   for (const Product & p : products) {
     if (listener.cancelled()) return;

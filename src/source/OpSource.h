@@ -26,8 +26,9 @@ class OpSource : public Source {
   // The token of the funds page: the part of the query that the list and the charts are asked for with ("a=b&c=d", without a leading
   // `&` or `?`). False, with `error` set, when the page has none.
   static bool parseToken(const std::string & page, std::string & token, std::string & error);
-  // The daily funds of the list answer. False, with `error` set, when `json` is not a list.
-  static bool parseList(const std::string & json, std::vector<Product> & products, std::string & error);
+  // The daily funds of the list answer that have a valid ISIN; `unnamed` gets the names of the rows that have none (or a wrong one), which
+  // are not stored. False, with `error` set, when `json` is not a list.
+  static bool parseList(const std::string & json, std::vector<Product> & products, std::vector<std::string> & unnamed, std::string & error);
   // Whether OP prices the fund less often than daily.
   static bool pricedLessOften(const std::string & isin);
 
