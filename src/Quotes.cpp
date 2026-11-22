@@ -178,16 +178,11 @@ std::span<const float> Quotes::trace(int r, int) const {
 }
 
 std::optional<cellui::Color> Quotes::color(int r, int c) const {
-  bool up;
-  if (c == CHANGE) {
-    up = latest(r).change >= 0;
-  } else if (c == HISTORY) {
-    std::span<const float> t = trace(r, c);
-    if (t.empty()) return std::nullopt;
-    up = t.back() >= t.front();
-  } else {
-    return std::nullopt;
-  }
+  // The change and the trace beside it are one colour, the sign of the last move (the change column's number), so that they
+  // never disagree: a trace that rose over the 60 days and fell on the last one is red, as its change is.
+  if (c != CHANGE && c != HISTORY) return std::nullopt;
+  if (c == HISTORY && trace(r, c).empty()) return std::nullopt;
+  const bool up = latest(r).change >= 0;
   return up ? cellui::Color(0x3f, 0xb9, 0x50) : cellui::Color(0xf8, 0x51, 0x49);
 }
 

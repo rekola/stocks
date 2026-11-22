@@ -585,3 +585,28 @@ TEST(the_viewer_is_drawn_by_the_loop_without_another_input) {
             {[&] { during = f.backend->frameCount(); }, [&] { f.press(Key::Escape); }});
   CHECK(during > before);  // the input that opened it has not returned, so no frame follows it: the dialog asks for one
 }
+
+TEST(a_rows_trace_and_change_have_the_same_colour_the_one_of_the_last_move) {
+  Fixture f(false);
+  Instrument eur = f.store->addInstrument({{}, "EUR", "Euro", InstrumentKind::Currency});
+  Instrument usd = f.store->addInstrument({{}, "USD", "US dollar", InstrumentKind::Currency});
+  Instrument gbp = f.store->addInstrument({{}, "GBP", "British pound", InstrumentKind::Currency});
+  Market currencies = f.store->addMarket({{}, "Currencies"});
+  Dataset a = f.store->addDataset({{}, "provider-a"});
+  // Up over the whole trace, down on the last day: the trace used to be green and the change red.
+  f.store->appendCandles({eur.id, usd.id, currencies.id, a.id}, Resolution::Day,
+                         {{0, 1, 1, 1, 1.0, 1}, {1, 1, 1, 1, 1.5, 1}, {2, 1, 1, 1, 2.0, 1}, {3, 1, 1, 1, 1.9, 1}});
+  // Down over the whole trace, up on the last day.
+  f.store->appendCandles({gbp.id, usd.id, currencies.id, a.id}, Resolution::Day,
+                         {{0, 1, 1, 1, 2.0, 1}, {1, 1, 1, 1, 1.5, 1}, {2, 1, 1, 1, 1.0, 1}, {3, 1, 1, 1, 1.1, 1}});
+  f.app->execute("show-currencies");
+  Table & t = f.browser->table();
+  CHECK(t.model()->rowCount() == 2);
+  const cellui::Color red(0xf8, 0x51, 0x49), green(0x3f, 0xb9, 0x50);
+  for (int r = 0; r < 2; r++) {
+    auto change = t.model()->color(r, Quotes::CHANGE), trace = t.model()->color(r, Quotes::HISTORY);
+    CHECK(change && trace && *change == *trace);
+    const bool eurRow = t.model()->text(r, Quotes::BASE) == "EUR";
+    CHECK(*change == (eurRow ? red : green));  // the last move decides, not the whole trace
+  }
+}
