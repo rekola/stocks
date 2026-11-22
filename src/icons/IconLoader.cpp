@@ -13,7 +13,7 @@ using cellui::TableIcon;
 
 namespace {
 
-constexpr char kMagic[4] = {'I', 'C', 'N', '1'};
+constexpr char kMagic[4] = {'I', 'C', 'N', '2'};  // 1 was 32 pixels wide: such a file is read as no icon
 constexpr size_t kPixelBytes = static_cast<size_t>(kIconSize) * kIconSize * 4;
 
 // A hash that is the same in every run, for the file name and the picture's id.

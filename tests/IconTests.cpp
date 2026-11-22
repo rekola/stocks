@@ -121,7 +121,7 @@ TEST(memory_keeps_the_most_recently_used_icons) {
 
 TEST(the_disk_cache_is_kept_under_its_cap_by_dropping_the_oldest) {
   const fs::path dir = tempDir("cap");
-  const uintmax_t cap = 10 * 4100;
+  const uintmax_t cap = 10 * (4 + kIconSize * kIconSize * 4);
   Rig rig({.cache_dir = dir, .max_disk_bytes = cap});
   std::vector<std::string> urls;
   for (int i = 0; i < 51; i++) urls.push_back("https://cdn/" + std::to_string(i) + ".png");

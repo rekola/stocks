@@ -22,8 +22,9 @@
 // Posted to the UI thread when icons have loaded: the table draws again.
 struct IconsLoaded {};
 
-// The side of the square an icon is kept at, in pixels. The table scales it again to the size of its cell.
-inline constexpr int kIconSize = 32;
+// The side of the square an icon is kept at, in pixels. The display scales it to the size of its cell, so it is
+// kept larger than any cell is likely to be.
+inline constexpr int kIconSize = 64;
 
 // Where icons are kept between runs: stocks/icons under the user's cache directory.
 std::filesystem::path defaultIconCacheDir();
@@ -39,8 +40,8 @@ class IconLoader {
  public:
   struct Options {
     std::filesystem::path cache_dir;                       // empty: no disk cache
-    size_t max_memory_icons = 16000;                       // about 66 MB; least recently used leave first
-    uintmax_t max_disk_bytes = 256u * 1024 * 1024;         // about 62000 icons; least recently used files go first
+    size_t max_memory_icons = 4000;                        // about 66 MB (disk serves the rest); least recently used leave first
+    uintmax_t max_disk_bytes = 512u * 1024 * 1024;         // about 31000 icons; least recently used files go first
     size_t burst = 100;                                    // requests in a row, then a pause (each burst 80-120 % of this)
     std::chrono::milliseconds burst_pause{2000};           // between bursts (each 50-150 % of this)
     std::chrono::milliseconds offline_pause{60000};        // after no answer
