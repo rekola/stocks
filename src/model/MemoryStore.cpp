@@ -223,11 +223,10 @@ std::string textOf(const Value & v) {
 void Snapshot::setAttribute(NodeRef n, const Attribute & a) { setAttributes(n, {a}); }
 
 namespace {
-std::string heldKey(NodeType t, const std::string & key) { return std::string(1, static_cast<char>('0' + static_cast<int>(t))) + key; }
+std::string heldKey(StoredType t, const std::string & key) { return std::string(1, static_cast<char>('0' + static_cast<int>(t))) + key; }
+std::string heldKey(const StoredNode & n) { return heldKey(n.type, n.key); }
 
-StoredFact stored(NodeType t, const std::string & key, const Attribute & a) {
-  return StoredFact{t, key, a.predicate, a.value, a.updated};
-}
+StoredFact stored(const StoredNode & n, const Attribute & a) { return StoredFact{n.type, n.key, a.predicate, a.value, a.updated}; }
 }  // namespace
 
 void Snapshot::hold(const std::vector<StoredFact> & facts) {
@@ -241,7 +240,7 @@ void Snapshot::hold(const std::vector<StoredFact> & facts) {
   for (auto & [key, attrs] : grouped) {
     const auto * old = held_.find(key);
     if (old) attrs.insert(attrs.begin(), old->begin(), old->end());
-    if (key[0] == static_cast<char>('0' + static_cast<int>(NodeType::Market)))
+    if (key[0] == static_cast<char>('0' + static_cast<int>(StoredType::Market)))
       for (const Attribute & a : attrs)
         if (const auto * text = std::get_if<std::string>(&a.value)) {
           const std::string said = indexKey(NodeType::Market, a.predicate, *text);
@@ -284,7 +283,7 @@ void Snapshot::setAttributes(NodeRef n, const std::vector<Attribute> & in) {
   // The key the node's facts are kept under, once it has one. An instrument or a dataset has what identifies it; a market has
   // a key of its own, which is that of the held market (what an earlier run kept) that says it is what this one is said to be
   // (its MIC, its id at a source, its name), else one made new. A market that has its key keeps it whatever is said of it.
-  std::string key;
+  StoredNode key;
   {
     std::vector<Attribute> after = attrs;
     for (const Attribute & a : said) {
@@ -294,29 +293,29 @@ void Snapshot::setAttributes(NodeRef n, const std::vector<Attribute> & in) {
     }
     if (n.type != NodeType::Market) {
       key = nodeKey(n.type, after);
-    } else if (const std::string * known = keyOf_.find(n)) {
+    } else if (const StoredNode * known = keyOf_.find(n)) {
       key = *known;
     } else if (const auto recognised = recognisedBy(n.type, after); !recognised.empty()) {
       for (const auto & [p, text] : recognised) {
         const auto * keys = heldMarkets_.find(indexKey(n.type, p, text));
         if (!keys || keys->size() == 0) continue;
-        key = *std::min_element(keys->begin(), keys->end());
+        key = {StoredType::Market, *std::min_element(keys->begin(), keys->end())};
         break;
       }
-      if (key.empty() && mint_ && *mint_) key = (*mint_)();
+      if (key.key.empty() && mint_ && *mint_) key = {StoredType::Market, (*mint_)()};
     }
   }
 
   // What an earlier run said of this node, now that it is known by what it was kept under: it stands where this run has
   // not said otherwise, with the times it had, so a value said again changes nothing but its time.
   bool adopted = false;
-  if (!key.empty())
-    if (const auto * held = held_.find(heldKey(n.type, key))) {
+  if (!key.key.empty())
+    if (const auto * held = held_.find(heldKey(key))) {
       for (const Attribute & h : *held) {
         if (const auto * text = std::get_if<std::string>(&h.value); text && n.type == NodeType::Market) {
           const std::string said_key = indexKey(n.type, h.predicate, *text);
           if (const auto * keys = heldMarkets_.find(said_key)) {
-            auto rest = keys->erase(key);
+            auto rest = keys->erase(key.key);
             heldMarkets_ = rest.size() ? heldMarkets_.set(said_key, rest) : heldMarkets_.erase(said_key);
           }
         }
@@ -325,7 +324,7 @@ void Snapshot::setAttributes(NodeRef n, const std::vector<Attribute> & in) {
         index(h);
         adopted = true;
       }
-      held_ = held_.erase(heldKey(n.type, key));
+      held_ = held_.erase(heldKey(key));
     }
 
   std::vector<size_t> changed, rechecked;  // positions in attrs
@@ -355,15 +354,15 @@ void Snapshot::setAttributes(NodeRef n, const std::vector<Attribute> & in) {
 
   // What goes to the disk: the facts of this write under the node's key; and where the node has just got a key, or a
   // stronger one, all of its facts under it, and none under the old.
-  const std::string * known = keyOf_.find(n);
-  if (!key.empty()) {
+  const StoredNode * known = keyOf_.find(n);
+  if (!key.key.empty()) {
     if (!known || *known != key) {
-      if (known) outbox_.forget.push_back({n.type, *known});
-      for (const Attribute & a : attrs) outbox_.changed.push_back(stored(n.type, key, a));
+      if (known) outbox_.forget.push_back(*known);
+      for (const Attribute & a : attrs) outbox_.changed.push_back(stored(key, a));
       keyOf_ = keyOf_.set(n, key);
     } else {
-      for (size_t i : changed) outbox_.changed.push_back(stored(n.type, key, attrs[i]));
-      for (size_t i : rechecked) outbox_.rechecked.push_back(stored(n.type, key, attrs[i]));
+      for (size_t i : changed) outbox_.changed.push_back(stored(key, attrs[i]));
+      for (size_t i : rechecked) outbox_.rechecked.push_back(stored(key, attrs[i]));
     }
   }
   attributes_ = attributes_.set(n, attrs);

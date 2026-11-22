@@ -140,9 +140,10 @@ there is no server in this step.
   `Snapshot::fact()` return it (`Attribute::updated`); `Attribute` equality ignores it. A write of an unchanged value moves
   `updated` and makes **no new version**, so nothing that watches the version (the table) wakes; a changed value makes one.
 - **The key of a node** is not its id, which belongs to one run, but what identifies it (`src/model/NodeIdentity.cpp`, the
-  one place): an instrument's ISIN, or its symbol where it has none; a dataset's name. Facts of a node that has none of these
-  yet are not written until it has, and when a stronger one is learned the facts move to it (the old rows are forgotten in
-  the same batch). **A market has a surrogate key**, 16 random hex digits the store makes when it first keeps a fact of the
+  one place): an instrument's ISIN; a currency's or a unit's code (the instruments with no ISIN); a dataset's name. The stored
+  node type says which, so a key has no prefix. Facts of a node that has no key yet are not written until it has (an instrument
+  with no ISIN that is no currency or unit has none), and when a stronger one is learned the facts move to it (the old rows are
+  forgotten in the same batch). **A market has a surrogate key**, 16 random hex digits the store makes when it first keeps a fact of the
   market: some markets have no MIC, so the MIC is a fact of the market like its name or its id at a source, not its key. The
   key never changes however much is learned of the market. A market of a later run is *recognised* by what it is said to be: the
   held market that has the same MIC, else the same id at a source, else the same name (`recognisedBy()`), and a market none
@@ -159,7 +160,7 @@ there is no server in this step.
   that says ten thousand known things again costs one transaction. The destructor flushes. `SqliteFactStore` (SQLiteCpp,
   behind `openSqliteFactStore()`, in no header) is the SQLite one.
 - **The file**: one table `facts(node_type, node_key, predicate, value, is_bool, updated)` keyed by
-  `(node_type, node_key, predicate)`, WAL mode, a transaction per batch, the schema version in `PRAGMA user_version` (1).
+  `(node_type, node_key, predicate)` (node type 0 instrument, 1 market, 2 dataset, 3 currency or unit), WAL mode, a transaction per batch, the schema version in `PRAGMA user_version` (1).
   `value` has no declared type, so SQLite's own null, integer, real and text are kept as given (a real that is whole stays a
   real) and a truth value is an integer with `is_bool` set. An undefined number is not said, so it is not kept. A file that
   is not a database, is damaged or has a newer `user_version` is moved aside (`.bad-<time>`, with its WAL files) and
@@ -173,9 +174,8 @@ there is no server in this step.
   the order nodes are first resolved, are used as positions in the node sequences and as parts of `EdgeKey`, and so cannot be
   kept. Edges would refer to a node by its key, which is stable and is what the facts file already uses (an instrument's ISIN, a
   market's surrogate key, a dataset's name), and facts would be looked up by that key, so there is nothing to restore and nothing
-  to hold until a node is made again (`held_`, adoption and `keyOf_` go). To decide then: whether the `isin:`/`symbol:` prefix
-  stays in the key or the identifier moves to its own column, and whether an instrument with no ISIN gets a surrogate key like a
-  market.
+  to hold until a node is made again (`held_`, adoption and `keyOf_` go). To decide then: whether an instrument with no ISIN
+  that is no currency or unit gets a surrogate key like a market.
 - **Not done**: any loader that writes new facts (they will be ordinary attributes through the same writes), node-valued links,
   and a rule for which source stands when two disagree (the last said stands).
 

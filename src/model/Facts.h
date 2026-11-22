@@ -10,15 +10,24 @@
 // What is kept of the node attributes between runs, and the interface of the place it is kept in. Nothing here knows
 // SQLite: a store backed by a server writes the same facts somewhere else.
 //
-// Node ids (`NodeRef`) are surrogates made per run, so a fact is kept under what identifies its node: an instrument's ISIN
-// (or its symbol where it has none), a market's MIC, its source's id or its name, a dataset's name (NodeIdentity.h). The
+// Node ids (`NodeRef`) are surrogates made per run, so a fact is kept under a type and a key that identify its node: an
+// instrument's ISIN, a currency's code, a market's surrogate key, a dataset's name (NodeIdentity.h). The
 // nodes themselves are not kept: one exists when it has edges, and edges are not kept. A fact whose node is not seen yet is
 // held until the node is made again.
 
+// What kind of thing a fact's node is, as it is kept: the kind says what its key is (NodeIdentity.h). The values are those of
+// the files, and so do not change.
+enum class StoredType : uint8_t {
+  Instrument = 0,  // key: its ISIN
+  Market = 1,      // key: a surrogate the store made
+  Dataset = 2,     // key: its name
+  Currency = 3,    // a currency or a unit, the instruments with no ISIN; key: its code
+};
+
 // One thing said of a node, as it is kept.
 struct StoredFact {
-  NodeType type = NodeType::Instrument;
-  std::string node;  // the node's key: "isin:FI0009000681", "mic:XHEL", "name:..." (NodeIdentity.h)
+  StoredType type = StoredType::Instrument;
+  std::string node;  // the node's key: "FI0009000681", "3f9c0a7d5e21b864", "provider-a", "EUR" (by `type`)
   std::string predicate;
   Value value;              // never NaN: an undefined number is not said, so it is not kept
   TimestampMs updated = 0;  // when a source last said it (milliseconds UTC), whether or not the value changed
@@ -26,7 +35,7 @@ struct StoredFact {
 
 // The key of a node's facts: what to forget when its identity changes.
 struct StoredNode {
-  NodeType type = NodeType::Instrument;
+  StoredType type = StoredType::Instrument;
   std::string key;
   friend bool operator==(const StoredNode &, const StoredNode &) = default;
 };

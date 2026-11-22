@@ -1,26 +1,31 @@
 #include "model/NodeIdentity.h"
 
-#include <initializer_list>
-
 namespace {
 
-// The text of the first of `predicates` that is said (and not empty), as "predicate:text".
-std::string firstOf(const std::vector<Attribute> & said, std::initializer_list<const char *> predicates) {
-  for (const char * p : predicates)
-    for (const Attribute & a : said)
-      if (a.predicate == p)
-        if (const auto * text = std::get_if<std::string>(&a.value); text && !text->empty()) return std::string(p) + ':' + *text;
+// The text of `predicate` where it is said and not empty; else nothing.
+std::string textOf(const std::vector<Attribute> & said, const char * predicate) {
+  for (const Attribute & a : said)
+    if (a.predicate == predicate)
+      if (const auto * text = std::get_if<std::string>(&a.value)) return *text;
   return {};
 }
 
 }  // namespace
 
-std::string nodeKey(NodeType type, const std::vector<Attribute> & said) {
+StoredNode nodeKey(NodeType type, const std::vector<Attribute> & said) {
   switch (type) {
-    case NodeType::Instrument:
-      return firstOf(said, {predicate::isin, predicate::symbol});
-    case NodeType::Dataset:
-      return firstOf(said, {predicate::name});
+    case NodeType::Instrument: {
+      if (std::string isin = textOf(said, predicate::isin); !isin.empty()) return {StoredType::Instrument, std::move(isin)};
+      const std::string kind = textOf(said, predicate::kind);
+      if (kind == kindName(InstrumentKind::Currency) || kind == kindName(InstrumentKind::Unit)) {
+        if (std::string code = textOf(said, predicate::symbol); !code.empty()) return {StoredType::Currency, std::move(code)};
+      }
+      return {};
+    }
+    case NodeType::Dataset: {
+      if (std::string name = textOf(said, predicate::name); !name.empty()) return {StoredType::Dataset, std::move(name)};
+      return {};
+    }
     case NodeType::Market:
       break;  // a surrogate
   }

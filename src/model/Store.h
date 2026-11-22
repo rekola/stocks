@@ -111,7 +111,7 @@ class Snapshot {
   FactBatch outbox_;  // what to keep, for the store that made this copy
   immer::map<std::string, std::vector<Attribute>> held_;  // "type key" to what an earlier run said of that node
   immer::map<std::string, immer::set<std::string>> heldMarkets_;  // "type predicate \0 text" to the keys of the held markets that say it
-  immer::map<NodeRef, std::string> keyOf_;  // the key a node's facts are kept under, once it has one
+  immer::map<NodeRef, StoredNode> keyOf_;  // the key a node's facts are kept under, once it has one
   Seq<Instrument> instruments_;
   Seq<Market> markets_;
   Seq<Dataset> datasets_;

@@ -56,8 +56,8 @@ class SqliteFactStore : public FactStore {
       while (q.executeStep()) {
         StoredFact f;
         const int type = q.getColumn(0).getInt();
-        if (type < 0 || type > static_cast<int>(NodeType::Dataset)) continue;
-        f.type = static_cast<NodeType>(type);
+        if (type < 0 || type > static_cast<int>(StoredType::Currency)) continue;
+        f.type = static_cast<StoredType>(type);
         f.node = q.getColumn(1).getString();
         f.predicate = q.getColumn(2).getString();
         const SQLite::Column value = q.getColumn(3);
