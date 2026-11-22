@@ -769,14 +769,16 @@ and they decide how history has to be collected):
    writing the bars to the store as they arrive (the table follows through the store's change). It does not
    load 17,000 instruments at start: only what is looked at, once per session per edge; what a
    persistent store keeps will make it once per edge ever. Only Nordnet's edges with an order book
-   id and without history are loaded. **What it asks for**: the whole period (`ALL`), daily, with `&fundType=FUND_NAV` for a fund.
-   Observed on the live endpoint: a stock answers `DAY` (1,596 bars, back to 2020); a commodity's `ALL` comes back
-   **`WEEK`** (1,530 bars, back to 1997) and a fund's too (1,797, back to 1992), as the answer's
-   `returnedResolution` says, not what was asked for. So the answer is stored under the resolution it
-   **returned** (day, week, month or quarter; the week and the coarser keyed by their first day), and where
-   that was not days the longest of `YEAR_10`, `YEAR_5`, `YEAR_3`, `YEAR_1` that gives days is asked for next
-   (a commodity: ten years of days, 3,485 bars; a fund's NAV: 2,377). The extra requests are between the
-   pauses too. A fund's points are `{timeStamp, value}`: a bar with only a close. A `volume` of 0 is no
+   id and without bars (fewer than 20 daily ones) are loaded. **How much**: the interactive program needs only a
+   small snapshot, the last 60 days a row's trace draws, so an edge is **one request**: `MONTH_3` daily (65 bars
+   for a stock, 92 for a commodity that trades every day, 62 for a fund's NAV; 3-10 KB). Nothing more is asked for
+   in the interactive use. **The whole history is a server's job**, loaded once and kept (a backfill), and the
+   loader has it as `Depth::Full`, tested and not used by the program: the whole period (`ALL`), daily, stored
+   under the resolution the answer **returned** (not what was asked for: a stock answers `DAY`, 1,596 bars back to
+   2020; a commodity's `ALL` comes back `WEEK`, 1,530 bars back to 1997, and a fund's too, 1,797 back to 1992), and
+   where that was not days the longest of `YEAR_10`, `YEAR_5`, `YEAR_3`, `YEAR_1` that gives days is asked for
+   next (a commodity: 3,485 daily bars; a fund's NAV: 2,377), with the pause between the requests. Weeks, months
+   and quarters are keyed by their first day. A fund's points are `{timeStamp, value}`: a bar with only a close. A `volume` of 0 is no
    volume (undefined), since a commodity or an ETC has none. Minute and hour bars are not stored yet (the answer
    is parsed and left alone), and the history's last bar replaces today's bar from the discovery, which the
    next discovery reload replaces again. Failures: a 404 is remembered for the edge for the session; a 403 or 429

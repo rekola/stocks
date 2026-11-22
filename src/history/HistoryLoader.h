@@ -14,21 +14,25 @@
 #include <unordered_set>
 #include <vector>
 
-// Loads the price history of Nordnet's edges on a thread of its own, from Nordnet's price time series, for the edges that
-// are wanted: a caller says which (want(): the rows on screen and a margin, most wanted first) and the loader fills them in,
-// one request at a time with a pause between them, writing the bars to the store as they arrive.
+// Loads price history for Nordnet's edges on a thread of its own, from Nordnet's price time series, for the edges that are
+// wanted: a caller says which (want(): the rows on screen and a margin, most wanted first) and the loader fills them in, one
+// request at a time with a pause between them, writing the bars to the store as they arrive.
 //
-// Which bars an edge gets: the longest history there is. The request is for the whole period, daily; where Nordnet answers
-// with a coarser resolution for it (a commodity's whole period comes weekly, back to 1997) that is stored too, and the
-// longest period it answers daily for is asked for next (the last ten years, five, three) so the days are there as well.
-// The resolution that is stored is the one the answer says it returned, never the one that was asked for: Nordnet
-// substitutes silently. A fund's series is its NAV (a bar with only a close).
+// How much: the interactive use needs a small snapshot, the trace of the last 60 days a row draws, so by default (Recent) an
+// edge is one request, the last three months daily (about 60 to 90 bars, 3-10 KB). The whole history is for a server that
+// backfills once and keeps it (Full): the whole period, and where Nordnet answers with a coarser resolution for it (a
+// commodity's whole period comes weekly, back to 1997) that is stored too and the longest period that gives days is asked for
+// next (the last ten years, five, three). Full exists and is tested; nothing in the interactive program uses it.
+// The resolution that is stored is the one the answer says it returned, never the one asked for: Nordnet substitutes
+// silently. A fund's series is its NAV (a bar with only a close).
 //
 //   Failures: a 404 (any other 4xx) is remembered for the session for that edge. A refusal (403, 429) stops all requests for
 //   the session. No answer or a 5xx pauses requests for a minute, and the edge is asked for again afterwards.
 class HistoryLoader {
  public:
+  enum class Depth { Recent, Full };
   struct Options {
+    Depth depth = Depth::Recent;                     // the last three months, or all there is
     std::chrono::milliseconds pause{500};            // between two requests
     std::chrono::milliseconds offline_pause{60000};  // after no answer
   };
@@ -41,7 +45,7 @@ class HistoryLoader {
   HistoryLoader & operator=(const HistoryLoader &) = delete;
 
   // What is wanted now, most wanted first. It replaces what was wanted before: edges scrolled past are not loaded. An edge
-  // that is not Nordnet's, has no order book, has its history already or failed is left out.
+  // that is not Nordnet's, has no order book, has its bars already or failed is left out.
   void want(const std::vector<EdgeKey> & edges);
 
   // Whether a refusal has stopped the network for this session.

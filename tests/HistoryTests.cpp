@@ -28,8 +28,9 @@ std::unique_ptr<Http> borrow(FakeHttp & http) {
   return b;
 }
 
-HistoryLoader::Options quickly() {
+HistoryLoader::Options quickly(HistoryLoader::Depth depth = HistoryLoader::Depth::Recent) {
   HistoryLoader::Options o;
+  o.depth = depth;
   o.pause = std::chrono::milliseconds(0);
   o.offline_pause = std::chrono::milliseconds(20);
   return o;
@@ -96,7 +97,7 @@ TEST(what_is_not_a_series_is_refused_and_a_resolution_not_stored_is_left_unsuppo
   CHECK(!s.supported && s.bars.empty());
 }
 
-TEST(wanting_an_edge_loads_its_whole_history_daily_and_writes_it_to_the_store) {
+TEST(wanting_an_edge_loads_the_last_three_months_daily_in_one_request_and_writes_them_to_the_store) {
   World w;
   EdgeKey k = w.edge(InstrumentKind::Company, "book-1");
   FakeHttp http;
@@ -106,7 +107,7 @@ TEST(wanting_an_edge_loads_its_whole_history_daily_and_writes_it_to_the_store) {
   loader.want({k});
   loader.waitIdle();
   CHECK(http.urls.size() == 1);
-  CHECK(http.urls[0] == "https://api.prod.nntech.io/market-data/v3/price-time-series/period/ALL/identifier/book-1?resolution=DAY");
+  CHECK(http.urls[0] == "https://api.prod.nntech.io/market-data/v3/price-time-series/period/MONTH_3/identifier/book-1?resolution=DAY");
   bool locale = false, cookie = false;
   for (const auto & [n, v] : http.headers[0]) {
     locale = locale || (n == "x-locale" && v == "fi-FI");
@@ -130,12 +131,14 @@ TEST(a_fund_is_asked_for_its_nav) {
   HistoryLoader loader(w.store, borrow(http), quickly(), [] {});
   loader.want({k});
   loader.waitIdle();
-  CHECK(!http.urls.empty() && http.urls[0].find("identifier/book-f?resolution=DAY&fundType=FUND_NAV") != std::string::npos);
-  // The answer came weekly: stored as weeks, and the longest period that gives days is tried next.
+  CHECK(http.urls.size() == 1);  // one request: the snapshot
+  CHECK(http.urls[0].find("MONTH_3/identifier/book-f?resolution=DAY&fundType=FUND_NAV") != std::string::npos);
+  // Whatever resolution the answer says it has is the one it is stored under.
   CHECK(w.store->snapshot()->candles(k, Resolution::Week).candles.size() == 7);
 }
 
-TEST(where_the_whole_period_comes_back_weekly_the_longest_period_that_gives_days_is_asked_for_too) {
+// The whole history is for a server that backfills once: the loader has it, and the interactive program does not use it.
+TEST(a_full_load_asks_for_the_whole_period_and_where_it_comes_back_weekly_the_longest_period_that_gives_days) {
   World w;
   EdgeKey k = w.edge(InstrumentKind::Commodity, "book-g");
   FakeHttp http;
@@ -143,7 +146,7 @@ TEST(where_the_whole_period_comes_back_weekly_the_longest_period_that_gives_days
     if (url.find("/period/YEAR_5/") != std::string::npos) return ok(fixture("history-gold-year5-day.json"));
     return ok(fixture("history-gold-week.json"));  // ALL and YEAR_10: weekly
   };
-  HistoryLoader loader(w.store, borrow(http), quickly(), [] {});
+  HistoryLoader loader(w.store, borrow(http), quickly(HistoryLoader::Depth::Full), [] {});
   loader.want({k});
   loader.waitIdle();
   CHECK(http.urls.size() == 3);
@@ -161,7 +164,7 @@ TEST(edges_that_cannot_or_need_not_be_loaded_are_left_out) {
   EdgeKey noBook = w.edge(InstrumentKind::Company, "");
   EdgeKey has = w.edge(InstrumentKind::Company, "book-c");
   std::vector<Candle> past;
-  for (int d = 0; d < 6; d++) past.push_back({dayNumber(2026, 1, 1) + d, 1, 1, 1, 1, 1});
+  for (int d = 0; d < 20; d++) past.push_back({dayNumber(2026, 1, 1) + d, 1, 1, 1, 1, 1});
   w.store->appendCandles(has, Resolution::Day, past);  // it has its history already
   EdgeKey noListing{w.store->addInstrument({{}, "", "X", InstrumentKind::Company, "XX999999"}).id, w.usd.id, w.market.id, w.nordnet.id};
   FakeHttp http;

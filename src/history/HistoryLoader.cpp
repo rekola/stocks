@@ -18,6 +18,10 @@ const HttpHeaders kHeaders = {{"Accept", "*/*"},
 
 const char * const kUrl = "https://api.prod.nntech.io/market-data/v3/price-time-series/period/";
 
+// The period of the snapshot the interactive use needs: a row's trace is its last 60 days, and three months are that for
+// a market that trades every day of the week too.
+const char * const kRecentPeriod = "MONTH_3";
+
 // The periods tried for daily bars, longest first, where the whole period came back coarser.
 const char * const kDailyPeriods[] = {"YEAR_10", "YEAR_5", "YEAR_3", "YEAR_1"};
 
@@ -128,8 +132,9 @@ void HistoryLoader::want(const std::vector<EdgeKey> & edges) {
       auto dataset = snapshot->dataset(k.dataset);
       auto listing = snapshot->listing(k);
       if (!dataset || dataset->name != "nordnet" || !listing || listing->orderBook.empty()) continue;
-      // More than today's bar: the history is there already (loaded before, or from elsewhere).
-      if (snapshot->lastCandles(k, Resolution::Day, 6).candles.size() >= 6) continue;
+      // More than today's bar: the bars are there already (loaded before, or from elsewhere).
+      const size_t enough = options_.depth == Depth::Recent ? 20 : 6;
+      if (snapshot->lastCandles(k, Resolution::Day, enough).candles.size() >= enough) continue;
       queue_.push_back(k);
     }
   }
@@ -216,6 +221,12 @@ bool HistoryLoader::load(const EdgeKey & edge, bool & network) {
     return true;
   };
 
+  if (options_.depth == Depth::Recent) {
+    if (!ask(kRecentPeriod)) return wrote;  // one request: the snapshot for the trace
+    std::lock_guard lock(mutex_);
+    done_.insert(edge);
+    return wrote;
+  }
   if (!ask("ALL")) return wrote;
   for (const char * period : kDailyPeriods) {
     if (complete) break;
