@@ -1,0 +1,153 @@
+# market: United Kingdom
+# kind,base,quote,name,yahoo,isin: what one unit of `base` costs in `quote`; `yahoo` is Yahoo's ticker
+kind,base,quote,name,yahoo,isin
+company,3IN.L,GBp,3i Infrastructure PLC,3IN.L,JE00BF5FX167
+company,AAF.L,GBp,Airtel Africa Plc,AAF.L,GB00BKDRYJ47
+company,AAL.L,GBp,Anglo American PLC,AAL.L,GB00BTK05J60
+company,ABDN.L,GBp,Aberdeen Group Plc,ABDN.L,GB00BF8Q6K64
+company,ABF.L,GBp,Associated British Foods PLC,ABF.L,GB0006731235
+company,ADM.L,GBp,Admiral Group PLC,ADM.L,GB00B02J6398
+company,AJB.L,GBp,AJ Bell plc,AJB.L,GB00BFZNLB60
+company,ANTO.L,GBp,Antofagasta PLC,ANTO.L,GB0000456144
+company,AUTO.L,GBp,Autotrader Group Plc,AUTO.L,GB00BVYVFW23
+company,AV.L,GBp,Aviva PLC,AV.L,GB00BPQY8M80
+company,AZN.L,GBp,AstraZeneca,AZN.L,GB0009895292
+company,BA.L,GBp,BAE Systems PLC,BA.L,GB0002634946
+company,BAB.L,GBp,Babcock International Group PLC,BAB.L,GB0009697037
+company,BARC.L,GBp,Barclays PLC,BARC.L,GB0031348658
+company,BATS.L,GBp,British American Tobacco PLC,BATS.L,GB0002875804
+company,BBOX.L,GBp,Tritax Big Box Reit Plc,BBOX.L,GB00BG49KP99
+company,BBY.L,GBp,Balfour Beatty PLC,BBY.L,GB0000961622
+company,BKG.L,GBp,Berkeley Group Holdings,BKG.L,GB00BP0RGD03
+company,BLND.L,GBp,British Land Co PLC,BLND.L,GB0001367019
+company,BME.L,GBp,B&M European Value Retail plc.,BME.L,JE00BVSYJW51
+company,BNZL.L,GBp,Bunzl PLC,BNZL.L,GB00B0744B38
+company,BP.L,GBp,BP PLC,BP.L,GB0007980591
+company,BPT.L,GBp,Bridgepoint Group plc,BPT.L,GB00BND88V85
+company,BRBY.L,GBp,Burberry Group PLC,BRBY.L,GB0031743007
+company,BT-A.L,GBp,BT Group PLC,BT-A.L,GB0030913577
+company,BTRW.L,GBp,Barratt Redrow Plc,BTRW.L,GB0000811801
+company,BWY.L,GBp,Bellway PLC,BWY.L,GB0000904986
+company,BYG.L,GBp,Big Yellow Group PLC,BYG.L,GB0002869419
+company,CCC.L,GBp,Computacenter PLC,CCC.L,GB00BV9FP302
+company,CCH.L,GBp,COCA COLA HBC LTD Ordinary Shares,CCH.L,CH0198251305
+company,CLDN.L,GBp,Caledonia Investments PLC/fund,CLDN.L,GB00BTNQ8K38
+company,CMCX.L,GBp,CMC Markets Plc,CMCX.L,GB00B14SKR37
+company,CNA.L,GBp,Centrica PLC,CNA.L,GB00B033F229
+company,CRDA.L,GBp,Croda International PLC,CRDA.L,GB00BJFFLV09
+company,CTEC.L,GBp,ConvaTec Group Plc,CTEC.L,GB00BD3VFW73
+company,CWK.L,GBp,Cranswick PLC,CWK.L,GB0002318888
+company,DCC.L,GBp,DCC Energy Plc,DCC.L,IE0002424939
+company,DGE.L,GBp,Diageo PLC,DGE.L,GB0002374006
+company,DLN.L,GBp,Derwent London PLC,DLN.L,GB0002652740
+company,DNLM.L,GBp,Dunelm Group PLC,DNLM.L,GB00B1CKQ739
+company,DPLM.L,GBp,Diploma PLC,DPLM.L,GB0001826634
+company,DRX.L,GBp,Drax Group PLC,DRX.L,GB00B1VNSX38
+company,EDV.L,GBp,Endeavour Mining Plc,EDV.L,GB00BL6K5J42
+company,EMG.L,GBp,Man Group Plc,EMG.L,JE00BJ1DLW90
+company,ENT.L,GBp,Entain plc,ENT.L,IM00B5VQMV65
+company,EXPN.L,GBp,Experian PLC,EXPN.L,GB00B19NLV48
+company,EZJ.L,GBp,easyJet PLC,EZJ.L,GB00B7KR2P84
+company,FRAS.L,GBp,Frasers Group Plc,FRAS.L,GB00B1QH8P22
+company,FRES.L,GBp,Fresnillo PLC,FRES.L,GB00B2QPKJ12
+company,GAW.L,GBp,Games Workshop Group plc,GAW.L,GB0003718474
+company,GFTU.L,GBp,Grafton Group,GFTU.L,IE00B00MZ448
+company,GLEN.L,GBp,Glencore plc,GLEN.L,JE00B4T3BW64
+company,GNC.L,GBp,Greencore Group Plc,GNC.L,IE0003864109
+company,GRG.L,GBp,Greggs PLC,GRG.L,GB00B63QSB39
+company,GSK.L,GBp,GSK,GSK.L,GB00BN7SWP63
+company,HBR.L,GBp,Harbour Energy Plc,HBR.L,GB00BMBVGQ36
+company,HGT.L,GBp,HgCapital Trust PLC/Fund,HGT.L,GB00BJ0LT190
+company,HICL.L,GBp,HICL Infrastructure PLC,HICL.L,GB00BJLP1Y77
+company,HIK.L,GBp,Hikma Pharmaceuticals Plc,HIK.L,GB00B0LCW083
+company,HILS.L,GBp,Hill & Smith PLC,HILS.L,GB0004270301
+company,HLMA.L,GBp,Halma PLC,HLMA.L,GB0004052071
+company,HLN.L,GBp,Haleon plc,HLN.L,GB00BMX86B70
+company,HMSO.L,GBp,Hammerson PLC,HMSO.L,GB00BRJQ8J25
+company,HOC.L,GBp,Hochschild Mining PLC,HOC.L,GB00B1FW5029
+company,HSBA.L,GBp,HSBC Holdings PLC,HSBA.L,GB0005405286
+company,HSX.L,GBp,Hiscox Ltd,HSX.L,BMG4593F1389
+company,HTWS.L,GBp,Helios Towers Plc,HTWS.L,GB00BJVQC708
+company,HWDN.L,GBp,Howden Joinery Group PLC,HWDN.L,GB0005576813
+company,ICG.L,GBp,ICG Plc,ICG.L,GB00BYT1DJ19
+company,III.L,GBp,3i Group PLC,III.L,GB00B1YW4409
+company,IMB.L,GBp,Imperial Brands Plc,IMB.L,GB0004544929
+company,IMI.L,GBp,IMI PLC,IMI.L,GB00BGLP8L22
+company,INCH.L,GBp,Inchcape PLC,INCH.L,GB00B61TVQ02
+company,INF.L,GBp,Informa Plc,INF.L,GB00BMJ6DW54
+company,INVP.L,GBp,Investec PLC,INVP.L,GB00B17BBQ50
+company,ITH.L,GBp,Ithaca Energy Plc,ITH.L,GB00BPJHV584
+company,ITRK.L,GBp,Intertek Group PLC,ITRK.L,GB0031638363
+company,ITV.L,GBp,ITV PLC,ITV.L,GB0033986497
+company,IWG.L,GBp,International Workplace Group plc,IWG.L,JE00BYVQYS01
+company,JD.L,GBp,JD Sports Fashion PLC,JD.L,GB00BM8Q5M07
+company,JMAT.L,GBp,Johnson Matthey PLC,JMAT.L,GB00BTQHVY80
+company,KGF.L,GBp,Kingfisher Plc,KGF.L,GB0033195214
+company,KLR.L,GBp,Keller Group PLC,KLR.L,GB0004866223
+company,LAND.L,GBp,Land Securities Group PLC,LAND.L,GB00BYW0PQ60
+company,LGEN.L,GBp,Legal & General Group PLC,LGEN.L,GB0005603997
+company,LLOY.L,GBp,Lloyds Banking Group PLC,LLOY.L,GB0008706128
+company,LMP.L,GBp,LondonMetric Property Plc,LMP.L,GB00B4WFW713
+company,LSEG.L,GBp,London Stock Exchange Group,LSEG.L,GB00B0SWJX34
+company,MAB.L,GBp,Mitchells & Butlers PLC,MAB.L,GB00B1FP6H53
+company,MGNS.L,GBp,Morgan Sindall Group PLC,MGNS.L,GB0008085614
+company,MKS.L,GBp,Marks & Spencer Group PLC,MKS.L,GB0031274896
+company,MNDI.L,GBp,Mondi PLC,MNDI.L,GB00BMWC6P49
+company,MRC.L,GBp,Mercantile Investment Trust PLC,MRC.L,GB00BF4JDH58
+company,MRO.L,GBp,Melrose Industries Plc.,MRO.L,GB00BNGDN821
+company,MTO.L,GBp,Mitie Group PLC,MTO.L,GB0004657408
+company,NG.L,GBp,National Grid PLC,NG.L,GB00BDR05C01
+company,NWG.L,GBp,NatWest Group Plc,NWG.L,GB00BM8PJY71
+company,NXT.L,GBp,NEXT plc,NXT.L,GB0032089863
+company,OCDO.L,GBp,Ocado Group PLC,OCDO.L,GB00B3MBS747
+company,ONT.L,GBp,Oxford Nanopore Technologies Plc,ONT.L,GB00BP6S8Z30
+company,PHP.L,GBp,Primary Health Prop.,PHP.L,GB00BYRJ5J14
+company,PLUS.L,GBp,Plus500 Ltd,PLUS.L,IL0011284465
+company,PNN.L,GBp,Pennon Group PLC,PNN.L,GB00BNNTLN49
+company,PRU.L,GBp,Prudential PLC,PRU.L,GB0007099541
+company,PSH.L,GBp,Pershing Square Holdings Ltd,PSH.L,GG00BPFJTF46
+company,PSN.L,GBp,Persimmon PLC,PSN.L,GB0006825383
+company,PSON.L,GBp,Pearson PLC,PSON.L,GB0006776081
+company,QLT.L,GBp,Quilter,QLT.L,GB00BNHSJN34
+company,QQ.L,GBp,QinetiQ Group PLC,QQ.L,GB00B0WMWD03
+company,RAT.L,GBp,Rathbones Group Plc,RAT.L,GB0002148343
+company,REL.L,GBp,RELX,REL.L,GB00B2B0DG97
+company,RIO.L,GBp,Rio Tinto plc,RIO.L,GB0007188757
+company,RKT.L,GBp,Reckitt Benckiser Group,RKT.L,GB00BSZBP530
+company,RMV.L,GBp,Rightmove PLC,RMV.L,GB00BGDT3G23
+company,ROR.L,GBp,Rotork PLC,ROR.L,GB00BVFNZH21
+company,ROSE.L,GBp,Rosebank Industries Plc,ROSE.L,JE00BSBJ5M88
+company,RR.L,GBp,Rolls-Royce Holdings PLC,RR.L,GB00B63H8491
+company,RS1.L,GBp,RS Group,RS1.L,GB0003096442
+company,RSW.L,GBp,Renishaw PLC,RSW.L,GB0007323586
+company,RTO.L,GBp,Rentokil Initial Plc.,RTO.L,GB00B082RF11
+company,SBRY.L,GBp,J Sainsbury PLC,SBRY.L,GB00B019KW72
+company,SCT.L,GBp,Softcat Plc,SCT.L,GB00BYZDVK82
+company,SDLF.L,GBp,Standard Life,SDLF.L,GB00BGXQNP29
+company,SEPL.L,GBp,Seplat Energy Plc,SEPL.L,NGSEPLAT0008
+company,SGE.L,GBp,Sage Group PLC,SGE.L,GB00B8C3BL03
+company,SGRO.L,GBp,Segro Plc,SGRO.L,GB00B5ZN1N88
+company,SHC.L,GBp,Shaftesbury Capital Plc,SHC.L,GB00B62G9D36
+company,SHEL.L,GBp,SHELL PLC,SHEL.L,GB00BP6MXD84
+company,SMIN.L,GBp,Smiths Group PLC,SMIN.L,GB00B1WY2338
+company,SN.L,GBp,Smith & Nephew PLC,SN.L,GB0009223206
+company,SPX.L,GBp,Spirax Group Plc,SPX.L,GB00BWFGQN14
+company,SRP.L,GBp,Serco Group PLC,SRP.L,GB0007973794
+company,SSE.L,GBp,SSE Plc,SSE.L,GB0007908733
+company,STAN.L,GBp,Standard Chartered PLC,STAN.L,GB0004082847
+company,STJ.L,GBp,St James's Place PLC,STJ.L,GB0007669376
+company,SVS.L,GBp,Savills PLC,SVS.L,GB00B135BJ46
+company,SVT.L,GBp,Severn Trent PLC,SVT.L,GB00B1FH8J72
+company,TATE.L,GBp,Tate & Lyle PLC,TATE.L,GB00BP92CJ43
+company,TCAP.L,GBp,TP ICAP Group plc,TCAP.L,JE00BMDZN391
+company,TSCO.L,GBp,Tesco PLC,TSCO.L,GB00BLGZ9862
+company,TW.L,GBp,Taylor Wimpey PLC,TW.L,GB0008782301
+company,UKW.L,GBp,Greencoat UK Wind Plc,UKW.L,GB00B8SC6K54
+company,ULVR.L,GBp,Unilever PLC,ULVR.L,GB00BVZK7T90
+company,UTG.L,GBp,Unite Group Plc,UTG.L,GB0006928617
+company,UU.L,GBp,United Utilities Group PLC,UU.L,GB00B39J2M42
+company,VOD.L,GBp,Vodafone Group PLC,VOD.L,GB00BH4HKS39
+company,WEIR.L,GBp,Weir PLC,WEIR.L,GB0009465807
+company,WOSG.L,GBp,Watches Of Switzerland Group Plc,WOSG.L,GB00BJDQQ870
+company,WPP.L,GBp,WPP Plc.,WPP.L,JE00B8KF9B49
+company,WTB.L,GBp,Whitbread PLC,WTB.L,GB00B1KJJ408

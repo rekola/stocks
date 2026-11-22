@@ -1,0 +1,303 @@
+# market: US
+# kind,base,quote,name,yahoo,isin: what one unit of `base` costs in `quote`; `yahoo` is Yahoo's ticker
+kind,base,quote,name,yahoo,isin
+company,A,USD,Agilent Technologies,A,US00846U1016
+company,AAPL,USD,Apple,AAPL,US0378331005
+company,ABBV,USD,AbbVie,ABBV,US00287Y1091
+company,ABNB,USD,Airbnb A,ABNB,US0090661010
+company,ABT,USD,Abbott Laboratories,ABT,US0028241000
+company,ACN,USD,Accenture A,ACN,IE00B4BNMY34
+company,ADBE,USD,Adobe,ADBE,US00724F1012
+company,ADI,USD,Analog Devices,ADI,US0326541051
+company,ADP,USD,Automatic Data Processing,ADP,US0530151036
+company,ADSK,USD,Autodesk,ADSK,US0527691069
+company,AEM,USD,Agnico Eagle,AEM,CA0084741085
+company,AEP,USD,American Electric Power,AEP,US0255371017
+company,AFL,USD,Aflac,AFL,US0010551028
+company,AJG,USD,Arthur J. Gallagher & Co,AJG,US3635761097
+company,ALL,USD,Allstate,ALL,US0200021014
+company,AMAT,USD,Applied Materials,AMAT,US0382221051
+company,AMD,USD,Advanced Micro Devices,AMD,US0079031078
+company,AME,USD,Ametek,AME,US0311001004
+company,AMGN,USD,Amgen,AMGN,US0311621009
+company,AMT,USD,American Tower REIT,AMT,US03027X1000
+company,AMX,USD,America Movil ADR,AMX,US02390A1016
+company,AMZN,USD,Amazon.com,AMZN,US0231351067
+company,ANET,USD,Arista Networks,ANET,US0404132054
+company,AON,USD,Aon,AON,IE00BLP1HW54
+company,APD,USD,Air Products And Chemicals,APD,US0091581068
+company,APH,USD,Amphenol,APH,US0320951017
+company,APO,USD,Apollo Global Management,APO,US03769M1062
+company,APP,USD,Applovin A,APP,US03831W1080
+company,ARGX,USD,argenx ADR,ARGX,US04016X1019
+company,ARM,USD,Arm Holdings ADR,ARM,US0420682058
+company,ASML,USD,ASML Holding,ASML,USN070592100
+company,AVGO,USD,Broadcom,AVGO,US11135F1012
+company,AXP,USD,American Express,AXP,US0258161092
+company,AZO,USD,AutoZone,AZO,US0533321024
+company,BA,USD,Boeing,BA,US0970231058
+company,BABA,USD,Alibaba Group ADR,BABA,US01609W1027
+company,BAC,USD,Bank Of America,BAC,US0605051046
+company,BBVA,USD,Banco Bilbao Vizcaya Argentaria ADR,BBVA,US05946K1016
+company,BCS,USD,Barclays ADR,BCS,US06738E2046
+company,BDX,USD,"Becton, Dickinson And Co",BDX,US0758871091
+company,BE,USD,Bloom Energy A,BE,US0937121079
+company,BHP,USD,BHP Group ADR,BHP,US0886061086
+company,BKNG,USD,Booking,BKNG,US09857L1089
+company,BKR,USD,Baker Hughes A,BKR,US05722G1004
+company,BLK,USD,BlackRock,BLK,US09290D1019
+company,BMY,USD,Bristol-Myers Squibb,BMY,US1101221083
+company,BNY,USD,Bank Of New York Mellon,BNY,US0640581007
+company,BP,USD,BP ADR,BP,US0556221044
+company,BRK-B,USD,Berkshire Hathaway B,BRK-B,US0846707026
+company,BSX,USD,Boston Scientific,BSX,US1011371077
+company,BTI,USD,British American Tobacco ADR,BTI,US1104481072
+company,BUD,USD,Anheuser-Busch InBev ADR,BUD,US03524A1088
+company,BX,USD,Blackstone,BX,US09260D1072
+company,C,USD,Citigroup,C,US1729674242
+company,CAH,USD,Cardinal Health,CAH,US14149Y1082
+company,CAT,USD,Caterpillar,CAT,US1491231015
+company,CB,USD,Chubb,CB,CH0044328745
+company,CDNS,USD,Cadence Design Systems,CDNS,US1273871087
+company,CEG,USD,Constellation Energy,CEG,US21037T1097
+company,CI,USD,Cigna,CI,US1255231003
+company,CL,USD,Colgate-Palmolive,CL,US1941621039
+company,CMCSA,USD,Comcast A,CMCSA,US20030N1019
+company,CME,USD,CME Group A,CME,US12572Q1058
+company,CMG,USD,Chipotle Mexican Grill,CMG,US1696561059
+company,CMI,USD,Cummins,CMI,US2310211063
+company,COF,USD,Capital One Financial,COF,US14040H1059
+company,COIN,USD,"Coinbase Global, Inc. - Class A",COIN,US19260Q1076
+company,COP,USD,ConocoPhillips,COP,US20825C1045
+company,COR,USD,Cencora,COR,US03073E1055
+company,COST,USD,Costco Wholesale,COST,US22160K1051
+company,CRH,USD,CRH,CRH,IE0001827041
+company,CRM,USD,Salesforce,CRM,US79466L3024
+company,CRWD,USD,CrowdStrike A,CRWD,US22788C1053
+company,CSCO,USD,Cisco Systems,CSCO,US17275R1023
+company,CSX,USD,CSX,CSX,US1264081035
+company,CTAS,USD,Cintas,CTAS,US1729081059
+company,CVNA,USD,Carvana,CVNA,US1468691027
+company,CVS,USD,CVS Health,CVS,US1266501006
+company,CVX,USD,Chevron,CVX,US1667641005
+company,D,USD,Dominion Energy,D,US25746U1097
+company,DAL,USD,Delta Air Lines,DAL,US2473617023
+company,DASH,USD,Doordash,DASH,US25809K1051
+company,DDOG,USD,Datadog A,DDOG,US23804L1035
+company,DE,USD,Deere & Co.,DE,US2441991054
+company,DELL,USD,Dell Technologies C,DELL,US24703L2025
+company,DEO,USD,Diageo ADR,DEO,US25243Q2057
+company,DHR,USD,Danaher,DHR,US2358511028
+company,DIS,USD,Walt Disney,DIS,US2546871060
+company,DLR,USD,Digital Realty Trust,DLR,US2538681030
+company,DUK,USD,Duke Energy,DUK,US26441C2044
+company,DVN,USD,Devon Energy,DVN,US25179M1036
+company,E,USD,Eni ADR,E,US26874R1086
+company,EBAY,USD,eBay,EBAY,US2786421030
+company,ECL,USD,EcoLab,ECL,US2788651006
+company,ELV,USD,Elevance Health,ELV,US0367521038
+company,EMR,USD,Emerson Electric,EMR,US2910111044
+company,EOG,USD,EOG Resources,EOG,US26875P1012
+company,EQIX,USD,Equinix,EQIX,US29444U7000
+company,ETN,USD,Eaton,ETN,IE00B8KQN827
+company,ETR,USD,Entergy,ETR,US29364G1031
+company,EW,USD,Edwards Lifesciences,EW,US28176E1082
+company,EXC,USD,Exelon,EXC,US30161N1019
+company,F,USD,Ford Motor,F,US3453708600
+company,FANG,USD,Diamondback Energy,FANG,US25278X1090
+company,FAST,USD,Fastenal,FAST,US3119001044
+company,FCX,USD,Freeport-McMoRan,FCX,US35671D8570
+company,FDX,USD,FedEx,FDX,US31428X1063
+company,FERG,USD,Ferguson,FERG,US31488V1070
+company,FITB,USD,Fifth Third Bancorp,FITB,US3167731005
+company,FTNT,USD,Fortinet,FTNT,US34959E1091
+company,GD,USD,General Dynamics,GD,US3695501086
+company,GE,USD,GE Aerospace,GE,US3696043013
+company,GEV,USD,GE Vernova,GEV,US36828A1016
+company,GILD,USD,Gilead Sciences,GILD,US3755581036
+company,GLW,USD,Corning,GLW,US2193501051
+company,GM,USD,General Motors,GM,US37045V1008
+company,GOOG,USD,Alphabet C,GOOG,US02079K1079
+company,GRMN,USD,Garmin,GRMN,CH0114405324
+company,GS,USD,Goldman Sachs,GS,US38141G1040
+company,GWW,USD,W.W. Grainger,GWW,US3848021040
+company,HCA,USD,HCA Healthcare,HCA,US40412C1018
+company,HD,USD,Home Depot,HD,US4370761029
+company,HLT,USD,Hilton Worldwide,HLT,US43300A2033
+company,HON,USD,Honeywell International,HON,US4385162056
+company,HONA,USD,Honeywell Aerospace,HONA,US43849R1059
+company,HOOD,USD,Robinhood Markets A,HOOD,US7707001027
+company,HPE,USD,Hewlett Packard Enterprise,HPE,US42824C1099
+company,HSBC,USD,HSBC,HSBC,US4042804066
+company,HUM,USD,Humana,HUM,US4448591028
+company,HWM,USD,Howmet Aerospace,HWM,US4432011082
+company,IBKR,USD,Interactive Brokers Group A,IBKR,US45841N1072
+company,IBM,USD,IBM,IBM,US4592001014
+company,IBN,USD,ICICI Bank ADR,IBN,US45104G1040
+company,ICE,USD,Intercontinental Exchange,ICE,US45866F1049
+company,IDXX,USD,IDEXX Laboratories,IDXX,US45168D1046
+company,INFY,USD,Infosys ADR,INFY,US4567881085
+company,ING,USD,ING Group ADR,ING,US4568371037
+company,INTC,USD,Intel,INTC,US4581401001
+company,INTU,USD,Intuit,INTU,US4612021034
+company,ISRG,USD,Intuitive Surgical,ISRG,US46120E6023
+company,ITW,USD,Illinois Tool Works,ITW,US4523081093
+company,JCI,USD,Johnson Controls International,JCI,IE00BY7QL619
+company,JNJ,USD,Johnson & Johnson,JNJ,US4781601046
+company,JPM,USD,JP Morgan Chase,JPM,US46625H1005
+company,KDP,USD,Keurig Dr Pepper,KDP,US49271V1008
+company,KEYS,USD,Keysight Technologies,KEYS,US49338L1035
+company,KKR,USD,KKR & Co,KKR,US48251W1045
+company,KLAC,USD,KLA,KLAC,US4824801009
+company,KMB,USD,Kimberly-Clark,KMB,US4943681035
+company,KMI,USD,Kinder Morgan,KMI,US49456B1017
+company,KO,USD,Coca-Cola,KO,US1912161007
+company,LHX,USD,L3Harris Technologies,LHX,US5024311095
+company,LIN,USD,Linde,LIN,IE000S9YS762
+company,LITE,USD,Lumentum,LITE,US55024U1097
+company,LLY,USD,Eli Lilly,LLY,US5324571083
+company,LMT,USD,Lockheed Martin,LMT,US5398301094
+company,LNG,USD,Cheniere Energy,LNG,US16411R2085
+company,LOW,USD,Lowe's,LOW,US5486611073
+company,LRCX,USD,Lam Research,LRCX,US5128073062
+company,LYG,USD,Lloyds Banking ADR,LYG,US5394391099
+company,MA,USD,Mastercard,MA,US57636Q1040
+company,MAR,USD,Marriott International A,MAR,US5719032022
+company,MCD,USD,McDonald's,MCD,US5801351017
+company,MCK,USD,McKesson,MCK,US58155Q1031
+company,MCO,USD,Moody's,MCO,US6153691059
+company,MDLN,USD,Medline,MDLN,US58507V1070
+company,MDLZ,USD,Mondelez International A,MDLZ,US6092071058
+company,MDT,USD,Medtronic,MDT,IE00BTN1Y115
+company,MELI,USD,MercadoLibre,MELI,US58733R1023
+company,META,USD,Meta Platforms A,META,US30303M1027
+company,MFG,USD,Mizuho Financial Group ADR,MFG,US60687Y1091
+company,MMM,USD,3M,MMM,US88579Y1010
+company,MNST,USD,Monster Beverage,MNST,US61174X1090
+company,MO,USD,Altria Group,MO,US02209S1033
+company,MPC,USD,Marathon Petroleum,MPC,US56585A1025
+company,MPWR,USD,Monolithic Power Systems,MPWR,US6098391054
+company,MRK,USD,Merck & Co,MRK,US58933Y1055
+company,MRNA,USD,Moderna,MRNA,US60770K1079
+company,MRSH,USD,Marsh & McLennan Companies,MRSH,US5717481023
+company,MRVL,USD,Marvell Technology,MRVL,US5738741041
+company,MS,USD,Morgan Stanley,MS,US6174464486
+company,MSCI,USD,MSCI,MSCI,US55354G1004
+company,MSFT,USD,Microsoft,MSFT,US5949181045
+company,MSI,USD,Motorola Solutions,MSI,US6200763075
+company,MT,USD,Arcelor Mittal ADR,MT,US03938L2034
+company,MU,USD,Micron Technology,MU,US5951121038
+company,NDAQ,USD,Nasdaq,NDAQ,US6311031081
+company,NEE,USD,NextEra Energy,NEE,US65339F1012
+company,NEM,USD,Newmont,NEM,US6516391066
+company,NET,USD,Cloudflare,NET,US18915M1071
+company,NFLX,USD,Netflix,NFLX,US64110L1061
+company,NKE,USD,Nike,NKE,US6541061031
+company,NOC,USD,Northrop Grumman,NOC,US6668071029
+company,NOW,USD,ServiceNow,NOW,US81762P1021
+company,NSC,USD,Norfolk Southern,NSC,US6558441084
+company,NTES,USD,NetEase ADR,NTES,US64110W1027
+company,NU,USD,Nu Holdings,NU,KYG6683N1034
+company,NUE,USD,Nucor,NUE,US6703461052
+company,NVDA,USD,NVIDIA,NVDA,US67066G1040
+company,NVO,USD,Novo Nordisk ADR,NVO,US6701002056
+company,NVS,USD,Novartis ADR,NVS,US66987V1098
+company,NWG,USD,NatWest ADR,NWG,US6390572070
+company,NXPI,USD,NXP Semiconductors,NXPI,NL0009538784
+company,O,USD,Realty Income REIT,O,US7561091049
+company,OKE,USD,ONEOK,OKE,US30609A1097
+company,ONC,USD,BeOne Medicines,ONC,US07725L1026
+company,ORCL,USD,Oracle,ORCL,US68389X1054
+company,ORLY,USD,O'Reilly Automotive,ORLY,US67103H1077
+company,OXY,USD,Occidental Petroleum,OXY,US6745991058
+company,PANW,USD,Palo Alto Networks,PANW,US6974351057
+company,PBR,USD,Petroleo Brasileiro S.A.- Petrobras ADR,PBR,US71654V4086
+company,PCAR,USD,PACCAR,PCAR,US6937181088
+company,PEP,USD,PepsiCo,PEP,US7134481081
+company,PFE,USD,Pfizer,PFE,US7170811035
+company,PG,USD,Procter & Gamble,PG,US7427181091
+company,PGR,USD,Progressive,PGR,US7433151039
+company,PH,USD,Parker-Hannifin,PH,US7010941042
+company,PLD,USD,Prologis,PLD,US74340W1036
+company,PLTR,USD,Palantir Technologies,PLTR,US69608A1088
+company,PM,USD,Philip Morris,PM,US7181721090
+company,PNC,USD,PNC Financial Services Group,PNC,US6934751057
+company,PSA,USD,Public Storage,PSA,US74460D1090
+company,PSX,USD,Phillips 66,PSX,US7185461040
+company,PWR,USD,Quanta Services,PWR,US74762E1029
+company,PYPL,USD,PayPal,PYPL,US70450Y1038
+company,QCOM,USD,QUALCOMM,QCOM,US7475251036
+company,RCL,USD,Royal Caribbean Cruises,RCL,LR0008862868
+company,REGN,USD,Regeneron Pharmaceuticals,REGN,US75886F1075
+company,RELX,USD,RELX ADR,RELX,US7595301083
+company,RIO,USD,Rio Tinto ADR,RIO,US7672041008
+company,ROP,USD,Roper Technologies,ROP,US7766961061
+company,ROST,USD,Ross Stores,ROST,US7782961038
+company,RSG,USD,Republic Services,RSG,US7607591002
+company,RTX,USD,RTX,RTX,US75513E1010
+company,SAN,USD,Banco Santander ADR,SAN,US05964H1059
+company,SBUX,USD,Starbucks,SBUX,US8552441094
+company,SCCO,USD,Southern Copper,SCCO,US84265V1052
+company,SCHW,USD,Charles Schwab,SCHW,US8085131055
+company,SHOP,USD,Shopify,SHOP,CA82509L1076
+company,SHW,USD,Sherwin-Williams,SHW,US8243481061
+company,SKHY,USD,SK hynix ADR,SKHY,US78392B2060
+company,SLB,USD,SLB,SLB,AN8068571086
+company,SMFG,USD,Sumitomo Mitsui Financial ADR,SMFG,US86562M2098
+company,SNDK,USD,Sandisk,SNDK,US80004C2008
+company,SNOW,USD,Snowflake Inc.,SNOW,US8334451098
+company,SNPS,USD,Synopsys,SNPS,US8716071076
+company,SNY,USD,Sanofi ADR,SNY,US80105N1054
+company,SO,USD,Southern Company,SO,US8425871071
+company,SPCX,USD,SpaceX,SPCX,US84615Q1031
+company,SPG,USD,Simon Property Group,SPG,US8288061091
+company,SPOT,USD,Spotify,SPOT,LU1778762911
+company,SRE,USD,DBA Sempra,SRE,US8168511090
+company,STT,USD,State Street,STT,US8574771031
+company,STX,USD,Seagate Technology,STX,IE00BKVD2N49
+company,SYK,USD,Stryker,SYK,US8636671013
+company,T,USD,AT&T,T,US00206R1023
+company,TAK,USD,Takeda Pharmaceutical ADR,TAK,US8740602052
+company,TD,USD,Toronto Dominion Bank,TD,CA8911605092
+company,TDG,USD,Transdigm Group,TDG,US8936411003
+company,TEL,USD,TE Connectivity,TEL,IE000IVNQZ81
+company,TFC,USD,Truist Financial,TFC,US89832Q1094
+company,TGT,USD,Target,TGT,US87612E1064
+company,TJX,USD,TJX Companies,TJX,US8725401090
+company,TM,USD,Toyota Motor ADR,TM,US8923313071
+company,TMO,USD,Thermo Fisher Scientific,TMO,US8835561023
+company,TMUS,USD,T-Mobile US,TMUS,US8725901040
+company,TRGP,USD,Targa Resources,TRGP,US87612G1013
+company,TRV,USD,Travelers Companies,TRV,US89417E1091
+company,TSLA,USD,Tesla,TSLA,US88160R1014
+company,TT,USD,Trane Technologies,TT,IE00BK9ZQ967
+company,TXN,USD,Texas Instruments,TXN,US8825081040
+company,UBER,USD,Uber Technologies,UBER,US90353T1007
+company,UL,USD,Unilever ADR,UL,US9047678035
+company,UNH,USD,UnitedHealth Group,UNH,US91324P1021
+company,UNP,USD,Union Pacific,UNP,US9078181081
+company,UPS,USD,United Parcel Service,UPS,US9113121068
+company,URI,USD,United Rentals,URI,US9113631090
+company,USB,USD,U.S. Bancorp,USB,US9029733048
+company,V,USD,Visa,V,US92826C8394
+company,VEEV,USD,Veeva Systems A,VEEV,US9224751084
+company,VLO,USD,Valero Energy,VLO,US91913Y1001
+company,VMRK,USD,Vivmark Residential,VMRK,US29476L1070
+company,VRT,USD,Vertiv Holdings A,VRT,US92537N1081
+company,VRTX,USD,Vertex Pharmaceuticals,VRTX,US92532F1003
+company,VTR,USD,Ventas,VTR,US92276F1003
+company,VYLR,USD,Vylor,VYLR,US92892R1086
+company,VZ,USD,Verizon Communications,VZ,US92343V1044
+company,WAB,USD,Westinghouse Air Brake Technologies,WAB,US9297401088
+company,WAT,USD,Waters,WAT,US9418481035
+company,WCN,USD,Waste Connections,WCN,CA94106B1013
+company,WDC,USD,Western Digital,WDC,US9581021055
+company,WELL,USD,Welltower,WELL,US95040Q1040
+company,WFC,USD,Wells Fargo,WFC,US9497461015
+company,WM,USD,Waste Management,WM,US94106L1098
+company,WMB,USD,Williams Companies,WMB,US9694571004
+company,WMT,USD,Walmart,WMT,US9311421039
+company,XEL,USD,Xcel Energy,XEL,US98389B1008
+company,XOM,USD,Exxon Mobil,XOM,US30233Q1085
+company,XYZ,USD,Block A,XYZ,US8522341036
+company,YMT,USD,Yimutian ADR,YMT,US9859154042

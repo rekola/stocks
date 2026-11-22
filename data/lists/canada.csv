@@ -1,0 +1,103 @@
+# market: Canada
+# kind,base,quote,name,yahoo,isin: what one unit of `base` costs in `quote`; `yahoo` is Yahoo's ticker
+kind,base,quote,name,yahoo,isin
+company,ABX.TO,CAD,Barrick Mining,ABX.TO,CA06849F1080
+company,ACO-X.TO,CAD,Atco Ltd.,ACO-X.TO,CA0467894006
+company,AG.TO,CAD,First Majestic Silver,AG.TO,CA32076V1031
+company,AGI.TO,CAD,Alamos Gold,AGI.TO,CA0115321089
+company,ALA.TO,CAD,AltaGas Ltd,ALA.TO,CA0213611001
+company,APTX.TO,CAD,Apotex Health Corp.,APTX.TO,CA03772D1015
+company,ATD.TO,CAD,"Alimentation-Couche Tard, Inc.",ATD.TO,CA01626P1484
+company,ATRL.TO,CAD,AtkinsRéalis Group,ATRL.TO,CA04764T1049
+company,ATZ.TO,CAD,Aritzia Inc,ATZ.TO,CA04045U1021
+company,BAM.TO,CAD,Brookfield Asset Management,BAM.TO,CA1130041058
+company,BBD-A.TO,CAD,Bombardier Inc.,BBD-A.TO,CA0977518798
+company,BBD-B.TO,CAD,Bombardier Inc.,BBD-B.TO,CA0977518616
+company,BCE.TO,CAD,BCE,BCE.TO,CA05534B7604
+company,BEP-UN.TO,CAD,Brookfield Renewable Partners LP Unit,BEP-UN.TO,BMG162581083
+company,BN.TO,CAD,Brookfield Corporation,BN.TO,CA11271J1075
+company,BNS.TO,CAD,Bank Of Nova Scotia,BNS.TO,CA0641491075
+company,BTO.TO,CAD,B2gold,BTO.TO,CA11777Q2099
+company,CAE.TO,CAD,Cae,CAE.TO,CA1247651088
+company,CCL-A.TO,CAD,CCL Industries Inc.,CCL-A.TO,CA1249002009
+company,CCL-B.TO,CAD,CCL Industries Inc.,CCL-B.TO,CA1249003098
+company,CCO.TO,CAD,Cameco,CCO.TO,CA13321L1085
+company,CGG.TO,CAD,CHINAGOLDINTL,CGG.TO,CA16890P1036
+company,CLS.TO,CAD,Celestica,CLS.TO,CA15101Q2071
+company,CM.TO,CAD,Canadian Imperial Bank Of Commerce,CM.TO,CA1360691010
+company,CNQ.TO,CAD,Canadian Natural Resources,CNQ.TO,CA1363851017
+company,CNR.TO,CAD,Canadian National Railway,CNR.TO,CA1363751027
+company,CP.TO,CAD,Canadian Pacific Kansas City,CP.TO,CA13646K1084
+company,CPX.TO,CAD,Capital Power Corp,CPX.TO,CA14042M1023
+company,CSU.TO,CAD,Constellation Software Inc,CSU.TO,CA21037X1006
+company,CTC-A.TO,CAD,"Canadian Tire Corp., Ltd.",CTC-A.TO,CA1366812024
+company,CTC.TO,CAD,"Canadian Tire Corp., Ltd.",CTC.TO,CA1366811034
+company,CU.TO,CAD,Canadian Utilities Ltd.,CU.TO,CA1367178326
+company,CVE.TO,CAD,Cenovus Energy,CVE.TO,CA15135U1093
+company,DFY.TO,CAD,Definity Financial Corporation,DFY.TO,CA24477T1003
+company,DOL.TO,CAD,Dollarama Inc,DOL.TO,CA25675T1075
+company,DPM.TO,CAD,DPM Metals Inc.,DPM.TO,CA26139R1091
+company,DSG.TO,CAD,Descartes Systems Group,DSG.TO,CA2499061083
+company,DSV.TO,CAD,Discovery Mining Ltd.,DSV.TO,CA25466C1077
+company,EFN.TO,CAD,Element Fleet Management Corp,EFN.TO,CA2861812014
+company,ELD.TO,CAD,Eldorado Gold,ELD.TO,CA2849025093
+company,EMA.TO,CAD,Emera,EMA.TO,CA2908761018
+company,EMP-A.TO,CAD,"Empire Co., Ltd.",EMP-A.TO,CA2918434077
+company,ENB.TO,CAD,Enbridge,ENB.TO,CA29250N1050
+company,EQX.TO,CAD,Equinox Gold,EQX.TO,CA29446Y5020
+company,FFH.TO,CAD,"Fairfax Financial Holdings, Ltd.",FFH.TO,CA3039011026
+company,FM.TO,CAD,First Quantum Minerals Ltd.,FM.TO,CA3359341052
+company,FNV.TO,CAD,Franco-Nevada,FNV.TO,CA3518581051
+company,FTS.TO,CAD,Fortis,FTS.TO,CA3495531079
+company,FTT.TO,CAD,Finning International Inc.,FTT.TO,CA3180714048
+company,GIB-A.TO,CAD,CGI,GIB-A.TO,CA12532H1047
+company,GIL.TO,CAD,Gildan Activewear,GIL.TO,CA3759161035
+company,GWO.TO,CAD,Great-West Lifeco Inc.,GWO.TO,CA39138C1068
+company,H.TO,CAD,Hydro One Ltd,H.TO,CA4488112083
+company,HBM.TO,CAD,Hudbay Minerals,HBM.TO,CA4436281022
+company,IAG.TO,CAD,iA Financial Corp,IAG.TO,CA45075E1043
+company,IFC.TO,CAD,Intact Financial Corp,IFC.TO,CA45823T1066
+company,IGM.TO,CAD,IGM Financial Inc.,IGM.TO,CA4495861060
+company,IMG.TO,CAD,Iamgold,IMG.TO,CA4509131088
+company,IMO.TO,CAD,Imperial Oil,IMO.TO,CA4530384086
+company,IVN.TO,CAD,Ivanhoe Mines Ltd.,IVN.TO,CA46579R1047
+company,K.TO,CAD,Kinross Gold,K.TO,CA4969024047
+company,KEY.TO,CAD,Keyera Corp,KEY.TO,CA4932711001
+company,L.TO,CAD,Loblaw Cos. Ltd.,L.TO,CA5394811015
+company,LUG.TO,CAD,Lundin Gold,LUG.TO,CA5503711080
+company,LUN.TO,CAD,Lundin Mining Corporation,LUN.TO,CA5503721063
+company,MFC.TO,CAD,Manulife Financial,MFC.TO,CA56501R1064
+company,MG.TO,CAD,Magna International,MG.TO,CA5592224011
+company,MRU.TO,CAD,Metro Inc,MRU.TO,CA59162N1096
+company,NA.TO,CAD,National Bank Of Canada,NA.TO,CA6330671034
+company,NGEX.TO,CAD,Ngex Minerals,NGEX.TO,CA62930A2011
+company,NTR.TO,CAD,Nutrien,NTR.TO,CA67077M1086
+company,OGC.TO,CAD,OceanaGold,OGC.TO,CA6752224007
+company,ONEX.TO,CAD,Onex Corp.,ONEX.TO,CA68272K1030
+company,OR.TO,CAD,OR Royalties,OR.TO,CA68390D1069
+company,OTEX.TO,CAD,OpenText,OTEX.TO,CA6837151068
+company,POW.TO,CAD,Power Corp. Of Canada,POW.TO,CA7392391016
+company,PPL.TO,CAD,Pembina Pipeline,PPL.TO,CA7063271034
+company,PSK.TO,CAD,PrairieSky Royalty Ltd,PSK.TO,CA7397211086
+company,QBR-A.TO,CAD,Quebecor Inc.,QBR-A.TO,CA7481931094
+company,QBR-B.TO,CAD,Quebecor Inc.,QBR-B.TO,CA7481932084
+company,QSR.TO,CAD,Restaurant Brands International,QSR.TO,CA76131D1033
+company,RBA.TO,CAD,RB Global,RBA.TO,CA74935Q1072
+company,RCI-A.TO,CAD,Rogers Communications Inc.,RCI-A.TO,CA7751091017
+company,RCI-B.TO,CAD,Rogers Communications,RCI-B.TO,CA7751092007
+company,RY.TO,CAD,Royal Bank Of Canada,RY.TO,CA7800871021
+company,SAP.TO,CAD,Saputo Inc,SAP.TO,CA8029121057
+company,SCR.TO,CAD,Strathcona Resources Ltd.,SCR.TO,CA8629522076
+company,SOBO.TO,CAD,South Bow,SOBO.TO,CA83671M1059
+company,STN.TO,CAD,Stantec,STN.TO,CA85472N1096
+company,SU.TO,CAD,Suncor Energy,SU.TO,CA8672241079
+company,T.TO,CAD,Telus,T.TO,CA87971M1032
+company,TECK-A.TO,CAD,Teck Resources Ltd,TECK-A.TO,CA8787423034
+company,TECK-B.TO,CAD,Teck Resources,TECK-B.TO,CA8787422044
+company,TIH.TO,CAD,Toromont Industries Ltd.,TIH.TO,CA8911021050
+company,TOU.TO,CAD,Tourmaline Oil Corp,TOU.TO,CA89156V1067
+company,TRP.TO,CAD,TC Energy,TRP.TO,CA87807B1076
+company,WN.TO,CAD,George Weston Ltd.,WN.TO,CA9611485090
+company,WPM.TO,CAD,Wheaton Precious Metals,WPM.TO,CA9628791027
+company,WSP.TO,CAD,WSP Global Inc,WSP.TO,CA92938W2022
+company,X.TO,CAD,TMX Group Ltd,X.TO,CA87262K1057
