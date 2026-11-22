@@ -8,11 +8,15 @@
 A stock data browser for the terminal and a GTK window, built on
 [cellui](https://github.com/rekola/cellui).
 
-A row of preset tags (commodities, Nasdaq Helsinki, currencies) over a sortable,
+A row of preset tags (commodities, Nasdaq Helsinki, currencies, indices, and all of them) over a sortable,
 scrollable table with a price trace per row. The rows are the edges of a
 [data model](plans/data-model.md) that data sources fill on a thread of their
-own; the table follows as the data arrives. The default source is Yahoo Finance
-(daily candles, dividends and splits; unofficial, no key, for personal use).
+own; the table follows as the data arrives, a few times a second at most, and reads
+only the rows it draws, so it stays quick with tens of thousands. The default sources are
+Nordnet's discovery (stocks, ETFs, funds, certificates, indices, currencies and
+commodities: today's bar of each, reloaded every five minutes) and then Yahoo Finance
+(daily candles, dividends and splits for the instruments in the lists on disk);
+both are unofficial, need no key, and are for personal use.
 
     cmake -B build
     cmake --build build -j
@@ -44,8 +48,8 @@ like [immer](https://github.com/arximboldi/immer) and
 The instruments the tags show are lists on disk, `data/yahoo/*.csv`, one file
 per market (Nasdaq Helsinki, Currencies, Commodities: about 220 instruments, not
 complete). A file starts with `# market: NAME`, then rows of
-`kind,base,quote,name,yahoo` (what one unit of `base` costs in `quote`, and the
-ticker Yahoo uses for it); `--lists DIR` reads another directory. Yahoo is
+`kind,base,quote,name,yahoo,isin` (what one unit of `base` costs in `quote`, the
+ticker Yahoo uses for it, and the ISIN, which only a currency may lack); `--lists DIR` reads another directory. Yahoo is
 asked for one instrument at a time, so loading all of them takes over a minute
 and about 6 MB: `--market NAME` (repeatable) loads one list, and
 `--source synthetic` loads none. `tools/yahoo/build_lists.py` rebuilds the

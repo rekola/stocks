@@ -146,6 +146,10 @@ CandleSeries Snapshot::lastCandles(const EdgeKey & k, Resolution r, size_t n) co
   const auto * bars = series_.find({k, r});
   return {r, bars ? bars->drop(bars->size() - std::min(n, bars->size())) : Seq<Candle>{}};
 }
+bool Snapshot::hasCandles(const EdgeKey & k, Resolution r) const {
+  const auto * s = series_.find(SeriesKey{k, r});
+  return s && !s->empty();
+}
 std::vector<Resolution> Snapshot::resolutions(const EdgeKey & k) const {
   std::vector<int> codes;
   if (const auto * set = resolutions_.find(k)) codes.assign(set->begin(), set->end());
