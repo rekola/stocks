@@ -167,6 +167,15 @@ there is no server in this step.
 - **Where**: `--facts FILE`, else `facts.sqlite` in the user's data directory (`XDG_DATA_HOME` or `~/.local/share/stocks`;
   `%LOCALAPPDATA%\stocks` on Windows); `--no-facts` runs without. `makeMemoryStore()` with no argument keeps nothing, which
   is what the tests use.
+- **Next, when this is merged: nodes without ids.** A table shows listing edges only, so what nodes the store holds does not
+  matter, and a node should have no data of its own (not even that it exists) beyond the facts said of it and the edges that
+  have it as an end. The surrogate ids (`InstrumentId`, `MarketId`, `DatasetId`, `NodeRef`) go: they are handed out per run in
+  the order nodes are first resolved, are used as positions in the node sequences and as parts of `EdgeKey`, and so cannot be
+  kept. Edges would refer to a node by its key, which is stable and is what the facts file already uses (an instrument's ISIN, a
+  market's surrogate key, a dataset's name), and facts would be looked up by that key, so there is nothing to restore and nothing
+  to hold until a node is made again (`held_`, adoption and `keyOf_` go). To decide then: whether the `isin:`/`symbol:` prefix
+  stays in the key or the identifier moves to its own column, and whether an instrument with no ISIN gets a surrogate key like a
+  market.
 - **Not done**: any loader that writes new facts (they will be ordinary attributes through the same writes), node-valued links,
   and a rule for which source stands when two disagree (the last said stands).
 
