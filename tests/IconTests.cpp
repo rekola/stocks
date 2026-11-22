@@ -52,7 +52,7 @@ TEST(an_icon_is_fetched_decoded_and_then_found_in_memory) {
   rig.loader->want({"https://cdn/a.png"});
   CHECK(rig.requests() == 1);
   auto icon = rig.loader->get("https://cdn/a.png");
-  CHECK(icon && icon->width == kIconSize && icon->height == kIconSize && icon->pixels && icon->pixels->size() == size_t(kIconSize * kIconSize));
+  CHECK(icon && icon->width == 4 && icon->height == 4 && icon->pixels && icon->pixels->size() == 16u);  // as it came, not scaled
   CHECK(rig.loaded == 1);
 }
 
@@ -108,7 +108,7 @@ TEST(the_second_run_draws_from_the_disk_without_the_network) {
 }
 
 TEST(memory_keeps_the_most_recently_used_icons) {
-  Rig rig({.max_memory_icons = 2});
+  Rig rig({.max_memory_bytes = 2 * 16 * 4});  // two 4 x 4 pictures
   rig.loader->want({"https://cdn/a.png"});
   rig.requests();
   rig.loader->want({"https://cdn/b.png"});
@@ -121,7 +121,7 @@ TEST(memory_keeps_the_most_recently_used_icons) {
 
 TEST(the_disk_cache_is_kept_under_its_cap_by_dropping_the_oldest) {
   const fs::path dir = tempDir("cap");
-  const uintmax_t cap = 10 * 4100;
+  const uintmax_t cap = 10 * kPngBody.size();
   Rig rig({.cache_dir = dir, .max_disk_bytes = cap});
   std::vector<std::string> urls;
   for (int i = 0; i < 51; i++) urls.push_back("https://cdn/" + std::to_string(i) + ".png");

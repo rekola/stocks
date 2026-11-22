@@ -22,9 +22,6 @@
 // Posted to the UI thread when icons have loaded: the table draws again.
 struct IconsLoaded {};
 
-// The side of the square an icon is kept at, in pixels. The table scales it again to the size of its cell.
-inline constexpr int kIconSize = 32;
-
 // Where icons are kept between runs: stocks/icons under the user's cache directory.
 std::filesystem::path defaultIconCacheDir();
 
@@ -39,8 +36,8 @@ class IconLoader {
  public:
   struct Options {
     std::filesystem::path cache_dir;                       // empty: no disk cache
-    size_t max_memory_icons = 16000;                       // about 66 MB; least recently used leave first
-    uintmax_t max_disk_bytes = 256u * 1024 * 1024;         // about 62000 icons; least recently used files go first
+    size_t max_memory_bytes = 128u * 1024 * 1024;          // decoded pixels; least recently used leave first (disk serves the rest)
+    uintmax_t max_disk_bytes = 512u * 1024 * 1024;         // the files as fetched; least recently used go first
     size_t burst = 100;                                    // requests in a row, then a pause (each burst 80-120 % of this)
     std::chrono::milliseconds burst_pause{2000};           // between bursts (each 50-150 % of this)
     std::chrono::milliseconds offline_pause{60000};        // after no answer
@@ -66,7 +63,7 @@ class IconLoader {
   // Loads one URL; returns whether an icon arrived.
   bool load(const std::string & url, bool & used_network);
   std::shared_ptr<const cellui::TableIcon> fromDisk(const std::string & url);
-  void toDisk(const std::string & url, const cellui::TableIcon & icon);
+  void toDisk(const std::string & url, const std::string & bytes);
   void trimDisk();
   void remember(const std::string & url, std::shared_ptr<const cellui::TableIcon> icon);
 
@@ -77,6 +74,7 @@ class IconLoader {
   std::condition_variable wake_, idle_;
   std::list<std::pair<std::string, std::shared_ptr<const cellui::TableIcon>>> memory_;  // most recently used first
   std::unordered_map<std::string, decltype(memory_)::iterator> in_memory_;
+  size_t memory_bytes_ = 0;
   std::unordered_set<std::string> failed_;
   std::list<std::string> queue_;
   bool busy_ = false, stop_ = false, refused_ = false;
