@@ -42,11 +42,11 @@ that is installed), fetched at a pinned commit
 like [immer](https://github.com/arximboldi/immer) and
 [nlohmann/json](https://github.com/nlohmann/json).
 
-Some instruments come from lists on disk, `data/*/*.csv`, one file
+Some instruments come from lists on disk, `data/lists/*.csv`, one file
 per market (about 220 instruments, not complete). A file starts with
-`# market: NAME`, then rows of `kind,base,quote,name,ticker,isin` (what one unit of
-`base` costs in `quote`, the ticker the source uses for it, and the ISIN, which only a
-currency may lack); `--lists DIR` reads another directory. Such a source is asked for one
+`# market: NAME`, then rows of six fields: `kind`, `base`, `quote` (what one unit of
+`base` costs in `quote`), `name`, the ticker the source uses, and the ISIN, which only a
+currency may lack; `--lists DIR` reads another directory. Such a source is asked for one
 instrument at a time, so loading all of them takes over a minute and about 6 MB:
 `--market NAME` (repeatable) loads one list, and `--source synthetic` loads none.
 The script under `tools/` rebuilds the files from its candidate lists.

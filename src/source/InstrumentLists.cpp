@@ -140,8 +140,8 @@ InstrumentList onlyMarkets(const InstrumentList & list, const std::vector<std::s
 std::filesystem::path findListsDirectory(const std::string & given) {
   std::error_code ec;
   if (!given.empty()) return given;
-  for (const std::filesystem::path & candidate : {std::filesystem::path("data") / "yahoo",
-                                                    std::filesystem::path(STOCKS_DATA_DIR) / "yahoo"})
+  for (const std::filesystem::path & candidate : {std::filesystem::path("data") / "lists",
+                                                    std::filesystem::path(STOCKS_DATA_DIR) / "lists"})
     if (std::filesystem::is_directory(candidate, ec)) return candidate;
   return {};
 }
@@ -149,7 +149,7 @@ std::filesystem::path findListsDirectory(const std::string & given) {
 InstrumentList resolveList(const ListSpec & spec, std::string & error) {
   std::filesystem::path directory = findListsDirectory(spec.directory);
   if (directory.empty()) {
-    error = "no instrument lists (data/yahoo); the lists option names a directory";
+    error = "no instrument lists (data/lists); the lists option names a directory";
     return {};
   }
   InstrumentList list = loadInstrumentLists(directory, error);

@@ -4,7 +4,7 @@
 //   stocks --ui terminal   in the terminal;  --ui window  in a window
 //   stocks --source NAME   the data source, one at a time: auto (the default: nordnet, and yahoo if nordnet gives nothing),
 //                          nordnet, yahoo or synthetic
-//   stocks --lists DIR     the instrument lists of the yahoo and synthetic sources (default: data/yahoo)
+//   stocks --lists DIR     the instrument lists of the yahoo and synthetic sources (default: data/lists)
 //   stocks --market NAME   of those lists, load only that market, e.g. "Nasdaq Helsinki" (repeatable)
 // Keys: arrows, PgUp/PgDn, Home/End move; Tab moves between the tags and the
 // table; M-x (Ctrl+Shift+P)
