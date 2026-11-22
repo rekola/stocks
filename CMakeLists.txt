@@ -59,7 +59,7 @@ find_package(Threads REQUIRED)
 target_link_libraries(stocks_model PUBLIC immer Threads::Threads)
 
 # The browser: the screen, its commands and the rows it shows, as a library so the tests can drive it.
-add_library(stocks_lib STATIC src/Browser.cpp src/Quotes.cpp src/Synthetic.cpp src/source/Http.cpp src/source/InstrumentLists.cpp src/source/InstrumentTypes.cpp
+add_library(stocks_lib STATIC src/Browser.cpp src/AttributeView.cpp src/Quotes.cpp src/Synthetic.cpp src/source/Http.cpp src/source/InstrumentLists.cpp src/source/InstrumentTypes.cpp
   src/icons/IconLoader.cpp src/source/YahooSource.cpp src/source/NordnetSource.cpp src/source/SourceRunner.cpp)
 target_include_directories(stocks_lib PUBLIC src)
 target_link_libraries(stocks_lib PUBLIC cellui stocks_model httpclient::httpclient nlohmann_json::nlohmann_json)

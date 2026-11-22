@@ -1,13 +1,17 @@
 #include "TestFramework.h"
 
+#include "AttributeView.h"
 #include "Browser.h"
 #include "Quotes.h"
 #include "Synthetic.h"
+#include "model/Dates.h"
 #include "source/Source.h"
 #include "source/InstrumentLists.h"
 
 #include <cellui/Application.h>
 #include <cellui/TestBackend.h>
+
+#include <clocale>
 
 using namespace cellui;
 
@@ -61,7 +65,49 @@ struct Fixture {
     app->present();
     return backend->text();
   }
+  // Runs `open` and, inside the modal it opens, one of `steps` a turn. True if the modal ended on its own (Escape) before
+  // the steps ran out; the loop is quit under it otherwise.
+  bool inModal(const std::function<void()> & open, std::vector<std::function<void()>> steps) {
+    EventLoop & loop = backend->eventLoop();
+    loop.setBefore([] { return 0; });
+    size_t turn = 0;
+    bool ran_out = false;
+    auto frame = loop.onFrame([&] {
+      if (turn < steps.size()) {
+        steps[turn++]();
+      } else {
+        ran_out = true;
+        loop.quit();
+      }
+    });
+    open();
+    return !ran_out;
+  }
 };
+
+// Where `needle` first is on the screen, in cells: {row, column}, or {-1, -1}.
+std::pair<int, int> cellOf(const std::string & screen, const std::string & needle) {
+  int row = 0, col = 0;
+  for (size_t i = 0; i < screen.size(); i++) {
+    if (screen.compare(i, needle.size(), needle) == 0) return {row, col};
+    if (screen[i] == '\n') row++, col = 0;
+    else if ((static_cast<unsigned char>(screen[i]) & 0xC0) != 0x80) col++;  // not a continuation byte
+  }
+  return {-1, -1};
+}
+
+// A company with an ISIN, a listing, a real number and a day number, on the Nasdaq Helsinki preset.
+EdgeKey addNokia(Store & store) {
+  Instrument eur = store.addInstrument({{}, "EUR", "Euro", InstrumentKind::Currency});
+  Instrument nokia = store.addInstrument({{}, "", "Nokia Oyj", InstrumentKind::Company, "FI0009000681"});
+  Market helsinki = store.addMarket({{}, "Nasdaq Helsinki"});
+  Dataset data = store.addDataset({{}, "nordnet"});
+  EdgeKey key{nokia.id, eur.id, helsinki.id, data.id};
+  store.appendCandles(key, Resolution::Day, {{dayNumber(2026, 1, 2), 1, 1, 1, 4.2, 1}, {dayNumber(2026, 1, 5), 1, 1, 1, 4.3, 1}});
+  store.setListing({key, "NOKIA", "1234", "5678", "STOCK", "Nokia"});
+  store.setAttributes(nokia.id, {{"market-cap", 12345.675}, {"report-day", dayNumber(2026, 3, 5)}, {"owners", int64_t{250000}}});
+  return key;
+}
 
 }  // namespace
 
@@ -385,4 +431,90 @@ TEST(a_busy_source_is_shown_at_most_so_often_and_the_last_change_is_shown_when_i
   f.browser->setMinRefreshInterval(0);
   f.app->present();  // the next frame shows it
   CHECK(t.model()->rowCount() == 2);
+}
+
+TEST(show_info_from_the_keyboard_shows_the_isin_the_symbol_a_number_and_a_date_and_escape_closes_it) {
+  Fixture f(false);
+  addNokia(*f.store);
+  f.app->execute("show-nasdaq-helsinki");
+  CHECK(f.browser->table().selectedRow() == 0);
+  std::string shown;
+  std::string end;
+  const bool closed_by_escape = f.inModal([&] { f.press('i'); },
+                                          {[&] { shown = f.text(); }, [&] { f.press(Key::End); }, [&] { end = f.text(); }, [&] { f.press(Key::Escape); }});
+  CHECK(shown.find("FI0009000681") != std::string::npos);  // the instrument's ISIN
+  CHECK(shown.find("NOKIA") != std::string::npos);         // the listing's symbol
+  CHECK(shown.find("12345.675") != std::string::npos);     // a real number, with a point
+  CHECK(end.find("2026-03-05") != std::string::npos);      // a day number, as a date (below, where the keys scrolled to)
+  CHECK(end.find("2 bars, 2026-01-02 to 2026-01-05") != std::string::npos);
+  CHECK(closed_by_escape);
+  CHECK(f.text().find("Esc: close") == std::string::npos);
+  // The Emacs key for it, from the terminal keymap.
+  shown.clear();
+  f.inModal([&] { f.press('x', kModCtrl), f.press('='); }, {[&] { shown = f.text(); }, [&] { f.press(Key::Escape); }});
+  CHECK(shown.find("FI0009000681") != std::string::npos);
+}
+
+TEST(a_click_on_the_info_button_selects_its_row_and_opens_the_viewer) {
+  Fixture f(false);
+  addNokia(*f.store);
+  f.app->execute("show-nasdaq-helsinki");
+  f.browser->table().select(-1);
+  auto [row, col] = cellOf(f.text(), "[i]");
+  CHECK(row >= 0);
+  std::string shown;
+  const bool closed = f.inModal([&] { f.click(row, col + 1); }, {[&] { shown = f.text(); }, [&] { f.press(Key::Escape); }});
+  CHECK(f.browser->table().selectedRow() == 0);
+  CHECK(shown.find("FI0009000681") != std::string::npos && shown.find("NOKIA") != std::string::npos);
+  CHECK(closed);
+}
+
+TEST(the_command_without_a_selected_row_says_so) {
+  Fixture f(false);
+  f.app->execute("show-info");
+  CHECK(f.text().find("No row selected") != std::string::npos);
+}
+
+TEST(the_buttons_follow_a_sort_and_leave_the_scroll_position_alone) {
+  Fixture f;
+  f.app->execute("show-nasdaq-helsinki");
+  Table & table = f.browser->table();
+  const auto & quotes = static_cast<const Quotes &>(*table.model());
+  CHECK(table.model()->rowCount() > table.visibleRows());
+  f.press(Key::End);  // the last row selected, the view scrolled down to it
+  const int first = table.firstVisiblePosition();
+  CHECK(first > 0);
+  auto open_first_visible = [&] {
+    auto [row, col] = cellOf(f.text(), "[i]");  // the first row in view
+    CHECK(row >= 0);
+    const int expected = table.rowAt(table.firstVisiblePosition());
+    std::string shown;
+    f.inModal([&] { f.click(row, col + 1); }, {[&] { shown = f.text(); }, [&] { f.press(Key::Escape); }});
+    CHECK(table.selectedRow() == expected);
+    auto isin = f.store->snapshot()->instrument(quotes.edge(expected).base)->isin;
+    CHECK(!isin.empty() && shown.find(isin) != std::string::npos);  // the row clicked, not another
+  };
+  open_first_visible();
+  CHECK(table.firstVisiblePosition() == first);  // the click did not move the view
+  auto [heading_row, heading_col] = cellOf(f.text(), "Name");
+  f.click(heading_row, heading_col);
+  CHECK(table.sortColumn() == Quotes::NAME);  // the column of buttons did not stop the sort
+  open_first_visible();  // and its buttons are on the rows that are there now
+}
+
+TEST(values_are_shown_by_what_they_are_without_the_locale) {
+  CHECK(showValue("report-day", int64_t{dayNumber(2026, 3, 5)}).text == "2026-03-05");
+  CHECK(showValue("first-trade-day", int64_t{dayNumber(1999, 12, 31)}).text == "1999-12-31");
+  CHECK(showValue("owners", int64_t{250000}).text == "250000");  // not a day
+  CHECK(showValue("tradable", true).text == "yes");
+  CHECK(showValue("name", std::string("Nokia")).text == "Nokia");
+  CHECK(showValue("x", std::monostate{}).text.empty());
+  const std::string before = std::setlocale(LC_NUMERIC, nullptr);
+  for (const char * name : {"de_DE.UTF-8", "fi_FI.UTF-8", "de_DE", "fi_FI"})
+    if (std::setlocale(LC_NUMERIC, name)) break;  // a decimal comma, where the system has one
+  CHECK(realText(0.35) == "0.35");
+  CHECK(realText(1234.5) == "1234.5");
+  CHECK(realText(42) == "42");
+  CHECK(showValue("dividend-amount", 0.7).text == "0.7");
+  std::setlocale(LC_NUMERIC, before.c_str());
 }

@@ -29,7 +29,7 @@ both are unofficial, need no key, and are for personal use.
 
 Keys: arrows, PgUp/PgDn, Home/End move; Tab moves between the tags and the table; `M-x` (`Ctrl+Shift+P` on
 the desktop keymap) opens the command palette, where every command is listed with
-its description and key; `q` (`C-x C-c`, `Ctrl+Q`) quits. Clicking a
+its description and key; `q` (`C-x C-c`, `Ctrl+Q`) quits. `i` (`C-x =`) or the `[i]` button at the end of a row shows everything known about the row (Esc closes it). Clicking a
 heading sorts; clicking a tag or row chooses it; the wheel scrolls. The table
 fills the screen and follows it when it is resized.
 
