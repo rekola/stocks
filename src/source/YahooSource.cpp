@@ -82,7 +82,9 @@ bool YahooSource::parse(const std::string & body, const ListEntry & e, Store & s
   Instrument quote = quoteNode(store, e.quote);
   const EdgeKey edge{base.id, quote.id, market.id, dataset.id};
   store.appendCandles(edge, Resolution::Day, bars);
-  Listing listing{edge, e.yahoo, "", "", ""};  // what Yahoo calls it, and its own type
+  // What Yahoo calls it, its own type (below) and the name a row shows: a pair is named by its two currencies, not by the
+  // base's name, which every pair of that base would share.
+  Listing listing{edge, e.yahoo, "", "", "", e.kind == InstrumentKind::Currency ? e.base + "/" + e.quote : e.name};
   std::vector<Attribute> said;
   if (auto meta = result.find("meta"); meta != result.end() && meta->is_object()) {
     auto t = meta->find("instrumentType");

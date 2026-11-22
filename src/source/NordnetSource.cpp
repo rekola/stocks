@@ -276,10 +276,11 @@ bool NordnetSource::parseIndicators(const std::string & body, std::vector<Nordne
       };
       const int64_t tick = integer(*p, "timestamp") / 1000;  // milliseconds in the answer
       auto h = number("high"), l = number("low"), c = number("last");
-      if (h && l && c && tick > 0) {
+      if (c && tick > 0) {
         r.hasBar = true;
-        // No open and no volume: undefined. Keyed by the date of the last tick in UTC.
-        r.bar = {dayNumberOfInstant(tick), kUndefined, *h, *l, *c, kUndefined};
+        // No open and no volume: undefined, and so are the high and the low where the row has none (the London metals
+        // give only the last price). Keyed by the date of the last tick in UTC.
+        r.bar = {dayNumberOfInstant(tick), kUndefined, h.value_or(kUndefined), l.value_or(kUndefined), *c, kUndefined};
       }
     }
     rows.push_back(std::move(r));
@@ -334,7 +335,7 @@ size_t NordnetSource::loadIndicators(const List & list, Store & store, Http & ht
     if (row.hasBar) {
       const EdgeKey edge{base.id, quote.id, market.id, dataset.id};
       store.appendCandles(edge, Resolution::Day, {row.bar});
-      store.setListing({edge, row.symbol, "", row.orderBookId, row.type});
+      store.setListing({edge, row.symbol, "", row.orderBookId, row.type, row.name});
     }
     written++;
   }
@@ -405,7 +406,7 @@ void NordnetSource::load(Store & store, Http & http, SourceListener & listener) 
           const EdgeKey edge{base.id, quote.id, market.id, dataset.id};
           store.appendCandles(edge, Resolution::Day, {l.bar});
           // What the market says of it: what it calls it, its own id for it and the order book its history is asked for by.
-          store.setListing({edge, l.symbol, l.identifier, l.bookId, l.type});
+          store.setListing({edge, l.symbol, l.identifier, l.bookId, l.type, l.name});
         }
       }
       found += page.listings.size();

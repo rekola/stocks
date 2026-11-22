@@ -15,6 +15,9 @@ std::vector<QuoteRow> makeRows(const Snapshot & snapshot, MarketId market, size_
       r.name = base->name;
       if (auto url = snapshot.attribute(key.base, predicate::iconUrl)) r.icon_url = asText(*url).value_or("");
     }
+    // What the dataset calls it on that market: "EUR/USD" rather than the euro on every row of a base, and the name each
+    // market gives an instrument listed on several.
+    if (auto listing = snapshot.listing(key); listing && !listing->name.empty()) r.name = listing->name;
     if (auto quote = snapshot.instrument(key.quote)) r.quote = quote->symbol;
     if (auto dataset = snapshot.dataset(key.dataset)) r.dataset = dataset->name;
     for (const Candle & c : series.candles) r.history.push_back(static_cast<float>(c.close));
