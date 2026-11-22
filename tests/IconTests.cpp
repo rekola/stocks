@@ -28,7 +28,7 @@ struct Rig {
     auto fake = std::make_unique<FakeHttp>();
     fake->answer = answer ? answer : [](const std::string &) { return ok(kPngBody); };
     http = fake.get();
-    options.pause = std::chrono::milliseconds(0);
+    options.burst_pause = std::chrono::milliseconds(0);
     loader = std::make_unique<IconLoader>(std::move(fake), options, [this] { loaded++; });
   }
   // Requests are read after the loader is idle, so the thread is not writing them.
@@ -187,4 +187,13 @@ TEST(the_table_shows_an_icon_once_it_has_loaded_and_keeps_its_place) {
   int shown = 0;  // pictures where the display has them: the two rows of the brand show the one picture
   for (const ImagePlacement & p : f.backend->images()) shown += p.shared.valid() && std::string(p.shared.kind) == "icon";
   CHECK(shown == 2);
+}
+
+TEST(requests_go_in_bursts_and_every_wanted_url_still_arrives) {
+  Rig rig({.burst = 2, .burst_pause = std::chrono::milliseconds(1)});
+  std::vector<std::string> urls;
+  for (int i = 0; i < 11; i++) urls.push_back("https://cdn/" + std::to_string(i) + ".png");
+  rig.loader->want(urls);
+  CHECK(rig.requests() == 11);
+  for (const std::string & url : urls) CHECK(rig.loader->get(url));
 }

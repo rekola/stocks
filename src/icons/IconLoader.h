@@ -12,6 +12,7 @@
 #include <list>
 #include <memory>
 #include <mutex>
+#include <random>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -40,7 +41,8 @@ class IconLoader {
     std::filesystem::path cache_dir;                       // empty: no disk cache
     size_t max_memory_icons = 16000;                       // about 66 MB; least recently used leave first
     uintmax_t max_disk_bytes = 256u * 1024 * 1024;         // about 62000 icons; least recently used files go first
-    std::chrono::milliseconds pause{100};                  // between two requests (a static CDN, not the API)
+    size_t burst = 100;                                    // requests in a row, then a pause (each burst 80-120 % of this)
+    std::chrono::milliseconds burst_pause{2000};           // between bursts (each 50-150 % of this)
     std::chrono::milliseconds offline_pause{60000};        // after no answer
   };
   // `loaded` runs on the loader's thread after icons have arrived; a program hands it to the UI thread.
@@ -80,5 +82,7 @@ class IconLoader {
   bool busy_ = false, stop_ = false, refused_ = false;
   std::chrono::steady_clock::time_point offline_until_{};
   int disk_writes_ = 0;
+  size_t sent_ = 0, burst_size_ = 0;  // requests in this burst, and where it ends
+  std::mt19937 random_{std::random_device{}()};
   std::thread thread_;  // last: it starts in the constructor
 };
