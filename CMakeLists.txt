@@ -101,7 +101,7 @@ set_tests_properties(stocks_rejects_an_unknown_ui PROPERTIES PASS_REGULAR_EXPRES
 # (TestBackend) is built where there is a POSIX event loop, so not on Windows.
 if(NOT WIN32)
   add_executable(stocks_tests tests/test_main.cpp tests/BrowserTests.cpp tests/ModelTests.cpp tests/SourceTests.cpp tests/InstrumentListsTests.cpp tests/NordnetTests.cpp tests/HistoryTests.cpp tests/InstrumentTypesTests.cpp tests/DatesTests.cpp tests/IconTests.cpp tests/FundTests.cpp tests/FactTests.cpp tests/NodeKeyTests.cpp tests/NordnetDetailsTests.cpp)
-  target_link_libraries(stocks_tests PRIVATE stocks_lib)
+  target_link_libraries(stocks_tests PRIVATE stocks_lib SQLiteCpp)  # the tests of the file make an old one with it
   add_test(NAME stocks_tests COMMAND stocks_tests)
   set_tests_properties(stocks_tests PROPERTIES TIMEOUT 60)
 endif()

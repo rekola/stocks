@@ -14,8 +14,8 @@ struct World {
   Instrument eur = store->addInstrument({{}, "EUR", "Euro", InstrumentKind::Currency});
   Market hel = store->addMarket({{}, "Nasdaq Helsinki"});
   Market sto = store->addMarket({{}, "Nasdaq Stockholm"});
-  Dataset a = store->addDataset({{}, "provider-a"});
-  Dataset b = store->addDataset({{}, "provider-b"});
+  Dataset a = store->addDataset({{}, "providera"});
+  Dataset b = store->addDataset({{}, "providerb"});
   std::shared_ptr<const Snapshot> snap() const { return store->snapshot(); }
   EdgeKey key(MarketId m, DatasetId d) const { return {nokia.id, eur.id, m, d}; }
 };
@@ -29,8 +29,8 @@ TEST(adding_the_same_symbol_or_name_returns_the_record_already_there) {
   Instrument again = w.store->addInstrument({{}, "NOKIA", "Other name", InstrumentKind::Index});
   CHECK(again.id == w.nokia.id && again.name == "Other name" && again.kind == InstrumentKind::Index);  // the last said stands
   CHECK(w.store->addMarket({{}, "Nasdaq Helsinki"}).id == w.hel.id);
-  CHECK(w.store->addDataset({{}, "provider-a"}).id == w.a.id);
-  CHECK(w.snap()->instruments().size() == 2 && w.snap()->markets().size() == 2 && w.snap()->datasets().size() == 2);
+  CHECK(w.store->addDataset({{}, "providera"}).id == w.a.id);
+  CHECK(w.snap()->nodeCount(NodeType::Instrument) == 2 && w.snap()->nodeCount(NodeType::Market) == 2 && w.snap()->nodeCount(NodeType::Dataset) == 2);
 }
 
 TEST(records_are_found_by_id_and_by_name) {
@@ -40,7 +40,7 @@ TEST(records_are_found_by_id_and_by_name) {
   CHECK(!w.snap()->findInstrument("NOPE"));
   CHECK(!w.snap()->instrument({}) && !w.snap()->instrument({99}));
   CHECK(w.snap()->findMarket("Nasdaq Stockholm")->id == w.sto.id && w.snap()->market(w.hel.id)->name == "Nasdaq Helsinki");
-  CHECK(w.snap()->findDataset("provider-b")->id == w.b.id && !w.snap()->dataset({}));
+  CHECK(w.snap()->findDataset("providerb")->id == w.b.id && !w.snap()->dataset({}));
 }
 
 TEST(candles_stay_time_ordered_and_a_bar_at_a_known_time_replaces_it) {
@@ -267,8 +267,8 @@ TEST(an_instrument_is_its_isin_whatever_its_symbol_or_market) {
   Instrument again = w.store->addInstrument({{}, "", "Other name", InstrumentKind::Etf, "IE00BGV5VN51"});  // another listing
   CHECK(a.id.valid() && again.id == a.id);
   CHECK(w.snap()->findInstrumentByIsin("IE00BGV5VN51")->id == a.id);
-  CHECK(!w.snap()->findInstrumentByIsin("IE0000000000"));
-  Instrument b = w.store->addInstrument({{}, "", "A different fund", InstrumentKind::Etf, "LU0000000001"});
+  CHECK(!w.snap()->findInstrumentByIsin("IE0000000004"));
+  Instrument b = w.store->addInstrument({{}, "", "A different fund", InstrumentKind::Etf, "LU0000000009"});
   CHECK(b.id.valid() && b.id != a.id);
   // A currency has no ISIN, and is its code.
   CHECK(w.store->addInstrument({{}, "EUR", "Euro", InstrumentKind::Currency}).id == w.eur.id);
@@ -343,9 +343,10 @@ TEST(a_thin_edge_is_a_triple_of_a_node_with_no_dataset_and_a_value_that_changes_
   CHECK(w.snap()->version() == version + 1 && asReal(*w.snap()->attribute(nokia, "pe")) == 13.0);
   CHECK(w.snap()->attributes(nokia).size() == s->attributes(nokia).size());
 
-  // Empty, undefined and nothing say nothing; so does a node that is not there.
+  // Empty, undefined and nothing say nothing; so does a key that is no node's (none, or a number that is no ISIN).
   w.store->setAttributes(nokia, {{"x", std::string()}, {"y", std::numeric_limits<double>::quiet_NaN()}, {"z", Value{}}});
-  w.store->setAttribute(NodeRef(InstrumentId{999}), {"pe", 1.0});
+  w.store->setAttribute(NodeRef(InstrumentId{}), {"pe", 1.0});
+  w.store->setAttribute(NodeRef(InstrumentId{(uint64_t{1} << 60) - 1}), {"pe", 1.0});
   CHECK(w.snap()->attributes(nokia).size() == s->attributes(nokia).size() && w.snap()->version() == version + 1);
 
   // Text is found by its value; other values are not.
@@ -371,7 +372,7 @@ TEST(edges_can_be_selected_by_the_type_of_their_base_instrument) {
 
 TEST(an_instrument_with_no_edge_is_not_seen_by_a_market) {
   World w;
-  w.store->addInstrument({{}, "LONELY", "No data", InstrumentKind::Etf, "XX0000000000", "UETF"});
+  w.store->addInstrument({{}, "LONELY", "No data", InstrumentKind::Etf, "XX0000000002", "UETF"});
   CHECK(w.snap()->findInstrument("LONELY"));  // it exists, as a node
-  for (const Market & m : w.snap()->markets()) CHECK(w.snap()->edges(m.id).empty());
+  CHECK(w.snap()->edges(w.hel.id).empty() && w.snap()->edges(w.sto.id).empty() && w.snap()->edgeMarkets().empty());
 }

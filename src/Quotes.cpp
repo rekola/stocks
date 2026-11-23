@@ -12,7 +12,7 @@ std::string labelOf(const Snapshot & snapshot, MarketId id) {
   if (auto m = snapshot.market(id); m && !m->name.empty()) return m->name;
   if (auto v = snapshot.attribute(id, predicate::nordnetId))
     if (auto text = asText(*v)) return "Nordnet " + *text;
-  return "#" + std::to_string(id.value);
+  return "#" + describe(NodeKey{id.value});
 }
 
 // A currency is its code ("EUR" of EUR/USD); anything else what the market calls it.
@@ -35,9 +35,13 @@ std::string quoteOf(const Snapshot & snapshot, const EdgeKey & key) {
   return quote ? quote->symbol : std::string();
 }
 
+// The rows of a market in the order of what they show first, the symbol, and then by key: a key's order means nothing of its own.
 void appendEdges(const Snapshot & snapshot, MarketId market, std::vector<EdgeKey> & out) {
+  std::vector<std::pair<std::string, EdgeKey>> shown;
   for (const EdgeKey & key : snapshot.edges(market))
-    if (snapshot.hasCandles(key, Resolution::Day)) out.push_back(key);  // no daily bars: a book alone has no row
+    if (snapshot.hasCandles(key, Resolution::Day)) shown.emplace_back(baseOf(snapshot, key), key);  // no daily bars: a book alone has no row
+  std::sort(shown.begin(), shown.end(), [](const auto & a, const auto & b) { return a.first != b.first ? a.first < b.first : a.second < b.second; });
+  for (const auto & entry : shown) out.push_back(entry.second);
 }
 
 void appendRows(const Snapshot & snapshot, MarketId market, Period period, std::vector<QuoteRow> & rows) {
@@ -72,7 +76,7 @@ std::vector<QuoteRow> makeRows(const Snapshot & snapshot, MarketId market, Perio
 
 std::vector<QuoteRow> makeAllRows(const Snapshot & snapshot, Period period) {
   std::vector<QuoteRow> rows;
-  for (const Market & m : snapshot.markets()) appendRows(snapshot, m.id, period, rows);
+  for (MarketId m : snapshot.edgeMarkets()) appendRows(snapshot, m, period, rows);
   return rows;
 }
 
@@ -84,7 +88,7 @@ std::vector<EdgeKey> quoteEdges(const Snapshot & snapshot, MarketId market) {
 
 std::vector<EdgeKey> allQuoteEdges(const Snapshot & snapshot) {
   std::vector<EdgeKey> keys;
-  for (const Market & m : snapshot.markets()) appendEdges(snapshot, m.id, keys);
+  for (MarketId m : snapshot.edgeMarkets()) appendEdges(snapshot, m, keys);
   return keys;
 }
 

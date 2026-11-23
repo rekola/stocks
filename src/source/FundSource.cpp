@@ -1,6 +1,7 @@
 #include "source/FundSource.h"
 
 #include "model/Isin.h"
+#include "model/NodeKey.h"
 
 #include <filesystem>
 #include <fstream>
@@ -159,6 +160,10 @@ bool FundSchema::parse(const std::string & text, FundSchema & out, std::string &
       return false;
     }
     *target = d[key].get<std::string>();
+  }
+  if (!datasetKey(s.dataset)) {
+    error = "dataset is the code of the dataset, one to ten letters or digits (it is never changed), not \"" + s.dataset + "\"";
+    return false;
   }
   if (auto pause = d.find("pauseMs"); pause != d.end() && pause->is_number()) s.pause = std::chrono::milliseconds(pause->get<int64_t>());
   if (auto hours = d.find("refreshHours"); hours != d.end() && hours->is_number())

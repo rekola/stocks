@@ -25,5 +25,5 @@ class NordnetDetails {
   bool loadBatch(Store &, Http &, SourceListener &, std::chrono::milliseconds pause, size_t batch);
 
  private:
-  std::set<uint32_t> tried_;  // the instruments asked for, found or not: a failure is not repeated until the next start
+  std::set<uint64_t> tried_;  // the instruments asked for, found or not: a failure is not repeated until the next start
 };

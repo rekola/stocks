@@ -2,8 +2,12 @@
 
 #include "model/FactWriter.h"
 #include "model/NodeIdentity.h"
+#include "model/NodeKey.h"
 #include "model/SqliteFactStore.h"
 #include "model/Store.h"
+#include "model/Isin.h"
+
+#include <SQLiteCpp/SQLiteCpp.h>
 
 #include <atomic>
 #include <chrono>
@@ -59,10 +63,21 @@ StoreOptions optionsFor(const std::shared_ptr<FactStore> & facts, Clock & clock)
   return o;
 }
 
-std::map<std::string, StoredFact> byPredicate(const std::vector<StoredFact> & all) {
-  std::map<std::string, StoredFact> out;
-  for (const StoredFact & f : all) out[f.node + "/" + f.predicate] = f;
+// The facts by (node, predicate).
+std::map<std::pair<uint64_t, std::string>, StoredFact> byKey(const std::vector<StoredFact> & all) {
+  std::map<std::pair<uint64_t, std::string>, StoredFact> out;
+  for (const StoredFact & f : all) out[{f.node, f.predicate}] = f;
   return out;
+}
+
+// The number of a key, or zero where there is none (no test wants a missing one to stop it).
+uint64_t numberOf(const std::optional<NodeKey> & key) { return key ? key->value : 0; }
+std::string nameOf(const std::optional<Dataset> & d) { return d ? d->name : std::string(); }
+
+// One fact of a map, or an empty one (no test wants a missing one to stop it).
+StoredFact at(const std::map<std::pair<uint64_t, std::string>, StoredFact> & facts, uint64_t node, const std::string & predicate) {
+  const auto it = facts.find({node, predicate});
+  return it == facts.end() ? StoredFact{} : it->second;
 }
 
 const char * kIsin = "FI0009000681";
@@ -77,6 +92,7 @@ Attribute factOf(const Snapshot & s, NodeRef n, const std::string & predicate) {
 
 TEST(every_value_alternative_round_trips_through_the_file) {
   TempFile t;
+  const uint64_t node = marketKey(0x1234).value;
   const std::vector<Value> values = {std::monostate{},
                                      std::string("Nokia Oyj — ääkköset"),
                                      std::string(),
@@ -92,34 +108,142 @@ TEST(every_value_alternative_round_trips_through_the_file) {
   {
     auto facts = openSqliteFactStore(t.file);
     FactBatch batch;
-    for (size_t i = 0; i < values.size(); i++)
-      batch.changed.push_back({StoredType::Market, "XHEL", "p" + std::to_string(i), values[i], 11 + static_cast<TimestampMs>(i)});
+    for (size_t i = 0; i < values.size(); i++) batch.changed.push_back({node, "p" + std::to_string(i), values[i], 11 + static_cast<TimestampMs>(i)});
     facts->apply(batch);
   }
-  auto loaded = byPredicate(openSqliteFactStore(t.file)->loadAll());
+  auto loaded = byKey(openSqliteFactStore(t.file)->loadAll());
   CHECK(loaded.size() == values.size());
   for (size_t i = 0; i < values.size(); i++) {
-    const StoredFact & f = loaded["XHEL/p" + std::to_string(i)];
+    const StoredFact & f = at(loaded, node, "p" + std::to_string(i));
     CHECK(f.value.index() == values[i].index());
     CHECK(f.value == values[i]);
-    CHECK(f.updated == 11 + static_cast<TimestampMs>(i) && f.type == StoredType::Market);
+    CHECK(f.updated == 11 + static_cast<TimestampMs>(i) && NodeKey{f.node}.kind() == NodeKind::Market);
   }
 }
 
-TEST(a_batch_replaces_by_key_and_forgets_whole_nodes) {
+TEST(a_batch_replaces_by_node_and_predicate) {
   TempFile t;
   auto facts = openSqliteFactStore(t.file);
-  FactBatch a;
-  a.changed = {{StoredType::Instrument, "A", "name", std::string("one"), 1},
-               {StoredType::Instrument, "A", "kind", std::string("company"), 1},
-               {StoredType::Instrument, "B", "name", std::string("two"), 1}};
-  facts->apply(a);
+  const uint64_t a = numberOf(datasetKey("a")), b = numberOf(datasetKey("b"));
+  FactBatch first;
+  first.changed = {{a, "name", std::string("one"), 1}, {a, "kind", std::string("x"), 1}, {b, "name", std::string("two"), 1}};
+  facts->apply(first);
+  FactBatch second;
+  second.rechecked = {{a, "name", std::string("uno"), 9}};
+  facts->apply(second);
+  auto loaded = byKey(facts->loadAll());
+  CHECK(loaded.size() == 3 && std::get<std::string>(at(loaded, a, "name").value) == "uno" && at(loaded, a, "name").updated == 9);
+  CHECK(std::get<std::string>(at(loaded, b, "name").value) == "two");
+}
+
+TEST(a_node_is_what_is_said_of_it_so_a_restart_shows_facts_and_no_edges) {
+  TempFile t;
+  Clock clock;
+  {
+    auto store = makeMemoryStore(optionsFor(openSqliteFactStore(t.file), clock));
+    Instrument nokia = store->resolveInstrument({{predicate::isin, kIsin}}, {{predicate::name, "Nokia"}});
+    Market hel = store->resolveMarket({{predicate::mic, "XHEL"}, {predicate::name, "Nasdaq Helsinki"}});
+    Dataset d = store->addDataset({{}, "providera"});
+    store->appendCandles({nokia.id, nokia.id, hel.id, d.id}, Resolution::Day, {{1, 1, 1, 1, 1, 1}});
+  }
+  auto store = makeMemoryStore(optionsFor(openSqliteFactStore(t.file), clock));
+  auto s = store->snapshot();
+  // The facts are there, found by what they say, and nothing was made of them: no version, no edge, no market with data.
+  CHECK(s->version() == 0);
+  CHECK(s->nodeCount(NodeType::Instrument) == 1 && s->nodeCount(NodeType::Market) == 1 && s->nodeCount(NodeType::Dataset) == 1);
+  const auto nokia = s->findInstrumentByIsin(kIsin);
+  const auto hel = s->findMarket("Nasdaq Helsinki");
+  CHECK(nokia && nokia->name == "Nokia" && hel && s->findDataset("providera"));
+  CHECK(hel && s->edges(hel->id).empty() && s->edgeMarkets().empty());
+}
+
+TEST(an_instrument_is_its_isin_and_a_currency_or_unit_its_code) {
+  TempFile t;
+  Clock clock;
+  InstrumentId eur, pts, nokia;
+  {
+    auto store = makeMemoryStore(optionsFor(openSqliteFactStore(t.file), clock));
+    eur = store->addInstrument({{}, "EUR", "Euro", InstrumentKind::Currency}).id;
+    pts = store->addInstrument({{}, "pts", "Index points", InstrumentKind::Unit}).id;
+    nokia = store->addInstrument({{}, "NOKIA", "Nokia", InstrumentKind::Company, kIsin}).id;
+    store->setAttribute(eur, {"country", "EU"});
+  }
+  CHECK(eur.value == numberOf(currencyKey("EUR")) && pts.value == numberOf(currencyKey("pts")) && nokia.value == numberOf(instrumentKey(kIsin)));
+  std::set<uint64_t> nodes;
+  for (const StoredFact & f : openSqliteFactStore(t.file)->loadAll()) nodes.insert(f.node);
+  CHECK((nodes == std::set<uint64_t>{eur.value, pts.value, nokia.value}));
+}
+
+TEST(an_instrument_with_no_isin_that_is_no_currency_is_given_one_of_ours) {
+  Clock clock;
+  auto store = makeMemoryStore(optionsFor(nullptr, clock));
+  Instrument acme = store->addInstrument({{}, "ACME", "Acme Corporation", InstrumentKind::Company});
+  CHECK(acme.id.valid() && acme.isin == privateIsin("ACME") && acme.symbol == "ACME");
+  CHECK(acme.id.value == numberOf(instrumentKey(privateIsin("ACME"))));
+  CHECK(store->addInstrument({{}, "ACME", "Acme again", InstrumentKind::Company}).id == acme.id);  // the same one: said by its symbol again
+  // One with no symbol is made from its name, if that fits.
+  Instrument named = store->addInstrument({{}, "", "Zinc", InstrumentKind::Commodity});
+  CHECK(named.isin == privateIsin("Zinc") && named.id.valid());
+}
+
+TEST(what_cannot_be_given_a_key_is_refused_and_told_of) {
+  Clock clock;
+  std::vector<std::string> told;
+  StoreOptions options = optionsFor(nullptr, clock);
+  options.notice = [&](const std::string & text) { told.push_back(text); };
+  auto store = makeMemoryStore(std::move(options));
+  CHECK(!store->addInstrument({{}, "NOKIA", "Nokia", InstrumentKind::Company, "FI0009000680"}).id.valid());  // the check digit is wrong
+  CHECK(!store->addInstrument({{}, "", "A name that is much too long for a private ISIN", InstrumentKind::Other}).id.valid());
+  CHECK(!store->addInstrument({{}, "A CURRENCY CODE", "Too long", InstrumentKind::Currency}).id.valid());
+  CHECK(!store->addDataset({{}, "provider-a"}).id.valid());  // a code is letters and digits
+  CHECK(!store->addDataset({{}, "morethanten1"}).id.valid());
+  CHECK(told.size() == 5);
+  CHECK(store->snapshot()->nodeCount(NodeType::Instrument) == 0 && store->snapshot()->nodeCount(NodeType::Dataset) == 0);
+}
+
+TEST(a_dataset_is_its_code_and_its_name_is_a_fact_that_is_the_code_until_said) {
+  Clock clock;
+  auto store = makeMemoryStore(optionsFor(nullptr, clock));
+  Dataset d = store->addDataset({{}, "nordnet"});
+  CHECK(d.id.valid() && d.code == "nordnet" && d.name == "nordnet" && d.id.value == numberOf(datasetKey("nordnet")));
+  store->addDataset({{}, "nordnet", "Nordnet"});
+  CHECK(nameOf(store->snapshot()->dataset(d.id)) == "Nordnet");
+  store->addDataset({{}, "nordnet"});  // said again with no name: the name that was said stays
+  CHECK(nameOf(store->snapshot()->dataset(d.id)) == "Nordnet" && nameOf(store->snapshot()->findDataset("nordnet")) == "Nordnet");
+}
+
+TEST(a_file_of_the_first_schema_is_converted_to_keys) {
+  TempFile t;
+  {
+    SQLite::Database db(t.file.string(), SQLite::OPEN_READWRITE | SQLite::OPEN_CREATE);
+    db.exec(
+        "CREATE TABLE facts (node_type INTEGER NOT NULL, node_key TEXT NOT NULL, predicate TEXT NOT NULL, value, is_bool INTEGER NOT NULL DEFAULT 0, "
+        "updated INTEGER NOT NULL, checked INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (node_type, node_key, predicate)) WITHOUT ROWID");
+    db.exec("INSERT INTO facts VALUES (0, 'FI0009000681', 'name', 'Nokia', 0, 100, 0)");
+    db.exec("INSERT INTO facts VALUES (0, 'FI0009000681', 'halal', 1, 1, 101, 0)");
+    db.exec("INSERT INTO facts VALUES (0, 'FI0009000680', 'name', 'a wrong ISIN', 0, 102, 0)");
+    db.exec("INSERT INTO facts VALUES (3, 'EUR', 'name', 'Euro', 0, 103, 0)");
+    db.exec("INSERT INTO facts VALUES (2, 'nordnet', 'name', 'Nordnet', 0, 104, 0)");
+    db.exec("INSERT INTO facts VALUES (2, 'not a code', 'name', 'x', 0, 105, 0)");
+    db.exec("INSERT INTO facts VALUES (1, '00000000000abcde', 'country', 'FI', 0, 106, 0)");
+    db.exec("INSERT INTO facts VALUES (1, 'nonsense', 'country', 'SE', 0, 107, 0)");
+    db.exec("INSERT INTO facts VALUES (0, 'symbol:OLD', 'name', 'older still', 0, 108, 0)");
+    db.exec("PRAGMA user_version = 1");
+  }
+  auto loaded = byKey(openSqliteFactStore(t.file)->loadAll());
+  CHECK(loaded.size() == 5);  // what has no key is left out
+  const uint64_t nokia = numberOf(instrumentKey("FI0009000681"));
+  CHECK(std::get<std::string>(at(loaded, nokia, "name").value) == "Nokia" && at(loaded, nokia, "name").updated == 100);
+  CHECK(std::get<bool>(at(loaded, nokia, "halal").value) == true);
+  CHECK(std::get<std::string>(at(loaded, numberOf(currencyKey("EUR")), "name").value) == "Euro");
+  CHECK(std::get<std::string>(at(loaded, numberOf(datasetKey("nordnet")), "name").value) == "Nordnet");
+  CHECK(std::get<std::string>(at(loaded, marketKey(0xabcde).value, "country").value) == "FI");
+  // It is a file of the new schema now: opened again it is not converted again, and it takes new facts.
+  auto facts = openSqliteFactStore(t.file);
   FactBatch b;
-  b.rechecked = {{StoredType::Instrument, "A", "name", std::string("uno"), 9}};
-  b.forget = {{StoredType::Instrument, "B"}};
+  b.changed = {{nokia, "name", std::string("Nokia Oyj"), 200}};
   facts->apply(b);
-  auto loaded = byPredicate(facts->loadAll());
-  CHECK(loaded.size() == 2 && std::get<std::string>(loaded["A/name"].value) == "uno" && loaded["A/name"].updated == 9);
+  CHECK(byKey(facts->loadAll()).size() == 5 && t.movedAside() == 0);
 }
 
 TEST(an_unchanged_write_moves_updated_and_makes_no_version) {
@@ -201,6 +325,24 @@ TEST(a_restart_shows_what_was_said_and_when_it_was_last_stored) {
   CHECK(std::get<std::string>(valueOf(*store->snapshot(), hel.id, predicate::country)) == "FI");
 }
 
+TEST(facts_said_again_after_a_restart_are_in_the_file_when_the_store_ends) {
+  TempFile t;
+  Clock clock;
+  {
+    auto store = makeMemoryStore(optionsFor(openSqliteFactStore(t.file), clock));
+    store->resolveInstrument({{predicate::isin, kIsin}}, {{predicate::name, "Nokia"}});
+  }
+  clock.now = 9000;
+  {
+    StoreOptions options = optionsFor(openSqliteFactStore(t.file), clock);
+    options.writer.rechecked_delay = std::chrono::minutes(10);  // not due: only the end of the store writes them
+    auto store = makeMemoryStore(std::move(options));
+    store->resolveInstrument({{predicate::isin, kIsin}}, {{predicate::name, "Nokia"}});
+    CHECK(store->snapshot()->version() == 0);
+  }
+  for (const StoredFact & f : openSqliteFactStore(t.file)->loadAll()) CHECK(f.updated == 9000);
+}
+
 TEST(what_another_source_does_not_say_survives_its_load) {
   TempFile t;
   Clock clock;
@@ -218,79 +360,6 @@ TEST(what_another_source_does_not_say_survives_its_load) {
   CHECK(s->findByAttribute(NodeType::Instrument, predicate::iconUrl, "a.png").value_or(NodeRef{}).id == i.id.value);  // and found by it
 }
 
-TEST(a_node_with_no_edges_is_not_seen_after_a_restore) {
-  TempFile t;
-  Clock clock;
-  {
-    auto store = makeMemoryStore(optionsFor(openSqliteFactStore(t.file), clock));
-    Instrument nokia = store->resolveInstrument({{predicate::isin, kIsin}}, {{predicate::name, "Nokia"}});
-    Market hel = store->resolveMarket({{predicate::mic, "XHEL"}, {predicate::name, "Nasdaq Helsinki"}});
-    Dataset d = store->addDataset({{}, "provider-a"});
-    store->appendCandles({nokia.id, nokia.id, hel.id, d.id}, Resolution::Day, {{1, 1, 1, 1, 1, 1}});
-  }
-  auto store = makeMemoryStore(optionsFor(openSqliteFactStore(t.file), clock));
-  auto s = store->snapshot();
-  CHECK(s->instruments().size() == 0 && s->markets().size() == 0 && s->datasets().size() == 0);
-  CHECK(!s->findInstrumentByIsin(kIsin) && !s->findMarket("Nasdaq Helsinki") && !s->findDataset("provider-a"));
-  CHECK(s->version() == 0);
-
-  // Said again, the node is made and has its facts; with no edges it is still not shown anywhere.
-  Instrument nokia = store->resolveInstrument({{predicate::isin, kIsin}}, {});
-  Market hel = store->resolveMarket({{predicate::mic, "XHEL"}});
-  s = store->snapshot();
-  CHECK(nokia.name == "Nokia" && hel.name == "Nasdaq Helsinki");
-  CHECK(s->edges(hel.id).empty());
-}
-
-TEST(an_instrument_is_kept_under_its_isin_and_a_currency_under_its_code) {
-  TempFile t;
-  Clock clock;
-  {
-    auto store = makeMemoryStore(optionsFor(openSqliteFactStore(t.file), clock));
-    Instrument eur = store->addInstrument({{}, "EUR", "Euro", InstrumentKind::Currency});
-    store->addInstrument({{}, "pts", "Index points", InstrumentKind::Unit});
-    store->setAttribute(eur.id, {"country", "EU"});
-    store->addInstrument({{}, "NOKIA", "Nokia", InstrumentKind::Company, kIsin});
-  }
-  std::map<std::string, std::set<std::string>> keys;  // by stored type
-  for (const StoredFact & f : openSqliteFactStore(t.file)->loadAll()) keys[std::to_string(static_cast<int>(f.type))].insert(f.node);
-  CHECK(keys["0"] == std::set<std::string>{kIsin});  // an instrument: its ISIN, bare
-  CHECK((keys["3"] == std::set<std::string>{"EUR", "pts"}));
-  CHECK(keys.size() == 2);
-}
-
-TEST(an_instrument_with_no_isin_that_is_no_currency_is_kept_once_it_has_one) {
-  TempFile t;
-  Clock clock;
-  {
-    auto store = makeMemoryStore(optionsFor(openSqliteFactStore(t.file), clock));
-    Instrument i = store->addInstrument({{}, "ACME", "Acme", InstrumentKind::Company});  // nothing to keep it under yet
-    store->setAttribute(i.id, {"shares", int64_t{7}});
-    store->flush();
-    CHECK(openSqliteFactStore(t.file)->loadAll().empty());
-    store->setAttribute(i.id, {predicate::isin, "SE0000000001"});  // and now there is
-  }
-  auto loaded = byPredicate(openSqliteFactStore(t.file)->loadAll());
-  CHECK(loaded.count("SE0000000001/shares") == 1 && loaded.count("SE0000000001/symbol") == 1 && loaded.count("SE0000000001/name") == 1);
-  for (const auto & [key, f] : loaded) CHECK(f.node == "SE0000000001" && f.type == StoredType::Instrument);
-}
-
-TEST(what_identifies_a_node) {
-  auto is = [](const StoredNode & n, StoredType type, const std::string & key) { return n.type == type && n.key == key; };
-  CHECK(is(nodeKey(NodeType::Instrument, {{predicate::symbol, "EUR"}, {predicate::kind, "currency"}}), StoredType::Currency, "EUR"));
-  CHECK(is(nodeKey(NodeType::Instrument, {{predicate::symbol, "pts"}, {predicate::kind, "unit"}}), StoredType::Currency, "pts"));
-  CHECK(is(nodeKey(NodeType::Instrument, {{predicate::symbol, "ACME"}, {predicate::isin, kIsin}}), StoredType::Instrument, kIsin));
-  CHECK(nodeKey(NodeType::Instrument, {{predicate::symbol, "ACME"}, {predicate::kind, "company"}}).key.empty());  // no ISIN, no currency
-  CHECK(nodeKey(NodeType::Instrument, {{predicate::symbol, "EUR"}}).key.empty());                                 // kind not said yet
-  CHECK(is(nodeKey(NodeType::Dataset, {{predicate::name, "provider-a"}}), StoredType::Dataset, "provider-a"));
-  CHECK(nodeKey(NodeType::Dataset, {{"other", "x"}}).key.empty());
-  // A market has no key of what it is said to be: it is recognised by it.
-  CHECK(nodeKey(NodeType::Market, {{predicate::mic, "XHEL"}}).key.empty());
-  const auto by = recognisedBy(NodeType::Market, {{predicate::name, "Nasdaq Helsinki"}, {predicate::nordnetId, "4"}, {predicate::mic, "XHEL"}});
-  CHECK(by.size() == 3 && by[0].first == predicate::mic && by[1].first == predicate::nordnetId && by[2].first == predicate::name);
-  CHECK(recognisedBy(NodeType::Market, {{predicate::country, "FI"}}).empty() && recognisedBy(NodeType::Instrument, {{predicate::mic, "X"}}).empty());
-}
-
 TEST(a_market_is_kept_under_a_key_of_its_own_and_its_mic_is_a_fact) {
   TempFile t;
   Clock clock;
@@ -301,12 +370,11 @@ TEST(a_market_is_kept_under_a_key_of_its_own_and_its_mic_is_a_fact) {
     Market other = store->resolveMarket({{predicate::nordnetId, "7"}});         // one with no MIC and no name
     store->setAttribute(other.id, {predicate::country, "SE"});
   }
-  std::set<std::string> keys;
-  std::map<std::string, Value> mic;
+  std::set<uint64_t> keys;
+  std::map<uint64_t, Value> mic;
   for (const StoredFact & f : openSqliteFactStore(t.file)->loadAll()) {
-    CHECK(f.type == StoredType::Market);
+    CHECK(NodeKey{f.node}.kind() == NodeKind::Market);  // a key of a market says nothing of what the market is
     keys.insert(f.node);
-    CHECK(f.node.find("XHEL") == std::string::npos && f.node.find("Helsinki") == std::string::npos);  // no fact's value is in a key
     if (f.predicate == predicate::mic) mic[f.node] = f.value;
   }
   CHECK(keys.size() == 2);  // the market learned its MIC later kept its key, and is one
@@ -407,7 +475,7 @@ TEST(a_file_that_gives_two_markets_the_same_mic_is_told_of) {
   {
     auto facts = openSqliteFactStore(t.file);
     FactBatch b;
-    b.changed = {{StoredType::Market, "one", predicate::mic, std::string("XHEL"), 1}, {StoredType::Market, "two", predicate::mic, std::string("XHEL"), 2}};
+    b.changed = {{marketKey(1).value, predicate::mic, std::string("XHEL"), 1}, {marketKey(2).value, predicate::mic, std::string("XHEL"), 2}};
     facts->apply(b);
   }
   std::vector<std::string> told;
@@ -429,7 +497,7 @@ TEST(a_file_that_is_no_database_is_moved_aside_and_replaced) {
   CHECK(said.size() == 1 && t.movedAside() == 1);
   CHECK(facts->loadAll().empty());
   FactBatch b;
-  b.changed = {{StoredType::Dataset, "x", "name", std::string("x"), 1}};
+  b.changed = {{numberOf(datasetKey("x")), "name", std::string("x"), 1}};
   facts->apply(b);
   CHECK(facts->loadAll().size() == 1);
 }
@@ -439,7 +507,7 @@ TEST(a_file_of_a_newer_schema_is_moved_aside_and_replaced) {
   {
     auto facts = openSqliteFactStore(t.file);
     FactBatch b;
-    b.changed = {{StoredType::Dataset, "x", "name", std::string("x"), 1}};
+    b.changed = {{numberOf(datasetKey("x")), "name", std::string("x"), 1}};
     facts->apply(b);
   }  // closed: the log is folded into the file
   {
@@ -461,7 +529,7 @@ TEST(a_file_that_cannot_be_made_keeps_nothing_and_does_not_throw) {
   std::vector<std::string> said;
   auto facts = openSqliteFactStore(t.dir / "in-the-way" / "facts.sqlite", [&](const std::string & s) { said.push_back(s); });
   FactBatch b;
-  b.changed = {{StoredType::Dataset, "x", "name", std::string("x"), 1}};
+  b.changed = {{numberOf(datasetKey("x")), "name", std::string("x"), 1}};
   facts->apply(b);
   CHECK(facts->loadAll().empty() && !said.empty());
 }
@@ -481,8 +549,8 @@ struct CountingFacts : FactStore {
   }
 };
 
-StoredFact fact(const std::string & node, const std::string & predicate, int64_t value, TimestampMs updated) {
-  return {StoredType::Instrument, node, predicate, value, updated};
+StoredFact fact(uint64_t node, const std::string & predicate, int64_t value, TimestampMs updated) {
+  return {node, predicate, value, updated};
 }
 
 }  // namespace
@@ -497,7 +565,7 @@ TEST(facts_said_again_are_written_together_and_not_one_by_one) {
     for (int round = 0; round < 50; round++)
       for (int n = 0; n < 100; n++) {
         FactBatch b;
-        b.rechecked = {fact(std::to_string(n), "shares", 5, round)};
+        b.rechecked = {fact(static_cast<uint64_t>(n) + 1, "shares", 5, round)};
         writer.post(std::move(b));
       }
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
@@ -516,10 +584,10 @@ TEST(a_change_is_written_soon_and_what_waits_goes_with_it) {
   o.rechecked_delay = std::chrono::minutes(10);
   FactWriter writer(counting, o);
   FactBatch quiet;
-  quiet.rechecked = {fact("1", "shares", 5, 1)};
+  quiet.rechecked = {fact(1, "shares", 5, 1)};
   writer.post(std::move(quiet));
   FactBatch loud;
-  loud.changed = {fact("2", "shares", 6, 2)};
+  loud.changed = {fact(2, "shares", 6, 2)};
   writer.post(std::move(loud));
   for (int i = 0; i < 400; i++) {
     {
@@ -532,21 +600,3 @@ TEST(a_change_is_written_soon_and_what_waits_goes_with_it) {
   CHECK(counting->applies == 1 && counting->batches[0].changed.size() == 2);
 }
 
-TEST(a_node_forgotten_takes_its_waiting_facts_with_it) {
-  auto counting = std::make_shared<CountingFacts>();
-  {
-    FactWriter::Options o;
-    o.changed_delay = std::chrono::minutes(10);
-    o.rechecked_delay = std::chrono::minutes(10);
-    FactWriter writer(counting, o);
-    FactBatch a;
-    a.changed = {fact("A", "shares", 1, 1)};
-    writer.post(std::move(a));
-    FactBatch b;
-    b.forget = {{StoredType::Instrument, "A"}};
-    b.changed = {fact("B", "shares", 1, 1)};
-    writer.post(std::move(b));
-  }  // the end writes what waits
-  CHECK(counting->applies == 1);
-  CHECK(counting->batches[0].forget.size() == 1 && counting->batches[0].changed.size() == 1 && counting->batches[0].changed[0].node == "B");
-}

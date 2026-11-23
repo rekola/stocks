@@ -11,7 +11,7 @@
 // was using the file.
 using FactLog = std::function<void(const std::string &)>;
 
-// The facts in a SQLite file: one table keyed by (node type, node key, predicate), in WAL mode, a transaction per batch. The
+// The facts in a SQLite file: one table keyed by (node key, predicate), in WAL mode, a transaction per batch. The
 // schema's version is in `PRAGMA user_version`.
 //
 // It never fails and never throws. A file that is not a database, is damaged or is of a newer schema is moved aside (next to

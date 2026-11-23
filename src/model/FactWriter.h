@@ -8,7 +8,7 @@
 #include <memory>
 #include <mutex>
 #include <thread>
-#include <tuple>
+#include <utility>
 
 // Takes batches of facts from the store's writers and hands them to a FactStore on a thread of its own, so that a write to
 // the store never waits for the disk. Batches are put together: what is waiting is one fact per (node, predicate), the last
@@ -43,9 +43,8 @@ class FactWriter {
   Options options_;
   std::mutex mutex_;
   std::condition_variable wake_, written_;
-  // The waiting facts, one per (node type, node key, predicate), and the nodes to forget before them.
-  std::map<std::tuple<int, std::string, std::string>, StoredFact> waiting_;
-  std::vector<StoredNode> forgotten_;
+  // The waiting facts, one per (node, predicate).
+  std::map<std::pair<uint64_t, std::string>, StoredFact> waiting_;
   Clock::time_point due_ = Clock::time_point::max();
   uint64_t posted_ = 0, done_ = 0;  // batches put in, and those handed on
   uint64_t failed_ = 0;             // batches whose FactStore threw (it should not)

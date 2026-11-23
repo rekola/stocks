@@ -79,9 +79,9 @@ TEST(a_page_of_certificates_has_the_same_shape) {
 
 TEST(rows_without_what_a_listing_needs_are_counted_and_left_out) {
   const char * body = R"({"rows":3,"total_hits":3,"results":[
-    {"instrument_info":{"instrument_id":1,"symbol":"A","isin":"X1","currency":"EUR","name":"A fund"},"market_info":{"market_id":4,"identifier":"A"}},
+    {"instrument_info":{"instrument_id":1,"symbol":"A","isin":"ZZ0000000016","currency":"EUR","name":"A fund"},"market_info":{"market_id":4,"identifier":"A"}},
     {"instrument_info":{"instrument_id":2,"symbol":"B","currency":"EUR"},"market_info":{"market_id":4}},
-    {"instrument_info":{"instrument_id":3,"symbol":"C","isin":"X3","currency":"EUR"}}]})";
+    {"instrument_info":{"instrument_id":3,"symbol":"C","isin":"ZZ0000000032","currency":"EUR"}}]})";
   NordnetSource::Page page;
   std::string error;
   CHECK(NordnetSource::parsePage(body, page, error));
@@ -122,13 +122,13 @@ TEST(loading_pages_through_every_list_and_stores_instruments_markets_and_edges) 
 
   auto s = store->snapshot();
   // Eight instruments (one ETF is listed on two markets) and the four quote currencies.
-  CHECK(s->instruments().size() == 12);
+  CHECK(s->nodeCount(NodeType::Instrument) == 12);
   Instrument xaix = *s->findInstrumentByIsin("IE00BGV5VN51");
   CHECK(xaix.kind == InstrumentKind::Etf && xaix.isin == "IE00BGV5VN51");
   CHECK(s->findInstrumentByIsin("DE000A0S9GB0")->kind == InstrumentKind::Certificate);  // a certificate, whoever lists it
   CHECK(s->findInstrument("EUR")->kind == InstrumentKind::Currency && s->findInstrument("EUR")->name == "Euro");
   CHECK(s->findInstrument("NOK")->name == "Norwegian krone");
-  CHECK(s->markets().size() == 6);
+  CHECK(s->nodeCount(NodeType::Market) == 6);
   MarketId xetra = s->findMarket("Xetra")->id, stockholm = s->findMarket("Nasdaq Stockholm")->id;
   CHECK(s->findMarket("Nasdaq Copenhagen") && s->findMarket("First North Sweden") && s->findMarket("First North Finland"));
   CHECK(s->findMarketByAttribute(predicate::nordnetId, "61") && s->findMarketByAttribute(predicate::nordnetId, "61")->name.empty());
@@ -160,7 +160,7 @@ TEST(loading_again_replaces_todays_bars_and_a_new_day_adds_one) {
   source.load(*store, http, listener);
   auto second = store->snapshot();
   // The same nodes and edges, and today's bar replaced, not added again.
-  CHECK(second->instruments().size() == first->instruments().size() && second->instruments().size() == 12);
+  CHECK(second->nodeCount(NodeType::Instrument) == first->nodeCount(NodeType::Instrument) && second->nodeCount(NodeType::Instrument) == 12);
   CHECK(source.listings().size() == 9);
   MarketId xetra = second->findMarket("Xetra")->id;
   CHECK(second->edges(xetra) == first->edges(xetra));
@@ -227,7 +227,7 @@ TEST(an_answer_that_is_not_a_list_ends_that_list_and_keeps_what_came_before) {
   CHECK(http.urls.size() == 3);  // the second ETF page, then the certificates
   CHECK(listener.messages.size() == 2 && listener.messages[0] == "nordnet: etflist: not an instrument list");
   CHECK(listener.messages[1] == "nordnet: 7 listings (etflist 3, certificatelist 4)");
-  CHECK(store->snapshot()->instruments().size() == 3 + 3 + 4 + 1);  // three ETFs, four certificates and their currencies
+  CHECK(store->snapshot()->nodeCount(NodeType::Instrument) == 3 + 3 + 4 + 1);  // three ETFs, four certificates and their currencies
 }
 
 TEST(an_empty_page_ends_the_load_even_if_the_total_says_more) {
@@ -276,12 +276,12 @@ TEST(a_new_day_adds_a_bar_to_the_series) {
 
 TEST(a_listing_without_a_price_is_a_node_and_has_no_edge) {
   const char * body = R"({"rows":3,"total_hits":3,"results":[
-    {"instrument_info":{"instrument_id":1,"symbol":"A","isin":"X1","currency":"EUR","name":"Traded","instrument_type":"UETF"},
+    {"instrument_info":{"instrument_id":1,"symbol":"A","isin":"ZZ0000000016","currency":"EUR","name":"Traded","instrument_type":"UETF"},
      "market_info":{"market_id":4,"identifier":"A"},
      "price_info":{"last":{"price":10.0},"open":{"price":9.5},"high":{"price":10.5},"low":{"price":9.0},"tick_timestamp":1795192200000,"turnover_volume":7}},
-    {"instrument_info":{"instrument_id":2,"symbol":"B","isin":"X2","currency":"EUR","name":"Not traded","instrument_type":"UETF"},
+    {"instrument_info":{"instrument_id":2,"symbol":"B","isin":"ZZ0000000024","currency":"EUR","name":"Not traded","instrument_type":"UETF"},
      "market_info":{"market_id":4,"identifier":"B"},"price_info":{}},
-    {"instrument_info":{"instrument_id":3,"symbol":"C","isin":"X3","currency":"EUR","name":"No open","instrument_type":"UETF"},
+    {"instrument_info":{"instrument_id":3,"symbol":"C","isin":"ZZ0000000032","currency":"EUR","name":"No open","instrument_type":"UETF"},
      "market_info":{"market_id":4,"identifier":"C"},
      "price_info":{"last":{"price":10.0},"high":{"price":10.5},"low":{"price":9.0},"tick_timestamp":1795192200000}}]})";
   auto store = makeMemoryStore();
@@ -292,9 +292,9 @@ TEST(a_listing_without_a_price_is_a_node_and_has_no_edge) {
   Listener listener;
   quick().load(*store, http, listener);
   auto s = store->snapshot();
-  CHECK(s->findInstrumentByIsin("X1") && s->findInstrumentByIsin("X2") && s->findInstrumentByIsin("X3"));  // all three are nodes
+  CHECK(s->findInstrumentByIsin("ZZ0000000016") && s->findInstrumentByIsin("ZZ0000000024") && s->findInstrumentByIsin("ZZ0000000032"));  // all three are nodes
   CHECK(s->edges(s->findMarket("Xetra")->id).size() == 1);                             // only the traded one is seen
-  CHECK(s->edges(s->findMarket("Xetra")->id)[0].base == s->findInstrumentByIsin("X1")->id);
+  CHECK(s->edges(s->findMarket("Xetra")->id)[0].base == s->findInstrumentByIsin("ZZ0000000016")->id);
 }
 
 TEST(an_instrument_keeps_the_type_nordnet_gives_it_and_edges_can_be_selected_by_it) {
@@ -408,7 +408,7 @@ TEST(a_market_is_found_by_its_nordnet_id_or_its_name_and_made_when_neither_is_th
   // Loading again makes no other market and leaves the name (Nordnet says nothing of this one's name).
   quick().load(*store, http, listener);
   auto again = store->snapshot();
-  CHECK(again->market(unnamed.id)->name == "Another Name" && again->markets().size() == named->markets().size());
+  CHECK(again->market(unnamed.id)->name == "Another Name" && again->nodeCount(NodeType::Market) == named->nodeCount(NodeType::Market));
 }
 
 TEST(a_market_a_provider_named_first_gets_the_nordnet_id_added) {
@@ -417,11 +417,11 @@ TEST(a_market_a_provider_named_first_gets_the_nordnet_id_added) {
   Market found = store->resolveMarket({{predicate::nordnetId, "11"}, {predicate::name, "Nasdaq Stockholm"}});
   CHECK(found.id == first.id && store->snapshot()->attributes(first.id).size() == 2);
   CHECK(store->snapshot()->findMarketByAttribute(predicate::nordnetId, "11")->id == first.id);
-  CHECK(store->snapshot()->markets().size() == 1);
+  CHECK(store->snapshot()->nodeCount(NodeType::Market) == 1);
   // The id is looked up first, so no second market is made when the name is spelled differently; the name is then said
   // again and changes.
   Market again = store->resolveMarket({{predicate::nordnetId, "11"}, {predicate::name, "OMX Stockholm"}});
-  CHECK(again.id == first.id && again.name == "OMX Stockholm" && store->snapshot()->markets().size() == 1);
+  CHECK(again.id == first.id && again.name == "OMX Stockholm" && store->snapshot()->nodeCount(NodeType::Market) == 1);
 }
 
 TEST(every_kind_of_node_keeps_its_attributes_the_same_way) {
@@ -462,7 +462,7 @@ TEST(a_market_is_found_by_its_code_before_its_name) {
   Market first = store->resolveMarket({{predicate::mic, "XHEL"}, {predicate::name, "Helsingin pörssi"}});  // a provider that names it so
   Market found = store->resolveMarket({{predicate::nordnetId, "24"}, {predicate::mic, "XHEL"}, {predicate::name, "Nasdaq Helsinki"}});
   CHECK(found.id == first.id && found.name == "Nasdaq Helsinki");  // the code found it; the name said now stands
-  CHECK(store->snapshot()->markets().size() == 1);
+  CHECK(store->snapshot()->nodeCount(NodeType::Market) == 1);
 }
 
 TEST(an_instrument_listed_on_two_markets_is_one_node_with_an_edge_and_a_say_for_each) {
@@ -555,12 +555,12 @@ TEST(the_indicator_lists_make_indices_in_points_currency_pairs_and_commodities_i
   CHECK(listener.messages.size() == 1 && listener.messages[0].find("indices 4, currencies 2, commodities 3") != std::string::npos);
 
   // Loading again replaces today's bars and makes nothing new.
-  const size_t instruments = s->instruments().size();
+  const size_t instruments = s->nodeCount(NodeType::Instrument);
   FakeHttp again;
   again.answer = http.answer;
   Listener second;
   NordnetSource(lists, std::chrono::milliseconds(0)).load(*store, again, second);
-  CHECK(store->snapshot()->instruments().size() == instruments);
+  CHECK(store->snapshot()->nodeCount(NodeType::Instrument) == instruments);
 }
 
 // The object of a predicate among the facts a parsed row has.

@@ -20,6 +20,7 @@ class Snapshot {
   // Which version of the store this is; each change that changed something makes the next number.
   uint64_t version() const { return version_; }
 
+  // A node is what is said of it, and these are views made from its facts, never stored: none where nothing is said of the key.
   std::optional<Instrument> instrument(InstrumentId) const;
   // By a symbol said of the instrument itself (a currency's code).
   std::optional<Instrument> findInstrument(const std::string & symbol) const;
@@ -43,13 +44,14 @@ class Snapshot {
   std::vector<Attribute> attributes(NodeRef) const;
   std::optional<NodeRef> findByAttribute(NodeType, const std::string & predicate, const std::string & value) const;
   std::optional<Dataset> dataset(DatasetId) const;
-  std::optional<Dataset> findDataset(const std::string & name) const;
-  const Seq<Instrument> & instruments() const { return instruments_; }
-  const Seq<Market> & markets() const { return markets_; }
-  const Seq<Dataset> & datasets() const { return datasets_; }
+  std::optional<Dataset> findDataset(const std::string & code) const;
+  // The markets that have an edge, by name and then by key.
+  std::vector<MarketId> edgeMarkets() const;
+  // How many nodes of a type have anything said of them: what a test or a diagnostic wants, and no view of the nodes.
+  size_t nodeCount(NodeType) const;
 
-  // The edges that have any data (candles or books) in a market: what a preset needs. Sorted. An instrument with no
-  // edge is not seen: nothing selects it.
+  // The edges that have any data (candles or books) in a market: what a preset needs. Sorted by key, which means nothing: a
+  // reader that shows them puts them in an order of its own. An instrument with no edge is not seen: nothing selects it.
   std::vector<EdgeKey> edges(MarketId) const;
   // The same, only those whose base instrument `keep` accepts (by its kind, its type, ...).
   std::vector<EdgeKey> edges(MarketId, const std::function<bool(const Instrument &)> & keep) const;
@@ -93,12 +95,12 @@ class Snapshot {
   void appendActions(const EventKey &, const std::vector<CorporateAction> &);
 
   // For a store to make on its own copy, with the changes above. `setTime` is the time of the write in progress: what
-  // `updated` becomes. `hold` gives it what an earlier run said, kept until its node is made (a node is not
-  // made by it). `revision` is the version plus the writes of facts that were only said again, which no version counts: a
+  // `updated` becomes. `load` gives it what an earlier run said: the facts of nodes, which makes no version and no node but
+  // what is said. `revision` is the version plus the writes of facts that were only said again, which no version counts: a
   // store publishes a copy when it moves. `takeFacts` is what the writes since the last call ask of the disk.
   void setTime(TimestampMs now) { now_ = now; }
-  void setKeyMaker(std::function<std::string()> * mint) { mint_ = mint; }  // for the keys of nodes kept under a surrogate
-  void hold(const std::vector<StoredFact> &);
+  void setKeyMaker(std::function<uint64_t()> * mint) { mint_ = mint; }  // for the keys of markets
+  void load(const std::vector<StoredFact> &);
   uint64_t revision() const { return version_ + checks_; }
   FactBatch takeFacts() { return std::exchange(outbox_, FactBatch{}); }
   // What the writes since the last call refused to say, in words (`isUnique()`): a MIC or an id at a source that another market
@@ -109,19 +111,13 @@ class Snapshot {
   uint64_t version_ = 0;
   uint64_t checks_ = 0;
   TimestampMs now_ = 0;
-  std::function<std::string()> * mint_ = nullptr;                 // set by the store for the length of a write
+  std::function<uint64_t()> * mint_ = nullptr;                    // set by the store for the length of a write
   FactBatch outbox_;                                              // what to keep, for the store that made this copy
   std::vector<std::string> notices_;                              // what was refused, for the store that made this copy
-  immer::map<std::string, std::vector<Attribute>> held_;          // "type key" to what an earlier run said of that node
-  immer::map<std::string, immer::set<std::string>> heldMarkets_;  // "type predicate \0 text" to the keys of the held markets that say it
-  immer::map<NodeRef, StoredNode> keyOf_;                         // the key a node's facts are kept under, once it has one
-  Seq<Instrument> instruments_;
-  Seq<Market> markets_;
-  Seq<Dataset> datasets_;
   immer::map<EdgeKey, Listing> listings_;
   immer::map<std::string, EdgeKey> edgeBySymbol_;  // "market \0 symbol" to the first edge there that has it
   immer::map<NodeRef, std::vector<Attribute>> attributes_;
-  immer::map<std::string, immer::set<uint32_t>> byAttribute_;  // "type predicate \0 value" to the ids that say it
+  immer::map<std::string, immer::set<uint64_t>> byAttribute_;  // "type predicate \0 value" to the keys that say it
   immer::map<SeriesKey, Seq<Candle>> series_;
   immer::map<EdgeKey, immer::set<int>> resolutions_;
   immer::map<EdgeKey, std::pair<int64_t, double>> previousClose_;  // the session's day number and the close before it
@@ -192,8 +188,8 @@ struct StoreOptions {
   FactWriter::Options writer;
   // The time of a write, for `updated`. The wall clock by default; a test sets its own.
   std::function<TimestampMs()> clock;
-  // The keys of markets (NodeIdentity.h): 16 random hex digits by default; a test can count instead.
-  std::function<std::string()> mint;
+  // The sixty bits of the next market's key (NodeKey.h): random by default; a test can count instead.
+  std::function<uint64_t()> mint;
   // Told, once for each, what the store refused or found wrong in what it was given or had kept: a MIC or an id at a source
   // that two markets would have. Called with the store's writer lock held, so it must not call back into the store.
   std::function<void(const std::string &)> notice;

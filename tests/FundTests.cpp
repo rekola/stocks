@@ -208,12 +208,12 @@ TEST(a_fund_with_a_wrong_isin_is_not_stored_and_is_reported) {
   Listener listener;
   FundSource funds = source("beta");
   funds.load(*store, http, listener);
-  CHECK(store->snapshot()->instruments().empty());
+  CHECK(store->snapshot()->nodeCount(NodeType::Instrument) == 0);
   bool said = false;
   for (const std::string & m : listener.messages) said = said || m.find("no ISIN for 1 (Typo)") != std::string::npos;
   CHECK(said);
   CHECK(!writeFund(*store, "beta", "Beta Funds", FundRow{.isin = "", .name = "x"}, {{1, 0, 0, 0, 1, 0}}));
-  CHECK(store->snapshot()->instruments().empty());
+  CHECK(store->snapshot()->nodeCount(NodeType::Instrument) == 0);
 }
 
 TEST(a_fund_whose_isin_is_only_in_its_details_is_stored_and_the_find_is_said) {
@@ -268,7 +268,7 @@ TEST(a_failed_token_page_says_so_and_writes_nothing) {
   FundSource funds = source("beta");
   funds.load(*store, http, listener);
   CHECK(listener.changes == 0 && listener.messages.size() == 1);
-  CHECK(store->snapshot()->instruments().empty());
+  CHECK(store->snapshot()->nodeCount(NodeType::Instrument) == 0);
 }
 
 TEST(sparse_series_are_judged_by_their_typical_gap) {

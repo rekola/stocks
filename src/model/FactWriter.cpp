@@ -23,19 +23,13 @@ void FactWriter::post(FactBatch batch) {
   {
     std::lock_guard lock(mutex_);
     posted_++;
-    for (StoredNode & n : batch.forget) {
-      // What waits for a node that goes is not written, and the node goes before anything posted after this.
-      std::erase_if(waiting_, [&](const auto & e) { return e.second.type == n.type && e.second.node == n.key; });
-      forgotten_.push_back(std::move(n));
-      note(now + options_.changed_delay);
-    }
     for (StoredFact & f : batch.changed) {
-      auto key = std::make_tuple(static_cast<int>(f.type), f.node, f.predicate);
+      auto key = std::make_pair(f.node, f.predicate);
       waiting_[std::move(key)] = std::move(f);
       note(now + options_.changed_delay);
     }
     for (StoredFact & f : batch.rechecked) {
-      auto key = std::make_tuple(static_cast<int>(f.type), f.node, f.predicate);
+      auto key = std::make_pair(f.node, f.predicate);
       waiting_[std::move(key)] = std::move(f);
       note(now + options_.rechecked_delay);
     }
@@ -54,7 +48,7 @@ void FactWriter::flush() {
 void FactWriter::run() {
   std::unique_lock lock(mutex_);
   for (;;) {
-    const bool anything = !waiting_.empty() || !forgotten_.empty();
+    const bool anything = !waiting_.empty();
     if (stop_ && !anything) return;
     if (!anything) {
       done_ = posted_;
@@ -68,8 +62,6 @@ void FactWriter::run() {
       continue;
     }
     FactBatch batch;
-    batch.forget = std::move(forgotten_);
-    forgotten_.clear();
     for (auto & entry : waiting_) batch.changed.push_back(std::move(entry.second));
     waiting_.clear();
     due_ = Clock::time_point::max();

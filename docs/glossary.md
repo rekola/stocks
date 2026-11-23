@@ -2,6 +2,10 @@
 
 Terms with a specific meaning in this project.
 
+**Dataset code**
+What names a dataset: one to ten letters or digits that its adapter defines and
+never changes. The name a person reads is a fact of the dataset.
+
 **Fact**
 One thing said of a node: a node, a predicate, a value, and when it was
 updated. The persisted form of an attribute (a thin edge), kept in
@@ -14,13 +18,12 @@ A file that cannot be read (damaged, or of a newer schema) is moved aside and a
 new one started.
 
 **Node key**
-What a node's facts are kept under in the facts file, since the ids of a run
-mean nothing in the next: an instrument's ISIN, a currency's or unit's code and a
-dataset's name. The node type in the file says which, so a key has no prefix. A
-market has a surrogate key the store makes the first time it keeps a fact of it:
-its MIC, the id a source gives it and its name are facts of it like any other
-(some markets have no MIC), and a market of a later run is recognised by them.
-When an instrument is learned to have an ISIN, its facts move to it.
+The number that names a node, the same in every run: one 64-bit number whose top
+bits say what kind of node it is. An instrument's is its ISIN packed, a
+currency's or unit's its code, a dataset's its code, a market's a number the
+store made the first time the market was said (its MIC, the id a source gives it
+and its name are facts of it like any other, since some markets have no MIC).
+The facts file keeps a fact under the key of its node.
 
 **Updated**
 When a source last said a fact, whether or not the value was the same as
