@@ -13,13 +13,21 @@
    "name": "/productNameEn",
    "risk": "/riskClass",
    "rating": "/morningstarRating",
-   "managementFee": "/runningCosts"
+   "managementFee": "/runningCosts",
+   "price": "/rateLast",
+   "date": "/rateDate",
+   "change": "/lastRateChange",
+   "esg": "/esgRating"
   },
   "scale": {
    "managementFee": 100
+  },
+  "attributes": {
+   "sfdr-class": "/esgArt",
+   "fund-subcategory": "/productSubcategoryEn"
   }
  },
- "isinFromId": "^(LU\\d{10})EUR$",
+ "isinFromId": "^([A-Z]{2}[A-Z0-9]{9}[0-9])EUR$",
  "isins": {
   "ALPHANORDIC": "FI0008810569",
   "ALPHAMICRO": "FI4000297817",
@@ -36,10 +44,22 @@
    "subscriptionFee": [
     "/values/onlineSubscriptionFee/value",
     "/values/subscriptionFee/value"
-   ]
+   ],
+   "link": "/values/productUrlFi/value"
+  },
+  "scale": {
+   "redemptionFee": 100,
+   "subscriptionFee": 100
+  },
+  "attributes": {
+   "net-assets": "/values/aum/value",
+   "start-day": "/values/dateFounded/value",
+   "volatility": "/values/volatility/value",
+   "sharpe-ratio": "/values/sharpeRatio/value"
   }
  },
  "history": {
   "url": "https://alpha.example/rates/{id}"
- }
+ },
+ "maxAgeDays": 14
 }
