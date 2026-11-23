@@ -409,9 +409,14 @@ void FundSource::load(Store & store, Http & http, SourceListener & listener) {
   const auto show = [&](Entry & e) {
     // Shown at once, from the list alone: the latest NAV is the bar, and the change tells the NAV before it. The history comes when it is wanted.
     const Candle bar{*e.fund.day, kUndefined, kUndefined, kUndefined, *e.fund.price, kUndefined};
-    auto edge = writeFund(store, schema_.dataset, e.fund, {bar});
-    if (!edge) return;
-    if (e.fund.change && *e.fund.change > -1) store.setPreviousClose(*edge, *e.fund.day, *e.fund.price / (1 + *e.fund.change));
+    bool written = false;
+    store.batch([&](Batch & b) {
+      auto edge = writeFund(b, schema_.dataset, e.fund, {bar});
+      if (!edge) return;
+      if (e.fund.change && *e.fund.change > -1) b.setPreviousClose(*edge, *e.fund.day, *e.fund.price / (1 + *e.fund.change));
+      written = true;
+    });
+    if (!written) return;
     shown++;
     if (++sinceChange >= 50) {  // the first screenful need not wait for the rest
       listener.changed();

@@ -342,8 +342,9 @@ TEST(a_fund_with_a_wrong_isin_is_not_stored_and_is_reported) {
   funds.load(*store, http, listener);
   CHECK(store->snapshot()->nodeCount(NodeType::Instrument) == 0);
   CHECK(said(listener, "no ISIN for 1 (Typo)"));
-  CHECK(!writeFund(*store, "beta", FundRow{.isin = "", .name = "x"},
-                   {{1, 0, 0, 0, 1, 0}}));
+  bool written = true;
+  store->batch([&](Batch & b) { written = writeFund(b, "beta", FundRow{.isin = "", .name = "x"}, {{1, 0, 0, 0, 1, 0}}).has_value(); });
+  CHECK(!written);
   CHECK(store->snapshot()->nodeCount(NodeType::Instrument) == 0);
 }
 TEST(the_dates_a_list_gives_are_day_numbers) {

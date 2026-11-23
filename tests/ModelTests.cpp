@@ -425,3 +425,41 @@ TEST(
         version); // nothing changed: no edge under a part that is none
   CHECK(w.snap()->edges(w.hel).empty() && w.snap()->events(refused).empty());
 }
+
+TEST(a_batch_makes_one_version_and_one_snapshot_however_many_writes_it_holds) {
+  World w;
+  const auto before = w.snap();
+  EdgeKey edge = w.key(w.hel, w.a);
+  InstrumentId made;
+  w.store->batch([&](Batch & b) {
+    made = b.addInstrument("", "Neste", InstrumentKind::Company, "FI0009013296");
+    for (int i = 0; i < 50; i++) b.appendCandles(edge, Resolution::Day, {bar(i, 1 + i)});
+    b.setListing({edge, "NOKIA", "", "", "", "Nokia"});
+    // What the batch has written is read from inside it, and the store shows none of it yet.
+    CHECK(b.view().findInstrumentByIsin("FI0009013296") == made);
+    CHECK(!w.snap()->findInstrumentByIsin("FI0009013296") && w.snap() == before);
+  });
+  const auto after = w.snap();
+  CHECK(after != before && after->version() == before->version() + 1);
+  // A reader holding the snapshot from before sees none of it.
+  CHECK(!before->findInstrumentByIsin("FI0009013296") && before->candles(edge, Resolution::Day).candles.empty() && !before->listing(edge));
+  CHECK(after->candles(edge, Resolution::Day).candles.size() == 50 && after->listing(edge) && after->name(made) == "Neste");
+  CHECK(*after->findInstrumentByIsin("FI0009013296") == made);
+}
+
+TEST(a_batch_that_changes_nothing_publishes_nothing_and_one_that_throws_applies_nothing) {
+  World w;
+  const auto before = w.snap();
+  w.store->batch([&](Batch & b) { b.addMarket("XHEL", "Nasdaq Helsinki"); });
+  CHECK(w.snap() == before);
+  bool thrown = false;
+  try {
+    w.store->batch([&](Batch & b) {
+      b.addInstrument("", "Neste", InstrumentKind::Company, "FI0009013296");
+      b.appendCandles(EdgeKey{}, Resolution::Day, {bar(1, 1)});
+    });
+  } catch (const std::invalid_argument &) {
+    thrown = true;
+  }
+  CHECK(thrown && w.snap() == before && !w.snap()->findInstrumentByIsin("FI0009013296"));
+}

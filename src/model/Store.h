@@ -118,6 +118,10 @@ class Snapshot {
   // store publishes a copy when it moves. `takeFacts` is what the writes since the last call ask of the disk.
   void setTime(TimestampMs now) { now_ = now; }
   void setRecheckInterval(std::chrono::milliseconds interval) { recheck_ = interval; }
+  // Makes the changes since the version was `before` one version: a batch of writes is one change to a reader.
+  void settleVersion(uint64_t before) {
+    if (version_ != before) version_ = before + 1;
+  }
   void load(const std::vector<StoredFact> &);
   uint64_t revision() const { return version_ + checks_; }
   FactBatch takeFacts() { return std::exchange(outbox_, FactBatch{}); }
@@ -147,15 +151,11 @@ class Snapshot {
   immer::map<InstrumentId, immer::set<EventKey>> eventsByInstrument_;
 };
 
-// Where the snapshots come from, and the only way to change them. Data sources write through it and everything else
-// reads a snapshot, so a store backed by a server can replace the in-memory one. Any thread may call anything: writes
-// are serialised, and `snapshot()` never waits for one.
-class Store {
+// The writes a store takes, called one at a time on a `Store` (each its own change, published at once) or together in a
+// `Batch`.
+class StoreWrites {
  public:
-  virtual ~Store() = default;
-
-  // The current version. Hold it for as long as a consistent view is needed.
-  virtual std::shared_ptr<const Snapshot> snapshot() const = 0;
+  virtual ~StoreWrites() = default;
 
   // Nodes are found by what is said about them, and what is said can change: a value set again replaces the one it
   // had (the last said stands; with two providers saying different things it is whichever wrote last, until the
@@ -180,8 +180,7 @@ class Store {
                              const std::string &name = {}) = 0;
   // Sets one attribute of any node: the same for all of them.
   virtual void setAttribute(NodeRef, const Attribute &) = 0;
-  // The listing of an edge, replacing the one it had. An edge exists once it has data, so one that has none yet takes
-  // nothing.
+  // The listing of an edge, replacing the one it had.
   virtual void setListing(const Listing &) = 0;
   // Says several things of a node in one write (an adapter's whole row), each as setAttribute does.
   virtual void setAttributes(NodeRef, const std::vector<Attribute> &) = 0;
@@ -209,6 +208,31 @@ class Store {
   // at the same instant is kept beside it.
   virtual void appendAnnouncements(const EventKey &, const std::vector<Announcement> &) = 0;
   virtual void appendActions(const EventKey &, const std::vector<CorporateAction> &) = 0;
+};
+
+// What `Store::batch()` gives its function: the writes above, applied to one copy of the store that nothing sees until the
+// function returns, and what the batch has written so far to read (a source looks up before it adds). Ids come back at once,
+// as from the store's own calls. Valid only inside the function; do not keep it.
+class Batch : public StoreWrites {
+ public:
+  // The store as the batch has made it so far.
+  virtual const Snapshot & view() const = 0;
+};
+
+// Where the snapshots come from, and the only way to change them. Data sources write through it and everything else
+// reads a snapshot, so a store backed by a server can replace the in-memory one. Any thread may call anything: writes
+// are serialised, and `snapshot()` never waits for one.
+class Store : public StoreWrites {
+ public:
+  // The current version. Hold it for as long as a consistent view is needed.
+  virtual std::shared_ptr<const Snapshot> snapshot() const = 0;
+
+  // Runs `change` with a batch and applies everything it writes under one lock, published once: one new version and one
+  // snapshot however many writes it holds, so a reader never sees half of a row (an edge with bars and no listing) and a
+  // source's page is one publication, not thousands. The notices and the facts for the disk of the whole batch go out
+  // once, at the end. A call of the store's own is a batch of one write. If `change` throws (a key with a part that is
+  // none), nothing of the batch is applied.
+  virtual void batch(const std::function<void(Batch &)> & change) = 0;
 
   // Returns when what has been said of the nodes is on its way to where it is kept (the disk, if a FactStore was given).
   virtual void flush() {}

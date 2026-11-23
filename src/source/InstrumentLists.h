@@ -46,8 +46,11 @@ const char * currencyName(const std::string & symbol);
 
 // The node for a currency's symbol: the one already in the store, whoever made it, else a new currency named as it is
 // usually called. A provider that has a currency gets the node this way and does not describe it.
+// Inside a batch it looks up what the batch has written, and outside one it is a batch of its own.
+InstrumentId currencyNode(Batch &, const std::string & symbol);
 InstrumentId currencyNode(Store &, const std::string & symbol);
 // What a price is in: a currency's node, or the unit node for `pts`, index points.
+InstrumentId quoteNode(Batch &, const std::string & code);
 InstrumentId quoteNode(Store &, const std::string & code);
 
 // Which lists a source loads: a directory (empty for the default) and the markets to keep (empty for all of them).

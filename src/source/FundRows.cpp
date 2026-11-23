@@ -140,7 +140,7 @@ std::vector<Attribute> attributesOf(const FundRow & f) {
   return said;
 }
 
-std::optional<EdgeKey> writeFund(Store &store, const std::string &datasetName,
+std::optional<EdgeKey> writeFund(Batch &store, const std::string &datasetName,
                                  const FundRow &f,
                                  const std::vector<Candle> &bars) {
   if (bars.empty() || !isValidIsin(f.isin)) return std::nullopt;

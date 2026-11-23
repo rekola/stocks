@@ -555,6 +555,32 @@ class SnapshotSlot {
 #endif
 };
 
+// The writes of a batch, made on the snapshot being built.
+class SnapshotBatch : public Batch {
+ public:
+  explicit SnapshotBatch(Snapshot & s) : s_(s) {}
+  const Snapshot & view() const override { return s_; }
+  InstrumentId addInstrument(const std::string & symbol, const std::string & name, InstrumentKind kind, const std::string & isin, const std::string & type) override {
+    return s_.addInstrument(symbol, name, kind, isin, type);
+  }
+  InstrumentId resolveInstrument(const std::vector<Attribute> & identifying, const std::vector<Attribute> & rest) override {
+    return s_.resolveInstrument(identifying, rest);
+  }
+  MarketId addMarket(const std::string & mic, const std::string & name) override { return s_.addMarket(mic, name); }
+  void setAttribute(NodeRef n, const Attribute & a) override { s_.setAttribute(n, a); }
+  void setAttributes(NodeRef n, const std::vector<Attribute> & a) override { s_.setAttributes(n, a); }
+  void setListing(const Listing & l) override { s_.setListing(l); }
+  DatasetId addDataset(const std::string & code, const std::string & name) override { return s_.addDataset(code, name); }
+  void appendCandles(const EdgeKey & k, Resolution r, const std::vector<Candle> & c) override { s_.appendCandles(k, r, c); }
+  void setPreviousClose(const EdgeKey & k, int64_t day, double close) override { s_.setPreviousClose(k, day, close); }
+  void appendBooks(const EdgeKey & k, const std::vector<BookSnapshot> & b) override { s_.appendBooks(k, b); }
+  void appendAnnouncements(const EventKey & k, const std::vector<Announcement> & a) override { s_.appendAnnouncements(k, a); }
+  void appendActions(const EventKey & k, const std::vector<CorporateAction> & a) override { s_.appendActions(k, a); }
+
+ private:
+  Snapshot & s_;
+};
+
 class MemoryStore : public Store {
  public:
   explicit MemoryStore(StoreOptions options)
@@ -582,6 +608,13 @@ class MemoryStore : public Store {
   }
 
   std::shared_ptr<const Snapshot> snapshot() const override { return current_.load(); }
+
+  void batch(const std::function<void(Batch &)> & change) override {
+    write([&](Snapshot & s) {
+      SnapshotBatch b(s);
+      change(b);
+    });
+  }
 
   InstrumentId resolveInstrument(const std::vector<Attribute> & identifying, const std::vector<Attribute> & rest) override {
     return write([&](Snapshot & s) { return s.resolveInstrument(identifying, rest); });
@@ -637,6 +670,7 @@ class MemoryStore : public Store {
     next.setTime(clock_());
     next.setRecheckInterval(recheck_);
     const auto finish = [&] {
+      next.settleVersion(old->version());
       tell(next.takeNotices());
       FactBatch facts = next.takeFacts();
       if (writer_) writer_->post(std::move(facts));

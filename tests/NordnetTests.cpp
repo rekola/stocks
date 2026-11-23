@@ -171,6 +171,22 @@ TEST(loading_pages_through_every_list_and_stores_instruments_markets_and_edges) 
   CHECK(a && b);  // one instrument, two edges, each in its own currency
 }
 
+TEST(a_page_of_a_list_is_one_publication) {
+  auto store = makeMemoryStore();
+  FakeHttp http;
+  http.answer = pages;
+  Listener listener;
+  auto lists = NordnetSource::defaultLists();
+  lists.erase(lists.begin(), lists.begin() + 1);
+  lists.resize(1);  // the certificates: one page
+  NordnetSource source(lists, std::chrono::milliseconds(0));
+  const auto before = store->snapshot();
+  source.load(*store, http, listener);
+  const auto after = store->snapshot();
+  CHECK(http.urls.size() == 1 && listener.changes == 1);
+  CHECK(after->version() == before->version() + 1 && after->quoteRowCount() > 0 && before->quoteRowCount() == 0);
+}
+
 TEST(loading_again_replaces_todays_bars_and_a_new_day_adds_one) {
   auto store = makeMemoryStore();
   FakeHttp http;

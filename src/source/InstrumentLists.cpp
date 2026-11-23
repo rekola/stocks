@@ -182,14 +182,26 @@ const char * currencyName(const std::string & symbol) {
   return "";
 }
 
-InstrumentId currencyNode(Store & store, const std::string & symbol) {
-  if (auto known = store.snapshot()->findInstrument(symbol)) return *known;
+InstrumentId currencyNode(Batch & store, const std::string & symbol) {
+  if (auto known = store.view().findInstrument(symbol)) return *known;
   const char * label = currencyName(symbol);
   return store.addInstrument(symbol, *label ? label : symbol, InstrumentKind::Currency);
 }
 
-InstrumentId quoteNode(Store & store, const std::string & code) {
+InstrumentId quoteNode(Batch & store, const std::string & code) {
   if (code != "pts") return currencyNode(store, code);
-  if (auto known = store.snapshot()->findInstrument(code)) return *known;
+  if (auto known = store.view().findInstrument(code)) return *known;
   return store.addInstrument(code, "Index points", InstrumentKind::Unit);
+}
+
+InstrumentId currencyNode(Store & store, const std::string & symbol) {
+  InstrumentId id;
+  store.batch([&](Batch & b) { id = currencyNode(b, symbol); });
+  return id;
+}
+
+InstrumentId quoteNode(Store & store, const std::string & code) {
+  InstrumentId id;
+  store.batch([&](Batch & b) { id = quoteNode(b, code); });
+  return id;
 }
