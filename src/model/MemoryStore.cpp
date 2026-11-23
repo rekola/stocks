@@ -453,17 +453,29 @@ DatasetId Snapshot::addDataset(const std::string & code, const std::string & nam
   return id;
 }
 
-namespace {
-bool hasData(const immer::map<MarketId, immer::set<EdgeKey>> & byMarket, const EdgeKey & k) {
-  const auto * set = byMarket.find(k.market);
+bool Snapshot::hasData(const EdgeKey & k) const {
+  const auto * set = edgesByMarket_.find(k.market);
   return set && set->count(k) > 0;
 }
-}  // namespace
+
+// The edge's symbol finds it, if nothing found by it before: only an edge that has data is found.
+void Snapshot::indexSymbol(const EdgeKey & k) {
+  const Listing * l = listings_.find(k);
+  if (!l || l->symbol.empty() || !hasData(k)) return;
+  if (!edgeBySymbol_.find(symbolKey(k.market, l->symbol))) edgeBySymbol_ = edgeBySymbol_.set(symbolKey(k.market, l->symbol), k);
+}
+
+// The edge has data: it exists now, and a listing said before is found by its symbol.
+void Snapshot::addEdge(const EdgeKey & k) {
+  if (hasData(k)) return;
+  const auto * set = edgesByMarket_.find(k.market);
+  edgesByMarket_ = edgesByMarket_.set(k.market, (set ? *set : immer::set<EdgeKey>{}).insert(k));
+  indexSymbol(k);
+}
 
 void Snapshot::setListing(const Listing & l) {
   const EdgeKey & k = l.key;
   require(k);
-  if (!hasData(edgesByMarket_, k)) return;  // no data yet: no edge
   const Listing * old = listings_.find(k);
   if (old && *old == l) return;
   if (old && old->symbol != l.symbol) {
@@ -471,8 +483,7 @@ void Snapshot::setListing(const Listing & l) {
     if (const EdgeKey * holder = edgeBySymbol_.find(key); holder && *holder == k) edgeBySymbol_ = edgeBySymbol_.erase(key);
   }
   listings_ = listings_.set(k, l);
-  if (!l.symbol.empty() && !edgeBySymbol_.find(symbolKey(k.market, l.symbol)))
-    edgeBySymbol_ = edgeBySymbol_.set(symbolKey(k.market, l.symbol), k);
+  indexSymbol(k);
   version_++;
 }
 
@@ -488,8 +499,7 @@ void Snapshot::appendCandles(const EdgeKey & k, Resolution r, const std::vector<
   const auto * known = resolutions_.find(k);
   if (r == Resolution::Day && !(known && known->count(static_cast<int>(r)))) quoteRows_ = quoteRows_.push_back(k);
   resolutions_ = resolutions_.set(k, (known ? *known : immer::set<int>{}).insert(static_cast<int>(r)));
-  const auto * set = edgesByMarket_.find(k.market);
-  edgesByMarket_ = edgesByMarket_.set(k.market, (set ? *set : immer::set<EdgeKey>{}).insert(k));
+  addEdge(k);
   version_++;
 }
 
@@ -498,8 +508,7 @@ void Snapshot::appendBooks(const EdgeKey & k, const std::vector<BookSnapshot> & 
   if (in.empty())
     return;
   appendTo(books_, k, in, [](const BookSnapshot &, const BookSnapshot &) { return true; });
-  const auto * set = edgesByMarket_.find(k.market);
-  edgesByMarket_ = edgesByMarket_.set(k.market, (set ? *set : immer::set<EdgeKey>{}).insert(k));
+  addEdge(k);
   version_++;
 }
 

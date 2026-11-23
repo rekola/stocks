@@ -615,8 +615,8 @@ they decide how history has to be collected):
   from one dataset, a row carrying its own key, small, with the price series beside it
   under the same key, and the fields the market says: the symbol it calls the instrument,
   its own id for it ("XAIX" on one market and "419021" on another for one ETF), the order
-  book its history is asked for by, the provider's own type. An edge takes nothing before it
-  has data. `findEdge(symbol, market)` finds the edge by what a market calls it, whoever
+  book its history is asked for by, the provider's own type. An edge is seen only once it
+  has data; a listing said before the data is kept and shows with it. `findEdge(symbol, market)` finds the edge by what a market calls it, whoever
   said it.
 - A **thin edge is a triple of a node**, (subject, predicate, object): what is known of the
   thing itself, which is not part of any market, so **no dataset says it** (an icon, the

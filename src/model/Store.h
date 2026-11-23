@@ -32,11 +32,12 @@ class Snapshot {
   std::string isin(InstrumentId) const;  // an instrument with an ISIN is that ISIN; empty for a currency or a unit
   // By a symbol said of the instrument itself (a currency's code).
   std::optional<InstrumentId> findInstrument(const std::string & symbol) const;
-  // The fat edge's listing: what a dataset says of the instrument on the market. Only an edge that has data has one.
+  // The fat edge's listing: what a dataset says of the instrument on the market, whether it was said before or after the
+  // edge's data (an edge is seen only once it has data).
   std::optional<Listing> listing(const EdgeKey &) const;
   // What the market calls the base instrument there, else the instrument's own symbol.
   std::string symbol(const EdgeKey &) const;
-  // The first edge made that a market's `symbol` is for: the instrument a market calls "NOKIA", whoever said it.
+  // The first edge to have data that a market's `symbol` is for: the instrument a market calls "NOKIA", whoever said it.
   std::optional<EdgeKey> findEdge(const std::string & symbol, MarketId) const;
   // The object of one predicate of a node, if it is said: an instrument's icon, its number of shares, a market's country.
   std::optional<Value> attribute(NodeRef, const std::string & predicate) const;
@@ -130,6 +131,10 @@ class Snapshot {
   std::vector<std::string> takeNotices() { return std::exchange(notices_, {}); }
 
  private:
+  bool hasData(const EdgeKey &) const;
+  void indexSymbol(const EdgeKey &);
+  void addEdge(const EdgeKey &);
+
   uint64_t version_ = 0;
   uint64_t checks_ = 0;
   TimestampMs now_ = 0;

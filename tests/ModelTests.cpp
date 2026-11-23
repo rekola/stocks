@@ -280,9 +280,9 @@ TEST(a_fat_edge_has_a_typed_listing_and_only_once_it_has_data) {
   InstrumentId fund = w.store->addInstrument("", "Xtrackers AI", InstrumentKind::Etf, "IE00BGV5VN51");
   const EdgeKey onHel{fund, w.eur, w.hel, w.a}, onSto{fund, w.eur, w.sto, w.a};
 
-  // An edge exists once it has data: before that it takes nothing.
+  // An edge exists once it has data: before that its listing is kept but nothing finds the edge.
   w.store->setListing({onHel, "XAIX", "XAIX", "book-h", "UETF"});
-  CHECK(!w.snap()->listing(onHel) && !w.snap()->findEdge("XAIX", w.hel));
+  CHECK(w.snap()->listing(onHel) && !w.snap()->findEdge("XAIX", w.hel) && w.snap()->edges(w.hel).empty());
 
   w.store->appendCandles(onHel, Resolution::Day, {bar(1, 10)});
   w.store->appendCandles(onSto, Resolution::Day, {bar(1, 11)});
@@ -462,4 +462,20 @@ TEST(a_batch_that_changes_nothing_publishes_nothing_and_one_that_throws_applies_
     thrown = true;
   }
   CHECK(thrown && w.snap() == before && !w.snap()->findInstrumentByIsin("FI0009013296"));
+}
+
+TEST(a_listing_said_before_the_data_gives_the_same_reads_as_after_it) {
+  World first, second;
+  const EdgeKey edge = first.key(first.hel, first.a);
+  const Listing listing{edge, "NOKIA", "id", "book", "STOCK", "Nokia"};
+  first.store->setListing(listing);
+  CHECK(first.snap()->edges(first.hel).empty() && first.snap()->quoteRowCount() == 0 && !first.snap()->findEdge("NOKIA", first.hel));
+  first.store->appendCandles(edge, Resolution::Day, {bar(1, 5)});
+  second.store->appendCandles(edge, Resolution::Day, {bar(1, 5)});
+  second.store->setListing(listing);
+  for (World * w : {&first, &second}) {
+    const auto s = w->snap();
+    CHECK(s->listing(edge) == listing && s->edges(w->hel).size() == 1 && s->quoteRowCount() == 1);
+    CHECK(s->findEdge("NOKIA", w->hel) == edge && s->symbol(edge) == "NOKIA");
+  }
 }
