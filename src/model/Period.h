@@ -16,6 +16,13 @@
 //   quarter  the last 90 days (three months): daily bars.
 //   year     the last 365 days: weekly bars, or daily ones that reach back that far.
 //
+// The last price of a period is the Price column's: a period's own series is loaded now and then, while the daily bar (the one
+// the Price column shows) is replaced every few minutes. Where the latest daily bar is at least as new as the series' last bar
+// (the day: its date is the session's; the week: on or after the day of the last hourly bar; the year: on or after the start
+// of the last weekly bar) its close is the period's `last`, and the trace ends with it as one more point when it differs from
+// the last bar's close, so the Price, the Change and the line agree. The base is never moved. A daily bar older than the series
+// changes nothing; a fund's daily bar is its latest NAV and works the same way.
+//
 // A period is shown only from bars that cover it: the first bar must be within a third of the period of its start (so the 60
 // daily bars the made-up data has are a quarter, one daily bar is not a week). Else the row has no number for the period,
 // never a wrong one.

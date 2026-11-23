@@ -815,7 +815,60 @@ TEST(the_days_base_is_the_previous_close_of_that_session_never_one_left_from_an_
   f.store->appendCandles(rows.riseFall, Resolution::Day, {{kToday + 1, 1, 1, 1, 22, 1}});
   f.store->appendCandles(rows.riseFall, Resolution::Min5, {{fiveMinuteSlot(kToday + 1, 0), 1, 1, 1, 23, 1}});
   PeriodView v = periodView(*snapshot(), rows.riseFall, Period::Day, true);
-  CHECK(v.base == 20 && v.last == 23 && v.closes.size() == 1);
+  // The session's daily bar (22) is newer than its one five-minute bar (23): it is the last price, and the trace ends with it.
+  CHECK(v.base == 20 && v.last == 22 && v.closes.size() == 2 && v.closes[0] == 23.0f && v.closes[1] == 22.0f);
+}
+
+namespace {
+// One edge with a period's own series ending in a close of 10 on kToday, and the daily bars `daily` (the newest last).
+EdgeKey seriesWorld(Store & store, Period period, std::vector<Candle> daily) {
+  InstrumentId usd = store.addInstrument("USD", "US dollar", InstrumentKind::Currency);
+  InstrumentId eur = store.addInstrument("EUR", "Euro", InstrumentKind::Currency);
+  MarketId market = store.addMarket("XXXX", "Currencies");
+  EdgeKey k{eur, usd, market, store.addDataset("providera")};
+  if (period == Period::Day) {
+    store.appendCandles(k, Resolution::Min5, {{fiveMinuteSlot(kToday, 0), 1, 1, 1, 9, 1}, {fiveMinuteSlot(kToday, 1), 1, 1, 1, 10, 1}});
+  } else if (period == Period::Week) {
+    std::vector<Candle> hours;
+    for (int d = 6; d >= 0; d--)
+      hours.push_back({slotOfInstant(Resolution::Hour1, (kToday - d - kUnixEpochDayNumber) * 86400 + 7 * 3600), 1, 1, 1, d == 0 ? 10.0 : 8.0, 1});
+    store.appendCandles(k, Resolution::Hour1, hours);
+  } else {
+    std::vector<Candle> weeks;
+    for (int64_t w = weekStart(kToday - 364); w <= weekStart(kToday); w += 7) weeks.push_back({w, 1, 1, 1, w == weekStart(kToday) ? 10.0 : 8.0, 1});
+    store.appendCandles(k, Resolution::Week, weeks);
+  }
+  store.appendCandles(k, Resolution::Day, daily);
+  return k;
+}
+}  // namespace
+
+TEST(a_newer_daily_bar_is_the_last_price_of_the_day_week_and_year_and_ends_their_trace) {
+  for (Period period : {Period::Day, Period::Week, Period::Year}) {
+    auto store = makeMemoryStore();
+    // The daily bar of today has moved on since the series was loaded.
+    EdgeKey k = seriesWorld(*store, period, {{kToday - 1, 1, 1, 1, 9, 1}, {kToday, 1, 1, 1, 12, 1}});
+    PeriodView v = periodView(*store->snapshot(), k, period, true);
+    CHECK(v.last == 12 && !v.closes.empty() && v.closes.back() == 12.0f);
+    CHECK(v.change() > 0);
+    // The same close as the series' last bar adds no point.
+    PeriodView same = periodView(*store->snapshot(), k, period, false);
+    CHECK(same.last == 12 && same.base == v.base);
+    store->appendCandles(k, Resolution::Day, {{kToday, 1, 1, 1, 10, 1}});
+    PeriodView still = periodView(*store->snapshot(), k, period, true);
+    CHECK(still.last == 10 && still.closes.back() == 10.0f && still.closes.size() == v.closes.size() - 1);
+  }
+}
+
+TEST(a_daily_bar_older_than_the_series_changes_nothing) {
+  for (Period period : {Period::Day, Period::Week, Period::Year}) {
+    auto store = makeMemoryStore();
+    // The newest daily bar is of the day before the series' last bar (the week's first day for the year's weekly bars).
+    const int64_t before = (period == Period::Year ? weekStart(kToday) : kToday) - 1;
+    EdgeKey k = seriesWorld(*store, period, {{before - 1, 1, 1, 1, 9, 1}, {before, 1, 1, 1, 12, 1}});
+    PeriodView v = periodView(*store->snapshot(), k, period, true);
+    CHECK(v.last == 10 && v.closes.back() == 10.0f);
+  }
 }
 
 TEST(a_narrow_screen_keeps_the_presets_and_the_headings_still_name_the_period) {

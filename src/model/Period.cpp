@@ -25,6 +25,17 @@ void trace(const Seq<Candle> & bars, PeriodView & v) {
   for (const Candle & c : bars) v.closes.push_back(static_cast<float>(c.close));
 }
 
+// Fills in the last price and the trace of a period from its series `bars`. The series is loaded now and then, the daily bar is
+// replaced every few minutes: where the daily bar is as new as the series (its date `since` or later) its close is the latest
+// price, the one the Price column shows, and the trace ends with it so the line ends where the change does.
+void finish(const Seq<Candle> & bars, const std::optional<Candle> & daily, int64_t since, PeriodView & v, bool withTrace) {
+  v.last = bars.back().close;
+  if (daily && daily->time >= since && isDefined(daily->close)) v.last = daily->close;
+  if (!withTrace) return;
+  trace(bars, v);
+  if (v.last != bars.back().close) v.closes.push_back(static_cast<float>(v.last));
+}
+
 }  // namespace
 
 const PeriodInfo & info(Period p) { return kInfo[static_cast<size_t>(p)]; }
@@ -50,7 +61,7 @@ PeriodView periodView(const Snapshot & snapshot, const EdgeKey & edge, Period pe
       if (!days.empty() && session < days.back().time) continue;  // older than the daily bars: a session gone by
       const Seq<Candle> bars = snapshot.candles(edge, r, {keyOf(r, session), kEnd}).candles;
       v.primary = true;
-      v.last = bars.back().close;
+      finish(bars, days.empty() ? std::nullopt : std::optional<Candle>(days.back()), session, v, withTrace);
       if (auto previous = snapshot.previousClose(edge, session)) v.base = *previous;
       else
         for (size_t i = days.size(); i-- > 0;)
@@ -58,7 +69,6 @@ PeriodView periodView(const Snapshot & snapshot, const EdgeKey & edge, Period pe
             v.base = days[i].close;
             break;
           }
-      if (withTrace) trace(bars, v);
       return v;
     }
     // No intraday bars: the change since the previous daily bar, and no trace.
@@ -67,6 +77,12 @@ PeriodView periodView(const Snapshot & snapshot, const EdgeKey & edge, Period pe
       v.base = days[0].close;
     }
     return v;
+  }
+  // The latest daily bar, read once (and not for the periods that are daily bars themselves).
+  std::optional<Candle> daily;
+  if (period == Period::Week || period == Period::Year) {
+    const CandleSeries newestDay = snapshot.lastCandles(edge, Resolution::Day, 1);
+    if (!newestDay.candles.empty()) daily = newestDay.candles.back();
   }
   for (size_t f = 0; f < in.feedCount; f++) {
     const Resolution r = in.feeds[f];
@@ -77,8 +93,8 @@ PeriodView periodView(const Snapshot & snapshot, const EdgeKey & edge, Period pe
     if (bars.empty() || dayOf(r, bars[0].time) > start + in.days / 3) continue;  // does not reach back far enough
     v.primary = f < in.primary;
     v.base = bars[0].close;
-    v.last = bars.back().close;
-    if (withTrace) trace(bars, v);
+    // A daily stand-in is the daily bars already: nothing newer to take.
+    finish(bars, r == Resolution::Day ? std::nullopt : daily, end, v, withTrace);
     return v;
   }
   return v;
