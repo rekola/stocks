@@ -38,7 +38,7 @@ InstrumentList loadInstrumentLists(const std::filesystem::path & directory, std:
 // `markets` is empty), in the same order.
 InstrumentList onlyMarkets(const InstrumentList & list, const std::vector<std::string> & markets);
 
-// Where the lists are: `given` if it is not empty, else data/lists here, else the source tree's. Empty if none is.
+// Where the lists are: `given` if it is not empty, else the data/lists of findDataDirectory. Empty if none is.
 std::filesystem::path findListsDirectory(const std::string & given);
 
 // The name of a currency that only appears as a quote ("" if unknown).

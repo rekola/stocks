@@ -8,7 +8,7 @@
 A stock data browser for the terminal and a GTK window, built on
 [cellui](https://github.com/rekola/cellui).
 
-A row of preset tags (commodities, Nasdaq Helsinki, currencies, indices, and all of them) over a sortable,
+A row of preset tags (commodities, Nasdaq Helsinki, currencies, indices, funds, and all of them) over a sortable,
 scrollable table with a price trace per row. The rows are the edges of a
 [data model](plans/data-model.md) that data sources fill on a thread of their
 own; the table follows as the data arrives, a few times a second at most, and reads
@@ -51,6 +51,9 @@ folds host names with the libunistring that is already needed, or a utf8proc if
 that is installed), fetched at a pinned commit
 like [immer](https://github.com/arximboldi/immer) and
 [nlohmann/json](https://github.com/nlohmann/json).
+
+The data the program ships with (`data/lists`, `data/funds`) is found in the current directory's `data`, beside the program (the build
+directory has a copy), in `share/stocks` beside the program's directory (`cmake --install build --prefix PREFIX` puts it there) and in the source tree.
 
 Some instruments come from lists on disk, `data/lists/*.csv`: Finland's shares and the
 largest of 16 other countries (the US, Canada, the UK, Germany, France, Sweden, Switzerland,

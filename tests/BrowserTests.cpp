@@ -321,6 +321,28 @@ TEST(the_made_up_data_fills_every_preset_with_what_the_lists_hold) {
   }
 }
 
+TEST(the_funds_preset_shows_the_funds_of_every_market_and_nothing_else_and_follows_the_store) {
+  Fixture f(false);
+  InstrumentId eur = f.store->addInstrument("EUR", "Euro", InstrumentKind::Currency);
+  InstrumentId alpha = f.store->addInstrument("", "Alpha Fund", InstrumentKind::Fund, "FI0008810569");
+  InstrumentId beta = f.store->addInstrument("", "Beta Fund", InstrumentKind::Fund, "FI0008800511");
+  InstrumentId nokia = f.store->addInstrument("", "Nokia Oyj", InstrumentKind::Company, "FI0009000681");
+  MarketId alphaFunds = f.store->addMarket("FUNA", "Alpha Funds"), helsinki = f.store->addMarket("XHEL", "Nasdaq Helsinki");
+  DatasetId a = f.store->addDataset("providera");
+  f.store->appendCandles({alpha, eur, alphaFunds, a}, Resolution::Day, {{0, 1, 1, 1, 1.0, 1}, {1000, 1, 1, 1, 1.1, 1}});
+  f.store->appendCandles({nokia, eur, helsinki, a}, Resolution::Day, {{0, 1, 1, 1, 4.0, 1}, {1000, 1, 1, 1, 4.1, 1}});
+  f.app->execute("show-funds");
+  Table & t = f.browser->table();
+  CHECK(t.model()->rowCount() == 1);  // not the company
+  // A fund of another market, on the same dataset or another, comes into the table when the store changes; the company does not.
+  f.store->appendCandles({beta, eur, helsinki, a}, Resolution::Day, {{0, 1, 1, 1, 2.0, 1}, {1000, 1, 1, 1, 2.1, 1}});
+  f.store->appendCandles({nokia, eur, alphaFunds, a}, Resolution::Day, {{0, 1, 1, 1, 4.0, 1}, {1000, 1, 1, 1, 4.1, 1}});
+  f.app->widgets().postToRoot(StoreChanged{});
+  CHECK(t.model()->rowCount() == 2);
+  f.app->execute("show-all");
+  CHECK(t.model()->rowCount() == 4);
+}
+
 TEST(the_table_follows_the_store_when_told_it_changed_and_keeps_the_sort_and_the_selection) {
   Fixture f(false);
   InstrumentId eur = f.store->addInstrument("EUR", "Euro", InstrumentKind::Currency);
