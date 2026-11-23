@@ -38,7 +38,7 @@ desktop keymap) choose one (`show-period-day`, `-week`, `-month`, `-quarter`, `-
 program runs, and starts at the three months. The change is the last price against the period's first (for the day, the
 previous close), and the colour of both is its sign. A row with no bars for the period shows no number and no trace. The rows on
 screen load what the period needs, and again once it is old (the day after 15 minutes, the week after an hour, the year after
-a day; see `HistoryLoader.h`).
+a day; see `NordnetHistory.h`).
 
 cellui is not pinned while the two are developed together: the build fetches its
 `main`. CI builds on Linux (x86-64 and ARM64, with the GTK window), macOS and

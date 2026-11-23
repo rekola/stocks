@@ -441,6 +441,8 @@ class Scripted : public Source {
     for (int i = 0; i < changes_; i++) listener.changed();
   }
   std::chrono::milliseconds refreshInterval() const override { return every_; }
+  std::shared_ptr<HistoryProvider> historyProvider() override { return history; }
+  std::shared_ptr<HistoryProvider> history;  // what loads its edges' history, if it has one
   int loads = 0;
   bool writeBar = true;  // false: it only writes instruments, and still calls changed()
 
@@ -451,6 +453,46 @@ class Scripted : public Source {
 };
 
 }  // namespace
+
+namespace {
+struct NamedHistory : HistoryProvider {
+  std::string code;
+  explicit NamedHistory(std::string c) : code(std::move(c)) {}
+  std::string dataset() const override { return code; }
+  Outcome load(Store &, Http &, const EdgeKey &, int, const Wait &) override { return Outcome::Ok; }
+};
+}  // namespace
+
+TEST(autos_history_provider_is_asked_for_before_the_choice_and_follows_it) {
+  auto store = makeMemoryStore();
+  FakeHttp http;
+  auto primary = std::make_unique<Scripted>("nordnet", 0), fallback = std::make_unique<Scripted>("yahoo", 1);
+  primary->history = std::make_shared<NamedHistory>("nordnet");
+  AutoSource source(std::move(primary), std::move(fallback));
+  auto history = source.historyProvider();  // as the program does, before the primary has loaded
+  CHECK(history && history->dataset() == "nordnet");
+  Listener listener;
+  source.load(*store, http, listener);  // the primary gave nothing: the fallback, which has no history of its own, is the source
+  CHECK(history->dataset().empty() && !history->need(*store->snapshot(), EdgeKey{}, Period::Quarter));
+}
+
+TEST(autos_history_goes_to_the_fallbacks_provider_where_it_has_one_and_there_is_none_where_neither_has) {
+  auto store = makeMemoryStore();
+  FakeHttp http;
+  auto primary = std::make_unique<Scripted>("nordnet", 0), fallback = std::make_unique<Scripted>("yahoo", 1);
+  primary->history = std::make_shared<NamedHistory>("nordnet");
+  fallback->history = std::make_shared<NamedHistory>("yahoo");
+  AutoSource source(std::move(primary), std::move(fallback));
+  auto history = source.historyProvider();
+  Listener listener;
+  source.load(*store, http, listener);
+  CHECK(history->dataset() == "yahoo");
+  AutoSource neither(std::make_unique<Scripted>("a", 1), std::make_unique<Scripted>("b", 1));
+  CHECK(!neither.historyProvider());
+  // The real pair: Nordnet's provider until Nordnet fails, and Yahoo loads its history with its list.
+  AutoSource real(std::make_unique<NordnetSource>(), std::make_unique<YahooSource>(InstrumentList{}));
+  CHECK(real.historyProvider() && real.historyProvider()->dataset() == "nordnet");
+}
 
 TEST(auto_stays_with_the_primary_when_it_gives_something) {
   auto store = makeMemoryStore();

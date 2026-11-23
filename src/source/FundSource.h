@@ -103,8 +103,9 @@ class FundHistory : public HistoryProvider {
  public:
   explicit FundHistory(FundSchema schema) : schema_(std::move(schema)) {}
   std::string dataset() const override { return schema_.dataset; }
-  bool wants(const Snapshot &, const EdgeKey &) const override;
-  Outcome load(Store &, Http &, const EdgeKey &) override;
+  // One request for a fund company's every edge, whatever the period: the details and the NAV history, once per session, unless the store has the quarter's bars.
+  std::optional<Need> need(const Snapshot &, const EdgeKey &, Period) const override;
+  Outcome load(Store &, Http &, const EdgeKey &, int request, const Wait &) override;
   std::chrono::milliseconds pause() const override { return schema_.pause; }
   // The token of the list's session, which the requests have in `{token}`; and a fund whose details are in the store already.
   void setToken(std::string);

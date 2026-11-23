@@ -3,6 +3,7 @@
 
 #include "model/Dates.h"
 #include "source/Countries.h"
+#include "source/NordnetHeaders.h"
 
 #include <nlohmann/json.hpp>
 
@@ -11,13 +12,6 @@
 using nlohmann::json;
 
 namespace {
-
-// The details answer to a browser's headers and a Nordic locale only (the descriptions come in that language).
-const HttpHeaders kHeaders = {{"Accept", "*/*"},
-                              {"Accept-Language", "en-US,en;q=0.9,fi;q=0.8"},
-                              {"Origin", "https://www.nordnet.fi"},
-                              {"Referer", "https://www.nordnet.fi/"},
-                              {"x-locale", "fi-FI"}};
 
 const json * member(const json & o, const char * key) {
   if (!o.is_object()) return nullptr;
@@ -187,7 +181,7 @@ bool NordnetDetails::loadBatch(Store & store, Http & http, SourceListener & list
     if (done >= batch) return true;
     tried_.insert(t.id.value);
     done++;
-    HttpResult r = http.get(t.fund ? fundUrl(t.orderBook) : stockUrl(t.orderBook), kHeaders);
+    HttpResult r = http.get(t.fund ? fundUrl(t.orderBook) : stockUrl(t.orderBook), nordnet::detailHeaders());
     std::vector<Attribute> said;
     std::string error;
     if (r.status == 403 || r.status == 429) {
@@ -202,7 +196,7 @@ bool NordnetDetails::loadBatch(Store & store, Http & http, SourceListener & list
     } else if (!(t.fund ? parseFund(r.body, said, error) : parseStock(r.body, said, error))) {
       listener.message("nordnet details: " + error);
     } else if (!said.empty()) {
-      store.setAttributes(t.id, said);
+      store.batch([&](Batch & b) { b.setAttributes(t.id, said); });
       listener.changed();
     }
     if (pause.count() > 0 && !listener.pause(pause)) return true;

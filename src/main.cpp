@@ -158,7 +158,8 @@ int main(int argc, char ** argv) {
   auto history = std::make_shared<HistoryLoader>(
       store, makeHttp(), HistoryLoader::Options{}, [&inbox] { inbox.post(StoreChanged{}); },
       [&inbox](std::string text) { inbox.post(SourceMessage{std::move(text)}); });
-  // A source that has the history of what it found, but not with the rest, hands the loader what loads it when it is wanted.
+  // A source that has the history of what it found, but not with the rest, hands the loader what loads it when it is wanted. This is
+  // before any source has run: "auto" hands over one that follows its choice, so it is asked for once, here.
   for (const auto & s : sources) history->addProvider(s->historyProvider());
   Browser browser(*app, store, icons, history);
   SourceRunner runner(

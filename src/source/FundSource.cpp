@@ -479,9 +479,10 @@ void FundSource::load(Store & store, Http & http, SourceListener & listener) {
                    (unpriced ? ", " + std::to_string(unpriced) + " for no price" : std::string()));
 }
 
-bool FundHistory::wants(const Snapshot & snapshot, const EdgeKey & edge) const {
+std::optional<HistoryProvider::Need> FundHistory::need(const Snapshot & snapshot, const EdgeKey & edge, Period) const {
   auto listing = snapshot.listing(edge);
-  return listing && !listing->identifier.empty();
+  if (!listing || listing->identifier.empty()) return std::nullopt;
+  return Need{0, periodView(snapshot, edge, Period::Quarter, false).primary};
 }
 
 void FundHistory::setToken(std::string token) {
@@ -494,7 +495,7 @@ void FundHistory::markDetailed(const std::string & id) {
   detailed_.insert(id);
 }
 
-HistoryProvider::Outcome FundHistory::load(Store & store, Http & http, const EdgeKey & edge) {
+HistoryProvider::Outcome FundHistory::load(Store & store, Http & http, const EdgeKey & edge, int, const Wait &) {
   auto snapshot = store.snapshot();
   auto listing = snapshot->listing(edge);
   if (!listing || listing->identifier.empty()) return Outcome::Missing;
