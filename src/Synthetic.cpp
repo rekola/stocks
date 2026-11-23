@@ -7,7 +7,7 @@
 
 void fillSyntheticData(Store & store, const InstrumentList & list) {
   const int64_t kStart = dayNumber(2026, 1, 1);  // the first trading date: a day number
-  Dataset synthetic = store.addDataset({{}, kSyntheticDataset});
+  const DatasetId synthetic = store.addDataset(kSyntheticDataset);
   std::string market;
   unsigned preset = 0;
   std::mt19937 rng;
@@ -17,7 +17,7 @@ void fillSyntheticData(Store & store, const InstrumentList & list) {
       market = e.market;
       rng.seed(preset++ * 7919u + 1u);
     }
-    Market m = store.addMarket({{}, e.market});
+    const MarketId m = store.addMarket(e.market);
     Instrument base = e.kind == InstrumentKind::Currency ? currencyNode(store, e.base) : store.addInstrument({{}, "", e.name, e.kind, e.isin});
     Instrument quote = quoteNode(store, e.quote);
     std::vector<Candle> bars;
@@ -28,6 +28,6 @@ void fillSyntheticData(Store & store, const InstrumentList & list) {
       bars.push_back({kStart + d, open, std::max(open, p) * (1 + wick(rng)), std::min(open, p) * (1 - wick(rng)), p,
                       volume(rng)});
     }
-    store.appendCandles({base.id, quote.id, m.id, synthetic.id}, Resolution::Day, bars);
+    store.appendCandles({base.id, quote.id, m, synthetic}, Resolution::Day, bars);
   }
 }

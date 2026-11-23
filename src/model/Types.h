@@ -158,21 +158,10 @@ struct Instrument {
   std::string type;  // the provider's own type ("UETF", "EQUITY"), beside the combined kind
 };
 
-// The resolved view of a market's attributes. The id is the market's own key, minted when it was first said: a market is found
-// again by what is said about it (its MIC, its id at a source, its name). The name is empty until one is known.
-struct Market {
-  MarketId id;
-  std::string name;
-};
-
-// Where a fact came from: a provider, a file, a prediction model. Two datasets that disagree both stay. A dataset is its code,
-// one to ten letters or digits that its adapter defines and never changes; the name is what a person reads, a fact of the
-// dataset that is the code until something says otherwise.
-struct Dataset {
-  DatasetId id;
-  std::string code;
-  std::string name;
-};
+// A market and a dataset are not records: a market is its key (`MarketId`, minted when it was first said) and a dataset is its
+// code (`DatasetId`, one to ten letters or digits that its adapter defines and never changes); what is said of either, its name
+// among that, is facts (`Snapshot::name()`, `attribute()`).
+inline std::string datasetCode(DatasetId id) { return text(NodeKey{id.value}); }
 
 // "One unit of `base` costs this much `quote`", as one dataset reports it on one market. The key of a price series
 // and of an order book series.

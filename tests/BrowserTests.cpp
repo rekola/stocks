@@ -31,9 +31,9 @@ Rows periodWorld(Store & store) {
   Instrument usd = store.addInstrument({{}, "USD", "US dollar", InstrumentKind::Currency});
   Instrument eur = store.addInstrument({{}, "EUR", "Euro", InstrumentKind::Currency});
   Instrument gbp = store.addInstrument({{}, "GBP", "British pound", InstrumentKind::Currency});
-  Market currencies = store.addMarket({{}, "Currencies"});
-  Dataset a = store.addDataset({{}, "providera"});
-  Rows rows{{eur.id, usd.id, currencies.id, a.id}, {gbp.id, usd.id, currencies.id, a.id}};
+  MarketId currencies = store.addMarket("Currencies");
+  DatasetId a = store.addDataset("providera");
+  Rows rows{{eur.id, usd.id, currencies, a}, {gbp.id, usd.id, currencies, a}};
   std::vector<Candle> days;
   for (int d = 70; d >= 1; d--) days.push_back({kToday - d, 1, 1, 1, 21.0 - d * 11.0 / 70.0 + (d == 1 ? 0.0 : 0.0), 1});
   days.back().close = 21;  // yesterday
@@ -128,9 +128,9 @@ std::pair<int, int> cellOf(const std::string & screen, const std::string & needl
 EdgeKey addNokia(Store & store) {
   Instrument eur = store.addInstrument({{}, "EUR", "Euro", InstrumentKind::Currency});
   Instrument nokia = store.addInstrument({{}, "", "Nokia Oyj", InstrumentKind::Company, "FI0009000681"});
-  Market helsinki = store.addMarket({{}, "Nasdaq Helsinki"});
-  Dataset data = store.addDataset({{}, "nordnet"});
-  EdgeKey key{nokia.id, eur.id, helsinki.id, data.id};
+  MarketId helsinki = store.addMarket("Nasdaq Helsinki");
+  DatasetId data = store.addDataset("nordnet");
+  EdgeKey key{nokia.id, eur.id, helsinki, data};
   store.appendCandles(key, Resolution::Day, {{dayNumber(2026, 1, 2), 1, 1, 1, 4.2, 1}, {dayNumber(2026, 1, 5), 1, 1, 1, 4.3, 1}});
   store.setListing({key, "NOKIA", "1234", "5678", "STOCK", "Nokia"});
   store.setAttributes(nokia.id, {{"market-cap", 12345.675}, {"report-day", dayNumber(2026, 3, 5)}, {"owners", int64_t{250000}}});
@@ -275,10 +275,10 @@ TEST(a_preset_shows_one_row_per_edge_with_its_dataset) {
   Fixture f(false);
   Instrument eur = f.store->addInstrument({{}, "EUR", "Euro", InstrumentKind::Currency});
   Instrument usd = f.store->addInstrument({{}, "USD", "US dollar", InstrumentKind::Currency});
-  Market currencies = f.store->addMarket({{}, "Currencies"});
-  Dataset a = f.store->addDataset({{}, "providera"}), b = f.store->addDataset({{}, "providerb"});
-  f.store->appendCandles({eur.id, usd.id, currencies.id, a.id}, Resolution::Day, {{0, 1, 1, 1, 1.00, 1}, {1000, 1, 1, 1, 1.10, 1}});
-  f.store->appendCandles({eur.id, usd.id, currencies.id, b.id}, Resolution::Day, {{0, 1, 1, 1, 2.00, 1}, {1000, 1, 1, 1, 1.00, 1}});
+  MarketId currencies = f.store->addMarket("Currencies");
+  DatasetId a = f.store->addDataset("providera"), b = f.store->addDataset("providerb");
+  f.store->appendCandles({eur.id, usd.id, currencies, a}, Resolution::Day, {{0, 1, 1, 1, 1.00, 1}, {1000, 1, 1, 1, 1.10, 1}});
+  f.store->appendCandles({eur.id, usd.id, currencies, b}, Resolution::Day, {{0, 1, 1, 1, 2.00, 1}, {1000, 1, 1, 1, 1.00, 1}});
   f.app->execute("show-currencies");
   f.app->execute("show-period-day");  // the bars are a thousand days apart: the day is the change since the previous bar
   Table & t = f.browser->table();
@@ -295,10 +295,10 @@ TEST(a_preset_whose_market_has_no_data_shows_no_rows_and_a_book_alone_is_not_a_r
   Fixture f(false);
   Instrument eur = f.store->addInstrument({{}, "EUR", "Euro", InstrumentKind::Currency});
   Instrument usd = f.store->addInstrument({{}, "USD", "US dollar", InstrumentKind::Currency});
-  Market currencies = f.store->addMarket({{}, "Currencies"});
-  Dataset a = f.store->addDataset({{}, "providera"});
+  MarketId currencies = f.store->addMarket("Currencies");
+  DatasetId a = f.store->addDataset("providera");
   CHECK(f.browser->table().model()->rowCount() == 0);  // Commodities: no such market
-  f.store->appendBooks({eur.id, usd.id, currencies.id, a.id}, {{0, {{1, 1}}, {{2, 1}}}});
+  f.store->appendBooks({eur.id, usd.id, currencies, a}, {{0, {{1, 1}}, {{2, 1}}}});
   f.app->execute("show-currencies");
   CHECK(f.browser->table().model()->rowCount() == 0);
 }
@@ -320,9 +320,9 @@ TEST(the_table_follows_the_store_when_told_it_changed_and_keeps_the_sort_and_the
   Instrument eur = f.store->addInstrument({{}, "EUR", "Euro", InstrumentKind::Currency});
   Instrument usd = f.store->addInstrument({{}, "USD", "US dollar", InstrumentKind::Currency});
   Instrument gbp = f.store->addInstrument({{}, "GBP", "British pound", InstrumentKind::Currency});
-  Market currencies = f.store->addMarket({{}, "Currencies"});
-  Dataset a = f.store->addDataset({{}, "providera"});
-  EdgeKey eurusd{eur.id, usd.id, currencies.id, a.id}, gbpusd{gbp.id, usd.id, currencies.id, a.id};
+  MarketId currencies = f.store->addMarket("Currencies");
+  DatasetId a = f.store->addDataset("providera");
+  EdgeKey eurusd{eur.id, usd.id, currencies, a}, gbpusd{gbp.id, usd.id, currencies, a};
   f.store->appendCandles(eurusd, Resolution::Day, {{0, 1, 1, 1, 1.0, 1}, {1000, 1, 1, 1, 1.1, 1}});
   f.app->execute("show-currencies");
   Table & t = f.browser->table();
@@ -370,9 +370,9 @@ TEST(a_row_shows_what_the_dataset_calls_the_listing_so_the_rows_of_one_base_are_
   Instrument eur = f.store->addInstrument({{}, "EUR", "Euro", InstrumentKind::Currency});
   Instrument usd = f.store->addInstrument({{}, "USD", "US dollar", InstrumentKind::Currency});
   Instrument gbp = f.store->addInstrument({{}, "GBP", "British pound", InstrumentKind::Currency});
-  Market currencies = f.store->addMarket({{}, "Currencies"});
-  Dataset a = f.store->addDataset({{}, "providera"});
-  EdgeKey eurusd{eur.id, usd.id, currencies.id, a.id}, eurgbp{eur.id, gbp.id, currencies.id, a.id};
+  MarketId currencies = f.store->addMarket("Currencies");
+  DatasetId a = f.store->addDataset("providera");
+  EdgeKey eurusd{eur.id, usd.id, currencies, a}, eurgbp{eur.id, gbp.id, currencies, a};
   for (const EdgeKey & k : {eurusd, eurgbp}) f.store->appendCandles(k, Resolution::Day, {{0, 1, 1, 1, 1.0, 1}});
   f.store->setListing({eurusd, "EURUSD", "", "", "CURRENCY", "EUR/USD"});
   f.store->setListing({eurgbp, "EURGBP", "", "", "CURRENCY", "EUR/GBP"});
@@ -384,14 +384,14 @@ TEST(a_row_shows_what_the_dataset_calls_the_listing_so_the_rows_of_one_base_are_
 
   // An instrument listed on two markets: each market's own name for it; one with no name of its own shows the instrument's.
   Instrument fund = f.store->addInstrument({{}, "", "Fund (instrument)", InstrumentKind::Etf, "IE00BGV5VN51"});
-  Market hel = f.store->addMarket({{}, "Nasdaq Helsinki"}), sto = f.store->addMarket({{}, "Nasdaq Stockholm"});
-  EdgeKey onHel{fund.id, eur.id, hel.id, a.id}, onSto{fund.id, usd.id, sto.id, a.id};
+  MarketId hel = f.store->addMarket("Nasdaq Helsinki"), sto = f.store->addMarket("Nasdaq Stockholm");
+  EdgeKey onHel{fund.id, eur.id, hel, a}, onSto{fund.id, usd.id, sto, a};
   for (const EdgeKey & k : {onHel, onSto}) f.store->appendCandles(k, Resolution::Day, {{0, 1, 1, 1, 1.0, 1}});
   f.store->setListing({onHel, "XAIX", "", "", "UETF", "Fund (Helsinki)"});
   f.store->setListing({onSto, "XAIX", "", "", "UETF", ""});
   auto snapshot = f.store->snapshot();
-  CHECK(makeRows(*snapshot, hel.id)[0].name == "Fund (Helsinki)");
-  CHECK(makeRows(*snapshot, sto.id)[0].name == "Fund (instrument)");
+  CHECK(makeRows(*snapshot, hel)[0].name == "Fund (Helsinki)");
+  CHECK(makeRows(*snapshot, sto)[0].name == "Fund (instrument)");
 }
 
 TEST(the_table_keeps_its_scroll_position_when_the_store_changes) {
@@ -409,7 +409,7 @@ TEST(the_table_keeps_its_scroll_position_when_the_store_changes) {
   CHECK(first > 0 && selected >= 0);
 
   auto snapshot = f.store->snapshot();
-  const EdgeKey k = snapshot->edges(snapshot->findMarket("Currencies")->id)[0];
+  const EdgeKey k = snapshot->edges(*snapshot->findMarket("Currencies"))[0];
   f.store->appendCandles(k, Resolution::Day, {{99999, 1, 1, 1, 2.0, 1}});
   f.app->widgets().postToRoot(StoreChanged{});  // what the source thread's post turns into
   CHECK(t.firstVisiblePosition() == first);      // not back at the first row
@@ -422,12 +422,12 @@ TEST(the_table_keeps_its_scroll_position_when_the_store_changes) {
 TEST(the_rows_on_screen_have_their_history_loaded_and_the_table_follows) {
   std::shared_ptr<Store> store = makeMemoryStore();
   Instrument usd = store->addInstrument({{}, "USD", "US dollar", InstrumentKind::Currency});
-  Market market = store->addMarket({{}, "Nasdaq Helsinki"});
-  Dataset nordnet = store->addDataset({{}, "nordnet"});
+  MarketId market = store->addMarket("Nasdaq Helsinki");
+  DatasetId nordnet = store->addDataset("nordnet");
   std::vector<EdgeKey> edges;
   for (int i = 0; i < 40; i++) {  // more rows than the screen holds
     Instrument inst = store->addInstrument({{}, "", "Stock " + std::to_string(i), InstrumentKind::Company, testIsin(100000 + i)});
-    EdgeKey k{inst.id, usd.id, market.id, nordnet.id};
+    EdgeKey k{inst.id, usd.id, market, nordnet};
     store->appendCandles(k, Resolution::Day, {{dayNumber(2026, 12, 1), kUndefined, 1, 1, 1, kUndefined}});
     store->setListing({k, std::string(i < 10 ? "S0" : "S") + std::to_string(i), "", "book-" + std::to_string(i), "ESH", "Stock " + std::to_string(i)});  // in the order of the symbols
     edges.push_back(k);
@@ -483,9 +483,9 @@ TEST(the_all_preset_shows_every_market_and_the_market_column_tells_the_rows_apar
   Fixture g(false);
   Instrument eur = g.store->addInstrument({{}, "EUR", "Euro", InstrumentKind::Currency});
   Instrument usd = g.store->addInstrument({{}, "USD", "US dollar", InstrumentKind::Currency});
-  Market unnamed = g.store->resolveMarket({{predicate::nordnetId, "61"}});
-  Dataset a = g.store->addDataset({{}, "nordnet"});
-  g.store->appendCandles({eur.id, usd.id, unnamed.id, a.id}, Resolution::Day, {{0, 1, 1, 1, 1.0, 1}});
+  MarketId unnamed = g.store->resolveMarket({{predicate::nordnetId, "61"}});
+  DatasetId a = g.store->addDataset("nordnet");
+  g.store->appendCandles({eur.id, usd.id, unnamed, a}, Resolution::Day, {{0, 1, 1, 1, 1.0, 1}});
   g.app->execute("show-all");
   CHECK(g.browser->table().model()->text(0, Quotes::MARKET) == "Nordnet 61");
 }
@@ -494,9 +494,9 @@ TEST(a_currency_pair_shows_its_first_currency_as_the_base_and_not_the_listing_sy
   Fixture f(false);
   Instrument eur = f.store->addInstrument({{}, "EUR", "Euro", InstrumentKind::Currency});
   Instrument usd = f.store->addInstrument({{}, "USD", "US dollar", InstrumentKind::Currency});
-  Market currencies = f.store->addMarket({{}, "Currencies"});
-  Dataset a = f.store->addDataset({{}, "nordnet"});
-  EdgeKey k{eur.id, usd.id, currencies.id, a.id};
+  MarketId currencies = f.store->addMarket("Currencies");
+  DatasetId a = f.store->addDataset("nordnet");
+  EdgeKey k{eur.id, usd.id, currencies, a};
   f.store->appendCandles(k, Resolution::Day, {{0, 1, 1, 1, 1.0, 1}});
   f.store->setListing({k, "EURUSD", "", "", "CURRENCY", "EUR/USD"});
   f.app->execute("show-currencies");
@@ -506,8 +506,8 @@ TEST(a_currency_pair_shows_its_first_currency_as_the_base_and_not_the_listing_sy
 
   // What a market calls anything else stays the base: its symbol there.
   Instrument fund = f.store->addInstrument({{}, "", "Fund", InstrumentKind::Etf, "IE00BGV5VN51"});
-  Market hel = f.store->addMarket({{}, "Nasdaq Helsinki"});
-  EdgeKey onHel{fund.id, eur.id, hel.id, a.id};
+  MarketId hel = f.store->addMarket("Nasdaq Helsinki");
+  EdgeKey onHel{fund.id, eur.id, hel, a};
   f.store->appendCandles(onHel, Resolution::Day, {{0, 1, 1, 1, 1.0, 1}});
   f.store->setListing({onHel, "XAIX", "", "", "UETF", "Fund"});
   f.app->execute("show-nasdaq-helsinki");
@@ -519,15 +519,15 @@ TEST(a_busy_source_is_shown_at_most_so_often_and_the_last_change_is_shown_when_i
   Instrument eur = f.store->addInstrument({{}, "EUR", "Euro", InstrumentKind::Currency});
   Instrument usd = f.store->addInstrument({{}, "USD", "US dollar", InstrumentKind::Currency});
   Instrument gbp = f.store->addInstrument({{}, "GBP", "British pound", InstrumentKind::Currency});
-  Market currencies = f.store->addMarket({{}, "Currencies"});
-  Dataset a = f.store->addDataset({{}, "providera"});
-  f.store->appendCandles({eur.id, usd.id, currencies.id, a.id}, Resolution::Day, {{0, 1, 1, 1, 1.0, 1}});
+  MarketId currencies = f.store->addMarket("Currencies");
+  DatasetId a = f.store->addDataset("providera");
+  f.store->appendCandles({eur.id, usd.id, currencies, a}, Resolution::Day, {{0, 1, 1, 1, 1.0, 1}});
   f.app->execute("show-currencies");
   Table & t = f.browser->table();
   CHECK(t.model()->rowCount() == 1);
 
   f.browser->setMinRefreshInterval(3600);  // not for an hour
-  f.store->appendCandles({eur.id, gbp.id, currencies.id, a.id}, Resolution::Day, {{0, 1, 1, 1, 0.9, 1}});
+  f.store->appendCandles({eur.id, gbp.id, currencies, a}, Resolution::Day, {{0, 1, 1, 1, 0.9, 1}});
   f.app->widgets().postToRoot(StoreChanged{});
   CHECK(t.model()->rowCount() == 1);  // asked for, and not yet shown
 

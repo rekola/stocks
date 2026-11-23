@@ -86,8 +86,8 @@ std::vector<InfoSection> buildInfo(const Snapshot & snapshot, const EdgeKey & ed
     add("type", l->type);
     add("name", l->name);
   }
-  if (auto d = snapshot.dataset(edge.dataset)) add("dataset", d->name);
-  if (auto m = snapshot.market(edge.market)) add("market", m->name);
+  add("dataset", snapshot.name(edge.dataset));
+  add("market", snapshot.name(edge.market));
   if (auto q = snapshot.instrument(edge.quote)) add("quote currency", q->symbol);
   out.push_back(std::move(listing));
 

@@ -170,7 +170,7 @@ bool NordnetDetails::loadBatch(Store & store, Http & http, SourceListener & list
     std::set<uint64_t> seen;
     for (MarketId market : snapshot->edgeMarkets()) {
       for (const EdgeKey & edge : snapshot->edges(market)) {
-        if (edge.dataset != dataset->id || tried_.count(edge.base.value) || !seen.insert(edge.base.value).second) continue;
+        if (edge.dataset != *dataset || tried_.count(edge.base.value) || !seen.insert(edge.base.value).second) continue;
         auto listing = snapshot->listing(edge);
         auto instrument = snapshot->instrument(edge.base);
         if (!listing || listing->orderBook.empty() || !instrument) continue;

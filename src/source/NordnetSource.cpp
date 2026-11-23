@@ -341,8 +341,8 @@ size_t NordnetSource::loadIndicators(const List & list, Store & store, Http & ht
     listener.message("nordnet: " + list.name + ": " + error);
     return 0;
   }
-  Dataset dataset = store.addDataset({{}, kNordnetDataset});
-  Market market = store.addMarket({{}, list.market});
+  const DatasetId dataset = store.addDataset(kNordnetDataset);
+  const MarketId market = store.addMarket(list.market);
   size_t written = 0;
   for (NordnetIndicator & row : rows) {
     row.list = list.name;
@@ -370,7 +370,7 @@ size_t NordnetSource::loadIndicators(const List & list, Store & store, Http & ht
       quote = row.type == "INDEX" ? quoteNode(store, "pts") : currencyNode(store, "USD");
     }
     if (row.hasBar) {
-      const EdgeKey edge{base.id, quote.id, market.id, dataset.id};
+      const EdgeKey edge{base.id, quote.id, market, dataset};
       store.appendCandles(edge, Resolution::Day, {row.bar});
       store.setListing({edge, row.symbol, "", row.orderBookId, row.type, row.name});
     }
@@ -423,7 +423,7 @@ void NordnetSource::load(Store & store, Http & http, SourceListener & listener) 
       skipped += page.skipped;
 
       // To the store as each page arrives, not all at the end.
-      Dataset dataset = store.addDataset({{}, kNordnetDataset});
+      const DatasetId dataset = store.addDataset(kNordnetDataset);
       for (NordnetListing & l : page.listings) {
         l.list = list.name;
         // The market with Nordnet's id, or the one with the name where that is known (one a provider with that name
@@ -432,15 +432,15 @@ void NordnetSource::load(Store & store, Http & http, SourceListener & listener) 
         // The code is looked for before the name: it is what identifies a market, the way an ISIN does an instrument.
         if (const char * mic = knownMarketMic(l.marketId)) says.push_back({predicate::mic, mic});
         if (const char * name = knownMarketName(l.marketId)) says.push_back({predicate::name, name});
-        Market market = store.resolveMarket(says);
-        store.setAttribute(market.id, {predicate::country, l.country});
+        const MarketId market = store.resolveMarket(says);
+        store.setAttribute(market, {predicate::country, l.country});
         Instrument base = store.addInstrument({{}, "", l.name, kindOfNordnetType(l.type), l.isin, l.type});
         Instrument quote = currencyNode(store, l.currency);
         // What Nordnet says of the instrument itself: thin edges, of the types it has.
         store.setAttributes(base.id, l.attributes);
         // Today's bar makes the edge; a listing with none stays a node nothing selects.
         if (l.hasBar) {
-          const EdgeKey edge{base.id, quote.id, market.id, dataset.id};
+          const EdgeKey edge{base.id, quote.id, market, dataset};
           store.appendCandles(edge, Resolution::Day, {l.bar});
           // What the market says of it: what it calls it, its own id for it and the order book its history is asked for by.
           store.setListing({edge, l.symbol, l.identifier, l.bookId, l.type, l.name});

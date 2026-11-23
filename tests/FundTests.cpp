@@ -75,7 +75,7 @@ std::optional<EdgeKey> edgeOf(const Snapshot & s, const char * isin, const char 
   auto d = s.findDataset(dataset);
   auto q = s.findInstrument("EUR");
   if (!b || !m || !d || !q) return std::nullopt;
-  return EdgeKey{b->id, q->id, m->id, d->id};
+  return EdgeKey{b->id, q->id, *m, *d};
 }
 
 }  // namespace

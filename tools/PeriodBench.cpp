@@ -32,14 +32,14 @@ int main(int argc, char ** argv) {
   const bool full = argc > 2 && std::string(argv[2]) == "full";
   auto store = makeMemoryStore();
   Instrument usd = store->addInstrument({{}, "USD", "US dollar", InstrumentKind::Currency});
-  Market market = store->addMarket({{}, "Nasdaq Helsinki"});
-  Dataset dataset = store->addDataset({{}, "nordnet"});
+  const MarketId market = store->addMarket("Nasdaq Helsinki");
+  const DatasetId dataset = store->addDataset("nordnet");
   const int64_t today = dayNumber(2026, 12, 1), dayStart = (today - kUnixEpochDayNumber) * 86400 + 7 * 3600;
   std::mt19937 rng(1);
   std::uniform_real_distribution<double> step(-0.02, 0.021);
   for (int i = 0; i < rows; i++) {
     Instrument inst = store->addInstrument({{}, "", "Stock " + std::to_string(i), InstrumentKind::Company, isinOf(i)});
-    EdgeKey k{inst.id, usd.id, market.id, dataset.id};
+    EdgeKey k{inst.id, usd.id, market, dataset};
     double p = 50;
     auto series = [&](int n, auto key) {
       std::vector<Candle> bars;

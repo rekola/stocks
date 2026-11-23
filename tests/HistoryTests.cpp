@@ -41,12 +41,12 @@ HistoryLoader::Options quickly(HistoryLoader::Depth depth = HistoryLoader::Depth
 struct World {
   std::shared_ptr<Store> store = makeMemoryStore();
   Instrument usd = store->addInstrument({{}, "USD", "US dollar", InstrumentKind::Currency});
-  Market market = store->addMarket({{}, "Nasdaq Stockholm"});
-  Dataset nordnet = store->addDataset({{}, "nordnet"});
+  MarketId market = store->addMarket("Nasdaq Stockholm");
+  DatasetId nordnet = store->addDataset("nordnet");
   int count = 0;
   EdgeKey edge(InstrumentKind kind, const std::string & book, bool nordnetData = true) {
     Instrument i = store->addInstrument({{}, "", "Instrument", kind, testIsin(100000 + count++)});
-    EdgeKey k{i.id, usd.id, market.id, nordnetData ? nordnet.id : store->addDataset({{}, "other"}).id};
+    EdgeKey k{i.id, usd.id, market, nordnetData ? nordnet : store->addDataset("other")};
     store->appendCandles(k, Resolution::Day, {{dayNumber(2026, 12, 1), kUndefined, 1, 1, 1, kUndefined}});
     store->setListing({k, "SYM", "", book, "ESH", "Instrument"});
     return k;
@@ -167,7 +167,7 @@ TEST(edges_that_cannot_or_need_not_be_loaded_are_left_out) {
   std::vector<Candle> past;
   for (int d = 0; d < 70; d++) past.push_back({dayNumber(2026, 12, 1) - 70 + d, 1, 1, 1, 1, 1});  // up to the discovery's bar of 1 December
   w.store->appendCandles(has, Resolution::Day, past);  // it has its history already
-  EdgeKey noListing{w.store->addInstrument({{}, "", "X", InstrumentKind::Company, testIsin(999999)}).id, w.usd.id, w.market.id, w.nordnet.id};
+  EdgeKey noListing{w.store->addInstrument({{}, "", "X", InstrumentKind::Company, testIsin(999999)}).id, w.usd.id, w.market, w.nordnet};
   FakeHttp http;
   http.answer = [](const std::string &) { return ok(fixture("history-stock-day.json")); };
   HistoryLoader loader(w.store, borrow(http), quickly(), [] {});
@@ -344,8 +344,8 @@ TEST(a_fund_has_no_intraday_so_its_day_and_week_are_the_daily_request_and_what_t
 TEST(a_dataset_is_found_by_its_code_and_not_by_a_name_that_can_change) {
   World w;
   EdgeKey k = w.edge(InstrumentKind::Company, "book-1");
-  w.store->addDataset({{}, "nordnet", "Nordnet, as a person calls it"});  // the name is a fact, and it was changed
-  CHECK(w.store->snapshot()->dataset(w.nordnet.id).value_or(Dataset{}).name == "Nordnet, as a person calls it");
+  w.store->addDataset("nordnet", "Nordnet, as a person calls it");  // the name is a fact, and it was changed
+  CHECK(w.store->snapshot()->name(w.nordnet) == "Nordnet, as a person calls it");
   FakeHttp http;
   http.answer = [](const std::string &) { return ok(fixture("history-stock-day.json")); };
   HistoryLoader loader(w.store, borrow(http), quickly(), [] {});

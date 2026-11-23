@@ -50,7 +50,7 @@ const ListEntry & entry(const std::string & yahoo) {
 // An edge by what is in the list: an instrument's ISIN, or a currency's code.
 EdgeKey edgeOf(const Snapshot & s, const char * base, const char * quote, const char * market, const char * dataset) {
   auto b = s.findInstrumentByIsin(base);
-  return {b ? b->id : s.findInstrument(base)->id, s.findInstrument(quote)->id, s.findMarket(market)->id, s.findDataset(dataset)->id};
+  return {b ? b->id : s.findInstrument(base)->id, s.findInstrument(quote)->id, *s.findMarket(market), *s.findDataset(dataset)};
 }
 
 constexpr const char * kNokia = "FI0009000681", * kGold = "XC0009655157";
@@ -85,7 +85,7 @@ TEST(yahoo_dividends_become_corporate_actions_in_the_quote_currency) {
     std::string error;
   CHECK(YahooSource::parse(fixture("nokia.json"), entry("NOKIA.HE"), *store, error));
   auto s = store->snapshot();
-  EventKey k{s->findInstrumentByIsin(kNokia)->id, s->findDataset("yahoo")->id};
+  EventKey k{s->findInstrumentByIsin(kNokia)->id, *s->findDataset("yahoo")};
   auto actions = s->actions(k);
   CHECK(actions.size() >= 2);
   for (const CorporateAction & a : actions) {
@@ -103,7 +103,7 @@ TEST(a_yahoo_split_is_new_shares_per_old) {
     std::string error;
   CHECK(YahooSource::parse(body, entry("NOKIA.HE"), *store, error));
   auto s = store->snapshot();
-  auto actions = s->actions({s->findInstrumentByIsin(kNokia)->id, s->findDataset("yahoo")->id});
+  auto actions = s->actions({s->findInstrumentByIsin(kNokia)->id, *s->findDataset("yahoo")});
   CHECK(actions.size() == 1 && actions[0].kind == ActionKind::Split && actions[0].value == 2.0 && actions[0].note == "2:1");
   CHECK(actions[0].time == dayNumber(2023, 11, 15));  // an ex-date is a date, not an instant
 }
@@ -169,7 +169,7 @@ TEST(loading_asks_for_every_instrument_and_reports_the_ones_that_fail) {
   CHECK(fortum && notFound);
   CHECK(http.urls.front().find("https://query1.finance.yahoo.com/v8/finance/chart/") == 0);
   CHECK(http.urls.front().find("range=1y&interval=1d&events=div%7Csplit") != std::string::npos);
-  CHECK(store->snapshot()->edges(store->snapshot()->findMarket("Nasdaq Helsinki")->id).size() == 1);
+  CHECK(store->snapshot()->edges(*store->snapshot()->findMarket("Nasdaq Helsinki")).size() == 1);
 }
 
 TEST(loading_tries_the_second_host_when_the_first_does_not_answer) {
@@ -215,7 +215,7 @@ TEST(the_runner_runs_the_sources_on_its_own_thread_and_reports_changes) {
   SourceRunner runner(store, std::move(sources), [&] { changes++; }, [](std::string) {});
   runner.wait();
   CHECK(changes == 1);
-  CHECK(store->snapshot()->edges(store->snapshot()->findMarket("Currencies")->id).size() == 1);
+  CHECK(store->snapshot()->edges(*store->snapshot()->findMarket("Currencies")).size() == 1);
 }
 
 TEST(the_sources_say_so_when_their_lists_are_missing_and_do_nothing) {
@@ -240,7 +240,7 @@ TEST(the_sources_read_the_lists_on_disk_when_they_load) {
   auto store2 = makeMemoryStore();
   Listener l2;
   SyntheticSource(ListSpec{"", {"Indices"}}).load(*store2, http, l2);
-  CHECK(l2.changes == 1 && store2->snapshot()->edges(store2->snapshot()->findMarket("Indices")->id).size() >= 4);
+  CHECK(l2.changes == 1 && store2->snapshot()->edges(*store2->snapshot()->findMarket("Indices")).size() >= 4);
   CHECK(!store2->snapshot()->findMarket("Currencies"));
 }
 

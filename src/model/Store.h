@@ -36,15 +36,17 @@ class Snapshot {
   // milliseconds UTC as the store took it where the write happened.
   std::optional<Attribute> fact(NodeRef, const std::string & predicate) const;
   std::optional<Instrument> findInstrumentByIsin(const std::string & isin) const;
-  std::optional<Market> market(MarketId) const;
-  std::optional<Market> findMarket(const std::string & name) const;  // by its name attribute
-  std::optional<Market> findMarketByAttribute(const std::string & predicate, const std::string & value) const;
+  // A market is its key: found by what is said of it, and named by a fact.
+  std::optional<MarketId> findMarket(const std::string & name) const;  // by its name attribute
+  std::optional<MarketId> findMarketByAttribute(const std::string & predicate, const std::string & value) const;
+  // The name said of a node (a market's, an instrument's); a dataset's is its code until a name is said. Empty where none is.
+  std::string name(NodeRef) const;
   // What is said about any node, in the order it was first said, with the times of each; and the node, of the type, that says the text `predicate`
   // is `value` (the one made first, if several do). Only text is found by its value.
   std::vector<Attribute> attributes(NodeRef) const;
   std::optional<NodeRef> findByAttribute(NodeType, const std::string & predicate, const std::string & value) const;
-  std::optional<Dataset> dataset(DatasetId) const;
-  std::optional<Dataset> findDataset(const std::string & code) const;
+  // The dataset with this code, if anything is said of it.
+  std::optional<DatasetId> findDataset(const std::string & code) const;
   // The markets that have an edge, by name and then by key.
   std::vector<MarketId> edgeMarkets() const;
   // How many nodes of a type have anything said of them: what a test or a diagnostic wants, and no view of the nodes.
@@ -84,10 +86,10 @@ class Snapshot {
   Instrument add(Instrument);
   Instrument resolveInstrument(const std::vector<Attribute> & identifying, const std::vector<Attribute> & rest);
   void setListing(const Listing &);
-  Market resolve(const std::vector<Attribute> &);
+  MarketId resolveMarket(const std::vector<Attribute> &);
   void setAttribute(NodeRef, const Attribute &);
   void setAttributes(NodeRef, const std::vector<Attribute> &);
-  Dataset add(Dataset);
+  DatasetId addDataset(const std::string & code, const std::string & name);
   void appendCandles(const EdgeKey &, Resolution, const std::vector<Candle> &);
   void setPreviousClose(const EdgeKey &, int64_t day, double close);
   void appendBooks(const EdgeKey &, const std::vector<BookSnapshot> &);
@@ -151,9 +153,9 @@ class Store {
   virtual Instrument resolveInstrument(const std::vector<Attribute> & identifying, const std::vector<Attribute> & rest) = 0;
   // The market that has any of these attributes, tried in the order given; where none has, a market is made. The
   // attributes are then set on it, so a market first seen by its Nordnet id is given its name when it is learned.
-  virtual Market resolveMarket(const std::vector<Attribute> &) = 0;
+  virtual MarketId resolveMarket(const std::vector<Attribute> &) = 0;
   // By name alone.
-  Market addMarket(Market m) { return resolveMarket({{predicate::name, m.name}}); }
+  MarketId addMarket(const std::string & name) { return resolveMarket({{predicate::name, name}}); }
   // Sets one attribute of any node: the same for all of them.
   virtual void setAttribute(NodeRef, const Attribute &) = 0;
   // The listing of an edge, replacing the one it had. An edge exists once it has data, so one that has none yet takes
@@ -161,7 +163,9 @@ class Store {
   virtual void setListing(const Listing &) = 0;
   // Says several things of a node in one write (an adapter's whole row), each as setAttribute does.
   virtual void setAttributes(NodeRef, const std::vector<Attribute> &) = 0;
-  virtual Dataset addDataset(Dataset) = 0;
+  // The dataset with this code, made if it is new; `name` is what a person reads (the code until one is said), and one already said
+  // stands where none is given. A code that is not one to ten letters or digits makes none: the id is none, and it is told of.
+  virtual DatasetId addDataset(const std::string & code, const std::string & name = {}) = 0;
 
   // Candles. An edge has a series for each resolution it has data in, as the provider gives it: nothing is derived from
   // another. A bar at a time already in the series replaces it (a correction, or today's bar updated); the rest are

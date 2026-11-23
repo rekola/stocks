@@ -30,8 +30,8 @@ constexpr RowAction kRowActions[] = {{kInfoGlyph, "show-info"}};
 // The edges of a preset: a market's, or everything.
 std::vector<EdgeKey> edgesOf(const Snapshot & snapshot, const Preset & preset) {
   if (std::string(preset.tag) == "All") return allQuoteEdges(snapshot);
-  std::optional<Market> market = snapshot.findMarket(preset.tag);
-  return market ? quoteEdges(snapshot, market->id) : std::vector<EdgeKey>{};
+  const std::optional<MarketId> market = snapshot.findMarket(preset.tag);
+  return market ? quoteEdges(snapshot, *market) : std::vector<EdgeKey>{};
 }
 
 std::vector<ButtonFace> buttonGlyphs() {
