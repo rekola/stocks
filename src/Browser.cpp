@@ -232,7 +232,7 @@ void Browser::refresh() {
   int row = quotes->rowCount() > 0 ? 0 : -1;
   for (int r = 0; selected && r < quotes->rowCount(); r++)
     if (quotes->edge(r) == *selected) row = r;
-  if (row >= 0) table_.select(row);
+  if (row >= 0) table_.reselect(row);  // the view stays where it is
 }
 
 // The tags on the top row (one cell in), a gap, the table, the info line and the status line.
