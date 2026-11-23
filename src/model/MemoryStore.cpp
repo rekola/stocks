@@ -485,6 +485,7 @@ void Snapshot::appendCandles(const EdgeKey & k, Resolution r, const std::vector<
   for (const Candle & c : in) bars = upsert(bars, c, [](const Candle &, const Candle &) { return true; });
   series_ = series_.set(key, bars);
   const auto * known = resolutions_.find(k);
+  if (r == Resolution::Day && !(known && known->count(static_cast<int>(r)))) quoteRows_ = quoteRows_.push_back(k);
   resolutions_ = resolutions_.set(k, (known ? *known : immer::set<int>{}).insert(static_cast<int>(r)));
   const auto * set = edgesByMarket_.find(k.market);
   edgesByMarket_ = edgesByMarket_.set(k.market, (set ? *set : immer::set<EdgeKey>{}).insert(k));

@@ -4,6 +4,7 @@
 #include "model/Facts.h"
 #include "model/Types.h"
 
+#include <immer/flex_vector.hpp>
 #include <immer/map.hpp>
 #include <immer/set.hpp>
 
@@ -57,6 +58,12 @@ class Snapshot {
   std::vector<EdgeKey> edges(MarketId) const;
   // The same, only those whose base instrument `keep` accepts (by its kind, its type, ...).
   std::vector<EdgeKey> edges(MarketId, const std::function<bool(const Instrument &)> & keep) const;
+
+  // The edges that have daily bars, in the order they got their first: what the table lists. An edge never leaves, so this only
+  // grows, and a reader that has seen the first `n` asks for what came after (`quoteRowsSince(n)`) instead of listing
+  // everything again to find what is new: `quoteRowCount()` is the one number that says whether anything is.
+  size_t quoteRowCount() const { return quoteRows_.size(); }
+  std::vector<EdgeKey> quoteRowsSince(size_t n) const { return std::vector<EdgeKey>(quoteRows_.begin() + std::min(n, quoteRows_.size()), quoteRows_.end()); }
 
   // The bars of the edge at `resolution` in `range` (in slot numbers, or day numbers for a date resolution), oldest first;
   // an empty series if there are none.
@@ -122,6 +129,7 @@ class Snapshot {
   immer::map<std::string, immer::set<uint64_t>> byAttribute_;  // "type predicate \0 value" to the keys that say it
   immer::map<SeriesKey, Seq<Candle>> series_;
   immer::map<EdgeKey, immer::set<int>> resolutions_;
+  immer::flex_vector<EdgeKey> quoteRows_;  // the edges with daily bars, in the order they got them
   immer::map<EdgeKey, std::pair<int64_t, double>> previousClose_;  // the session's day number and the close before it
   immer::map<EdgeKey, Seq<BookSnapshot>> books_;
   immer::map<MarketId, immer::set<EdgeKey>> edgesByMarket_;

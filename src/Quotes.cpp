@@ -4,7 +4,6 @@
 #include <cctype>
 #include <cmath>
 #include <cstdlib>
-#include <unordered_set>
 
 namespace {
 
@@ -127,26 +126,23 @@ std::shared_ptr<const cellui::TableIcon> Quotes::icon(int r, int c) const {
 
 void Quotes::reset(std::shared_ptr<const Snapshot> snapshot, std::vector<EdgeKey> keys) {
   keys_ = std::move(keys);
+  // `keys` are made from this snapshot; with none, the store's rows are read again when one comes (a market not found yet has none)
+  rows_seen_ = keys_.empty() ? 0 : snapshot->quoteRowCount();
   setSnapshot(std::move(snapshot));
 }
 
-bool Quotes::follow(std::shared_ptr<const Snapshot> snapshot, const std::vector<EdgeKey> & edges) {
-  if (edges == keys_) {  // the usual refresh: new bars for the rows already listed
-    setSnapshot(std::move(snapshot));
-    return false;
+bool Quotes::addRows(std::shared_ptr<const Snapshot> snapshot, const Scope & scope) {
+  bool added = false;
+  if (scope.resolved()) {  // until it is, the rows stay unread: the market may be the one they are in
+    for (const EdgeKey & key : snapshot->quoteRowsSince(rows_seen_))
+      if (scope.has(key)) {
+        keys_.push_back(key);
+        added = true;
+      }
+    rows_seen_ = snapshot->quoteRowCount();
   }
-  std::vector<EdgeKey> ordered;
-  ordered.reserve(edges.size());
-  const std::unordered_set<EdgeKey> wanted(edges.begin(), edges.end());
-  std::unordered_set<EdgeKey> placed;
-  for (const EdgeKey & key : keys_)
-    if (wanted.count(key) && placed.insert(key).second) ordered.push_back(key);
-  for (const EdgeKey & key : edges)
-    if (placed.insert(key).second) ordered.push_back(key);
-  const bool changed = ordered != keys_;
-  if (changed) keys_ = std::move(ordered);
   setSnapshot(std::move(snapshot));
-  return changed;
+  return added;
 }
 
 void Quotes::setSnapshot(std::shared_ptr<const Snapshot> snapshot) {

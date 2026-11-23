@@ -27,6 +27,11 @@ struct RowAction {
 };
 constexpr RowAction kRowActions[] = {{kInfoGlyph, "show-info"}};
 
+Quotes::Scope scopeOf(const Snapshot & snapshot, const Preset & preset) {
+  if (std::string(preset.tag) == "All") return {.all = true};
+  return {.market = snapshot.findMarket(preset.tag)};
+}
+
 // The edges of a preset: a market's, or everything.
 std::vector<EdgeKey> edgesOf(const Snapshot & snapshot, const Preset & preset) {
   if (std::string(preset.tag) == "All") return allQuoteEdges(snapshot);
@@ -224,8 +229,9 @@ void Browser::refresh() {
     // (setModel would put the table back at the top).
     // Most changes are new bars for rows already listed: then the rows stay as they are, and with no sort the order too, so the
     // table is drawn again and nothing is sorted or put in order again.
-    // The rows keep their places whatever the order edgesOf() gives: a row that appears goes last.
-    const bool same_rows = !quotes->follow(snapshot, edgesOf(*snapshot, kPresets[preset]));
+    // The rows keep their places and a row that appears goes last: the store says which have, so nothing is listed or compared
+    // again unless there are some.
+    const bool same_rows = !(quotes->hasNewRows(*snapshot) ? quotes->addRows(snapshot, scopeOf(*snapshot, kPresets[preset])) : (quotes->setSnapshot(snapshot), false));
     shown_version_ = snapshot->version();
     if (same_rows && table_.sortColumn() < 0) table_.render();
     else table_.modelChanged();
