@@ -10,6 +10,7 @@
 #include <fstream>
 #include <mutex>
 #include <sstream>
+#include <stdexcept>
 
 namespace {
 
@@ -432,4 +433,40 @@ TEST(a_providers_edge_wanted_again_while_it_loads_is_loaded_once) {
   loader.waitIdle();
   CHECK(provider->loads == 1);
   CHECK(http.urls.empty());
+}
+
+namespace {
+// Another dataset's history that throws for its first edge.
+struct ThrowingProvider : HistoryProvider {
+  std::atomic<int> loads{0};
+  std::string dataset() const override { return "other"; }
+  Outcome load(Store &, Http &, const EdgeKey &) override {
+    if (loads++ == 0) throw std::runtime_error("broken answer");
+    return Outcome::Ok;
+  }
+};
+}  // namespace
+
+TEST(a_provider_that_throws_counts_as_missing_and_the_queue_goes_on) {
+  World w;
+  EdgeKey a = w.edge(InstrumentKind::Fund, "", /*nordnetData=*/false);
+  EdgeKey b = w.edge(InstrumentKind::Fund, "", /*nordnetData=*/false);
+  auto provider = std::make_shared<ThrowingProvider>();
+  FakeHttp http;
+  http.answer = [](const std::string &) { return failed(500); };
+  std::mutex mutex;
+  std::vector<std::string> messages;
+  HistoryLoader loader(w.store, borrow(http), quickly(), [] {}, [&](std::string m) {
+    std::lock_guard lock(mutex);
+    messages.push_back(std::move(m));
+  });
+  loader.addProvider(provider);
+  loader.want({a, b});
+  loader.waitIdle();
+  CHECK(provider->loads == 2);  // the second edge was loaded after the first threw
+  loader.want({a, b});
+  loader.waitIdle();
+  CHECK(provider->loads == 2);  // the first is not asked again, nor the second, which is done
+  std::lock_guard lock(mutex);
+  CHECK(messages.size() == 1 && messages[0].find("broken answer") != std::string::npos);
 }

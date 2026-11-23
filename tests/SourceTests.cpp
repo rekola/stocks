@@ -9,6 +9,7 @@
 #include "source/SourceRunner.h"
 #include "source/YahooSource.h"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <set>
@@ -16,7 +17,9 @@
 #include <thread>
 #include <fstream>
 #include <functional>
+#include <mutex>
 #include <sstream>
+#include <stdexcept>
 
 namespace {
 
@@ -570,4 +573,89 @@ TEST(a_source_returns_when_its_pause_is_cut_short) {
   } listener;
   YahooSource(testList(), "1y", std::chrono::hours(1)).load(*store, http, listener);
   CHECK(listener.pauses == 1 && http.urls.size() == 2);  // the first instrument (both hosts), then the pause said stop
+}
+
+namespace {
+// A source whose load throws every time, and whose details throw something that is not an exception, and that counts both.
+class ThrowingSource : public Source {
+ public:
+  ThrowingSource(std::atomic<int> & loads, std::atomic<int> & details) : loads_(loads), details_(details) {}
+  std::string name() const override { return "throwing"; }
+  std::string description() const override { return "A source that throws"; }
+  void load(Store &, Http &, SourceListener &) override {
+    loads_++;
+    throw std::runtime_error("broken answer");
+  }
+  std::chrono::milliseconds refreshInterval() const override { return std::chrono::milliseconds(5); }
+  bool loadDetails(Store &, Http &, SourceListener &) override {
+    details_++;
+    throw 42;
+  }
+
+ private:
+  std::atomic<int> & loads_;
+  std::atomic<int> & details_;
+};
+}  // namespace
+
+TEST(a_source_that_throws_is_said_and_the_runner_goes_on_with_its_schedule) {
+  std::shared_ptr<Store> store = makeMemoryStore();
+  std::atomic<int> loads{0}, details{0}, other{0};
+  std::mutex mutex;
+  std::vector<std::string> messages;
+  {
+    std::vector<std::unique_ptr<Source>> sources;
+    sources.push_back(std::make_unique<ThrowingSource>(loads, details));
+    sources.push_back(std::make_unique<CountingSource>(other, std::chrono::milliseconds(0)));
+    SourceRunner runner(store, std::move(sources), [] {}, [&](std::string m) {
+      std::lock_guard lock(mutex);
+      messages.push_back(std::move(m));
+    });
+    CHECK(waitFor([&] { return loads >= 3 && details >= 3; }));  // loaded again and again, its details asked for after each
+  }
+  CHECK(other == 1);  // the other source is not disturbed
+  std::lock_guard lock(mutex);
+  CHECK(std::count(messages.begin(), messages.end(), "throwing: broken answer") >= 3);
+  CHECK(std::count(messages.begin(), messages.end(), "throwing: failed") >= 3);
+}
+
+TEST(a_yahoo_answer_that_lacks_a_column_parses_without_crashing) {
+  // No volume: the bars have none.
+  {
+    auto store = makeMemoryStore();
+    std::string error;
+    CHECK(YahooSource::parse(
+        R"({"chart":{"result":[{"timestamp":[1767254400],"indicators":{"quote":[{"open":[1],"high":[2],"low":[0.5],"close":[1.5]}]}}]}})",
+        entry("NOKIA.HE"), *store, error));
+    auto s = store->snapshot();
+    CandleSeries c = s->candles(edgeOf(*s, kNokia, "EUR", "XHEL", "yahoo"), Resolution::Day);
+    CHECK(c.candles.size() == 1 && c.candles[0].close == 1.5 && !isDefined(c.candles[0].volume));
+  }
+  // No open, a quote that is not an object, events of the wrong shape: no candles, or none of the bad events, and no throw.
+  const char * bad[] = {
+      R"({"chart":{"result":[{"timestamp":[1767254400],"indicators":{"quote":[{"high":[2],"low":[0.5],"close":[1.5],"volume":[3]}]}}]}})",
+      R"({"chart":{"result":[{"timestamp":[1767254400],"indicators":{"quote":[[1,2,3]]}}]}})",
+      R"({"chart":{"result":[{"timestamp":[1767254400],"indicators":{"quote":{"open":[1]}}}]}})",
+      R"({"chart":{"result":[{"timestamp":[1767254400],"indicators":[]}]}})",
+      R"({"chart":{"result":[7]}})",
+      R"({"chart":[1]})",
+      R"({"chart":{"error":{"description":7}}})",
+      R"([1, 2])"};
+  for (const char * body : bad) {
+    auto store = makeMemoryStore();
+    std::string error;
+    bool parsed = true;
+    try {
+      parsed = YahooSource::parse(body, entry("NOKIA.HE"), *store, error);
+    } catch (...) {
+      CHECK(false);
+    }
+    CHECK(!parsed && !error.empty());
+  }
+  auto store = makeMemoryStore();
+  std::string error;
+  CHECK(YahooSource::parse(
+      R"({"chart":{"result":[{"timestamp":[1767254400],"indicators":{"quote":[{"open":[1],"high":[2],"low":[0.5],"close":[1.5]}]},)"
+      R"("events":{"dividends":{"a":7,"b":{"date":"x"}},"splits":{"a":[1],"b":{"date":1767254400,"numerator":"2","denominator":1}}}}]}})",
+      entry("NOKIA.HE"), *store, error));
 }

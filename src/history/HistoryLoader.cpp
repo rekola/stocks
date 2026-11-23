@@ -224,7 +224,21 @@ void HistoryLoader::run() {
     loading_ = ask;  // want() leaves it out until it is done or failed
     lock.unlock();
     bool network = false;
-    const bool wrote = load(ask, network);
+    bool wrote = false;
+    std::string thrown;
+    try {
+      wrote = load(ask, network);
+    } catch (const std::exception & e) {
+      thrown = e.what();
+    } catch (...) {
+      thrown = "failed";
+    }
+    if (!thrown.empty()) {
+      // Counted as missing: not asked for again this session, and the queue goes on.
+      if (message_) message_("history: " + thrown);
+      std::lock_guard failed(mutex_);
+      failed_.insert(ask);
+    }
     if (wrote && changed_) changed_();
     lock.lock();
     loading_.reset();
@@ -268,7 +282,17 @@ bool HistoryLoader::loadProvided(const Ask & wanted, bool & network) {
   if (!provider) return false;
   network = true;
   extra_pause_ = provider->pause();
-  switch (provider->load(*store_, *http_, wanted.edge)) {
+  HistoryProvider::Outcome outcome;
+  try {
+    outcome = provider->load(*store_, *http_, wanted.edge);
+  } catch (const std::exception & e) {  // as missing: the edge is not asked for again
+    if (message_) message_("history: " + snapshot->name(wanted.edge.dataset) + ": " + e.what());
+    outcome = HistoryProvider::Outcome::Missing;
+  } catch (...) {
+    if (message_) message_("history: " + snapshot->name(wanted.edge.dataset) + ": failed");
+    outcome = HistoryProvider::Outcome::Missing;
+  }
+  switch (outcome) {
     case HistoryProvider::Outcome::Refused: {
       {
         std::lock_guard lock(mutex_);

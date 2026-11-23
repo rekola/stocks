@@ -48,20 +48,28 @@ SourceRunner::SourceRunner(std::shared_ptr<Store> store, std::vector<std::unique
         if (stop_) return;
         lock.unlock();
         if (loadDue <= Clock::now()) {
+          // A load that throws (a write the store refuses: data with no market) is said, and the schedule goes on: the
+          // next load, the details.
           try {
-            source->load(
-                *store, *http,
-                listener); // a write the store refuses (data with no market)
-                           // throws: said, and the next load goes on
-          } catch (const std::exception &e) {
-            listener.message(source->description() + ": " + e.what());
+            source->load(*store, *http, listener);
+          } catch (const std::exception & e) {
+            listener.message(source->name() + ": " + e.what());
+          } catch (...) {
+            listener.message(source->name() + ": failed");
           }
           const auto interval = source->refreshInterval();
           loadDue = interval.count() > 0 ? Clock::now() + interval : Clock::time_point::max();
           if (detailsDue == Clock::time_point::max()) detailsDue = Clock::now();  // a load may have found instruments to fill in
         }
         if (!stop_ && detailsDue <= Clock::now()) {
-          const bool more = source->loadDetails(*store, *http, listener);
+          bool more = false;  // after a throw, the details are asked for again after the next load
+          try {
+            more = source->loadDetails(*store, *http, listener);
+          } catch (const std::exception & e) {
+            listener.message(source->name() + ": " + e.what());
+          } catch (...) {
+            listener.message(source->name() + ": failed");
+          }
           detailsDue = more ? Clock::now() + source->detailsInterval() : Clock::time_point::max();
         }
         lock.lock();
