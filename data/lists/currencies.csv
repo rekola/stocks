@@ -1,4 +1,3 @@
-# market: Currencies
 # kind,base,quote,name,yahoo: what one unit of `base` costs in `quote`; `yahoo` is Yahoo's ticker
 kind,base,quote,name,yahoo,isin
 currency,EUR,GBP,Euro,EURGBP=X,

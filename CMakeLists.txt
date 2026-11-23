@@ -67,7 +67,7 @@ FetchContent_Declare(SQLiteCpp
 FetchContent_MakeAvailable(SQLiteCpp)
 
 # The data model: plain values and the Store they live in. Knows nothing of the screen.
-add_library(stocks_model STATIC src/model/MemoryStore.cpp src/model/Isin.cpp src/model/Period.cpp src/model/NodeIdentity.cpp src/model/NodeKey.cpp
+add_library(stocks_model STATIC src/model/MemoryStore.cpp src/model/Isin.cpp src/model/Period.cpp src/model/NodeKey.cpp
   src/model/FactWriter.cpp src/model/SqliteFactStore.cpp)
 target_include_directories(stocks_model PUBLIC src)
 target_compile_features(stocks_model PUBLIC cxx_std_20)

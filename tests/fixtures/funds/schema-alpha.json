@@ -1,6 +1,5 @@
 {
  "name": "alpha",
- "market": "Alpha Funds",
  "dataset": "alpha",
  "pauseMs": 2000,
  "refreshHours": 6,

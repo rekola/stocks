@@ -161,7 +161,7 @@ TEST(the_funds_are_shown_at_once_from_the_list_alone) {
   FundSource funds = source("alpha");
   funds.load(*store, http, listener);
   auto s = store->snapshot();
-  auto edge = edgeOf(*s, "FI0008810569", "Alpha Funds", "alpha");
+  auto edge = edgeOf(*s, "FI0008810569", "XOFF", "alpha");
   CHECK(edge.has_value());
   if (!edge) return;
   auto bars = s->candles(*edge, Resolution::Day).candles;
@@ -171,8 +171,10 @@ TEST(the_funds_are_shown_at_once_from_the_list_alone) {
   CHECK(previous && std::fabs(*previous - 3.3099 / (1 - 0.005887)) < 1e-9);
   CHECK(s->listing(*edge)->identifier == "ALPHANORDIC");
   CHECK(s->kind(*s->findInstrumentByIsin("FI0008810569")) == InstrumentKind::Fund);
-  CHECK(edgeOf(*s, "LU0823428346", "Alpha Funds", "alpha").has_value());  // the ISIN in the id
-  CHECK(edgeOf(*s, "FI4000297817", "Alpha Funds", "alpha").has_value());  // the ISIN in the details
+  CHECK(edgeOf(*s, "LU0823428346", "XOFF", "alpha")
+            .has_value()); // the ISIN in the id
+  CHECK(edgeOf(*s, "FI4000297817", "XOFF", "alpha")
+            .has_value()); // the ISIN in the details
   CHECK(said(listener, "found in the details at /identifiers/isin"));
   CHECK(s->nodeCount(NodeType::Instrument) == 4);  // two funds, the one found in the details, the euro: not the unwanted, the old or the unpriced
   CHECK(said(listener, "1 left out for an old NAV") && said(listener, "1 for no price"));
@@ -194,7 +196,7 @@ TEST(the_history_of_a_fund_is_loaded_when_it_is_wanted_and_once) {
   Listener listener;
   FundSource funds = source("alpha");
   funds.load(*store, http, listener);
-  auto edge = edgeOf(*store->snapshot(), "FI0008810569", "Alpha Funds", "alpha");
+  auto edge = edgeOf(*store->snapshot(), "FI0008810569", "XOFF", "alpha");
   CHECK(edge.has_value());
   if (!edge) return;
 
@@ -245,7 +247,8 @@ TEST(a_refusal_stops_the_provider_and_not_the_other_funds_of_the_screen_loader) 
   FundSource funds = source("alpha");
   funds.load(*store, http, listener);
   auto s = store->snapshot();
-  auto a = edgeOf(*s, "FI0008810569", "Alpha Funds", "alpha"), b = edgeOf(*s, "LU0823428346", "Alpha Funds", "alpha");
+  auto a = edgeOf(*s, "FI0008810569", "XOFF", "alpha"),
+       b = edgeOf(*s, "LU0823428346", "XOFF", "alpha");
   CHECK(a && b);
   if (!a || !b) return;
   std::vector<std::string> messages;
@@ -301,11 +304,12 @@ TEST(a_source_with_a_token_asks_for_its_history_with_it) {
   FundSource funds = source("beta");
   funds.load(*store, http, listener);
   auto s = store->snapshot();
-  auto edge = edgeOf(*s, "FI0008800511", "Beta Funds", "beta");
+  auto edge = edgeOf(*s, "FI0008800511", "XOFF", "beta");
   CHECK(edge.has_value());
-  auto other = edgeOf(*s, "FI0008801238", "Beta Funds", "beta");  // priced as a number, not a string
+  auto other = edgeOf(*s, "FI0008801238", "XOFF",
+                      "beta"); // priced as a number, not a string
   CHECK(other.has_value());
-  CHECK(!edgeOf(*s, "FI4000439971", "Beta Funds", "beta"));  // known, not wanted
+  CHECK(!edgeOf(*s, "FI4000439971", "XOFF", "beta")); // known, not wanted
   CHECK(said(listener, "no ISIN for 444 (No ISIN)"));
   if (!edge || !other) return;
   CHECK(s->candles(*edge, Resolution::Day).candles.size() == 1);
@@ -338,7 +342,8 @@ TEST(a_fund_with_a_wrong_isin_is_not_stored_and_is_reported) {
   funds.load(*store, http, listener);
   CHECK(store->snapshot()->nodeCount(NodeType::Instrument) == 0);
   CHECK(said(listener, "no ISIN for 1 (Typo)"));
-  CHECK(!writeFund(*store, "beta", "Beta Funds", FundRow{.isin = "", .name = "x"}, {{1, 0, 0, 0, 1, 0}}));
+  CHECK(!writeFund(*store, "beta", FundRow{.isin = "", .name = "x"},
+                   {{1, 0, 0, 0, 1, 0}}));
   CHECK(store->snapshot()->nodeCount(NodeType::Instrument) == 0);
 }
 TEST(the_dates_a_list_gives_are_day_numbers) {
@@ -373,10 +378,16 @@ TEST(schemas_are_read_from_json_and_a_wrong_one_says_what_is_wrong) {
   CHECK(!FundSchema::load("nosuchschema", f, error) && error.find("nosuchschema") != std::string::npos);
   CHECK(!FundSchema::load("/nonexistent/x.json", f, error));
   CHECK(!FundSchema::parse("[]", f, error));
-  CHECK(!FundSchema::parse(R"({"name":"x","market":"X","dataset":"x","list":{"url":"u","fields":{"id":"id"}},"history":{"url":"h"}})", f, error));  // a pointer has a slash
+  CHECK(!FundSchema::parse(
+      R"({"name":"x","dataset":"x","list":{"url":"u","fields":{"id":"id"}},"history":{"url":"h"}})",
+      f, error)); // a pointer has a slash
   CHECK(error.find("field id") != std::string::npos);
-  CHECK(!FundSchema::parse(R"({"name":"x","market":"X","dataset":"x","list":{"url":"u","fields":{"name":"/n"}},"history":{"url":"h"}})", f, error));  // no id
-  CHECK(FundSchema::parse(R"({"name":"x","market":"X","dataset":"x","list":{"url":"u","fields":{"id":"/i"}},"history":{"url":"h"}})", f, error));
+  CHECK(!FundSchema::parse(
+      R"({"name":"x","dataset":"x","list":{"url":"u","fields":{"name":"/n"}},"history":{"url":"h"}})",
+      f, error)); // no id
+  CHECK(FundSchema::parse(
+      R"({"name":"x","dataset":"x","list":{"url":"u","fields":{"id":"/i"}},"history":{"url":"h"}})",
+      f, error));
   CHECK(f.pause == std::chrono::milliseconds(2000) && f.refresh == std::chrono::hours(6));
 }
 

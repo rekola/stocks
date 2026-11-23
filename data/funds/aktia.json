@@ -1,6 +1,5 @@
 {
  "name": "aktia",
- "market": "Aktia Funds",
  "dataset": "aktia",
  "pauseMs": 2000,
  "refreshHours": 6,

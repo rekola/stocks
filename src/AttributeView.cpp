@@ -92,7 +92,10 @@ std::vector<InfoSection> buildInfo(const Snapshot & snapshot, const EdgeKey & ed
   out.push_back(std::move(listing));
 
   out.push_back({"Instrument", attributeRows(snapshot, NodeRef(edge.base), {predicate::isin, predicate::name, predicate::kind})});
-  out.push_back({"Market", attributeRows(snapshot, NodeRef(edge.market), {predicate::name, predicate::mic, predicate::nordnetId, predicate::country, predicate::timezone})});
+  out.push_back(
+      {"Market", attributeRows(snapshot, NodeRef(edge.market),
+                               {predicate::name, predicate::mic,
+                                predicate::country, predicate::timezone})});
   if (auto rows = attributeRows(snapshot, NodeRef(edge.quote), {predicate::isin, predicate::name, predicate::kind}); !rows.empty())
     out.push_back({"Quote currency", std::move(rows)});
 

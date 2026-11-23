@@ -34,6 +34,10 @@ constexpr KnownMarket kMarkets[] = {
     {82, "Madrid Stock Exchange", "XMAD"},
     {83, "SIX Swiss Exchange", "XSWX"},
     {0, "NYSE Arca", "ARCX"},
+    {0, "No market", "XXXX"}, // indices, spot prices and currency pairs: what
+                              // is quoted on no venue
+    {0, "Off exchange",
+     "XOFF"}, // what is priced by its provider and traded on no venue: funds
 };
 
 }  // namespace

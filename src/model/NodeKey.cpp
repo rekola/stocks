@@ -79,10 +79,16 @@ std::optional<NodeKey> datasetKey(const std::string & code) {
   return NodeKey{withKind(NodeKind::Dataset, *packed)};
 }
 
-NodeKey marketKey(uint64_t random) {
-  uint64_t identity = random & NodeKey::kIdentityMask;
-  if (identity == 0) identity = 1;
-  return NodeKey{withKind(NodeKind::Market, identity)};
+std::optional<NodeKey> marketKey(const std::string &mic) {
+  if (mic.size() != 4)
+    return std::nullopt;
+  for (char c : mic)
+    if (!((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')))
+      return std::nullopt;
+  const auto packed = packCode(mic);
+  if (!packed)
+    return std::nullopt;
+  return NodeKey{withKind(NodeKind::Market, *packed)};
 }
 
 std::string text(NodeKey key) {
@@ -108,17 +114,8 @@ std::string text(NodeKey key) {
     }
     case NodeKind::Currency:
     case NodeKind::Dataset:
-      return unpackCode(key.identity());
     case NodeKind::Market:
-      break;
+      return unpackCode(key.identity());
   }
   return {};
-}
-
-std::string describe(NodeKey key) {
-  if (!key.valid()) return {};
-  if (key.kind() != NodeKind::Market) return text(key);
-  char out[17];
-  std::snprintf(out, sizeof out, "%015llx", static_cast<unsigned long long>(key.identity()));
-  return out;
 }

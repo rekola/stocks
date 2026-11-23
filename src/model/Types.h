@@ -20,8 +20,9 @@
 template <class T>
 using Seq = immer::flex_vector<T>;
 
-// A node is named by its key (NodeKey.h): the same number in every run, made from what the node is (an ISIN, a code) or minted
-// for a market. A default-constructed id (0) is "none".
+// A node is named by its key (NodeKey.h): the same number in every run, made
+// from what the node is (an ISIN, a code, a MIC). A default-constructed id (0)
+// is "none".
 template <class Tag>
 struct Id {
   uint64_t value = 0;
@@ -97,14 +98,14 @@ inline constexpr const char * symbol = "symbol";
 inline constexpr const char * isin = "isin";
 inline constexpr const char * kind = "kind";
 inline constexpr const char * type = "type";  // the provider's own type
-inline constexpr const char * nordnetId = "nordnet-id";  // a market's id at Nordnet
 inline constexpr const char * nordnetInstrument = "nordnet-instrument";  // an instrument's id at Nordnet
 inline constexpr const char * country = "country";  // a market's country (ISO 3166 alpha-2)
 inline constexpr const char * timezone = "timezone";  // a market's time zone (IANA name)
 inline constexpr const char * iconUrl = "icon-url";
 inline constexpr const char * webUrl = "web-url";  // the instrument's page on its provider's website
 inline constexpr const char * firstTradeDay = "first-trade-day";  // a day number: where an instrument's history begins
-inline constexpr const char * mic = "mic";  // a market's ISO 10383 code, the way an ISIN identifies an instrument
+inline constexpr const char *mic =
+    "mic"; // a market's ISO 10383 code: its key, said as a fact too
 }  // namespace predicate
 
 enum class NodeType : uint8_t { Instrument, Market, Dataset };
@@ -153,10 +154,19 @@ inline InstrumentKind kindOfName(const std::string & s) {
 // is facts: the symbol, the name, the kind and the provider's own type ("UETF", "EQUITY"), read with `Snapshot::symbol()`, `name()`,
 // `kind()` and `said()`; the ISIN is the id itself (`Snapshot::isin()`). One listed on two markets is one instrument.
 
-// A market and a dataset are not records: a market is its key (`MarketId`, minted when it was first said) and a dataset is its
-// code (`DatasetId`, one to ten letters or digits that its adapter defines and never changes); what is said of either, its name
-// among that, is facts (`Snapshot::name()`, `attribute()`).
+// A market and a dataset are not records: a market is its MIC (`MarketId`, the
+// ISO 10383 code, four characters, which never changes) and a dataset is its
+// code (`DatasetId`, one to ten letters or digits that its adapter defines and
+// never changes); what is said of either, its name among that, is facts
+// (`Snapshot::name()`, `attribute()`).
 inline std::string datasetCode(DatasetId id) { return text(NodeKey{id.value}); }
+inline std::string marketCode(MarketId id) { return text(NodeKey{id.value}); }
+
+// The markets that are no venue: listed instruments traded off an exchange (the
+// funds of a fund company), and no market at all (an index, a spot price, a
+// currency pair that has none). A venue has its own MIC.
+inline constexpr const char *kOffExchange = "XOFF";
+inline constexpr const char *kNoMarket = "XXXX";
 
 // "One unit of `base` costs this much `quote`", as one dataset reports it on one market. The key of a price series
 // and of an order book series.

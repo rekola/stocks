@@ -7,12 +7,10 @@
 
 namespace {
 
-// What a market is called in a row: its name, else Nordnet's id for it (one it has no name for yet), else its number.
+// What a market is called in a row: its name, else its code.
 std::string labelOf(const Snapshot & snapshot, MarketId id) {
   if (std::string name = snapshot.name(id); !name.empty()) return name;
-  if (auto v = snapshot.attribute(id, predicate::nordnetId))
-    if (auto text = asText(*v)) return "Nordnet " + *text;
-  return "#" + describe(NodeKey{id.value});
+  return marketCode(id);
 }
 
 // A currency is its code ("EUR" of EUR/USD); anything else what the market calls it.
@@ -78,9 +76,13 @@ std::vector<QuoteRow> makeAllRows(const Snapshot & snapshot, Period period) {
   return rows;
 }
 
-std::vector<EdgeKey> quoteEdges(const Snapshot & snapshot, MarketId market) {
+std::vector<EdgeKey> quoteEdges(const Snapshot &snapshot, MarketId market,
+                                std::optional<InstrumentKind> kind) {
   std::vector<EdgeKey> keys;
   appendEdges(snapshot, market, keys);
+  if (kind)
+    std::erase_if(
+        keys, [&](const EdgeKey &k) { return snapshot.kind(k.base) != *kind; });
   return keys;
 }
 
@@ -133,7 +135,7 @@ bool Quotes::addRows(std::shared_ptr<const Snapshot> snapshot, const Scope & sco
   bool added = false;
   if (scope.resolved()) {  // until it is, the rows stay unread: the market may be the one they are in
     for (const EdgeKey & key : snapshot->quoteRowsSince(rows_seen_))
-      if (scope.has(key)) {
+      if (scope.has(*snapshot, key)) {
         keys_.push_back(key);
         added = true;
       }

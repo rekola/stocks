@@ -1,13 +1,19 @@
 // The stock browser: cellui's Table, TagBar and trace chart over a store of
 // candles that data sources fill on a thread of their own.
-//   stocks                 on the display cellui picks, with Nordnet's data, or Yahoo's if Nordnet gives nothing
-//   stocks --ui terminal   in the terminal;  --ui window  in a window
-//   stocks --source NAME   the data source (several, comma-separated, run at once): auto (the default: nordnet, and yahoo if nordnet gives nothing),
-//                          nordnet, yahoo, funds:SCHEMA (a fund company: a schema in data/funds, or a schema file) or synthetic
-//   stocks --lists DIR     the instrument lists of the yahoo and synthetic sources (default: data/lists)
-//   stocks --facts FILE    where what the sources said of instruments, markets and datasets is kept between runs (default: facts.sqlite in the
+//   stocks                 on the display cellui picks, with Nordnet's data, or
+//   Yahoo's if Nordnet gives nothing stocks --ui terminal   in the terminal;
+//   --ui window  in a window stocks --source NAME   the data source (several,
+//   comma-separated, run at once): auto (the default: nordnet, and yahoo if
+//   nordnet gives nothing),
+//                          nordnet, yahoo, funds:SCHEMA (a fund company: a
+//                          schema in data/funds, or a schema file) or synthetic
+//   stocks --lists DIR     the instrument lists of the yahoo and synthetic
+//   sources (default: data/lists) stocks --facts FILE    where what the sources
+//   said of instruments, markets and datasets is kept between runs (default:
+//   facts.sqlite in the
 //                          user's data directory); --no-facts runs without it
-//   stocks --market NAME   of those lists, load only that market, e.g. "Nasdaq Helsinki" (repeatable)
+//   stocks --market MIC    of those lists, load only that market, e.g. XHEL;
+//   XXXX is the indices, spot prices and currency pairs (repeatable)
 // Keys: arrows, PgUp/PgDn, Home/End move; Tab moves between the tags and the
 // table; M-x (Ctrl+Shift+P)
 // opens the command palette; q quits. Clicking a heading sorts, clicking a tag
@@ -85,8 +91,13 @@ int main(int argc, char ** argv) {
     else if (args[i] == "--lists" && i + 1 < args.size()) list_directory = args[++i];
     else if (args[i].rfind("--lists=", 0) == 0) list_directory = args[i].substr(8);
     else {
-      return fail(2, std::string("usage: ") + argv[0] + " [--ui auto|terminal|window] [--theme original|dark|light] [--source " +
-                         kSourceNames + "] [--facts FILE | --no-facts] [--lists DIR] [--market NAME]...");
+      return fail(
+          2,
+          std::string("usage: ") + argv[0] +
+              " [--ui auto|terminal|window] [--theme original|dark|light] "
+              "[--source " +
+              kSourceNames +
+              "] [--facts FILE | --no-facts] [--lists DIR] [--market MIC]...");
     }
   }
   // One source, for now: the instrument lists are the yahoo source's own (and the synthetic one follows them); each reads

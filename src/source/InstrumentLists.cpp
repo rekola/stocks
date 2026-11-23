@@ -60,7 +60,7 @@ bool loadFile(const std::filesystem::path & path, InstrumentList & out, std::str
     error = path.string() + ": cannot be read";
     return false;
   }
-  std::string market, line;
+  std::string line;
   int number = 0;
   while (std::getline(in, line)) {
     number++;
@@ -69,7 +69,6 @@ bool loadFile(const std::filesystem::path & path, InstrumentList & out, std::str
     const std::string where = path.string() + ":" + std::to_string(number) + ": ";
     if (line[0] == '#') {
       std::string comment = trimmed(line.substr(1));
-      if (comment.rfind("market:", 0) == 0) market = trimmed(comment.substr(7));
       continue;
     }
     std::vector<std::string> f = fields(line);
@@ -96,11 +95,10 @@ bool loadFile(const std::filesystem::path & path, InstrumentList & out, std::str
         return false;
       }
       e.market = name;
-    } else if (market.empty()) {
-      error = where + "a row with no market code before the '# market:' line";
-      return false;
     } else {
-      e.market = market;
+      e.mic =
+          kNoMarket; // an index, a currency pair or a spot price: on no market
+      e.market = marketNameOfMic(e.mic);
     }
     e.base = f[1];
     e.quote = f[2];
@@ -140,7 +138,8 @@ InstrumentList onlyMarkets(const InstrumentList & list, const std::vector<std::s
   if (markets.empty()) return list;
   InstrumentList out;
   for (const ListEntry & e : list)
-    if (std::find(markets.begin(), markets.end(), e.market) != markets.end()) out.push_back(e);
+    if (std::find(markets.begin(), markets.end(), e.mic) != markets.end())
+      out.push_back(e);
   return out;
 }
 

@@ -1,6 +1,5 @@
 {
  "name": "beta",
- "market": "Beta Funds",
  "dataset": "beta",
  "pauseMs": 2000,
  "refreshHours": 6,

@@ -1,6 +1,5 @@
 {
  "name": "op",
- "market": "OP Funds",
  "dataset": "op",
  "pauseMs": 2000,
  "refreshHours": 6,

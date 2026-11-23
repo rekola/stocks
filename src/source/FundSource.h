@@ -11,31 +11,53 @@
 #include <optional>
 #include <regex>
 
-// Where in a company's answers the parts of a fund are: one fund company's way of publishing its funds, as data. Read from JSON (a file in data/funds, where the schemas that come
-// with the program are), so that a company is a file and not code. Pointers are JSON pointers (RFC 6901); a field
-// with several tries them in turn.
+// Where in a company's answers the parts of a fund are: one fund company's way
+// of publishing its funds, as data. Read from JSON (a file in data/funds, where
+// the schemas that come with the program are), so that a company is a file and
+// not code. Pointers are JSON pointers (RFC 6901); a field with several tries
+// them in turn.
 //
-//   name, market, dataset     what the data is called in the store ("Some Funds" is a market, "some" the code of a dataset: one to ten letters
-//                             or digits, and never changed, since what is kept is kept under it)
-//   pauseMs, refreshHours     the wait between requests (2000) and how often to load again (6)
-//   headers                   sent with every request
-//   token                     {page, regex}: a page that hands out a token (the first capture of the regex) that the other URLs have in `{token}`
-//   list                      {url, rows, fields, scale, linkPrefix}: the list answer. `rows` points at the array of funds ("" for the answer itself).
-//                             `fields` gives, of each row: id (what the details and the history are asked for by), symbol, name, isin, risk, rating, esg,
-//                             managementFee, subscriptionFee, redemptionFee, link, and the latest NAV: price, date (a date or an instant) and change
-//                             (from the NAV before it, as a fraction). A fund with a price and a date is shown at once, from the list alone.
-//                             `attributes` keeps more of the row, by predicate: a number, a text or a truth value as it is, a date for a predicate that ends in -day. `scale` multiplies a number (a fraction to per cent); `linkPrefix` is put
-//                             before a link that is a path.
-//   isinFromId                a regex whose first capture is the ISIN, where the id holds it
-//   isins                     an ISIN by id or by ISIN: an empty one says that the fund is known and not wanted (closed, joined, priced less often than daily)
-//   maxAgeDays                a fund whose latest NAV is older than this (14) is not shown: it is closed, or priced less often than daily
-//   detail                    {url, fields}: a request for each fund (`{id}`) whose answer says more of it (the fees); asked for once
-//   history                   {url}: the NAV history of a fund, `[[ms, value], ...]`, asked for with `{id}`. It is not asked for with the list but
-//                             when the fund is wanted (on the screen), one fund at a time, together with its details.
+//   name, dataset             what the company is called and the code of its
+//   dataset in the store ("some": one to ten letters or digits, and
+//                             never changed, since what is kept is kept under
+//                             it). A fund is priced by its company and on no
+//                             venue: market XOFF
+//   pauseMs, refreshHours     the wait between requests (2000) and how often to
+//   load again (6) headers                   sent with every request token
+//   {page, regex}: a page that hands out a token (the first capture of the
+//   regex) that the other URLs have in `{token}` list {url, rows, fields,
+//   scale, linkPrefix}: the list answer. `rows` points at the array of funds
+//   ("" for the answer itself).
+//                             `fields` gives, of each row: id (what the details
+//                             and the history are asked for by), symbol, name,
+//                             isin, risk, rating, esg, managementFee,
+//                             subscriptionFee, redemptionFee, link, and the
+//                             latest NAV: price, date (a date or an instant)
+//                             and change (from the NAV before it, as a
+//                             fraction). A fund with a price and a date is
+//                             shown at once, from the list alone. `attributes`
+//                             keeps more of the row, by predicate: a number, a
+//                             text or a truth value as it is, a date for a
+//                             predicate that ends in -day. `scale` multiplies a
+//                             number (a fraction to per cent); `linkPrefix` is
+//                             put before a link that is a path.
+//   isinFromId                a regex whose first capture is the ISIN, where
+//   the id holds it isins                     an ISIN by id or by ISIN: an
+//   empty one says that the fund is known and not wanted (closed, joined,
+//   priced less often than daily) maxAgeDays                a fund whose latest
+//   NAV is older than this (14) is not shown: it is closed, or priced less
+//   often than daily detail                    {url, fields}: a request for
+//   each fund (`{id}`) whose answer says more of it (the fees); asked for once
+//   history                   {url}: the NAV history of a fund, `[[ms, value],
+//   ...]`, asked for with `{id}`. It is not asked for with the list but
+//                             when the fund is wanted (on the screen), one fund
+//                             at a time, together with its details.
 //
-// The ISIN of a fund is found, in this order, in: its `isin` field, `isinFromId`, `isins`, any string of its list row that is an ISIN, and (when
-// there is a `detail`) any string of the detail answer. The last two are said in a message, because a string that looks like an ISIN is not
-// always the fund's. A fund with none is not stored; a message says which.
+// The ISIN of a fund is found, in this order, in: its `isin` field,
+// `isinFromId`, `isins`, any string of its list row that is an ISIN, and (when
+// there is a `detail`) any string of the detail answer. The last two are said
+// in a message, because a string that looks like an ISIN is not always the
+// fund's. A fund with none is not stored; a message says which.
 struct FundSchema {
   using Pointers = std::vector<std::string>;
   struct Request {
@@ -45,7 +67,7 @@ struct FundSchema {
     std::map<std::string, Pointers> attributes;  // predicate to where it is: kept of the fund as it is (a predicate ending in -day is a date)
     std::string rows, linkPrefix;
   };
-  std::string name, market, dataset;
+  std::string name, dataset;
   std::chrono::milliseconds pause{2000}, refresh{std::chrono::hours(6)};
   HttpHeaders headers;
   std::string tokenPage, tokenRegex;
@@ -104,7 +126,9 @@ class FundSource : public Source {
 
   std::string name() const override { return "funds:" + schema_.name; }
   std::vector<std::string> datasetCodes() const override { return {schema_.dataset}; }
-  std::string description() const override { return schema_.market + ": funds and their NAV history (no key)"; }
+  std::string description() const override {
+    return schema_.name + ": funds and their NAV history (no key)";
+  }
   void load(Store &, Http &, SourceListener &) override;
   std::chrono::milliseconds refreshInterval() const override { return schema_.refresh; }
 

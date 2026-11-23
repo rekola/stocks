@@ -30,12 +30,18 @@ std::string fixture(const std::string & name) {
 // A small list of its own, so the tests do not depend on what the lists on disk hold.
 const InstrumentList & testList() {
   static const InstrumentList u = {
-    {"Nasdaq Helsinki", "NOKIA", "EUR", "Nokia", "NOKIA.HE", InstrumentKind::Company, "FI0009000681"},
-    {"Nasdaq Helsinki", "FORTUM", "EUR", "Fortum", "FORTUM.HE", InstrumentKind::Company, "FI0009007132"},
-    {"Nasdaq Helsinki", "SAMPO", "EUR", "Sampo", "SAMPO.HE", InstrumentKind::Company, "FI4000552500"},
-    {"Commodities", "XAU", "USD", "Gold", "GC=F", InstrumentKind::Commodity, "XC0009655157"},
-    {"Commodities", "XAG", "USD", "Silver", "SI=F", InstrumentKind::Commodity, "XC0009653103"},
-    {"Currencies", "EUR", "USD", "Euro", "EURUSD=X", InstrumentKind::Currency, ""},
+      {"Nasdaq Helsinki", "NOKIA", "EUR", "Nokia", "NOKIA.HE",
+       InstrumentKind::Company, "FI0009000681", "XHEL"},
+      {"Nasdaq Helsinki", "FORTUM", "EUR", "Fortum", "FORTUM.HE",
+       InstrumentKind::Company, "FI0009007132", "XHEL"},
+      {"Nasdaq Helsinki", "SAMPO", "EUR", "Sampo", "SAMPO.HE",
+       InstrumentKind::Company, "FI4000552500", "XHEL"},
+      {"Commodities", "XAU", "USD", "Gold", "GC=F", InstrumentKind::Commodity,
+       "XC0009655157"},
+      {"Commodities", "XAG", "USD", "Silver", "SI=F", InstrumentKind::Commodity,
+       "XC0009653103"},
+      {"Currencies", "EUR", "USD", "Euro", "EURUSD=X", InstrumentKind::Currency,
+       ""},
   };
   return u;
 }
@@ -62,7 +68,7 @@ TEST(a_yahoo_chart_becomes_candles_on_the_edge_of_its_market) {
     std::string error;
   CHECK(YahooSource::parse(fixture("nokia.json"), entry("NOKIA.HE"), *store, error));
   auto s = store->snapshot();
-  EdgeKey k = edgeOf(*s, kNokia, "EUR", "Nasdaq Helsinki", "yahoo");
+  EdgeKey k = edgeOf(*s, kNokia, "EUR", "XHEL", "yahoo");
   CandleSeries c = s->candles(k, Resolution::Day);
   CHECK(c.resolution == Resolution::Day && c.candles.size() > 400);
   // Keyed by trading date: the exchange's date of the first bar, not an instant.
@@ -80,18 +86,21 @@ TEST(a_yahoo_chart_becomes_candles_on_the_edge_of_its_market) {
   CHECK(s->symbol(k) == "NOKIA.HE");
 }
 
-TEST(a_row_with_a_market_code_goes_to_the_market_another_provider_made_by_that_code) {
+TEST(a_row_goes_to_the_market_of_its_code) {
   auto store = makeMemoryStore();
-  // Another provider made Helsinki by its code and called it what it calls it.
-  MarketId helsinki = store->resolveMarket({{predicate::mic, "XHEL"}, {predicate::name, "Helsinki (other name)"}});
+  MarketId helsinki = store->addMarket(
+      "XHEL",
+      "Helsinki (other name)"); // another provider made it, and named it
   ListEntry e = entry("NOKIA.HE");
   e.market = "Nasdaq Helsinki";
   e.mic = "XHEL";
   std::string error;
   CHECK(YahooSource::parse(fixture("nokia.json"), e, *store, error));
   auto s = store->snapshot();
-  CHECK(*s->findMarket("Nasdaq Helsinki") == helsinki);  // the same market, no second Helsinki (the last name said stands)
-  CHECK(*s->findMarketByAttribute(predicate::mic, "XHEL") == helsinki);
+  CHECK(*s->findMarket("XHEL") ==
+        helsinki); // the same market, no second Helsinki (the last name said
+                   // stands)
+  CHECK(marketCode(helsinki) == "XHEL");
   auto edges = s->edges(helsinki);
   CHECK(edges.size() == 1);
 }
@@ -129,7 +138,8 @@ TEST(days_yahoo_has_no_price_for_are_skipped) {
     std::string error;
   CHECK(YahooSource::parse(fixture("gold.json"), entry("GC=F"), *store, error));
   auto s = store->snapshot();
-  CandleSeries c = s->candles(edgeOf(*s, kGold, "USD", "Commodities", "yahoo"), Resolution::Day);
+  CandleSeries c =
+      s->candles(edgeOf(*s, kGold, "USD", "XXXX", "yahoo"), Resolution::Day);
   CHECK(c.candles.size() == 504);  // 506 days, two of them null
   CHECK(s->kind(*s->findInstrumentByIsin(kGold)) == InstrumentKind::Commodity);
 }
@@ -139,7 +149,7 @@ TEST(a_currency_pair_is_an_edge_between_two_currencies) {
   std::string error;
   CHECK(YahooSource::parse(fixture("eurusd.json"), entry("EURUSD=X"), *store, error));
   auto s = store->snapshot();
-  EdgeKey k = edgeOf(*s, "EUR", "USD", "Currencies", "yahoo");
+  EdgeKey k = edgeOf(*s, "EUR", "USD", "XXXX", "yahoo");
   CHECK(s->lastCandles(k, Resolution::Day, 1).candles.size() == 1);
   CHECK(s->kind(k.base) == InstrumentKind::Currency && s->name(k.quote) == "US dollar");
 }
@@ -185,7 +195,9 @@ TEST(loading_asks_for_every_instrument_and_reports_the_ones_that_fail) {
   CHECK(fortum && notFound);
   CHECK(http.urls.front().find("https://query1.finance.yahoo.com/v8/finance/chart/") == 0);
   CHECK(http.urls.front().find("range=1y&interval=1d&events=div%7Csplit") != std::string::npos);
-  CHECK(store->snapshot()->edges(*store->snapshot()->findMarket("Nasdaq Helsinki")).size() == 1);
+  CHECK(
+      store->snapshot()->edges(*store->snapshot()->findMarket("XHEL")).size() ==
+      1);
 }
 
 TEST(loading_tries_the_second_host_when_the_first_does_not_answer) {
@@ -231,7 +243,9 @@ TEST(the_runner_runs_the_sources_on_its_own_thread_and_reports_changes) {
   SourceRunner runner(store, std::move(sources), [&] { changes++; }, [](std::string) {});
   runner.wait();
   CHECK(changes == 1);
-  CHECK(store->snapshot()->edges(*store->snapshot()->findMarket("Currencies")).size() == 1);
+  CHECK(
+      store->snapshot()->edges(*store->snapshot()->findMarket("XXXX")).size() ==
+      3); // the gold, the silver and the euro
 }
 
 TEST(the_sources_say_so_when_their_lists_are_missing_and_do_nothing) {
@@ -251,13 +265,18 @@ TEST(the_sources_read_the_lists_on_disk_when_they_load) {
   FakeHttp http;
   http.answer = [](const std::string &) { return failed(404); };
   Listener listener;
-  YahooSource(ListSpec{"", {"Currencies"}}, "1y", std::chrono::milliseconds(0)).load(*store, http, listener);
+  YahooSource(ListSpec{"", {"XXXX"}}, "1y", std::chrono::milliseconds(0))
+      .load(*store, http, listener);
   CHECK(http.urls.size() >= 80 && http.urls[0].find("=X") != std::string::npos);  // the currency pairs, one request each
   auto store2 = makeMemoryStore();
   Listener l2;
-  SyntheticSource(ListSpec{"", {"Indices"}}).load(*store2, http, l2);
-  CHECK(l2.changes == 1 && store2->snapshot()->edges(*store2->snapshot()->findMarket("Indices")).size() >= 4);
-  CHECK(!store2->snapshot()->findMarket("Currencies"));
+  SyntheticSource(ListSpec{"", {"XXXX"}}).load(*store2, http, l2);
+  CHECK(l2.changes == 1 &&
+        store2->snapshot()
+                ->edges(*store2->snapshot()->findMarket("XXXX"))
+                .size() >= 4);
+  CHECK(!store2->snapshot()->findMarket(
+      "XHEL")); // the other markets of the lists are not loaded
 }
 
 namespace {
@@ -352,7 +371,7 @@ TEST(yahoo_makes_the_instrument_from_the_isin_in_its_list_and_the_same_node_as_a
   std::string error;
   CHECK(YahooSource::parse(fixture("nokia.json"), entry("NOKIA.HE"), *store, error));
   auto s = store->snapshot();
-  EdgeKey k = edgeOf(*s, kNokia, "EUR", "Nasdaq Helsinki", "yahoo");
+  EdgeKey k = edgeOf(*s, kNokia, "EUR", "XHEL", "yahoo");
   CHECK(k.base == made && s->nodeCount(NodeType::Instrument) == 2);  // the one instrument, and the euro
   CHECK(s->symbol(k) == "NOKIA.HE");                          // what Yahoo calls it
   // Where Yahoo's history begins is said of the instrument.
@@ -372,8 +391,9 @@ TEST(yahoo_keeps_its_own_type_on_the_edge) {
   CHECK(YahooSource::parse(fixture("gold.json"), entry("GC=F"), *store, error));
   auto s = store->snapshot();
   auto typeOf = [&](const EdgeKey & k) { return s->listing(k)->type; };
-  CHECK(typeOf(edgeOf(*s, kNokia, "EUR", "Nasdaq Helsinki", "yahoo")) == "EQUITY");
-  CHECK(typeOf(edgeOf(*s, kGold, "USD", "Commodities", "yahoo")) == "FUTURE");  // the contract, not the metal
+  CHECK(typeOf(edgeOf(*s, kNokia, "EUR", "XHEL", "yahoo")) == "EQUITY");
+  CHECK(typeOf(edgeOf(*s, kGold, "USD", "XXXX", "yahoo")) ==
+        "FUTURE"); // the contract, not the metal
   CHECK(s->kind(*s->findInstrumentByIsin(kGold)) == InstrumentKind::Commodity);
 }
 

@@ -6,7 +6,9 @@
 #include "source/InstrumentTypes.h"
 #include "source/KnownMarkets.h"
 
+#include <algorithm>
 #include <nlohmann/json.hpp>
+#include <set>
 
 #include <optional>
 #include <thread>
@@ -294,7 +296,9 @@ size_t NordnetSource::loadIndicators(const List & list, Store & store, Http & ht
     return 0;
   }
   const DatasetId dataset = store.addDataset(kNordnetDataset);
-  const MarketId market = store.addMarket(list.market);
+  // Indices, currency pairs and commodity prices of these lists are on no
+  // market.
+  const MarketId market = store.addMarket(kNoMarket);
   size_t written = 0;
   for (NordnetIndicator & row : rows) {
     row.list = list.name;
@@ -376,15 +380,31 @@ void NordnetSource::load(Store & store, Http & http, SourceListener & listener) 
 
       // To the store as each page arrives, not all at the end.
       const DatasetId dataset = store.addDataset(kNordnetDataset);
+      const auto unknown = std::remove_if(
+          page.listings.begin(), page.listings.end(),
+          [](const NordnetListing &l) { return !knownMarketMic(l.marketId); });
+      if (unknown != page.listings.end()) {
+        std::set<int> ids;
+        for (auto it = unknown; it != page.listings.end(); ++it)
+          ids.insert(it->marketId);
+        std::string text;
+        for (int id : ids)
+          text += (text.empty() ? "" : ", ") + std::to_string(id);
+        skipped += static_cast<int>(page.listings.end() - unknown);
+        page.listings.erase(unknown, page.listings.end());
+        listener.message(
+            "nordnet: " + list.name +
+            ": rows on markets with no known MIC left out (Nordnet market " +
+            text + ")");
+      }
       for (NordnetListing & l : page.listings) {
         l.list = list.name;
-        // The market with Nordnet's id, or the one with the name where that is known (one a provider with that name
-        // found first); else a new one, to be named later.
-        std::vector<Attribute> says = {{predicate::nordnetId, std::to_string(l.marketId)}};
-        // The code is looked for before the name: it is what identifies a market, the way an ISIN does an instrument.
-        if (const char * mic = knownMarketMic(l.marketId)) says.push_back({predicate::mic, mic});
-        if (const char * name = knownMarketName(l.marketId)) says.push_back({predicate::name, name});
-        const MarketId market = store.resolveMarket(says);
+        // A market is its MIC; a listing on one Nordnet's id of which is not
+        // known is left out, as data with no market is refused.
+        const char *mic = knownMarketMic(l.marketId);
+        const char *marketName = knownMarketName(l.marketId);
+        const MarketId market =
+            store.addMarket(mic, marketName ? marketName : "");
         store.setAttribute(market, {predicate::country, l.country});
         const InstrumentId base = store.addInstrument("", l.name, kindOfNordnetType(l.type), l.isin, l.type);
         const InstrumentId quote = currencyNode(store, l.currency);

@@ -20,15 +20,21 @@ new one started.
 **Node key**
 The number that names a node, the same in every run: one 64-bit number whose top
 bits say what kind of node it is. An instrument's is its ISIN packed, a
-currency's or unit's its code, a dataset's its code, a market's a number the
-store made the first time the market was said (its MIC, the id a source gives it
-and its name are facts of it like any other, since some markets have no MIC).
+currency's or unit's its code, a dataset's its code, a market's its MIC (so a
+market is never made up: a source that knows a market only by its own id maps it
+to a MIC, and what it cannot map it leaves out). The name and the country are
+facts of the market.
+
+**XXXX, XOFF**
+The two codes for what has no venue. XXXX is "no market": an index, a spot price or
+a currency pair, which are not the price of an exchange. XOFF is off exchange: a
+fund, priced by its company. A real venue, such as a futures market, has its own MIC.
 The facts file keeps a fact under the key of its node.
 
 **Preset**
 A selection of edges that the table shows, one row per edge: a market, a set of
 markets, a filter (by the kind of the instrument, the country of the market) or
-the edges the user follows. Today a preset is one market by name, or All.
+the edges the user follows. Today a preset is a market (by its MIC) and, where the market holds several kinds (XXXX), the kind of the instrument, or All.
 
 **Updated**
 When a source last said a fact, whether or not the value was the same as

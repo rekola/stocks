@@ -1,6 +1,7 @@
 #include "source/SourceRunner.h"
 
 #include <algorithm>
+#include <exception>
 
 class SourceRunner::Listener : public SourceListener {
  public:
@@ -38,7 +39,14 @@ SourceRunner::SourceRunner(std::shared_ptr<Store> store, std::vector<std::unique
         if (stop_) return;
         lock.unlock();
         if (loadDue <= Clock::now()) {
-          source->load(*store, *http, listener);
+          try {
+            source->load(
+                *store, *http,
+                listener); // a write the store refuses (data with no market)
+                           // throws: said, and the next load goes on
+          } catch (const std::exception &e) {
+            listener.message(source->description() + ": " + e.what());
+          }
           const auto interval = source->refreshInterval();
           loadDue = interval.count() > 0 ? Clock::now() + interval : Clock::time_point::max();
           if (detailsDue == Clock::time_point::max()) detailsDue = Clock::now();  // a load may have found instruments to fill in

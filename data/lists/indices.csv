@@ -1,4 +1,3 @@
-# market: Indices
 # kind,base,quote,name,yahoo,isin: what one unit of `base` costs in `quote`; `yahoo` is Yahoo's ticker; an index is quoted in points
 kind,base,quote,name,yahoo,isin
 index,DJIA,pts,Dow Jones Industrial Average,^DJI,US2605661048
