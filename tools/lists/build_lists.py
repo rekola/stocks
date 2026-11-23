@@ -101,7 +101,7 @@ def write(path, market, rows, mic=None):
     each say their market by its ISO 10383 code."""
     with open(path, "w", newline="", encoding="utf-8") as f:
         if mic is None:
-            f.write("# market: %s\n" % market)
+            f.write("# %s: no market (XXXX)\n" % market)
             f.write("# kind,base,quote,name,yahoo,isin: what one unit of `base` costs in `quote`; `yahoo` is Yahoo's ticker\n")
         else:
             f.write("# %s\n" % market)

@@ -12,8 +12,8 @@ struct World {
   std::unique_ptr<Store> store = makeMemoryStore();
   InstrumentId nokia = store->addInstrument("NOKIA", "Nokia", InstrumentKind::Company);
   InstrumentId eur = store->addInstrument("EUR", "Euro", InstrumentKind::Currency);
-  MarketId hel = store->addMarket("Nasdaq Helsinki");
-  MarketId sto = store->addMarket("Nasdaq Stockholm");
+  MarketId hel = store->addMarket("XHEL", "Nasdaq Helsinki");
+  MarketId sto = store->addMarket("XSTO", "Nasdaq Stockholm");
   DatasetId a = store->addDataset("providera");
   DatasetId b = store->addDataset("providerb");
   std::shared_ptr<const Snapshot> snap() const { return store->snapshot(); }
@@ -28,7 +28,7 @@ TEST(adding_the_same_symbol_or_name_returns_the_record_already_there) {
   World w;
   InstrumentId again = w.store->addInstrument("NOKIA", "Other name", InstrumentKind::Index);
   CHECK(again == w.nokia && w.snap()->name(again) == "Other name" && w.snap()->kind(again) == InstrumentKind::Index);  // the last said stands
-  CHECK(w.store->addMarket("Nasdaq Helsinki") == w.hel);
+  CHECK(w.store->addMarket("XHEL", "Nasdaq Helsinki") == w.hel);
   CHECK(w.store->addDataset("providera") == w.a);
   CHECK(w.snap()->nodeCount(NodeType::Instrument) == 2 && w.snap()->nodeCount(NodeType::Market) == 2 && w.snap()->nodeCount(NodeType::Dataset) == 2);
 }
@@ -39,7 +39,8 @@ TEST(records_are_found_by_id_and_by_name) {
   CHECK(*w.snap()->findInstrument("NOKIA") == w.nokia);
   CHECK(!w.snap()->findInstrument("NOPE"));
   CHECK(!w.snap()->known(NodeRef(InstrumentId{})) && !w.snap()->known(NodeRef(InstrumentId{99})));
-  CHECK(*w.snap()->findMarket("Nasdaq Stockholm") == w.sto && w.snap()->name(w.hel) == "Nasdaq Helsinki");
+  CHECK(*w.snap()->findMarket("XSTO") == w.sto &&
+        w.snap()->name(w.hel) == "Nasdaq Helsinki");
   CHECK(*w.snap()->findDataset("providerb") == w.b && !w.snap()->findDataset("provider-b") && w.snap()->name(NodeRef(DatasetId{})).empty());
 }
 
@@ -393,17 +394,34 @@ TEST(an_instrument_is_its_id_and_what_is_said_of_it_is_read_from_the_facts) {
   CHECK(!s->findInstrumentByIsin("SE0000000009") && !s->findInstrument("NOPE"));
 }
 
-TEST(what_is_said_of_an_edge_with_a_part_that_was_refused_is_said_of_nothing) {
+TEST(
+    what_is_said_of_an_edge_with_a_part_that_was_refused_throws_and_writes_nothing) {
   World w;
   const InstrumentId refused = w.store->addInstrument("X", "A wrong ISIN", InstrumentKind::Company, "FI0009000680");  // the check digit is wrong
-  CHECK(!refused.valid());
+  const MarketId noMarket = w.store->addMarket("not a mic");
+  CHECK(!refused.valid() && !noMarket.valid());
   const uint64_t version = w.snap()->version();
-  const EdgeKey bad{refused, w.eur, w.hel, w.a};
-  w.store->appendCandles(bad, Resolution::Day, {bar(1, 1.0)});
-  w.store->appendBooks(bad, {BookSnapshot{}});
-  w.store->setPreviousClose(bad, 1, 1.0);
-  w.store->appendAnnouncements({refused, w.a}, {Announcement{}});
-  w.store->appendActions({refused, w.a}, {CorporateAction{}});
-  CHECK(w.snap()->version() == version);  // nothing changed: no edge under an instrument that is none
-  CHECK(w.snap()->edges(w.hel).empty() && !w.snap()->hasCandles(bad, Resolution::Day) && w.snap()->events(refused).empty());
+  auto throws = [](auto &&write) {
+    try {
+      write();
+    } catch (const std::invalid_argument &) {
+      return true;
+    }
+    return false;
+  };
+  for (const EdgeKey &bad : {EdgeKey{refused, w.eur, w.hel, w.a},
+                             EdgeKey{w.eur, w.eur, noMarket, w.a}}) {
+    CHECK(throws(
+        [&] { w.store->appendCandles(bad, Resolution::Day, {bar(1, 1.0)}); }));
+    CHECK(throws([&] { w.store->appendBooks(bad, {BookSnapshot{}}); }));
+    CHECK(throws([&] { w.store->setPreviousClose(bad, 1, 1.0); }));
+    CHECK(throws([&] { w.store->setListing({bad, "X", "", "", "", ""}); }));
+  }
+  CHECK(throws(
+      [&] { w.store->appendAnnouncements({refused, w.a}, {Announcement{}}); }));
+  CHECK(throws(
+      [&] { w.store->appendActions({refused, w.a}, {CorporateAction{}}); }));
+  CHECK(w.snap()->version() ==
+        version); // nothing changed: no edge under a part that is none
+  CHECK(w.snap()->edges(w.hel).empty() && w.snap()->events(refused).empty());
 }

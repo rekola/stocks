@@ -151,11 +151,12 @@ struct IconFixture {
     auto owned = std::make_unique<test::TestBackend>(24, 100, display);
     backend = owned.get();
     app = Application::adopt(std::move(owned));
-    MarketId market = store->addMarket("Commodities");
+    MarketId market = store->addMarket("XXXX", "Commodities");
     InstrumentId usd = store->addInstrument("USD", "US dollar", InstrumentKind::Currency);
     DatasetId dataset = store->addDataset("test");
     for (const char * symbol : {"AAA", "BBB", "CCC"}) {
-      InstrumentId i = store->addInstrument(symbol, symbol, InstrumentKind::Company);
+      InstrumentId i =
+          store->addInstrument(symbol, symbol, InstrumentKind::Commodity);
       if (std::string(symbol) != "CCC") store->setAttribute(i, {predicate::iconUrl, "https://cdn/brand.png"});
       store->appendCandles({i, usd, market, dataset}, Resolution::Day, {{0, 1, 1, 1, 1.0, 1}, {1000, 1, 1, 1, 2.0, 1}});
     }

@@ -195,7 +195,9 @@ bool FundSchema::parse(const std::string & text, FundSchema & out, std::string &
     return false;
   }
   FundSchema s;
-  for (auto [key, target] : {std::pair<const char *, std::string *>{"name", &s.name}, {"market", &s.market}, {"dataset", &s.dataset}}) {
+  for (auto [key, target] :
+       {std::pair<const char *, std::string *>{"name", &s.name},
+        {"dataset", &s.dataset}}) {
     if (!d.contains(key) || !d[key].is_string() || d[key].get<std::string>().empty()) {
       error = std::string("no ") + key;
       return false;
@@ -408,7 +410,7 @@ void FundSource::load(Store & store, Http & http, SourceListener & listener) {
   const auto show = [&](Entry & e) {
     // Shown at once, from the list alone: the latest NAV is the bar, and the change tells the NAV before it. The history comes when it is wanted.
     const Candle bar{*e.fund.day, kUndefined, kUndefined, kUndefined, *e.fund.price, kUndefined};
-    auto edge = writeFund(store, schema_.dataset, schema_.market, e.fund, {bar});
+    auto edge = writeFund(store, schema_.dataset, e.fund, {bar});
     if (!edge) return;
     if (e.fund.change && *e.fund.change > -1) store.setPreviousClose(*edge, *e.fund.day, *e.fund.price / (1 + *e.fund.change));
     shown++;

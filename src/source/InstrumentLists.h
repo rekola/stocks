@@ -13,23 +13,29 @@ struct ListEntry {
   std::string market, base, quote, name, yahoo;
   InstrumentKind kind = InstrumentKind::Other;  // of the base
   std::string isin;  // of the base: what the instrument is (empty only for a currency, which is its code)
-  std::string mic;  // the market's ISO 10383 code, if the row gives one: what finds the market another provider also made
+  std::string mic =
+      kNoMarket; // the market's ISO 10383 code (XXXX where the row has none: an
+                 // index, a spot price, a currency pair)
 };
 using InstrumentList = std::vector<ListEntry>;
 
-// Reads every *.csv in `directory`, in file name order. A row is on a market, given by its code (a seventh field) or, for a row
-// with none, by the file's name for it:
-//   # market: Currencies               the market of the rows with no code (other # lines are comments)
-//   kind,base,quote,name,yahoo,isin,mic   the header (optional; the last field may be left out of a row)
-//   company,NOKIA,EUR,Nokia Oyj,NOKIA.HE,FI0009000681,XHEL
-// The code finds the market the other providers made, and names it where it is made first (KnownMarkets); a code not known is refused.
-// A currency has no ISIN and is its code; anything else must have one (Yahoo gives none, so the data does). An
-// index is quoted in `pts`, index points.
-// `kind` is company, currency, commodity, index, etf, certificate or other; a field with a comma is in double quotes. Returns nothing,
-// with `error` set, if the directory or a file is wrong.
+// Reads every *.csv in `directory`, in file name order. A row is on a market,
+// given by its code (a seventh field); a row with none is on no market (XXXX:
+// an index, a spot price, a currency pair). A line starting with # is a
+// comment.
+//   kind,base,quote,name,yahoo,isin,mic   the header (optional; the last field
+//   may be left out of a row) company,NOKIA,EUR,Nokia
+//   Oyj,NOKIA.HE,FI0009000681,XHEL
+// The code is the market (KnownMarkets names it); a code not known is refused.
+// A currency has no ISIN and is its code; anything else must have one (Yahoo
+// gives none, so the data does). An index is quoted in `pts`, index points.
+// `kind` is company, currency, commodity, index, etf, certificate or other; a
+// field with a comma is in double quotes. Returns nothing, with `error` set, if
+// the directory or a file is wrong.
 InstrumentList loadInstrumentLists(const std::filesystem::path & directory, std::string & error);
 
-// The entries of `list` whose market is one of `markets` (all of them if `markets` is empty), in the same order.
+// The entries of `list` whose market code is one of `markets` (all of them if
+// `markets` is empty), in the same order.
 InstrumentList onlyMarkets(const InstrumentList & list, const std::vector<std::string> & markets);
 
 // Where the lists are: `given` if it is not empty, else data/lists here, else the source tree's. Empty if none is.

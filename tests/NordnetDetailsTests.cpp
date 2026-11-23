@@ -29,7 +29,7 @@ void addInstruments(Store & store) {
   InstrumentId eur = store.addInstrument("EUR", "Euro", InstrumentKind::Currency);
   InstrumentId stock = store.addInstrument("", "AbbVie", InstrumentKind::Company, "US00287Y1091");
   InstrumentId fund = store.addInstrument("", "A fund", InstrumentKind::Fund, "LU0231483743");
-  MarketId market = store.addMarket("Somewhere");
+  MarketId market = store.addMarket("XXXX", "Somewhere");
   DatasetId data = store.addDataset("nordnet");
   for (auto [instrument, book] : {std::pair{stock, "stock-book"}, std::pair{fund, "fund-book"}}) {
     EdgeKey key{instrument, eur, market, data};

@@ -51,22 +51,18 @@ Every node has a **key**, one 64-bit number that means the same in every run, in
 anywhere translates between ids, and no table holds an "internal id" of its own:
 
 - an **instrument** is its ISIN, packed (56 bits, the check digit left out); a **currency or a unit** its code (up to ten letters or
-  digits); a **dataset** its code, which its adapter defines and never changes; a **market** sixty random bits, minted once;
+  digits); a **dataset** its code, which its adapter defines and never changes; a **market** its MIC (four characters, `A-Z0-9`), which never changes; XXXX is no market (indices, spot prices, currency pairs) and XOFF what is priced off exchange (funds);
 - the kind of node is in the top bits, and a key is below 2^62, so it is a positive `BIGINT` in MariaDB and a `UInt64` in ClickHouse;
-- in text, an instrument is its ISIN, a currency or dataset its code and a market its fifteen hex digits (`describe()`), which is
+- in text, an instrument is its ISIN, a currency or dataset its code and a market its MIC (`describe()`), which is
   what a URL carries;
 - more kinds of node take the kind values 4 to 7 in bit 62, and keys stay below 2^63, so none of the keys above changes. The
   first is the **country** (kind 4: its key is its ISO 3166-1 alpha-2 code, see "Countries" in `data-model.md`); an issuer or a
   person would come after. An index is not a kind: it is an instrument, identified by its ISIN like a share.
 
-**Who mints a market's key.** The key of an instrument, a currency or a dataset is made from what it is, so any machine makes the
-same one. A market has no such identity (some have no MIC), so its key is minted where the market is first said, and two
-machines would mint two. With a server the **catalog mints them**: its `markets` table holds the key with unique constraints on
-the MIC and on each provider's id, and a market is found by those or by its name, as the app does. A client that has kept facts of
-markets in its own file reconciles on first contact: its markets are matched to the catalog's by MIC, id at a source or name, the
-catalog's key stands, and the file is written again under it (a market the catalog does not know yet is sent, and gets a key).
-Open: what happens to two markets the catalog finds to be one (a merge, which has to rewrite every edge), and the API for a
-client to ask for keys.
+**A market's key is made from what it is**, like the others, so any machine makes the same one and no catalog mints keys. The
+`markets` table holds the MIC as the key and the name, country and time zone as facts. A provider's id for a market is not kept: the
+adapter maps it to a MIC (a table in the adapter, or an endpoint of the provider that lists markets with their MICs), and a listing on
+a market it cannot map is left out until it can, since data with no market is refused.
 
 ## Immutability and a server that never stops loading
 
@@ -497,7 +493,7 @@ according to one provider" and "its ticker is NOKIA.HE, according to another".
   ISIN are the candidates, since they are what the adapters already collect and
   discard); the resolution rules; whether the API exposes statements or only the resolved view; and
   how the app's `Store` holds them. Nodes that are not instruments get keys of their own kind (see Keys): a
-  market's is minted, an issuer's or a person's would be too, and an index is an instrument with an ISIN.
+  market's is its MIC, an issuer's or a person's would be minted, and an index is an instrument with an ISIN.
 
 ## Ingest
 
@@ -546,8 +542,7 @@ thousand). More lists are one entry each.
 - **Markets** may have only a numeric id in the answer. They are named from the id where it
   is known (inferred from the data) and by a placeholder otherwise. The exchange code in a
   listing's slug is not used: it can be the home exchange while the listing trades elsewhere.
-  A market is found by code, provider id or name, else made, with a minted key (a crypto
-  venue has no MIC; see Keys); one with no name is named later and keeps its edges. The segment named
+  A market is its MIC (see Keys): a listing on one the adapter cannot map to a MIC is left out and said so. The segment named
   in a row's own venue list ("First North", "Spotlight") is a market of its own.
 - **What a row holds**: instrument info (id, name, symbol, ISIN, type, currency, issuer,
   clearing place), market info, a price block with a timestamp, returns, fund info and

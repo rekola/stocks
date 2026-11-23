@@ -13,7 +13,7 @@ namespace {
 
 namespace fs = std::filesystem;
 
-constexpr int kSchemaVersion = 2;
+constexpr int kSchemaVersion = 3;
 // SQLite's result codes for a damaged database and for a file that is none (kCorrupt, kNotADatabase): SQLiteCpp does
 // not show sqlite3.h, and nothing of SQLite itself is called from here.
 constexpr int kCorrupt = 11, kNotADatabase = 26;
@@ -139,6 +139,8 @@ class SqliteFactStore : public FactStore {
     if (db_->execAndGet("PRAGMA quick_check(1)").getString() != "ok") throw Unusable{"it is damaged"};
     if (version == 1) {
       migrateFromVersion1();
+    } else if (version == 2) {
+      migrateFromVersion2();
     } else {
       createTable();
       if (version < kSchemaVersion) db_->exec("PRAGMA user_version = " + std::to_string(kSchemaVersion));
@@ -153,6 +155,15 @@ class SqliteFactStore : public FactStore {
         "node_key INTEGER NOT NULL, predicate TEXT NOT NULL, "
         "value, is_bool INTEGER NOT NULL DEFAULT 0, updated INTEGER NOT NULL, "
         "PRIMARY KEY (node_key, predicate)) WITHOUT ROWID");
+  }
+
+  // The second schema gave a market a key of random bits; a market is its MIC
+  // now, so what was kept of the markets is left out: the sources say it again.
+  void migrateFromVersion2() {
+    SQLite::Transaction transaction(*db_);
+    db_->exec("DELETE FROM facts WHERE (node_key >> 60) = 2");
+    db_->exec("PRAGMA user_version = " + std::to_string(kSchemaVersion));
+    transaction.commit();
   }
 
   // The first schema kept the key of a node as text under a node type: an ISIN, a currency's code, a market's sixteen hex digits
@@ -172,9 +183,8 @@ class SqliteFactStore : public FactStore {
           key = instrumentKey(text);
           break;
         case 1:
-          if (text.size() == 16 && text.find_first_not_of("0123456789abcdef") == std::string::npos)
-            key = marketKey(std::stoull(text, nullptr, 16));
-          break;
+          break; // a market was a random number then; it is its MIC now, and
+                 // the sources say it again
         case 2:
           key = datasetKey(text);
           break;

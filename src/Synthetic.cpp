@@ -17,7 +17,7 @@ void fillSyntheticData(Store & store, const InstrumentList & list) {
       market = e.market;
       rng.seed(preset++ * 7919u + 1u);
     }
-    const MarketId m = store.addMarket(e.market);
+    const MarketId m = store.addMarket(e.mic, e.market);
     const InstrumentId base = e.kind == InstrumentKind::Currency ? currencyNode(store, e.base) : store.addInstrument("", e.name, e.kind, e.isin);
     const InstrumentId quote = quoteNode(store, e.quote);
     std::vector<Candle> bars;

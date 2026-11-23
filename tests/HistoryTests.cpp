@@ -41,7 +41,7 @@ HistoryLoader::Options quickly(HistoryLoader::Depth depth = HistoryLoader::Depth
 struct World {
   std::shared_ptr<Store> store = makeMemoryStore();
   InstrumentId usd = store->addInstrument("USD", "US dollar", InstrumentKind::Currency);
-  MarketId market = store->addMarket("Nasdaq Stockholm");
+  MarketId market = store->addMarket("XSTO", "Nasdaq Stockholm");
   DatasetId nordnet = store->addDataset("nordnet");
   int count = 0;
   EdgeKey edge(InstrumentKind kind, const std::string & book, bool nordnetData = true) {

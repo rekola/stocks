@@ -203,17 +203,21 @@ low sixty:
 |---|---|---|
 | 0 | instrument | its ISIN: 26 x 26 country letters and nine letters or digits make 56 bits, plus one so that AA0000000000 is not zero; the check digit is not stored, since `isinCheckDigit()` gives it back |
 | 1 | currency or unit | its code: up to ten letters or digits, six bits each (0 is the end, 1 to 62 are `0-9A-Za-z`), case kept (`pts`) |
-| 2 | market | sixty random bits, made by the store the first time a market is said |
+| 2 | market | its MIC, the ISO 10383 market code: four characters of `A-Z0-9`, packed in the same way as a currency's |
 | 3 | dataset | its code, packed in the same way as a currency's |
 
 - **An instrument is an ISIN**, or a currency or a unit. An index, a fund or a commodity is an instrument like a share, with an
   ISIN: no kind of its own. One given no ISIN that is not a currency or a unit is given one of ours (`ZZ` and nine characters, made
   from its symbol or else its name, `privateIsin()`); one that cannot be keyed, or whose ISIN is not valid, is refused and told of
   (`StoreOptions::notice`), and what is said of an edge with a part that was refused is said of nothing.
-- **A market** has no identifier all of them have (some have no MIC), so its key is a surrogate, and its MIC, its id at a source and
-  its name are facts of it like any other. It is found by the first of the given facts that a market has, and made, with a minted
-  key, when none is there. No two markets say the same MIC or the same id at a source (`isUnique()`): the first keeps it, and the
-  second is refused and told of. Merging two markets that turn out to be one is not attempted.
+- **A market is its MIC**, which never changes, so nothing is minted and nothing is looked up by a name or a provider's id: a source
+  that has only an id for a market maps it to a MIC (Nordnet: `KnownMarkets`) and leaves out what it cannot map, saying so. A code
+  that is no MIC makes no market (told of), and what is said of an edge with no market **throws** (`std::invalid_argument`); the
+  source runner says so and goes on. Three codes stand for what has no venue: **XXXX** for an index, a spot price or a currency
+  pair (the quoted price of no exchange), **XOFF** for a fund priced by its company; a real venue, a futures market or a currency
+  market, has its own MIC. The name and the country are facts of the market (the name is the MIC until something says otherwise).
+  A preset that shows currency pairs or commodities is therefore a selection: market XXXX and the kind of the base. Files of the
+  second schema lose their markets on opening (the sources say them again).
 - **A dataset** is its **code**, one to ten letters or digits that its adapter defines and never changes (`source/DatasetCodes.h`; a
   fund schema names its own); two sources may not write the same one. Its name is a fact that is the code until something says
   otherwise. A name can change, so a dataset is looked up by its code.
@@ -223,7 +227,7 @@ low sixty:
 - **Size.** An `EdgeKey` is four keys of eight bytes. On 50,000 edges of 60 daily bars (`stocks_period_bench`, Release) the store
   takes 310 MB against 317 with the earlier ids, and the edge list, a refresh, a period, a sort and a frame cost the same within
   the noise: the bars are nearly all of the memory.
-- The server adopts these keys (`server.md`, "Keys"); who mints a market's key there is open.
+- The server adopts these keys (`server.md`, "Keys").
 
 ### Countries (planned)
 

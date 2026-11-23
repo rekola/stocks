@@ -66,7 +66,9 @@ TEST(a_market_is_named_by_its_nordnet_id_where_that_is_known) {
   CHECK(std::string(NordnetSource::knownMarketName(19)) == "Nasdaq" && std::string(NordnetSource::knownMarketMic(19)) == "XNAS");
   CHECK(std::string(NordnetSource::knownMarketName(49)) == "Euronext Growth Oslo");
   CHECK(NordnetSource::knownMarketName(61) == nullptr);  // not known
-  CHECK(std::string(NordnetSource::knownMarketMic(24)) == "XHEL" && NordnetSource::knownMarketMic(53) == nullptr);
+  CHECK(std::string(NordnetSource::knownMarketMic(24)) == "XHEL" &&
+        NordnetSource::knownMarketMic(53) == std::string("FNSE") &&
+        NordnetSource::knownMarketMic(61) == nullptr);
   // A code identifies a market, so two markets never share one (Oslo's growth market has its segment's, not Oslo Børs's), nor a name.
   std::set<std::string> codes, names;
   for (int id = 0; id < 200; id++) {
@@ -127,24 +129,34 @@ TEST(loading_pages_through_every_list_and_stores_instruments_markets_and_edges) 
 
   // The store is told after each page, not once at the end.
   CHECK(listener.changes == 3);
-  CHECK(listener.messages.size() == 1 && listener.messages[0] == "nordnet: 9 listings (etflist 5, certificatelist 4)");
-  CHECK(source.listings().size() == 9 && source.listings()[0].list == "etflist" && source.listings()[8].list == "certificatelist");
+  // One certificate is on a market this table has no MIC for (61): it is said
+  // once and left out.
+  CHECK(listener.messages.size() == 2 &&
+        listener.messages[0].find("Nordnet market 61") != std::string::npos);
+  CHECK(listener.messages[1] ==
+        "nordnet: 8 listings (etflist 5, certificatelist 3), 1 rows left out");
+  CHECK(source.listings().size() == 8 &&
+        source.listings()[0].list == "etflist" &&
+        source.listings()[7].list == "certificatelist");
 
   auto s = store->snapshot();
-  // Eight instruments (one ETF is listed on two markets) and the four quote currencies.
-  CHECK(s->nodeCount(NodeType::Instrument) == 12);
+  // Seven instruments (one ETF is listed on two markets) and the four quote
+  // currencies.
+  CHECK(s->nodeCount(NodeType::Instrument) == 11);
   InstrumentId xaix = *s->findInstrumentByIsin("IE00BGV5VN51");
   CHECK(s->kind(xaix) == InstrumentKind::Etf && s->isin(xaix) == "IE00BGV5VN51");
   CHECK(s->kind(*s->findInstrumentByIsin("DE000A0S9GB0")) == InstrumentKind::Certificate);  // a certificate, whoever lists it
   CHECK(s->kind(*s->findInstrument("EUR")) == InstrumentKind::Currency && s->name(*s->findInstrument("EUR")) == "Euro");
-  CHECK(s->name(*s->findInstrument("NOK")) == "Norwegian krone");
-  CHECK(s->nodeCount(NodeType::Market) == 6);
-  MarketId xetra = *s->findMarket("Xetra"), stockholm = *s->findMarket("Nasdaq Stockholm");
-  CHECK(s->findMarket("Nasdaq Copenhagen") && s->findMarket("First North Sweden") && s->findMarket("First North Finland"));
-  CHECK(s->findMarketByAttribute(predicate::nordnetId, "61") && s->name(*s->findMarketByAttribute(predicate::nordnetId, "61")).empty());
+  CHECK(s->name(*s->findInstrument("DKK")) == "Danish krone");
+  CHECK(s->nodeCount(NodeType::Market) == 5);
+  MarketId xetra = *s->findMarket("XETR"), stockholm = *s->findMarket("XSTO");
+  CHECK(s->findMarket("XCSE"));
   CHECK(s->edges(xetra).size() == 3 && s->edges(stockholm).size() == 2);  // FLXK, XAIX, 4GLD; XACT BULL, XAIX
-  // The certificate on First North Sweden has no tick time, so no bar and no edge: a node nothing selects.
-  CHECK(s->findInstrumentByIsin("NO0010903685") && s->edges(*s->findMarket("First North Sweden")).empty());
+  CHECK(!s->findInstrumentByIsin(
+      "DE000SU696R4")); // on a market with no MIC: not made
+  // No tick time: a node, and no edge.
+  CHECK(s->findInstrumentByIsin("NO0010903685") &&
+        s->edges(*s->findMarket("FNSE")).empty());
   DatasetId nordnet = *s->findDataset("nordnet");
   EdgeKey onXetra{xaix, *s->findInstrument("EUR"), xetra, nordnet};
   EdgeKey onStockholm{xaix, *s->findInstrument("SEK"), stockholm, nordnet};
@@ -170,9 +182,11 @@ TEST(loading_again_replaces_todays_bars_and_a_new_day_adds_one) {
   source.load(*store, http, listener);
   auto second = store->snapshot();
   // The same nodes and edges, and today's bar replaced, not added again.
-  CHECK(second->nodeCount(NodeType::Instrument) == first->nodeCount(NodeType::Instrument) && second->nodeCount(NodeType::Instrument) == 12);
-  CHECK(source.listings().size() == 9);
-  MarketId xetra = *second->findMarket("Xetra");
+  CHECK(second->nodeCount(NodeType::Instrument) ==
+            first->nodeCount(NodeType::Instrument) &&
+        second->nodeCount(NodeType::Instrument) == 11);
+  CHECK(source.listings().size() == 8);
+  MarketId xetra = *second->findMarket("XETR");
   CHECK(second->edges(xetra) == first->edges(xetra));
   for (const EdgeKey & k : second->edges(xetra)) CHECK(second->candles(k, Resolution::Day).candles.size() == 1);
 }
@@ -213,9 +227,11 @@ TEST(another_failure_ends_only_that_list) {
   NordnetSource source = quick();
   source.load(*store, http, listener);
   CHECK(http.urls.size() == 2);  // the ETFs once, then the certificates
-  CHECK(listener.messages.size() == 2 && listener.messages[0] == "nordnet: etflist: HTTP 500");
-  CHECK(listener.messages[1] == "nordnet: 4 listings (certificatelist 4)");
-  CHECK(source.listings().size() == 4);
+  CHECK(listener.messages.size() == 3 &&
+        listener.messages[0] == "nordnet: etflist: HTTP 500");
+  CHECK(listener.messages[2] ==
+        "nordnet: 3 listings (certificatelist 3), 1 rows left out");
+  CHECK(source.listings().size() == 3);
 
   FakeHttp none;
   none.answer = [](const std::string &) { return failed(0); };
@@ -235,9 +251,12 @@ TEST(an_answer_that_is_not_a_list_ends_that_list_and_keeps_what_came_before) {
   NordnetSource source = quick();
   source.load(*store, http, listener);
   CHECK(http.urls.size() == 3);  // the second ETF page, then the certificates
-  CHECK(listener.messages.size() == 2 && listener.messages[0] == "nordnet: etflist: not an instrument list");
-  CHECK(listener.messages[1] == "nordnet: 7 listings (etflist 3, certificatelist 4)");
-  CHECK(store->snapshot()->nodeCount(NodeType::Instrument) == 3 + 3 + 4 + 1);  // three ETFs, four certificates and their currencies
+  CHECK(listener.messages.size() == 3 &&
+        listener.messages[0] == "nordnet: etflist: not an instrument list");
+  CHECK(listener.messages[2] ==
+        "nordnet: 6 listings (etflist 3, certificatelist 3), 1 rows left out");
+  CHECK(store->snapshot()->nodeCount(NodeType::Instrument) ==
+        3 + 3 + 4); // three ETFs, three certificates and their currencies
 }
 
 TEST(an_empty_page_ends_the_load_even_if_the_total_says_more) {
@@ -279,7 +298,8 @@ TEST(a_new_day_adds_a_bar_to_the_series) {
   source.load(*store, http, listener);
   auto s = store->snapshot();
   InstrumentId xaix = *s->findInstrumentByIsin("IE00BGV5VN51");
-  EdgeKey onXetra{xaix, *s->findInstrument("EUR"), *s->findMarket("Xetra"), *s->findDataset("nordnet")};
+  EdgeKey onXetra{xaix, *s->findInstrument("EUR"), *s->findMarket("XETR"),
+                  *s->findDataset("nordnet")};
   CandleSeries c = s->candles(onXetra, Resolution::Day);
   CHECK(c.candles.size() == 2 && c.candles[0].time == dayNumber(2026, 11, 20) && c.candles[1].time == dayNumber(2026, 11, 21));
 }
@@ -303,8 +323,10 @@ TEST(a_listing_without_a_price_is_a_node_and_has_no_edge) {
   quick().load(*store, http, listener);
   auto s = store->snapshot();
   CHECK(s->findInstrumentByIsin("ZZ0000000016") && s->findInstrumentByIsin("ZZ0000000024") && s->findInstrumentByIsin("ZZ0000000032"));  // all three are nodes
-  CHECK(s->edges(*s->findMarket("Xetra")).size() == 1);                                                                                  // only the traded one is seen
-  CHECK(s->edges(*s->findMarket("Xetra"))[0].base == *s->findInstrumentByIsin("ZZ0000000016"));
+  CHECK(s->edges(*s->findMarket("XETR")).size() ==
+        1); // only the traded one is seen
+  CHECK(s->edges(*s->findMarket("XETR"))[0].base ==
+        *s->findInstrumentByIsin("ZZ0000000016"));
 }
 
 TEST(an_instrument_keeps_the_type_nordnet_gives_it_and_edges_can_be_selected_by_it) {
@@ -316,7 +338,7 @@ TEST(an_instrument_keeps_the_type_nordnet_gives_it_and_edges_can_be_selected_by_
   auto s = store->snapshot();
   CHECK(s->said(NodeRef(*s->findInstrumentByIsin("IE00BHZRR030")), predicate::type) == "UETF" && s->said(NodeRef(*s->findInstrumentByIsin("SE0001342395")), predicate::type) == "KETF");
   CHECK(s->said(NodeRef(*s->findInstrumentByIsin("DE000A0S9GB0")), predicate::type) == "PTC" && s->said(NodeRef(*s->findInstrument("EUR")), predicate::type).empty());
-  MarketId xetra = *s->findMarket("Xetra");
+  MarketId xetra = *s->findMarket("XETR");
   auto certificates = s->edges(xetra, [&](InstrumentId i) { return s->said(NodeRef(i), predicate::type) == "PTC"; });
   auto funds = s->edges(xetra, [&](InstrumentId i) { return s->kind(i) == InstrumentKind::Etf; });
   auto byKind = s->edges(xetra, [&](InstrumentId i) { return s->kind(i) == InstrumentKind::Certificate; });
@@ -383,68 +405,50 @@ TEST(the_default_lists_are_the_etfs_the_certificates_the_funds_and_the_stocks) {
   CHECK(lists[3].url.find("/stocklist?") != std::string::npos && lists[3].pageSize == 1000);
 }
 
-TEST(a_market_is_found_by_its_nordnet_id_or_its_name_and_made_when_neither_is_there) {
+TEST(
+    a_market_is_its_mic_and_a_listing_on_one_nordnet_has_no_mic_for_is_left_out) {
   auto store = makeMemoryStore();
-  // Another provider saw Helsinki first, by its name.
-  MarketId helsinki = store->addMarket("Nasdaq Helsinki");
-  CHECK(store->snapshot()->attributes(helsinki).size() == 1);
+  // Another provider saw Helsinki first, and named it.
+  MarketId helsinki = store->addMarket("XHEL", "Helsinki (other name)");
   FakeHttp http;
   http.answer = pages;
   Listener listener;
   quick().load(*store, http, listener);
   auto s = store->snapshot();
 
-  // A Nordnet market with a known name is found by it: Xetra is one market with a name and Nordnet's id.
-  MarketId xetra = *s->findMarket("Xetra");
-  CHECK(*s->findMarketByAttribute(predicate::nordnetId, "4") == xetra && s->attributes(xetra).size() == 4);  // the id, the code, the name and the country
-
-  // One with no name is found by the id alone, and has no name yet.
-  MarketId unnamed = *s->findMarketByAttribute(predicate::nordnetId, "61");
-  CHECK(s->name(unnamed).empty() && s->attributes(unnamed).size() == 2);  // the id and the country
-  const size_t edges = s->edges(unnamed).size();
-  CHECK(edges > 0);
-
-  // A name filled in later is the same market, with the same edges, found by the name from then on.
-  store->setAttribute(unnamed, {predicate::name, "Some Exchange"});
-  auto named = store->snapshot();
-  CHECK(*named->findMarket("Some Exchange") == unnamed && named->name(unnamed) == "Some Exchange");
-  CHECK(named->edges(unnamed).size() == edges);
-  CHECK(*named->findMarketByAttribute(predicate::nordnetId, "61") == unnamed);
-
-  // The name can change, and the old one finds nothing.
-  store->setAttribute(unnamed, {predicate::name, "Another Name"});
-  CHECK(!store->snapshot()->findMarket("Some Exchange") && *store->snapshot()->findMarket("Another Name") == unnamed);
-
-  // Loading again makes no other market and leaves the name (Nordnet says nothing of this one's name).
+  // Xetra is its code, named as Nordnet's list names it; Helsinki keeps the
+  // name it was given.
+  MarketId xetra = *s->findMarket("XETR");
+  CHECK(marketCode(xetra) == "XETR" && s->name(xetra) == "Xetra" &&
+        s->attributes(xetra).size() == 3); // the code, the name and the country
+  CHECK(s->name(helsinki) == "Helsinki (other name)");
+  // Markets Nordnet gives only an id for are not markets here: no edge is made
+  // on them, and the load says so.
+  CHECK(!s->findMarket("XNYS"));
+  bool said = false;
+  for (const std::string &m : listener.messages)
+    said = said || m.find("no known MIC") != std::string::npos;
+  CHECK(said);
+  const size_t markets = s->nodeCount(NodeType::Market);
   quick().load(*store, http, listener);
-  auto again = store->snapshot();
-  CHECK(again->name(unnamed) == "Another Name" && again->nodeCount(NodeType::Market) == named->nodeCount(NodeType::Market));
-}
-
-TEST(a_market_a_provider_named_first_gets_the_nordnet_id_added) {
-  auto store = makeMemoryStore();
-  MarketId first = store->addMarket("Nasdaq Stockholm");  // as another provider names it
-  MarketId found = store->resolveMarket({{predicate::nordnetId, "11"}, {predicate::name, "Nasdaq Stockholm"}});
-  CHECK(found == first && store->snapshot()->attributes(first).size() == 2);
-  CHECK(*store->snapshot()->findMarketByAttribute(predicate::nordnetId, "11") == first);
-  CHECK(store->snapshot()->nodeCount(NodeType::Market) == 1);
-  // The id is looked up first, so no second market is made when the name is spelled differently; the name is then said
-  // again and changes.
-  MarketId again = store->resolveMarket({{predicate::nordnetId, "11"}, {predicate::name, "OMX Stockholm"}});
-  CHECK(again == first && store->snapshot()->name(again) == "OMX Stockholm" && store->snapshot()->nodeCount(NodeType::Market) == 1);
+  CHECK(store->snapshot()->nodeCount(NodeType::Market) == markets);
 }
 
 TEST(every_kind_of_node_keeps_its_attributes_the_same_way) {
   auto store = makeMemoryStore();
   InstrumentId i = store->addInstrument("NOKIA", "Nokia", InstrumentKind::Company, "FI0009000681", "ESH");
   DatasetId d = store->addDataset("nordnet");
-  MarketId m = store->addMarket("Nasdaq Helsinki");
-  store->setAttribute(i, {predicate::nordnetId, "16"});
+  MarketId m = store->addMarket("XHEL");
+  store->setAttribute(i, {"nordnet-id", "16"});
   store->setAttribute(d, {"description", "Nordnet"});
   auto s = store->snapshot();
-  CHECK(s->findByAttribute(NodeType::Instrument, predicate::nordnetId, "16")->id == i.value);
-  CHECK(!s->findByAttribute(NodeType::Market, predicate::nordnetId, "16"));  // by type: another node's, not this one's
-  CHECK(s->attributes(i).size() == 6 && s->attributes(d).size() == 2 && s->attributes(m).size() == 1);
+  CHECK(s->findByAttribute(NodeType::Instrument, "nordnet-id", "16")->id ==
+        i.value);
+  CHECK(!s->findByAttribute(NodeType::Market, "nordnet-id",
+                            "16")); // by type: another node's, not this one's
+  CHECK(s->attributes(i).size() == 6 && s->attributes(d).size() == 2 &&
+        s->attributes(m).size() ==
+            2); // its code and its name, which is the code until it is said
 
   // The instrument's name changes and the view follows; unchanged says nothing new.
   store->addInstrument("NOKIA", "Nokia Oyj", InstrumentKind::Company, "FI0009000681", "ESH");
@@ -467,14 +471,6 @@ TEST(a_currency_is_the_node_the_store_has_for_its_symbol) {
   CHECK(currencyNode(*store, "XYZ") == other && store->snapshot()->kind(currencyNode(*store, "XYZ")) == InstrumentKind::Other);
 }
 
-TEST(a_market_is_found_by_its_code_before_its_name) {
-  auto store = makeMemoryStore();
-  MarketId first = store->resolveMarket({{predicate::mic, "XHEL"}, {predicate::name, "Helsingin pörssi"}});  // a provider that names it so
-  MarketId found = store->resolveMarket({{predicate::nordnetId, "24"}, {predicate::mic, "XHEL"}, {predicate::name, "Nasdaq Helsinki"}});
-  CHECK(found == first && store->snapshot()->name(found) == "Nasdaq Helsinki");  // the code found it; the name said now stands
-  CHECK(store->snapshot()->nodeCount(NodeType::Market) == 1);
-}
-
 TEST(an_instrument_listed_on_two_markets_is_one_node_with_an_edge_and_a_say_for_each) {
   auto store = makeMemoryStore();
   FakeHttp http;
@@ -483,7 +479,7 @@ TEST(an_instrument_listed_on_two_markets_is_one_node_with_an_edge_and_a_say_for_
   quick().load(*store, http, listener);
   auto s = store->snapshot();
   InstrumentId xaix = *s->findInstrumentByIsin("IE00BGV5VN51");
-  MarketId xetra = *s->findMarket("Xetra"), stockholm = *s->findMarket("Nasdaq Stockholm");
+  MarketId xetra = *s->findMarket("XETR"), stockholm = *s->findMarket("XSTO");
   DatasetId nordnet = *s->findDataset("nordnet");
   const EdgeKey onXetra{xaix, *s->findInstrument("EUR"), xetra, nordnet};
   const EdgeKey onStockholm{xaix, *s->findInstrument("SEK"), stockholm, nordnet};
@@ -529,12 +525,12 @@ TEST(the_indicator_lists_make_indices_in_points_currency_pairs_and_commodities_i
   auto s = store->snapshot();
   DatasetId nordnet = *s->findDataset("nordnet");
 
-  // An index: its ISIN, in points, on the market named for the list.
+  // An index: its ISIN, in points, on no market.
   InstrumentId dax = *s->findInstrumentByIsin("DE0008469008");
   CHECK(s->kind(dax) == InstrumentKind::Index && s->said(NodeRef(dax), predicate::type) == "INDEX");
   const InstrumentId points = *s->findInstrument("pts");
   CHECK(s->kind(points) == InstrumentKind::Unit);
-  const EdgeKey onDax{dax, points, *s->findMarket("Indices"), nordnet};
+  const EdgeKey onDax{dax, points, *s->findMarket("XXXX"), nordnet};
   CHECK(s->lastCandles(onDax, Resolution::Day, 1).candles.size() == 1);
   CHECK(s->symbol(onDax) == "DAX");
   CHECK(!s->listing(onDax)->orderBook.empty() && s->listing(onDax)->type == "INDEX");  // what its history is asked for by
@@ -548,20 +544,30 @@ TEST(the_indicator_lists_make_indices_in_points_currency_pairs_and_commodities_i
 
   // A metal the London exchange prices has only a last price: a bar with the high and the low undefined.
   const InstrumentId lead = *s->findInstrumentByIsin(privateIsin("LEAD"));
-  CandleSeries leadBar = s->lastCandles({lead, *s->findInstrument("USD"), *s->findMarket("Commodities"), nordnet}, Resolution::Day, 1);
+  CandleSeries leadBar = s->lastCandles(
+      {lead, *s->findInstrument("USD"), *s->findMarket("XXXX"), nordnet},
+      Resolution::Day, 1);
   CHECK(leadBar.candles.size() == 1 && leadBar.candles[0].close == 1808.7);
   CHECK(!isDefined(leadBar.candles[0].high) && !isDefined(leadBar.candles[0].low) && !isDefined(leadBar.candles[0].open));
-  CHECK(s->listing({lead, *s->findInstrument("USD"), *s->findMarket("Commodities"), nordnet})->name == "Lyijy");
+  CHECK(s->listing(
+             {lead, *s->findInstrument("USD"), *s->findMarket("XXXX"), nordnet})
+            ->name == "Lyijy");
 
   // A pair is an edge between two currency nodes, named for the two.
-  CHECK(s->listing({*s->findInstrument("EUR"), *s->findInstrument("USD"), *s->findMarket("Currencies"), nordnet})->name == "EUR/USD");
-  const EdgeKey eurusd{*s->findInstrument("EUR"), *s->findInstrument("USD"), *s->findMarket("Currencies"), nordnet};
+  CHECK(s->listing({*s->findInstrument("EUR"), *s->findInstrument("USD"),
+                    *s->findMarket("XXXX"), nordnet})
+            ->name == "EUR/USD");
+  const EdgeKey eurusd{*s->findInstrument("EUR"), *s->findInstrument("USD"),
+                       *s->findMarket("XXXX"), nordnet};
   CHECK(s->lastCandles(eurusd, Resolution::Day, 1).candles.size() == 1 && s->symbol(eurusd) == "EURUSD");
 
   // A commodity with an ISIN, quoted in dollars; one with none has Nordnet's id.
   InstrumentId gold = *s->findInstrumentByIsin("XC0009655157");
   CHECK(s->kind(gold) == InstrumentKind::Commodity);
-  CHECK(s->lastCandles({gold, *s->findInstrument("USD"), *s->findMarket("Commodities"), nordnet}, Resolution::Day, 1).candles.size() == 1);
+  CHECK(s->lastCandles(
+             {gold, *s->findInstrument("USD"), *s->findMarket("XXXX"), nordnet},
+             Resolution::Day, 1)
+            .candles.size() == 1);
   CHECK(listener.messages.size() == 1 && listener.messages[0].find("indices 4, currencies 2, commodities 3") != std::string::npos);
 
   // Loading again replaces today's bars and makes nothing new.

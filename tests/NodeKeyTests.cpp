@@ -110,23 +110,23 @@ TEST(different_codes_make_different_keys_and_a_longer_code_is_not_the_shorter) {
   CHECK(keys.size() == alphabet.size() * alphabet.size());
 }
 
-TEST(a_market_key_has_sixty_random_bits_and_is_never_zero) {
-  const NodeKey a = marketKey(0x123456789ABCDEF0ull);
+TEST(a_market_key_is_its_mic) {
+  const NodeKey a = orNone(marketKey("XHEL"));
   CHECK(a.kind() == NodeKind::Market && a.valid() && a.value < kBelow62);
-  CHECK(a.identity() == (0x123456789ABCDEF0ull & NodeKey::kIdentityMask));
-  CHECK(describe(a) == "23456789abcdef0");  // fifteen hex digits: sixty bits
-  CHECK(text(a).empty());
-  const NodeKey zero = marketKey(0);
-  CHECK(zero.valid() && zero.kind() == NodeKind::Market && zero.identity() == 1);
-  CHECK(marketKey(~uint64_t{0}).value < kBelow62);
-  CHECK(!NodeKey{}.valid() && describe(NodeKey{}).empty() && text(NodeKey{}).empty());
+  CHECK(text(a) == "XHEL" && describe(a) == "XHEL");
+  CHECK(orNone(marketKey("XHEL")) == a && !(orNone(marketKey("XSTO")) == a));
+  CHECK(orNone(marketKey("XXXX")).valid() &&
+        orNone(marketKey("XOFF")).valid() && orNone(marketKey("A1B2")).valid());
+  // Four characters of A-Z and 0-9, nothing else.
+  for (const char *bad : {"", "XHE", "XHELS", "xhel", "XH L", "XH-L", "ÅHEL"})
+    CHECK(!marketKey(bad));
 }
 
 TEST(keys_of_different_kinds_never_meet) {
   const auto isin = instrumentKey("FI0009000681");
   const auto currency = currencyKey("EUR");
   const auto dataset = datasetKey("EUR");
-  const NodeKey market = marketKey(7);
+  const NodeKey market = orNone(marketKey("XHEL"));
   CHECK(isin && currency && dataset);
   const std::set<uint64_t> all = {orNone(isin).value, orNone(currency).value, orNone(dataset).value, market.value};
   CHECK(all.size() == 4);

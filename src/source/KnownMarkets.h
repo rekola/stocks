@@ -8,7 +8,8 @@
 struct KnownMarket {
   int nordnetId;       // Nordnet's id for it; zero where only a code is known
   const char * name;
-  const char * mic;    // null where not known exactly
+  const char *mic; // null where not known exactly: a listing on it is left out,
+                   // as data with no market is refused
 };
 
 // The market Nordnet calls `id`, or null.

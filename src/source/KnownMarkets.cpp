@@ -18,9 +18,9 @@ constexpr KnownMarket kMarkets[] = {
     {26, "TSX Venture Exchange", "XTSX"},
     {49, "Euronext Growth Oslo", "MERK"},
     {52, "Spotlight Stock Market", "XSAT"},
-    {53, "First North Sweden", nullptr},
-    {54, "First North Finland", nullptr},
-    {55, "First North Denmark", nullptr},
+    {53, "First North Sweden", "FNSE"},
+    {54, "First North Finland", "FNFI"},
+    {55, "First North Denmark", "FNDK"},
     {67, "Spotlight Stock Market DK", "SPDK"},
     {68, "Spotlight Stock Market NO", "SPNO"},
     {70, "London Stock Exchange", "XLON"},
@@ -34,6 +34,10 @@ constexpr KnownMarket kMarkets[] = {
     {82, "Madrid Stock Exchange", "XMAD"},
     {83, "SIX Swiss Exchange", "XSWX"},
     {0, "NYSE Arca", "ARCX"},
+    {0, "No market", "XXXX"}, // indices, spot prices and currency pairs: what
+                              // is quoted on no venue
+    {0, "Off exchange",
+     "XOFF"}, // what is priced by its provider and traded on no venue: funds
 };
 
 }  // namespace

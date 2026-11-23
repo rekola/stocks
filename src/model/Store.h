@@ -43,10 +43,11 @@ class Snapshot {
   // milliseconds UTC as the store took it where the write happened.
   std::optional<Attribute> fact(NodeRef, const std::string & predicate) const;
   std::optional<InstrumentId> findInstrumentByIsin(const std::string & isin) const;  // if anything is said of it
-  // A market is its key: found by what is said of it, and named by a fact.
-  std::optional<MarketId> findMarket(const std::string & name) const;  // by its name attribute
-  std::optional<MarketId> findMarketByAttribute(const std::string & predicate, const std::string & value) const;
-  // The name said of a node (a market's, an instrument's); a dataset's is its code until a name is said. Empty where none is.
+  // A market is its MIC, named by a fact. The market with this MIC, if anything
+  // is said of it.
+  std::optional<MarketId> findMarket(const std::string &mic) const;
+  // The name said of a node (an instrument's); a market's is its MIC and a
+  // dataset's its code until a name is said. Empty where none is.
   std::string name(NodeRef) const;
   // What is said about any node, in the order it was first said, with the times of each; and the node, of the type, that says the text `predicate`
   // is `value` (the one made first, if several do). Only text is found by its value.
@@ -99,7 +100,7 @@ class Snapshot {
   InstrumentId addInstrument(const std::string & symbol, const std::string & name, InstrumentKind, const std::string & isin, const std::string & type);
   InstrumentId resolveInstrument(const std::vector<Attribute> & identifying, const std::vector<Attribute> & rest);
   void setListing(const Listing &);
-  MarketId resolveMarket(const std::vector<Attribute> &);
+  MarketId addMarket(const std::string &mic, const std::string &name);
   void setAttribute(NodeRef, const Attribute &);
   void setAttributes(NodeRef, const std::vector<Attribute> &);
   DatasetId addDataset(const std::string & code, const std::string & name);
@@ -114,19 +115,17 @@ class Snapshot {
   // what is said. `revision` is the version plus the writes of facts that were only said again, which no version counts: a
   // store publishes a copy when it moves. `takeFacts` is what the writes since the last call ask of the disk.
   void setTime(TimestampMs now) { now_ = now; }
-  void setKeyMaker(std::function<uint64_t()> * mint) { mint_ = mint; }  // for the keys of markets
   void load(const std::vector<StoredFact> &);
   uint64_t revision() const { return version_ + checks_; }
   FactBatch takeFacts() { return std::exchange(outbox_, FactBatch{}); }
-  // What the writes since the last call refused to say, in words (`isUnique()`): a MIC or an id at a source that another market
-  // already has is not given to a second one.
+  // What the writes since the last call refused to say, in words: an ISIN that
+  // is not valid, a code or a MIC that does not fit.
   std::vector<std::string> takeNotices() { return std::exchange(notices_, {}); }
 
  private:
   uint64_t version_ = 0;
   uint64_t checks_ = 0;
   TimestampMs now_ = 0;
-  std::function<uint64_t()> * mint_ = nullptr;                    // set by the store for the length of a write
   FactBatch outbox_;                                              // what to keep, for the store that made this copy
   std::vector<std::string> notices_;                              // what was refused, for the store that made this copy
   immer::map<EdgeKey, Listing> listings_;
@@ -166,11 +165,15 @@ class Store {
   // An instrument by the first of the identifying attributes that finds one, made if none does; then all the
   // attributes, the identifying ones too, are set.
   virtual InstrumentId resolveInstrument(const std::vector<Attribute> & identifying, const std::vector<Attribute> & rest) = 0;
-  // The market that has any of these attributes, tried in the order given; where none has, a market is made. The
-  // attributes are then set on it, so a market first seen by its Nordnet id is given its name when it is learned.
-  virtual MarketId resolveMarket(const std::vector<Attribute> &) = 0;
-  // By name alone.
-  MarketId addMarket(const std::string & name) { return resolveMarket({{predicate::name, name}}); }
+  // The market with this MIC (ISO 10383: four characters of A-Z0-9), made if it
+  // is new; `name` is what a person reads (the MIC until one is said), and one
+  // already said stands where none is given. Nothing else is a market: a code
+  // that is no MIC makes none (the id is none and it is told of), and a source
+  // that cannot name a row's market skips the row. The two that are no venue
+  // are kOffExchange (XOFF: listed instruments traded off an exchange, the
+  // funds) and kNoMarket (XXXX: an index, a spot price, a currency pair).
+  virtual MarketId addMarket(const std::string &mic,
+                             const std::string &name = {}) = 0;
   // Sets one attribute of any node: the same for all of them.
   virtual void setAttribute(NodeRef, const Attribute &) = 0;
   // The listing of an edge, replacing the one it had. An edge exists once it has data, so one that has none yet takes
@@ -182,9 +185,16 @@ class Store {
   // stands where none is given. A code that is not one to ten letters or digits makes none: the id is none, and it is told of.
   virtual DatasetId addDataset(const std::string & code, const std::string & name = {}) = 0;
 
-  // Candles. An edge has a series for each resolution it has data in, as the provider gives it: nothing is derived from
-  // another. A bar at a time already in the series replaces it (a correction, or today's bar updated); the rest are
-  // inserted in order. The bars' times are slot numbers, or day numbers for a date resolution.
+  // What is said of an edge or an event needs all of its parts: a key with an
+  // instrument, a market or a dataset that is none (one that was refused) is a
+  // bug in the caller, and every call below throws std::invalid_argument for
+  // it, and writes nothing.
+  //
+  // Candles. An edge has a series for each resolution it has data in, as the
+  // provider gives it: nothing is derived from another. A bar at a time already
+  // in the series replaces it (a correction, or today's bar updated); the rest
+  // are inserted in order. The bars' times are slot numbers, or day numbers for
+  // a date resolution.
   virtual void appendCandles(const EdgeKey &, Resolution, const std::vector<Candle> &) = 0;
   // The close before the session of `day`, which a provider gives beside the day's bars; replaces what was said.
   virtual void setPreviousClose(const EdgeKey &, int64_t day, double close) = 0;
@@ -207,10 +217,9 @@ struct StoreOptions {
   FactWriter::Options writer;
   // The time of a write, for `updated`. The wall clock by default; a test sets its own.
   std::function<TimestampMs()> clock;
-  // The sixty bits of the next market's key (NodeKey.h): random by default; a test can count instead.
-  std::function<uint64_t()> mint;
-  // Told, once for each, what the store refused or found wrong in what it was given or had kept: a MIC or an id at a source
-  // that two markets would have. Called with the store's writer lock held, so it must not call back into the store.
+  // Told, once for each, what the store refused in what it was given: an ISIN
+  // that is not valid, a code or a MIC that does not fit. Called with the
+  // store's writer lock held, so it must not call back into the store.
   std::function<void(const std::string &)> notice;
 };
 

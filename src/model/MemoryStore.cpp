@@ -1,18 +1,17 @@
 #include "model/Store.h"
 
-#include "model/NodeIdentity.h"
 #include "model/Isin.h"
 
 #include <algorithm>
 #include <atomic>
 #include <chrono>
-#include <unordered_map>
-#include <map>
-#include <random>
-#include <set>
-#include <memory>
 #include <functional>
+#include <map>
+#include <memory>
 #include <mutex>
+#include <set>
+#include <stdexcept>
+#include <unordered_map>
 
 namespace {
 
@@ -100,10 +99,21 @@ std::optional<NodeRef> lowest(const immer::set<uint64_t> * ids, NodeType t) {
   return n;
 }
 
-// A key with all of its parts: an instrument that was refused (no ISIN, a code that does not fit) has none, and what is said of
-// an edge or an event that has it is said of nothing.
-bool whole(const EdgeKey & k) { return k.base.valid() && k.quote.valid() && k.market.valid() && k.dataset.valid(); }
-bool whole(const EventKey & k) { return k.instrument.valid() && k.dataset.valid(); }
+// A key with all of its parts. An instrument, a market or a dataset that was
+// refused has none, and a caller that goes on to say something of an edge or an
+// event with it has a bug: it is told by an exception, not left to write
+// nothing or something under key zero. (A source that cannot name a market or
+// an instrument skips the row, and says so.)
+void require(const EdgeKey &k) {
+  if (!k.base.valid() || !k.quote.valid() || !k.market.valid() ||
+      !k.dataset.valid())
+    throw std::invalid_argument(
+        "an edge needs an instrument, a quote, a market and a dataset");
+}
+void require(const EventKey &k) {
+  if (!k.instrument.valid() || !k.dataset.valid())
+    throw std::invalid_argument("an event needs an instrument and a dataset");
+}
 
 std::string symbolKey(MarketId m, const std::string & symbol) { return std::to_string(m.value) + '\0' + symbol; }
 
@@ -121,7 +131,8 @@ std::string Snapshot::isin(InstrumentId id) const { return NodeKey{id.value}.kin
 std::string Snapshot::name(NodeRef n) const {
   const auto * attrs = attributes_.find(n);
   std::string name = attrs ? textFact(*attrs, predicate::name) : std::string();
-  if (name.empty() && n.type == NodeType::Dataset && attrs) return text(NodeKey{n.id});  // the code, until a name is said
+  if (name.empty() && attrs && n.type != NodeType::Instrument)
+    return text(NodeKey{n.id}); // the code or the MIC, until a name is said
   return name;
 }
 std::optional<InstrumentId> Snapshot::findInstrument(const std::string & s) const {
@@ -159,12 +170,11 @@ std::optional<InstrumentId> Snapshot::findInstrumentByIsin(const std::string & i
   if (!key || !attributes_.find(refOf(*key))) return std::nullopt;
   return InstrumentId{key->value};
 }
-std::optional<MarketId> Snapshot::findMarket(const std::string & s) const {
-  return findMarketByAttribute(predicate::name, s);
-}
-std::optional<MarketId> Snapshot::findMarketByAttribute(const std::string & p, const std::string & v) const {
-  auto n = findByAttribute(NodeType::Market, p, v);
-  return n ? std::optional<MarketId>(MarketId{n->id}) : std::nullopt;
+std::optional<MarketId> Snapshot::findMarket(const std::string &mic) const {
+  const auto key = marketKey(mic);
+  if (!key || !attributes_.find(refOf(*key)))
+    return std::nullopt;
+  return MarketId{key->value};
 }
 std::vector<Attribute> Snapshot::attributes(NodeRef n) const {
   const auto * a = attributes_.find(n);
@@ -218,7 +228,9 @@ std::optional<double> Snapshot::previousClose(const EdgeKey & k, int64_t day) co
   return p->second;
 }
 void Snapshot::setPreviousClose(const EdgeKey & k, int64_t day, double close) {
-  if (!isDefined(close) || !whole(k)) return;
+  require(k);
+  if (!isDefined(close))
+    return;
   const auto * p = previousClose_.find(k);
   if (p && *p == std::make_pair(day, close)) return;
   previousClose_ = previousClose_.set(k, {day, close});
@@ -297,36 +309,16 @@ void Snapshot::load(const std::vector<StoredFact> & facts) {
       }
     attributes_ = attributes_.set(n, std::move(attrs));
   }
-  // What a file says of two nodes that no two have is told, and the lowest key is the node.
-  for (const auto & [said, ids] : byAttribute_) {
-    const size_t at = said.find('\0');
-    const auto type = static_cast<NodeType>(said[0] - '0');
-    if (ids.size() > 1 && at != std::string::npos && isUnique(type, said.substr(1, at - 1)))
-      notices_.push_back("market: the file says " + said.substr(1, at - 1) + " " + said.substr(at + 1) + " of " + std::to_string(ids.size()) + " markets");
-  }
 }
 
 void Snapshot::setAttributes(NodeRef n, const std::vector<Attribute> & in) {
   const NodeKey nodeKey{n.id};
   if (!nodeKey.valid() || refOf(nodeKey).type != n.type) return;
-  if (nodeKey.kind() != NodeKind::Market && text(nodeKey).empty()) return;  // a number that is no ISIN and no code is no node
+  if (text(nodeKey).empty())
+    return; // a number that is no ISIN, no code and no MIC is no node
   std::vector<Attribute> said;
   for (const Attribute & a : in)
     if (says(a.value) && !a.predicate.empty()) said.push_back(a);
-  if (said.empty()) return;
-
-  // What says which node is meant is not said of two: another node that has it keeps it, and the second is refused.
-  std::erase_if(said, [&](const Attribute & a) {
-    const auto * text = std::get_if<std::string>(&a.value);
-    if (!text || !isUnique(n.type, a.predicate)) return false;
-    const auto * ids = byAttribute_.find(indexKey(n.type, a.predicate, *text));
-    if (!ids || !std::any_of(ids->begin(), ids->end(), [&](uint64_t id) { return id != n.id; })) return false;
-    notices_.push_back(std::string(n.type == NodeType::Market ? "market" : n.type == NodeType::Instrument ? "instrument"
-                                                                                                          : "dataset") +
-                       ": " +
-                       a.predicate + " " + *text + " is already said of another, not said of this one too");
-    return true;
-  });
   if (said.empty()) return;
 
   std::vector<Attribute> attrs = attributes(n);
@@ -423,23 +415,24 @@ InstrumentId Snapshot::addInstrument(const std::string & symbol, const std::stri
   return resolveInstrument({}, rest);
 }
 
-// A market has no identifier all of them have, so its key is minted when it is first said, and it is found again by what is said
-// of it (the first of these that a market has, in the order given). What it is said to be that another market is said to be
-// too is refused: that is two records of one market, which this does not settle.
-MarketId Snapshot::resolveMarket(const std::vector<Attribute> & attributes) {
-  std::optional<NodeRef> found;
-  for (const Attribute & a : attributes)
-    if (const auto * text = std::get_if<std::string>(&a.value); text && !found) found = findByAttribute(NodeType::Market, a.predicate, *text);
-  MarketId id{found ? found->id : 0};
-  if (!id.valid()) {
-    if (!mint_ || !*mint_) return MarketId{};
-    for (int tries = 0; tries < 8 && !id.valid(); tries++) {
-      const NodeKey candidate = marketKey((*mint_)());
-      if (!attributes_.find(refOf(candidate))) id = MarketId{candidate.value};
-    }
-    if (!id.valid()) return MarketId{};
+// A market is its MIC, the ISO 10383 code: four characters of A-Z0-9, which
+// never changes. Nothing else is a market: a code that is no MIC makes none,
+// and says why. Its name is a fact of it that is the MIC until something says
+// otherwise.
+MarketId Snapshot::addMarket(const std::string &mic, const std::string &name) {
+  const auto key = marketKey(mic);
+  if (!key) {
+    notices_.push_back("market: " + mic +
+                       " is not a market code (four letters or digits, an ISO "
+                       "10383 MIC), so it is not kept");
+    return MarketId{};
   }
-  setAttributes(NodeRef(id), attributes);
+  const MarketId id{key->value};
+  setAttributes(NodeRef(id), {{predicate::mic, mic}});
+  if (!name.empty())
+    setAttributes(NodeRef(id), {{predicate::name, name}});
+  else if (!fact(NodeRef(id), predicate::name))
+    setAttributes(NodeRef(id), {{predicate::name, mic}});
   return id;
 }
 
@@ -467,6 +460,7 @@ bool hasData(const immer::map<MarketId, immer::set<EdgeKey>> & byMarket, const E
 
 void Snapshot::setListing(const Listing & l) {
   const EdgeKey & k = l.key;
+  require(k);
   if (!hasData(edgesByMarket_, k)) return;  // no data yet: no edge
   const Listing * old = listings_.find(k);
   if (old && *old == l) return;
@@ -481,7 +475,9 @@ void Snapshot::setListing(const Listing & l) {
 }
 
 void Snapshot::appendCandles(const EdgeKey & k, Resolution r, const std::vector<Candle> & in) {
-  if (in.empty() || !whole(k)) return;
+  require(k);
+  if (in.empty())
+    return;
   const SeriesKey key{k, r};
   const auto * old = series_.find(key);
   Seq<Candle> bars = old ? *old : Seq<Candle>{};
@@ -496,7 +492,9 @@ void Snapshot::appendCandles(const EdgeKey & k, Resolution r, const std::vector<
 }
 
 void Snapshot::appendBooks(const EdgeKey & k, const std::vector<BookSnapshot> & in) {
-  if (in.empty() || !whole(k)) return;
+  require(k);
+  if (in.empty())
+    return;
   appendTo(books_, k, in, [](const BookSnapshot &, const BookSnapshot &) { return true; });
   const auto * set = edgesByMarket_.find(k.market);
   edgesByMarket_ = edgesByMarket_.set(k.market, (set ? *set : immer::set<EdgeKey>{}).insert(k));
@@ -504,7 +502,9 @@ void Snapshot::appendBooks(const EdgeKey & k, const std::vector<BookSnapshot> & 
 }
 
 void Snapshot::appendAnnouncements(const EventKey & k, const std::vector<Announcement> & in) {
-  if (in.empty() || !whole(k)) return;
+  require(k);
+  if (in.empty())
+    return;
   appendTo(announcements_, k, in,
            [](const Announcement & a, const Announcement & b) { return a.headline == b.headline; });
   const auto * set = eventsByInstrument_.find(k.instrument);
@@ -513,7 +513,9 @@ void Snapshot::appendAnnouncements(const EventKey & k, const std::vector<Announc
 }
 
 void Snapshot::appendActions(const EventKey & k, const std::vector<CorporateAction> & in) {
-  if (in.empty() || !whole(k)) return;
+  require(k);
+  if (in.empty())
+    return;
   appendTo(actions_, k, in, [](const CorporateAction & a, const CorporateAction & b) { return a.kind == b.kind; });
   const auto * set = eventsByInstrument_.find(k.instrument);
   eventsByInstrument_ = eventsByInstrument_.set(k.instrument, (set ? *set : immer::set<EventKey>{}).insert(k));
@@ -556,15 +558,7 @@ class MemoryStore : public Store {
   explicit MemoryStore(StoreOptions options)
       : current_(std::make_shared<const Snapshot>()),
         clock_(std::move(options.clock)),
-        mint_(std::move(options.mint)),
         notice_(std::move(options.notice)) {
-    if (!mint_)
-      mint_ = [] {
-        static std::mutex m;
-        static std::mt19937_64 random{std::random_device{}()};
-        std::lock_guard lock(m);
-        return static_cast<uint64_t>(random());
-      };
     if (!clock_)
       clock_ = [] {
         return static_cast<TimestampMs>(
@@ -592,8 +586,8 @@ class MemoryStore : public Store {
   InstrumentId addInstrument(const std::string & symbol, const std::string & name, InstrumentKind kind, const std::string & isin, const std::string & type) override {
     return write([&](Snapshot & s) { return s.addInstrument(symbol, name, kind, isin, type); });
   }
-  MarketId resolveMarket(const std::vector<Attribute> & a) override {
-    return write([&](Snapshot & s) { return s.resolveMarket(a); });
+  MarketId addMarket(const std::string &mic, const std::string &name) override {
+    return write([&](Snapshot &s) { return s.addMarket(mic, name); });
   }
   void setAttributes(NodeRef n, const std::vector<Attribute> & a) override {
     write([&](Snapshot & s) { s.setAttributes(n, a); });
@@ -638,9 +632,7 @@ class MemoryStore : public Store {
     std::shared_ptr<const Snapshot> old = current_.load();
     Snapshot next = *old;
     next.setTime(clock_());
-    next.setKeyMaker(&mint_);
     const auto finish = [&] {
-      next.setKeyMaker(nullptr);
       tell(next.takeNotices());
       FactBatch facts = next.takeFacts();
       if (writer_) writer_->post(std::move(facts));
@@ -659,7 +651,6 @@ class MemoryStore : public Store {
   std::mutex mutex_;
   SnapshotSlot current_;
   std::function<TimestampMs()> clock_;
-  std::function<uint64_t()> mint_;  // the keys of markets
   std::function<void(const std::string &)> notice_;
   std::set<std::string> told_;          // what notice_ has been told, which it is told once
   std::unique_ptr<FactWriter> writer_;  // last: its thread ends first, with everything written
