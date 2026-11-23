@@ -163,13 +163,17 @@ void Browser::showPreset(int i) {
 
 void Browser::requestRefresh() {
   const auto now = std::chrono::steady_clock::now();
-  if (std::chrono::duration<double>(now - last_refresh_).count() < min_refresh_) {
+  // A refresh lists every row again and sorts them (tens of milliseconds at 30 000 rows) and data keeps arriving for minutes: wait
+  // at least ten times what the last one cost, so it takes a tenth of the time at most. A test that sets no wait gets none.
+  const double wait = min_refresh_ > 0 ? std::max(min_refresh_, 10 * refresh_cost_) : 0;
+  if (std::chrono::duration<double>(now - last_refresh_).count() < wait) {
     pending_ = true;  // the next frame asks again
     return;
   }
   pending_ = false;
   last_refresh_ = now;
   refresh();
+  refresh_cost_ = std::chrono::duration<double>(std::chrono::steady_clock::now() - now).count();
 }
 
 void Browser::requestIcons() {

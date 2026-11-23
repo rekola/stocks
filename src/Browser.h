@@ -83,6 +83,7 @@ class Browser {
     bool operator==(const HistoryView &) const = default;
   } history_view_;              // what the history loader was last told is wanted
   double min_refresh_ = 0.25;
+  double refresh_cost_ = 0;  // seconds the last refresh took: the next waits longer than that many times over, so loading never keeps the UI busy
   std::chrono::steady_clock::time_point last_refresh_{};
   std::optional<int> action_row_;  // the row a button was clicked on, while its command runs: not the selected one
   bool pending_ = false;        // the store changed and the table does not show it yet
