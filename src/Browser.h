@@ -75,14 +75,12 @@ class Browser {
   cellui::StatusLine status_;
   uint64_t shown_version_ = 0;  // of the snapshot the table shows
   int shown_preset_ = -1;       // the preset the table shows
-  struct HistoryView {
-    const void * model = nullptr;
-    int first = -1, rows = -1, count = -1;
-    Period period = Period::Day;
-    int64_t minute = 0;  // the wall minute: what is wanted is told again every minute, for the requests that have expired
-    bool set = false;
-    bool operator==(const HistoryView &) const = default;
-  } history_view_;              // what the history loader was last told is wanted
+  // What the history loader was last told is wanted: the edges, in the order sent, and the period. The edges themselves and
+  // not where the view is, as a sort (a click on a heading, or a store change that sorts again) puts other edges at the
+  // same positions.
+  std::vector<EdgeKey> history_edges_, history_scratch_;
+  std::optional<Period> history_period_;
+  int64_t history_minute_ = 0;  // the wall minute it was told in: told again every minute, for the requests that have expired
   double min_refresh_ = 0.25;
   double refresh_cost_ = 0;  // seconds the last refresh took: the next waits longer than that many times over, so loading never keeps the UI busy
   std::chrono::steady_clock::time_point last_refresh_{};

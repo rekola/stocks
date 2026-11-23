@@ -24,14 +24,16 @@ class HttpClientHttp : public Http {
   }
 
   HttpResult get(const std::string & url, const HttpHeaders & headers) override {
+    if (cancelled()) return cancelledResult();
     httpclient::HTTPRequest request(httpclient::Method::GET, url);
     request.setFollowLocation(true);
     request.setConnectTimeout(client_->getConnectTimeout());
     request.setReadTimeout(client_->getReadTimeout());
     request.setConnectionTimeout(client_->getConnectionTimeout());
     for (const auto & [name, value] : headers) request.addHeader(name, value);
-    httpclient::HTTPResponse response;
+    Response response(*this);
     client_->request(request, client_->noAuth, response);
+    if (cancelled()) return cancelledResult();  // what came before is not an answer: it may be cut short
     HttpResult r;
     r.status = response.getResultCode();
     r.body = response.getContent();
@@ -40,6 +42,22 @@ class HttpClientHttp : public Http {
   }
 
  private:
+  // A response that ends the transfer when the Http is cancelled: httpclient asks onIdle() about once a second while it waits
+  // (connecting, or for data), and a chunk that is not taken ends it at once.
+  class Response : public httpclient::HTTPResponse {
+   public:
+    explicit Response(const Http & http) : http_(http) {}
+    bool onIdle() override { return !http_.cancelled(); }
+    bool handleChunk(std::string_view chunk) override { return !http_.cancelled() && HTTPResponse::handleChunk(chunk); }
+
+   private:
+    const Http & http_;
+  };
+  static HttpResult cancelledResult() {
+    HttpResult r;
+    r.error = "cancelled";
+    return r;
+  }
   // Some providers refuse an empty or library user agent.
   static constexpr const char * kUserAgent = "Mozilla/5.0 (compatible; stocks)";
   std::unique_ptr<httpclient::HTTPClient> client_;

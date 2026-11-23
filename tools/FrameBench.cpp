@@ -25,7 +25,7 @@ int main(int argc, char ** argv) {
   const int rows = argc > 1 ? std::atoi(argv[1]) : 30000;
   std::shared_ptr<Store> store = makeMemoryStore();
   const InstrumentId usd = store->addInstrument("USD", "US dollar", InstrumentKind::Currency);
-  const MarketId market = store->addMarket("Nasdaq Helsinki");
+  const MarketId market = store->addMarket("XHEL", "Nasdaq Helsinki");
   const DatasetId dataset = store->addDataset("nordnet");
   const int64_t today = dayNumber(2026, 12, 1);
   std::mt19937 rng(1);

@@ -9,6 +9,7 @@
 #include "source/SourceRunner.h"
 #include "source/YahooSource.h"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <set>
@@ -16,7 +17,16 @@
 #include <thread>
 #include <fstream>
 #include <functional>
+#include <mutex>
 #include <sstream>
+#include <stdexcept>
+
+#ifndef _WIN32
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
+#endif
 
 namespace {
 
@@ -514,4 +524,211 @@ TEST(the_datasets_of_the_shipped_fund_schemas_are_codes_that_no_other_source_has
     schemas++;
   }
   CHECK(schemas >= 2);
+}
+
+namespace {
+// A source that waits a minute between two requests, and says whether the wait was cut short.
+class PausingSource : public Source {
+ public:
+  PausingSource(std::atomic<bool> & waiting, std::atomic<bool> & cut) : waiting_(waiting), cut_(cut) {}
+  std::string name() const override { return "pausing"; }
+  std::string description() const override { return ""; }
+  void load(Store &, Http &, SourceListener & listener) override {
+    waiting_ = true;
+    cut_ = !listener.pause(std::chrono::minutes(1));
+  }
+
+ private:
+  std::atomic<bool> & waiting_;
+  std::atomic<bool> & cut_;
+};
+}  // namespace
+
+TEST(the_runner_stopping_cuts_a_sources_pause_short) {
+  std::shared_ptr<Store> store = makeMemoryStore();
+  std::atomic<bool> waiting{false}, cut{false};
+  const auto start = std::chrono::steady_clock::now();
+  {
+    std::vector<std::unique_ptr<Source>> sources;
+    sources.push_back(std::make_unique<PausingSource>(waiting, cut));
+    SourceRunner runner(store, std::move(sources), [] {}, [](std::string) {});
+    CHECK(waitFor([&] { return waiting.load(); }));
+  }  // the destructor wakes the pause and joins
+  CHECK(cut);
+  CHECK(std::chrono::steady_clock::now() - start < std::chrono::seconds(10));
+}
+
+TEST(a_pause_outside_a_runner_sleeps_and_one_after_a_cancel_does_not) {
+  Listener listener;
+  CHECK(listener.pause(std::chrono::milliseconds(1)));
+  struct Cancelled : Listener {
+    bool cancelled() const override { return true; }
+  } cancelled;
+  CHECK(!cancelled.pause(std::chrono::hours(1)));
+}
+
+TEST(a_source_returns_when_its_pause_is_cut_short) {
+  auto store = makeMemoryStore();
+  FakeHttp http;
+  http.answer = [](const std::string &) { return failed(404); };
+  struct Stopping : Listener {
+    int pauses = 0;
+    bool pause(std::chrono::milliseconds) override {
+      pauses++;
+      return false;
+    }
+  } listener;
+  YahooSource(testList(), "1y", std::chrono::hours(1)).load(*store, http, listener);
+  CHECK(listener.pauses == 1 && http.urls.size() == 2);  // the first instrument (both hosts), then the pause said stop
+}
+
+namespace {
+// A source whose load throws every time, and whose details throw something that is not an exception, and that counts both.
+class ThrowingSource : public Source {
+ public:
+  ThrowingSource(std::atomic<int> & loads, std::atomic<int> & details) : loads_(loads), details_(details) {}
+  std::string name() const override { return "throwing"; }
+  std::string description() const override { return "A source that throws"; }
+  void load(Store &, Http &, SourceListener &) override {
+    loads_++;
+    throw std::runtime_error("broken answer");
+  }
+  std::chrono::milliseconds refreshInterval() const override { return std::chrono::milliseconds(5); }
+  bool loadDetails(Store &, Http &, SourceListener &) override {
+    details_++;
+    throw 42;
+  }
+
+ private:
+  std::atomic<int> & loads_;
+  std::atomic<int> & details_;
+};
+}  // namespace
+
+TEST(a_source_that_throws_is_said_and_the_runner_goes_on_with_its_schedule) {
+  std::shared_ptr<Store> store = makeMemoryStore();
+  std::atomic<int> loads{0}, details{0}, other{0};
+  std::mutex mutex;
+  std::vector<std::string> messages;
+  {
+    std::vector<std::unique_ptr<Source>> sources;
+    sources.push_back(std::make_unique<ThrowingSource>(loads, details));
+    sources.push_back(std::make_unique<CountingSource>(other, std::chrono::milliseconds(0)));
+    SourceRunner runner(store, std::move(sources), [] {}, [&](std::string m) {
+      std::lock_guard lock(mutex);
+      messages.push_back(std::move(m));
+    });
+    CHECK(waitFor([&] { return loads >= 3 && details >= 3; }));  // loaded again and again, its details asked for after each
+  }
+  CHECK(other == 1);  // the other source is not disturbed
+  std::lock_guard lock(mutex);
+  CHECK(std::count(messages.begin(), messages.end(), "throwing: broken answer") >= 3);
+  CHECK(std::count(messages.begin(), messages.end(), "throwing: failed") >= 3);
+}
+
+TEST(a_yahoo_answer_that_lacks_a_column_parses_without_crashing) {
+  // No volume: the bars have none.
+  {
+    auto store = makeMemoryStore();
+    std::string error;
+    CHECK(YahooSource::parse(
+        R"({"chart":{"result":[{"timestamp":[1767254400],"indicators":{"quote":[{"open":[1],"high":[2],"low":[0.5],"close":[1.5]}]}}]}})",
+        entry("NOKIA.HE"), *store, error));
+    auto s = store->snapshot();
+    CandleSeries c = s->candles(edgeOf(*s, kNokia, "EUR", "XHEL", "yahoo"), Resolution::Day);
+    CHECK(c.candles.size() == 1 && c.candles[0].close == 1.5 && !isDefined(c.candles[0].volume));
+  }
+  // No open, a quote that is not an object, events of the wrong shape: no candles, or none of the bad events, and no throw.
+  const char * bad[] = {
+      R"({"chart":{"result":[{"timestamp":[1767254400],"indicators":{"quote":[{"high":[2],"low":[0.5],"close":[1.5],"volume":[3]}]}}]}})",
+      R"({"chart":{"result":[{"timestamp":[1767254400],"indicators":{"quote":[[1,2,3]]}}]}})",
+      R"({"chart":{"result":[{"timestamp":[1767254400],"indicators":{"quote":{"open":[1]}}}]}})",
+      R"({"chart":{"result":[{"timestamp":[1767254400],"indicators":[]}]}})",
+      R"({"chart":{"result":[7]}})",
+      R"({"chart":[1]})",
+      R"({"chart":{"error":{"description":7}}})",
+      R"([1, 2])"};
+  for (const char * body : bad) {
+    auto store = makeMemoryStore();
+    std::string error;
+    bool parsed = true;
+    try {
+      parsed = YahooSource::parse(body, entry("NOKIA.HE"), *store, error);
+    } catch (...) {
+      CHECK(false);
+    }
+    CHECK(!parsed && !error.empty());
+  }
+  auto store = makeMemoryStore();
+  std::string error;
+  CHECK(YahooSource::parse(
+      R"({"chart":{"result":[{"timestamp":[1767254400],"indicators":{"quote":[{"open":[1],"high":[2],"low":[0.5],"close":[1.5]}]},)"
+      R"("events":{"dividends":{"a":7,"b":{"date":"x"}},"splits":{"a":[1],"b":{"date":1767254400,"numerator":"2","denominator":1}}}}]}})",
+      entry("NOKIA.HE"), *store, error));
+}
+
+#ifndef _WIN32
+TEST(a_cancelled_http_ends_the_request_in_progress_and_makes_no_more) {
+  // A server on this machine that takes the connection and never answers: without a cancel the request would wait for
+  // the read timeout (20 s).
+  const int server = socket(AF_INET, SOCK_STREAM, 0);
+  sockaddr_in address{};
+  address.sin_family = AF_INET;
+  address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+  CHECK(bind(server, reinterpret_cast<sockaddr *>(&address), sizeof address) == 0 && listen(server, 4) == 0);
+  socklen_t length = sizeof address;
+  getsockname(server, reinterpret_cast<sockaddr *>(&address), &length);
+  const std::string url = "http://127.0.0.1:" + std::to_string(ntohs(address.sin_port)) + "/";
+
+  std::unique_ptr<Http> http = makeHttp();
+  std::atomic<bool> returned{false};
+  HttpResult result;
+  std::thread request([&] {
+    result = http->get(url);
+    returned = true;
+  });
+  const int connection = accept(server, nullptr, nullptr);  // the request is in progress
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+  CHECK(!returned);
+  const auto cancelled = std::chrono::steady_clock::now();
+  http->cancel();
+  request.join();
+  CHECK(std::chrono::steady_clock::now() - cancelled < std::chrono::seconds(5));
+  CHECK(result.status == 0 && result.error == "cancelled");
+  // A later request is not made.
+  const auto again = std::chrono::steady_clock::now();
+  CHECK(http->get(url).status == 0 && std::chrono::steady_clock::now() - again < std::chrono::milliseconds(500));
+  if (connection >= 0) close(connection);
+  close(server);
+}
+#endif
+
+namespace {
+// A source whose load waits like a request that gets no answer, until its Http is cancelled (for a minute at most).
+class WaitingSource : public Source {
+ public:
+  explicit WaitingSource(std::atomic<bool> & waiting) : waiting_(waiting) {}
+  std::string name() const override { return "waiting"; }
+  std::string description() const override { return ""; }
+  void load(Store &, Http & http, SourceListener &) override {
+    waiting_ = true;
+    for (int i = 0; i < 6000 && !http.cancelled(); i++) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+
+ private:
+  std::atomic<bool> & waiting_;
+};
+}  // namespace
+
+TEST(the_runner_stopping_cancels_its_sources_http) {
+  std::shared_ptr<Store> store = makeMemoryStore();
+  std::atomic<bool> waiting{false};
+  const auto start = std::chrono::steady_clock::now();
+  {
+    std::vector<std::unique_ptr<Source>> sources;
+    sources.push_back(std::make_unique<WaitingSource>(waiting));
+    SourceRunner runner(store, std::move(sources), [] {}, [](std::string) {});
+    CHECK(waitFor([&] { return waiting.load(); }));
+  }
+  CHECK(std::chrono::steady_clock::now() - start < std::chrono::seconds(10));
 }

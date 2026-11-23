@@ -11,6 +11,7 @@
 #include <list>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -130,10 +131,12 @@ class HistoryLoader {
   std::list<Ask> queue_;
   std::unordered_map<Ask, std::chrono::steady_clock::time_point> done_;  // the asks loaded, and when
   std::unordered_set<Ask> failed_;
+  std::optional<Ask> loading_;  // the ask being loaded now: not yet done or failed, so want() must not queue it again
   std::vector<std::shared_ptr<HistoryProvider>> providers_;
   std::unordered_set<std::string> blocked_;  // the datasets whose provider has refused
   std::chrono::milliseconds extra_pause_{0};  // a provider's own, after its request (the loader's thread only)
   bool busy_ = false, stop_ = false, refused_ = false;
+  bool retry_ = false;  // the ask being loaded had no answer: queued again after it (under the lock)
   std::chrono::steady_clock::time_point offline_until_{};
   std::thread thread_;  // last: it starts in the constructor
 };

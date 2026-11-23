@@ -215,10 +215,10 @@ void Browser::requestHistory() {
   if (!history_ || !quotes) return;
   const int count = quotes->rowCount(), first = table_.firstVisiblePosition(), view = std::max(1, table_.visibleRows());
   const int64_t minute = std::chrono::duration_cast<std::chrono::minutes>(std::chrono::steady_clock::now().time_since_epoch()).count();
-  const HistoryView now{quotes, first, view, count, period_, minute, true};
-  if (now == history_view_) return;  // the same rows as the minute before: the loader has them
-  history_view_ = now;
-  std::vector<EdgeKey> edges;
+  // Listed every frame (three screens of rows, into a buffer that is kept) and compared with what was sent: a sort or a scroll
+  // changes them, a frame that only draws does not.
+  std::vector<EdgeKey> & edges = history_scratch_;
+  edges.clear();
   auto add = [&](int position) {
     const int row = table_.rowAt(position);
     if (row >= 0) edges.push_back(quotes->edge(row));
@@ -226,7 +226,11 @@ void Browser::requestHistory() {
   // Each is a request a second: what is on screen, then the screen after and the one before.
   for (int p = first; p < std::min(count, first + 2 * view); p++) add(p);
   for (int p = first - 1; p >= std::max(0, first - view); p--) add(p);
-  history_->want(edges, period_);
+  if (history_period_ == period_ && minute == history_minute_ && edges == history_edges_) return;  // the same rows as the minute before: the loader has them
+  history_period_ = period_;
+  history_minute_ = minute;
+  std::swap(history_edges_, history_scratch_);
+  history_->want(history_edges_, period_);
 }
 
 void Browser::refresh() {

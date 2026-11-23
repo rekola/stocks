@@ -137,6 +137,7 @@ HistoryLoader::~HistoryLoader() {
     std::lock_guard lock(mutex_);
     stop_ = true;
   }
+  if (http_) http_->cancel();  // a request in progress ends too
   wake_.notify_all();
   if (thread_.joinable()) thread_.join();
 }
@@ -189,7 +190,7 @@ void HistoryLoader::want(const std::vector<EdgeKey> & edges, Period period) {
       if (auto provider = providerOf(dataset)) {
         // Another dataset's edge: once each, unless the store has the bars already (the quarter's, as a fund's).
         const Ask ask{k, kProvided};
-        if (blocked_.count(dataset) || done_.count(ask) || failed_.count(ask) || !seen.insert(ask).second) continue;
+        if (blocked_.count(dataset) || done_.count(ask) || failed_.count(ask) || loading_ == ask || !seen.insert(ask).second) continue;
         if (!provider->wants(*snapshot, k) || periodView(*snapshot, k, Period::Quarter, false).primary) continue;
         queue_.push_back(ask);
         continue;
@@ -197,15 +198,16 @@ void HistoryLoader::want(const std::vector<EdgeKey> & edges, Period period) {
       if (dataset != kNordnetDataset || !listing || listing->orderBook.empty()) continue;
       if (options_.depth == Depth::Full) {
         // More than today's bar: the bars are there already (loaded before, or from elsewhere).
-        if (done_.count({k, kDaily}) || failed_.count({k, kDaily}) || !seen.insert({k, kDaily}).second) continue;
+        const Ask ask{k, kDaily};
+        if (done_.count(ask) || failed_.count(ask) || loading_ == ask || !seen.insert(ask).second) continue;
         if (snapshot->lastCandles(k, Resolution::Day, 6).candles.size() >= 6) continue;
-        queue_.push_back({k, kDaily});
+        queue_.push_back(ask);
         continue;
       }
       const bool nav = snapshot->kind(k.base) == InstrumentKind::Fund;
       const int request = requestOf(period, nav);
       const Ask ask{k, request};
-      if (failed_.count(ask) || !seen.insert(ask).second) continue;
+      if (failed_.count(ask) || loading_ == ask || !seen.insert(ask).second) continue;
       // Loaded before: not again until it has expired (then the store's bars are the old ones, so they do not count).
       const auto loaded = done_.find(ask);
       if (loaded != done_.end() && !expired(ask, loaded->second)) continue;
@@ -231,12 +233,41 @@ void HistoryLoader::run() {
     }
     const Ask ask = queue_.front();
     queue_.pop_front();
+    // Queued before its answer came: not asked again. A done one that has expired was queued by want() for that: it is loaded.
+    const auto loaded = done_.find(ask);
+    if (failed_.count(ask) || (loaded != done_.end() && !expired(ask, loaded->second))) {
+      if (queue_.empty()) idle_.notify_all();
+      continue;
+    }
     busy_ = true;
+    loading_ = ask;  // want() leaves it out until it is done or failed
     lock.unlock();
     bool network = false;
-    const bool wrote = load(ask, network);
+    bool wrote = false;
+    std::string thrown;
+    try {
+      wrote = load(ask, network);
+    } catch (const std::exception & e) {
+      thrown = e.what();
+    } catch (...) {
+      thrown = "failed";
+    }
+    if (!thrown.empty()) {
+      // Counted as missing: not asked for again this session, and the queue goes on.
+      if (message_) message_("history: " + thrown);
+      std::lock_guard failed(mutex_);
+      failed_.insert(ask);
+    }
     if (wrote && changed_) changed_();
     lock.lock();
+    loading_.reset();
+    if (retry_) {
+      // No answer: first in the queue, for after the pause. Here and not in load(), so that a want() meanwhile, which left it
+      // out as the one being loaded, does not drop it; and only once.
+      retry_ = false;
+      std::erase(queue_, ask);
+      queue_.push_front(ask);
+    }
     busy_ = false;
     if (network) {
       const auto pause = std::max(options_.pause, extra_pause_);
@@ -270,7 +301,17 @@ bool HistoryLoader::loadProvided(const Ask & wanted, bool & network) {
   if (!provider) return false;
   network = true;
   extra_pause_ = provider->pause();
-  switch (provider->load(*store_, *http_, wanted.edge)) {
+  HistoryProvider::Outcome outcome;
+  try {
+    outcome = provider->load(*store_, *http_, wanted.edge);
+  } catch (const std::exception & e) {  // as missing: the edge is not asked for again
+    if (message_) message_("history: " + snapshot->name(wanted.edge.dataset) + ": " + e.what());
+    outcome = HistoryProvider::Outcome::Missing;
+  } catch (...) {
+    if (message_) message_("history: " + snapshot->name(wanted.edge.dataset) + ": failed");
+    outcome = HistoryProvider::Outcome::Missing;
+  }
+  switch (outcome) {
     case HistoryProvider::Outcome::Refused: {
       {
         std::lock_guard lock(mutex_);
@@ -287,7 +328,7 @@ bool HistoryLoader::loadProvided(const Ask & wanted, bool & network) {
     case HistoryProvider::Outcome::Offline: {
       std::lock_guard lock(mutex_);
       offline_until_ = std::chrono::steady_clock::now() + options_.offline_pause;
-      queue_.push_front(wanted);  // again afterwards
+      retry_ = true;  // again afterwards
       return false;
     }
     case HistoryProvider::Outcome::Missing: {
@@ -328,7 +369,7 @@ bool HistoryLoader::load(const Ask & wanted, bool & network) {
       case Outcome::Offline: {
         std::lock_guard lock(mutex_);
         offline_until_ = std::chrono::steady_clock::now() + options_.offline_pause;
-        queue_.push_front(wanted);  // again afterwards
+        retry_ = true;  // again afterwards
         return false;
       }
       case Outcome::Missing: {

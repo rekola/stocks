@@ -6,11 +6,17 @@
 #include <nlohmann/json.hpp>
 
 #include <cmath>
-#include <thread>
 
 using nlohmann::json;
 
 namespace {
+
+// The member `key` of `o`, if `o` is an object and has it.
+const json * member(const json & o, const char * key) {
+  if (!o.is_object()) return nullptr;
+  auto it = o.find(key);
+  return it == o.end() ? nullptr : &*it;
+}
 
 // Element i of a column of numbers, or nothing where Yahoo has a null (a day it has no price for).
 std::optional<double> number(const json & column, size_t i) {
@@ -35,28 +41,41 @@ std::string encoded(const std::string & ticker) {
 }  // namespace
 
 bool YahooSource::parse(const std::string & body, const ListEntry & e, Store & store, std::string & error) {
-  json doc = json::parse(body, nullptr, /*allow_exceptions=*/false);
-  if (doc.is_discarded() || !doc.is_object() || !doc.contains("chart")) {
+  // What the answer holds is looked up with find() on what is checked to be an object: a const operator[] on a key that is not
+  // there is undefined, and on what is not an object it throws.
+  const json doc = json::parse(body, nullptr, /*allow_exceptions=*/false);
+  const json * chart = member(doc, "chart");
+  if (!chart || !chart->is_object()) {
     error = "not a chart response";
     return false;
   }
-  const json & chart = doc["chart"];
-  if (chart.contains("error") && chart["error"].is_object()) {
-    error = chart["error"].value("description", std::string("the provider reported an error"));
+  if (const json * failure = member(*chart, "error"); failure && failure->is_object()) {
+    const json * description = member(*failure, "description");
+    error = description && description->is_string() ? description->get<std::string>() : "the provider reported an error";
     return false;
   }
-  if (!chart.contains("result") || !chart["result"].is_array() || chart["result"].empty()) {
+  const json * results = member(*chart, "result");
+  if (!results || !results->is_array() || results->empty() || !results->front().is_object()) {
     error = "no result";
     return false;
   }
-  const json & result = chart["result"][0];
-  if (!result.contains("timestamp") || !result["timestamp"].is_array() || !result.contains("indicators") ||
-      !result["indicators"].contains("quote") || result["indicators"]["quote"].empty()) {
+  const json & result = results->front();
+  const json * timestamps = member(result, "timestamp");
+  const json * indicators = member(result, "indicators");
+  const json * quotes = indicators ? member(*indicators, "quote") : nullptr;
+  if (!timestamps || !timestamps->is_array() || !quotes || !quotes->is_array() || quotes->empty() || !quotes->front().is_object()) {
     error = "no candles";
     return false;
   }
-  const json & ts = result["timestamp"];
-  const json & q = result["indicators"]["quote"][0];
+  const json & ts = *timestamps;
+  const json & q = quotes->front();
+  // A column the answer lacks is all nulls.
+  static const json kNoColumn;
+  auto column = [&](const char * key) -> const json & {
+    const json * c = member(q, key);
+    return c ? *c : kNoColumn;
+  };
+  const json &open = column("open"), &high = column("high"), &low = column("low"), &close = column("close"), &volume = column("volume");
 
   // A daily bar is keyed by its trading date, not by the instant Yahoo stamps it with: the start of the trading day in the
   // exchange's time zone, for which the chart's meta has today's offset from UTC (see tradingDateOfDailyStamp).
@@ -67,9 +86,9 @@ bool YahooSource::parse(const std::string & body, const ListEntry & e, Store & s
   }
   std::vector<Candle> bars;
   for (size_t i = 0; i < ts.size(); i++) {
-    auto open = number(q["open"], i), high = number(q["high"], i), low = number(q["low"], i), close = number(q["close"], i);
-    if (!ts[i].is_number_integer() || !open || !high || !low || !close) continue;  // a day without a price
-    bars.push_back({tradingDateOfDailyStamp(ts[i].get<int64_t>(), utcOffset), *open, *high, *low, *close, number(q["volume"], i).value_or(kUndefined)});
+    auto o = number(open, i), h = number(high, i), l = number(low, i), c = number(close, i);
+    if (!ts[i].is_number_integer() || !o || !h || !l || !c) continue;  // a day without a price
+    bars.push_back({tradingDateOfDailyStamp(ts[i].get<int64_t>(), utcOffset), *o, *h, *l, *c, number(volume, i).value_or(kUndefined)});
   }
   if (bars.empty()) {
     error = "no candles";
@@ -99,18 +118,23 @@ bool YahooSource::parse(const std::string & body, const ListEntry & e, Store & s
   store.setListing(listing);
   store.setAttributes(base, said);
 
-  if (result.contains("events") && result["events"].is_object()) {
-    const json & events = result["events"];
+  if (const json * events = member(result, "events"); events && events->is_object()) {
     std::vector<CorporateAction> actions;
-    if (events.contains("dividends") && events["dividends"].is_object())
-      for (const auto & [key, d] : events["dividends"].items())
-        if (d.contains("date") && d.contains("amount") && d["date"].is_number_integer() && d["amount"].is_number())
-          actions.push_back({tradingDateOfDailyStamp(d["date"].get<int64_t>(), utcOffset), ActionKind::Dividend, d["amount"].get<double>(), quote, ""});
-    if (events.contains("splits") && events["splits"].is_object())
-      for (const auto & [key, s] : events["splits"].items()) {
-        double num = s.value("numerator", 0.0), den = s.value("denominator", 0.0);
-        if (s.contains("date") && s["date"].is_number_integer() && num > 0 && den > 0)
-          actions.push_back({tradingDateOfDailyStamp(s["date"].get<int64_t>(), utcOffset), ActionKind::Split, num / den, {}, s.value("splitRatio", std::string())});
+    if (const json * dividends = member(*events, "dividends"); dividends && dividends->is_object())
+      for (const auto & [key, d] : dividends->items()) {
+        const json *date = member(d, "date"), *amount = member(d, "amount");
+        if (date && amount && date->is_number_integer() && amount->is_number())
+          actions.push_back({tradingDateOfDailyStamp(date->get<int64_t>(), utcOffset), ActionKind::Dividend, amount->get<double>(), quote, ""});
+      }
+    if (const json * splits = member(*events, "splits"); splits && splits->is_object())
+      for (const auto & [key, sp] : splits->items()) {
+        const json *date = member(sp, "date"), *numerator = member(sp, "numerator"), *denominator = member(sp, "denominator"),
+                   *ratio = member(sp, "splitRatio");
+        const double num = numerator && numerator->is_number() ? numerator->get<double>() : 0.0;
+        const double den = denominator && denominator->is_number() ? denominator->get<double>() : 0.0;
+        if (date && date->is_number_integer() && num > 0 && den > 0)
+          actions.push_back({tradingDateOfDailyStamp(date->get<int64_t>(), utcOffset), ActionKind::Split, num / den, {},
+                             ratio && ratio->is_string() ? ratio->get<std::string>() : std::string()});
       }
     store.appendActions({base, dataset}, actions);
   }
@@ -148,6 +172,6 @@ void YahooSource::load(Store & store, Http & http, SourceListener & listener) {
     }
     if (done) listener.changed();
     else listener.message(std::string("yahoo: ") + e.yahoo + ": " + error);
-    if (pause_.count() > 0) std::this_thread::sleep_for(pause_);
+    if (pause_.count() > 0 && !listener.pause(pause_)) return;
   }
 }

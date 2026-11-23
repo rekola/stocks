@@ -22,8 +22,10 @@ class NordnetDetails {
   static bool parseFund(const std::string & json, std::vector<Attribute> & said, std::string & error);
 
   // Asks for the pages of up to `batch` instruments of the Nordnet dataset that lack them, `pause` apart. True if more remain.
+  // A refusal (403, 429) stops it for the session: it is said, and false is returned then and at every call after.
   bool loadBatch(Store &, Http &, SourceListener &, std::chrono::milliseconds pause, size_t batch);
 
  private:
   std::set<uint64_t> tried_;  // the instruments asked for, found or not: a failure is not repeated until the next start
+  bool refused_ = false;      // the provider refused: nothing is asked for again this session
 };
