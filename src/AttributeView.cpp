@@ -136,7 +136,7 @@ void AttributeModal::layout(Plane & screen, int rows, int cols) {
   constexpr int kChrome = 6;
   const int height = std::min(static_cast<int>(lines_.size()) + kChrome, std::max(kChrome + 1, rows - 2));
   body_rows_ = std::max(1, height - kChrome);
-  scroll_.setExtent(static_cast<int>(lines_.size()), body_rows_);
+  body_.setCount(static_cast<int>(lines_.size()));
 
   if (!plane_) {
     plane_ = screen.createChild();
@@ -159,29 +159,32 @@ void AttributeModal::layout(Plane & screen, int rows, int cols) {
   paint(quiet);
   plane_->putstr(height - 2, 1, utf8::truncateToWidth(kHint, inner));
 
+  const int top = (rows - height) / 2, left = (cols - width) / 2;
+  plane_->move(top, left);
+  body_.layout(screen, *plane_, top, left, 3, body_rows_, width - 1, bg, fg, quiet, strong);
+  Plane & body = body_.plane();
   const int valueX = 1 + predicate_width_ + 2, valueCols = std::max(0, width - 1 - valueX);
-  for (int i = 0; i < body_rows_; i++) {
-    const size_t at = static_cast<size_t>(scroll_.offset() + i);
+  const TextStyle plain{TextFont::PROPORTIONAL, TextOverflow::ELLIPSIS, kPlainFace, TextAlign::LEFT};
+  for (int i = 0; i < body_.drawnRows(); i++) {
+    const size_t at = static_cast<size_t>(body_.firstLine() + i);
     if (at >= lines_.size()) break;
     const Line & line = lines_[at];
-    const int y = 3 + i;
     if (line.kind == Line::HEADING) {
-      paint(strong);
-      plane_->putstr(y, 1, utf8::truncateToWidth(line.predicate, inner), kBoldFace);
+      body.setFgColor(strong);
+      body.putText(i, 1, inner, line.predicate, TextStyle{TextFont::PROPORTIONAL, TextOverflow::ELLIPSIS, kBoldFace, TextAlign::LEFT});
     } else if (line.kind == Line::ROW) {
-      paint(quiet);
-      plane_->putText(y, 1, predicate_width_, line.predicate, TextStyle{TextFont::MONOSPACE, TextOverflow::ELLIPSIS, kPlainFace, TextAlign::LEFT});
-      paint(line.link ? strong : fg);  // where a value refers to a node it will be a link
-      plane_->putText(y, valueX, valueCols, line.text, TextStyle{TextFont::MONOSPACE, TextOverflow::ELLIPSIS, kPlainFace, TextAlign::LEFT});
+      body.setFgColor(quiet);
+      body.putText(i, 1, predicate_width_, line.predicate, plain);
+      body.setFgColor(line.link ? strong : fg);  // where a value refers to a node it will be a link
+      body.putText(i, valueX, valueCols, line.text, plain);
     }
   }
-  drawScrollbar(*plane_, 3, width - 1, body_rows_, static_cast<int>(lines_.size()), body_rows_, scroll_.shown(), bg, quiet, strong);
-  plane_->move((rows - height) / 2, (cols - width) / 2);
   plane_->moveToTop();
+  body.moveToTop();
 }
 
 void AttributeModal::scrollBy(int delta) {
-  scroll_.scrollBy(delta);
+  body_.scrollBy(delta);
   relayout();
 }
 
@@ -192,10 +195,22 @@ void AttributeModal::keyDown(const KeyDown & e) {
   else if (e.key == Key::Up || (e.mods.ctrl && e.key == 'p')) scrollBy(-1);
   else if (e.key == Key::PageDown || (e.mods.ctrl && e.key == 'v')) scrollBy(page);
   else if (e.key == Key::PageUp || (e.mods.alt && e.key == 'v')) scrollBy(-page);
-  else if (e.key == Key::Home) scrollBy(-static_cast<int>(lines_.size()));
-  else if (e.key == Key::End) scrollBy(static_cast<int>(lines_.size()));
+  else if (e.key == Key::Home) body_.home(), relayout();
+  else if (e.key == Key::End) body_.end(), relayout();
 }
 
 void AttributeModal::wheel(const Wheel & e) {
   if (e.dy != 0) scrollBy(-e.dy * 3);
+}
+
+void AttributeModal::mouseDown(const MouseDown & e) {
+  if (e.button == 1 && body_.press(e.row, e.col)) relayout();
+}
+
+void AttributeModal::mouseMove(const MouseMove & e) {
+  if ((e.buttons & 1u) && body_.drag(e.row, e.col)) relayout();
+}
+
+void AttributeModal::mouseUp(const MouseUp & e) {
+  if (e.button == 1 && body_.release(e.row, e.col)) relayout();
 }

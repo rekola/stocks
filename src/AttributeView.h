@@ -3,7 +3,7 @@
 #include "model/Store.h"
 
 #include <cellui/ModalDialog.h>
-#include <cellui/Viewport.h>
+#include <cellui/ScrollBody.h>
 
 #include <memory>
 #include <optional>
@@ -56,7 +56,14 @@ class AttributeModal : public cellui::ModalDialog {
   void layout(cellui::Plane & screen, int rows, int cols) override;
   void keyDown(const cellui::KeyDown & e) override;
   void wheel(const cellui::Wheel & e) override;
-  void close() override { plane_.reset(); }
+  void mouseDown(const cellui::MouseDown & e) override;
+  void mouseMove(const cellui::MouseMove & e) override;
+  void mouseUp(const cellui::MouseUp & e) override;
+  bool animating() const override { return body_.animating(); }
+  void close() override {
+    body_.close();
+    plane_.reset();
+  }
 
  private:
   struct Line {
@@ -72,6 +79,6 @@ class AttributeModal : public cellui::ModalDialog {
   std::vector<Line> lines_;
   int predicate_width_ = 0;
   int body_rows_ = 1;
-  cellui::ScrollAxis scroll_;
+  cellui::ScrollBody body_;
   std::unique_ptr<cellui::Plane> plane_;
 };
