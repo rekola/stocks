@@ -103,6 +103,7 @@ class FundSource : public Source {
   explicit FundSource(FundSchema schema);
 
   std::string name() const override { return "funds:" + schema_.name; }
+  std::vector<std::string> datasetCodes() const override { return {schema_.dataset}; }
   std::string description() const override { return schema_.market + ": funds and their NAV history (no key)"; }
   void load(Store &, Http &, SourceListener &) override;
   std::chrono::milliseconds refreshInterval() const override { return schema_.refresh; }

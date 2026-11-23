@@ -104,6 +104,7 @@ int main(int argc, char ** argv) {
     sources.push_back(std::move(source));
     from = comma + 1;
   }
+  if (const std::string clash = datasetCodeClash(sources); !clash.empty()) return fail(2, "stocks: " + clash);
 
   // What the sources said of the nodes is read from the file before they run. What goes wrong with the file is a message on
   // the status line once the display is up.

@@ -17,9 +17,11 @@ std::string labelOf(const Snapshot & snapshot, MarketId id) {
 
 // A currency is its code ("EUR" of EUR/USD); anything else what the market calls it.
 std::string baseOf(const Snapshot & snapshot, const EdgeKey & key) {
-  auto base = snapshot.instrument(key.base);
-  if (!base) return {};
-  return base->kind == InstrumentKind::Currency ? base->symbol : snapshot.symbol(key);
+  // Two facts and no view of the instrument: this is read for every row, and to put them in order.
+  const auto kind = snapshot.attribute(key.base, predicate::kind);
+  if (kind && asText(*kind).value_or("") == kindName(InstrumentKind::Currency))
+    return asText(snapshot.attribute(key.base, predicate::symbol).value_or(Value{})).value_or("");
+  return snapshot.symbol(key);
 }
 
 // What the dataset calls it on that market: "EUR/USD" rather than the euro on every row of a base, and the name each market
@@ -35,13 +37,11 @@ std::string quoteOf(const Snapshot & snapshot, const EdgeKey & key) {
   return quote ? quote->symbol : std::string();
 }
 
-// The rows of a market in the order of what they show first, the symbol, and then by key: a key's order means nothing of its own.
+// The rows of a market in the order of their keys: an instrument's ISIN, then the quote, then the dataset. That order is stable
+// and costs nothing; a heading sorts by what a person looks for.
 void appendEdges(const Snapshot & snapshot, MarketId market, std::vector<EdgeKey> & out) {
-  std::vector<std::pair<std::string, EdgeKey>> shown;
   for (const EdgeKey & key : snapshot.edges(market))
-    if (snapshot.hasCandles(key, Resolution::Day)) shown.emplace_back(baseOf(snapshot, key), key);  // no daily bars: a book alone has no row
-  std::sort(shown.begin(), shown.end(), [](const auto & a, const auto & b) { return a.first != b.first ? a.first < b.first : a.second < b.second; });
-  for (const auto & entry : shown) out.push_back(entry.second);
+    if (snapshot.hasCandles(key, Resolution::Day)) out.push_back(key);  // no daily bars: a book alone has no row
 }
 
 void appendRows(const Snapshot & snapshot, MarketId market, Period period, std::vector<QuoteRow> & rows) {

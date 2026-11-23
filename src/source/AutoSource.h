@@ -14,6 +14,11 @@ class AutoSource : public Source {
       : primary_(std::move(primary)), fallback_(std::move(fallback)) {}
 
   std::string name() const override { return "auto"; }
+  std::vector<std::string> datasetCodes() const override {
+    std::vector<std::string> codes = primary_->datasetCodes();
+    for (std::string & code : fallback_->datasetCodes()) codes.push_back(std::move(code));
+    return codes;
+  }
   std::string description() const override {
     return primary_->name() + ", and " + fallback_->name() + " if " + primary_->name() + " gives nothing";
   }
