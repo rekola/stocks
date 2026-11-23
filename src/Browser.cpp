@@ -224,10 +224,8 @@ void Browser::refresh() {
     // (setModel would put the table back at the top).
     // Most changes are new bars for rows already listed: then the rows stay as they are, and with no sort the order too, so the
     // table is drawn again and nothing is sorted or put in order again.
-    std::vector<EdgeKey> edges = edgesOf(*snapshot, kPresets[preset]);
-    const bool same_rows = edges == quotes->edges();
-    if (same_rows) quotes->setSnapshot(snapshot);
-    else quotes->reset(snapshot, std::move(edges));
+    // The rows keep their places whatever the order edgesOf() gives: a row that appears goes last.
+    const bool same_rows = !quotes->follow(snapshot, edgesOf(*snapshot, kPresets[preset]));
     shown_version_ = snapshot->version();
     if (same_rows && table_.sortColumn() < 0) table_.render();
     else table_.modelChanged();

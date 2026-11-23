@@ -345,6 +345,26 @@ TEST(the_table_follows_the_store_when_told_it_changed_and_keeps_the_sort_and_the
   CHECK(f.text().find("yahoo: NOKIA.HE: HTTP 404") != std::string::npos);
 }
 
+TEST(without_a_sort_the_rows_stay_where_they_are_and_a_new_row_goes_last) {
+  Fixture f(false);
+  Instrument eur = f.store->addInstrument({{}, "EUR", "Euro", InstrumentKind::Currency});
+  Instrument usd = f.store->addInstrument({{}, "USD", "US dollar", InstrumentKind::Currency});
+  Instrument aud = f.store->addInstrument({{}, "AUD", "Australian dollar", InstrumentKind::Currency});
+  Market currencies = f.store->addMarket({{}, "Currencies"});
+  Dataset a = f.store->addDataset({{}, "providera"});
+  EdgeKey eurusd{eur.id, usd.id, currencies.id, a.id}, audusd{aud.id, usd.id, currencies.id, a.id};
+  f.store->appendCandles(eurusd, Resolution::Day, {{0, 1, 1, 1, 1.0, 1}, {1000, 1, 1, 1, 1.1, 1}});
+  f.app->execute("show-currencies");
+  Table & t = f.browser->table();
+  CHECK(t.sortColumn() == -1);
+
+  f.store->appendCandles(audusd, Resolution::Day, {{0, 1, 1, 1, 0.6, 1}, {1000, 1, 1, 1, 0.7, 1}});
+  f.app->widgets().postToRoot(StoreChanged{});
+  CHECK(t.model()->rowCount() == 2);
+  CHECK(t.model()->text(t.rowAt(0), Quotes::BASE) == "EUR");  // AUD comes before EUR by symbol, but EUR was there first
+  CHECK(t.model()->text(t.rowAt(1), Quotes::BASE) == "AUD");
+}
+
 TEST(a_row_shows_what_the_dataset_calls_the_listing_so_the_rows_of_one_base_are_told_apart) {
   Fixture f(false);
   Instrument eur = f.store->addInstrument({{}, "EUR", "Euro", InstrumentKind::Currency});
