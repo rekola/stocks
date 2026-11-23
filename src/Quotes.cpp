@@ -4,7 +4,7 @@
 #include <cctype>
 #include <cmath>
 #include <cstdlib>
-#include <set>
+#include <unordered_set>
 
 namespace {
 
@@ -131,10 +131,14 @@ void Quotes::reset(std::shared_ptr<const Snapshot> snapshot, std::vector<EdgeKey
 }
 
 bool Quotes::follow(std::shared_ptr<const Snapshot> snapshot, const std::vector<EdgeKey> & edges) {
+  if (edges == keys_) {  // the usual refresh: new bars for the rows already listed
+    setSnapshot(std::move(snapshot));
+    return false;
+  }
   std::vector<EdgeKey> ordered;
   ordered.reserve(edges.size());
-  const std::set<EdgeKey> wanted(edges.begin(), edges.end());
-  std::set<EdgeKey> placed;
+  const std::unordered_set<EdgeKey> wanted(edges.begin(), edges.end());
+  std::unordered_set<EdgeKey> placed;
   for (const EdgeKey & key : keys_)
     if (wanted.count(key) && placed.insert(key).second) ordered.push_back(key);
   for (const EdgeKey & key : edges)
