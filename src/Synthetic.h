@@ -12,7 +12,7 @@ void fillSyntheticData(Store & store, const InstrumentList & list);
 // The same as a source, for runs without a network.
 class SyntheticSource : public Source {
  public:
-  // Follows `list`, or the lists on disk that `spec` names (the same ones Yahoo is asked for).
+  // Follows `list`, or the lists on disk that `spec` names (the same ones the other sources read).
   explicit SyntheticSource(InstrumentList list) : list_(std::move(list)) {}
   explicit SyntheticSource(ListSpec spec) : spec_(std::move(spec)), fromFiles_(true) {}
 

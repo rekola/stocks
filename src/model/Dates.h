@@ -88,5 +88,5 @@ constexpr int64_t slotOfInstant(Resolution r, Timestamp utcSeconds) {
 constexpr Timestamp instantOfSlot(Resolution r, int64_t slot) { return slot * seconds(r); }
 
 // Whether a bar that starts at `utcSeconds` starts on a slot boundary. One that does not cannot be keyed by its slot
-// without losing its offset: Yahoo's hourly bars on US exchanges start at :30.
+// without losing its offset: a provider's hourly bars on US exchanges can start at :30.
 constexpr bool onSlotBoundary(Resolution r, Timestamp utcSeconds) { return utcSeconds % seconds(r) == 0; }

@@ -4,7 +4,6 @@
 #include "model/Dates.h"
 #include "model/Isin.h"
 #include "source/InstrumentLists.h"
-#include "source/InstrumentTypes.h"
 #include "source/NordnetSource.h"
 
 #include <nlohmann/json.hpp>
@@ -442,7 +441,7 @@ TEST(a_page_of_stocks_has_the_same_shape_and_a_bar_from_the_day_so_far) {
   const NordnetListing & first = page.listings[0];
   CHECK(first.symbol == "0M0" && first.isin == "DE000A3ESL51" && first.currency == "EUR" && first.type == "ESH");
   CHECK(first.marketId == 4 && first.hasBar && first.bar.close == 1.55);
-  CHECK(kindOfNordnetType(first.type) == InstrumentKind::Company);
+  CHECK(NordnetSource::kindOfType(first.type) == InstrumentKind::Company);
 }
 
 TEST(a_fund_is_a_bar_with_only_its_nav_as_the_close) {
@@ -457,7 +456,7 @@ TEST(a_fund_is_a_bar_with_only_its_nav_as_the_close) {
   CHECK(!isDefined(fund.bar.open) && !isDefined(fund.bar.high) && !isDefined(fund.bar.low) && !isDefined(fund.bar.volume));
   CHECK(fund.bar.time == dayNumberOfInstant(1795132800));  // dated by its tick
   CHECK(!fund.bookId.empty());  // the id the history is asked for by, with the NAV parameter
-  CHECK(kindOfNordnetType(fund.type) == InstrumentKind::Fund);
+  CHECK(NordnetSource::kindOfType(fund.type) == InstrumentKind::Fund);
 }
 
 TEST(a_stock_bar_carries_the_volume_when_the_answer_has_it) {
@@ -731,4 +730,13 @@ TEST(a_private_isin_is_made_from_what_the_thing_is_in_a_namespace_nobody_issues_
   CHECK(isValidIsin(privateIsin("A TEXT THAT IS MUCH LONGER THAN NINE CHARACTERS")) && privateIsin("").empty());
   // A fixed hash: the same on every run and platform.
   CHECK(zinc == "ZZSEZBQVPB31");
+}
+
+TEST(nordnet_types_are_mapped_onto_the_one_vocabulary_and_certificates_are_named) {
+  CHECK(NordnetSource::kindOfType("UETF") == InstrumentKind::Etf && NordnetSource::kindOfType("KETF") == InstrumentKind::Etf);
+  CHECK(NordnetSource::kindOfType("PTC") == InstrumentKind::Certificate);
+  CHECK(NordnetSource::kindOfType("ESH") == InstrumentKind::Company && NordnetSource::kindOfType("PESH") == InstrumentKind::Company);
+  CHECK(NordnetSource::kindOfType("ESHMTF") == InstrumentKind::Company && NordnetSource::kindOfType("ESHOTC") == InstrumentKind::Company);
+  CHECK(NordnetSource::kindOfType("FUCITS") == InstrumentKind::Fund && NordnetSource::kindOfType("FOTH") == InstrumentKind::Fund);
+  CHECK(NordnetSource::kindOfType("") == InstrumentKind::Other && NordnetSource::kindOfType("SOMETHING_NEW") == InstrumentKind::Other);
 }

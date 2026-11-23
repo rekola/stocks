@@ -14,7 +14,7 @@
 // that are wanted, the ones on the screen first, paces, retries and remembers, and asks the provider for each, one at a time, on its own
 // thread. The loader names no provider.
 //
-// What the loader asks of an edge is a request: an id the provider defines (Nordnet's day, its week; one for a fund company), the same
+// What the loader asks of an edge is a request: an id the provider defines (a period's, or one for all of them), the same
 // id for the periods that share one. An edge and a request are asked for once per session, again only once the request has expired.
 class HistoryProvider {
  public:

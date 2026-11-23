@@ -1,7 +1,6 @@
 #include "source/YahooSource.h"
 
 #include "model/Dates.h"
-#include "source/InstrumentTypes.h"
 
 #include <nlohmann/json.hpp>
 
@@ -177,4 +176,13 @@ void YahooSource::load(Store & store, Http & http, SourceListener & listener) {
     else listener.message(std::string("yahoo: ") + e.yahoo + ": " + error);
     if (pause_.count() > 0 && !listener.pause(pause_)) return;
   }
+}
+
+InstrumentKind YahooSource::kindOfType(const std::string & type) {
+  if (type == "EQUITY") return InstrumentKind::Company;
+  if (type == "ETF") return InstrumentKind::Etf;
+  if (type == "INDEX") return InstrumentKind::Index;
+  if (type == "FUTURE") return InstrumentKind::Commodity;
+  if (type == "CURRENCY") return InstrumentKind::Currency;
+  return InstrumentKind::Other;
 }

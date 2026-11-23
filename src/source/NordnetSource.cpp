@@ -3,7 +3,6 @@
 #include "model/Dates.h"
 #include "model/Isin.h"
 #include "source/InstrumentLists.h"
-#include "source/InstrumentTypes.h"
 #include "source/KnownMarkets.h"
 #include "source/NordnetHeaders.h"
 
@@ -16,6 +15,9 @@
 using nlohmann::json;
 
 namespace {
+
+// An instrument's id, said of the instrument itself.
+constexpr const char * kInstrumentIdPredicate = "nordnet-instrument";
 
 std::string text(const json & o, const char * key) {
   auto it = o.find(key);
@@ -206,7 +208,7 @@ bool NordnetSource::parsePage(const std::string & body, Page & page, std::string
       const int64_t tick = integer(p, "tick_timestamp") / 1000;  // the answer is in milliseconds; seconds from here on
       // A fund has only its NAV: the bar's close, which is also the last price while the slot is still in progress (the
       // NAV of the day is dated by its tick). Its open, high and low are undefined, and so is a volume the answer lacks.
-      const bool fund = kindOfNordnetType(l.type) == InstrumentKind::Fund;
+      const bool fund = kindOfType(l.type) == InstrumentKind::Fund;
       if (fund && last) open = high = low = kUndefined;
       if ((fund || (open && high && low)) && last && tick > 0) {
         auto volume = p.find("turnover_volume");  // written to the bar when the answer has it; volume weights the bars
@@ -307,7 +309,7 @@ size_t NordnetSource::loadIndicators(const List & list, Store & store, Http & ht
                                     : row.type == "COMMODITY" ? InstrumentKind::Commodity
                                                               : InstrumentKind::Other;
         std::vector<Attribute> rest = {{predicate::name, row.name}, {predicate::type, row.type},
-                                       {predicate::nordnetInstrument, row.instrumentId}};
+                                       {kInstrumentIdPredicate, row.instrumentId}};
         if (kind != InstrumentKind::Other) rest.push_back({predicate::kind, kindName(kind)});
         base = b.resolveInstrument(identifying, rest);
         b.setAttribute(base, {predicate::country, row.country});  // of an index
@@ -404,8 +406,8 @@ void NordnetSource::load(Store & store, Http & http, SourceListener & listener) 
         // listing elsewhere says them only where none are said yet, so two listings do not take turns at it.
         const std::string country = b.view().said(NodeRef(market), predicate::country);
         const bool home = !country.empty() && l.isin.compare(0, 2, country) == 0;
-        const InstrumentId base = home ? b.addInstrument("", l.name, kindOfNordnetType(l.type), l.isin, l.type)
-                                       : addInstrumentUnlessSaid(b, "", l.name, kindOfNordnetType(l.type), l.isin, l.type);
+        const InstrumentId base = home ? b.addInstrument("", l.name, kindOfType(l.type), l.isin, l.type)
+                                       : addInstrumentUnlessSaid(b, "", l.name, kindOfType(l.type), l.isin, l.type);
           const InstrumentId quote = currencyNode(b, l.currency);
           // What Nordnet says of the instrument itself: thin edges, of the types it has.
           b.setAttributes(base, l.attributes);
@@ -432,4 +434,13 @@ void NordnetSource::load(Store & store, Http & http, SourceListener & listener) 
   if (!counts.empty())
     listener.message("nordnet: " + std::to_string(listings_.size() + indicators_.size()) + " listings (" + counts + ")" +
                      (skipped ? ", " + std::to_string(skipped) + " rows left out" : std::string()));
+}
+
+InstrumentKind NordnetSource::kindOfType(const std::string & type) {
+  if (type == "UETF" || type == "KETF") return InstrumentKind::Etf;
+  if (type == "PTC") return InstrumentKind::Certificate;
+  // Shares: ordinary, preference, multilateral-facility and over-the-counter listings.
+  if (type == "ESH" || type == "PESH" || type == "ESHMTF" || type == "ESHOTC") return InstrumentKind::Company;
+  if (type == "FUCITS" || type == "FOTH") return InstrumentKind::Fund;
+  return InstrumentKind::Other;
 }
