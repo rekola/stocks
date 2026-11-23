@@ -80,6 +80,7 @@ class Browser {
   // same positions.
   std::vector<EdgeKey> history_edges_, history_scratch_;
   std::optional<Period> history_period_;
+  int64_t history_minute_ = 0;  // the wall minute it was told in: told again every minute, for the requests that have expired
   double min_refresh_ = 0.25;
   double refresh_cost_ = 0;  // seconds the last refresh took: the next waits longer than that many times over, so loading never keeps the UI busy
   std::chrono::steady_clock::time_point last_refresh_{};

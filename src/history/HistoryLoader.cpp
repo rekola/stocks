@@ -164,6 +164,19 @@ std::shared_ptr<HistoryProvider> HistoryLoader::providerOf(const std::string & d
   return nullptr;
 }
 
+bool HistoryLoader::expired(const Ask & ask, std::chrono::steady_clock::time_point loaded) const {
+  std::chrono::milliseconds lifetime{0};
+  if (options_.depth == Depth::Recent)
+    switch (ask.request) {
+      case kDaily: lifetime = options_.quarter_lifetime; break;
+      case kDay: lifetime = options_.day_lifetime; break;
+      case 2: lifetime = options_.week_lifetime; break;
+      case 3: lifetime = options_.year_lifetime; break;
+      default: break;  // a provider's: once per session
+    }
+  return lifetime.count() > 0 && std::chrono::steady_clock::now() - loaded >= lifetime;
+}
+
 void HistoryLoader::want(const std::vector<EdgeKey> & edges, Period period) {
   auto snapshot = store_->snapshot();
   {
@@ -194,11 +207,14 @@ void HistoryLoader::want(const std::vector<EdgeKey> & edges, Period period) {
       const bool nav = snapshot->kind(k.base) == InstrumentKind::Fund;
       const int request = requestOf(period, nav);
       const Ask ask{k, request};
-      if (done_.count(ask) || failed_.count(ask) || loading_ == ask || !seen.insert(ask).second) continue;
+      if (failed_.count(ask) || loading_ == ask || !seen.insert(ask).second) continue;
+      // Loaded before: not again until it has expired (then the store's bars are the old ones, so they do not count).
+      const auto loaded = done_.find(ask);
+      if (loaded != done_.end() && !expired(ask, loaded->second)) continue;
       // The store has the period's bars already (loaded before, or from elsewhere): no request. A fund's day and week are
       // its daily bars.
       const Period shown = nav && request == kDaily && period != Period::Month ? Period::Quarter : period;
-      if (periodView(*snapshot, k, shown, false).primary) continue;
+      if (loaded == done_.end() && periodView(*snapshot, k, shown, false).primary) continue;
       queue_.push_back(ask);
     }
   }
@@ -217,7 +233,9 @@ void HistoryLoader::run() {
     }
     const Ask ask = queue_.front();
     queue_.pop_front();
-    if (done_.count(ask) || failed_.count(ask)) {  // queued before its answer came: not asked again
+    // Queued before its answer came: not asked again. A done one that has expired was queued by want() for that: it is loaded.
+    const auto loaded = done_.find(ask);
+    if (failed_.count(ask) || (loaded != done_.end() && !expired(ask, loaded->second))) {
       if (queue_.empty()) idle_.notify_all();
       continue;
     }
@@ -321,7 +339,7 @@ bool HistoryLoader::loadProvided(const Ask & wanted, bool & network) {
     case HistoryProvider::Outcome::Ok: break;
   }
   std::lock_guard lock(mutex_);
-  done_.insert(wanted);
+  done_[wanted] = std::chrono::steady_clock::now();
   return true;
 }
 
@@ -378,7 +396,7 @@ bool HistoryLoader::load(const Ask & wanted, bool & network) {
   if (options_.depth == Depth::Recent) {
     if (!ask(kRequests[wanted.request].period, kRequests[wanted.request].resolution)) return wrote;  // one request: the snapshot
     std::lock_guard lock(mutex_);
-    done_.insert(wanted);
+    done_[wanted] = std::chrono::steady_clock::now();
     return wrote;
   }
   if (!ask("ALL", "DAY")) return wrote;
@@ -392,6 +410,6 @@ bool HistoryLoader::load(const Ask & wanted, bool & network) {
     }
   }
   std::lock_guard lock(mutex_);
-  done_.insert(wanted);
+  done_[wanted] = std::chrono::steady_clock::now();
   return wrote;
 }

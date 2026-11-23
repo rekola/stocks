@@ -16,7 +16,9 @@
 //
 // A fact whose value changed goes after `changed_delay`. A fact only said again goes with the next batch that is due or after
 // `rechecked_delay`, whichever comes first, so a source that says ten thousand known things again costs a write, not ten
-// thousand. The destructor and `flush()` write everything waiting.
+// thousand. The store says a fact again only once its `updated` is older than its recheck interval (an hour), so these are rare;
+// but facts said together fall due together, so when they do it is the whole table at once, which this puts in one transaction.
+// The destructor and `flush()` write everything waiting.
 class FactWriter {
  public:
   struct Options {

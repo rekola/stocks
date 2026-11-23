@@ -8,6 +8,7 @@
 #include <immer/map.hpp>
 #include <immer/set.hpp>
 
+#include <chrono>
 #include <functional>
 #include <memory>
 #include <utility>
@@ -40,7 +41,8 @@ class Snapshot {
   // The object of one predicate of a node, if it is said: an instrument's icon, its number of shares, a market's country.
   std::optional<Value> attribute(NodeRef, const std::string & predicate) const;
   // The same with its time: when a source last said it (`updated`), whether or not the value was the same as before, in
-  // milliseconds UTC as the store took it where the write happened.
+  // milliseconds UTC as the store took it where the write happened, and only to within `StoreOptions::recheck_interval`
+  // (an hour by default): a value said again sooner than that after the time here leaves it as it is.
   std::optional<Attribute> fact(NodeRef, const std::string & predicate) const;
   std::optional<InstrumentId> findInstrumentByIsin(const std::string & isin) const;  // if anything is said of it
   // A market is its MIC, named by a fact. The market with this MIC, if anything
@@ -115,6 +117,7 @@ class Snapshot {
   // what is said. `revision` is the version plus the writes of facts that were only said again, which no version counts: a
   // store publishes a copy when it moves. `takeFacts` is what the writes since the last call ask of the disk.
   void setTime(TimestampMs now) { now_ = now; }
+  void setRecheckInterval(std::chrono::milliseconds interval) { recheck_ = interval; }
   void load(const std::vector<StoredFact> &);
   uint64_t revision() const { return version_ + checks_; }
   FactBatch takeFacts() { return std::exchange(outbox_, FactBatch{}); }
@@ -126,6 +129,7 @@ class Snapshot {
   uint64_t version_ = 0;
   uint64_t checks_ = 0;
   TimestampMs now_ = 0;
+  std::chrono::milliseconds recheck_{0};
   FactBatch outbox_;                                              // what to keep, for the store that made this copy
   std::vector<std::string> notices_;                              // what was refused, for the store that made this copy
   immer::map<EdgeKey, Listing> listings_;
@@ -217,6 +221,10 @@ struct StoreOptions {
   FactWriter::Options writer;
   // The time of a write, for `updated`. The wall clock by default; a test sets its own.
   std::function<TimestampMs()> clock;
+  // `updated` says when a source last said a fact to within this interval: a value said again that was last said less than this
+  // ago changes nothing (no new time, no snapshot, nothing for the disk); an older one gets the time of the write. A changed
+  // value is written at once. Zero: every write that says a fact again moves its time.
+  std::chrono::milliseconds recheck_interval{3'600'000};
   // Told, once for each, what the store refused in what it was given: an ISIN
   // that is not valid, a code or a MIC that does not fit. Called with the
   // store's writer lock held, so it must not call back into the store.

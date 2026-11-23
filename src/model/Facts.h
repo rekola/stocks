@@ -18,7 +18,7 @@ struct StoredFact {
   uint64_t node = 0;  // the node's key; the kind of node is in it
   std::string predicate;
   Value value;              // never NaN: an undefined number is not said, so it is not kept
-  TimestampMs updated = 0;  // when a source last said it (milliseconds UTC), whether or not the value changed
+  TimestampMs updated = 0;  // when a source last said it (milliseconds UTC), whether or not the value changed, to within the recheck interval
 };
 
 // What one write to the store asks the disk to do. The two lists are told apart so that a writer can be quick with what changed

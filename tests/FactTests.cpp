@@ -1,4 +1,5 @@
 #include "TestFramework.h"
+#include "TestIsin.h"
 
 #include "model/FactWriter.h"
 #include "model/NodeKey.h"
@@ -57,6 +58,7 @@ StoreOptions optionsFor(const std::shared_ptr<FactStore> & facts, Clock & clock)
   StoreOptions o;
   o.facts = facts;
   o.clock = clock.fn();
+  o.recheck_interval = std::chrono::milliseconds(0);  // the tests of `updated` say each time what it becomes
   o.writer.changed_delay = std::chrono::milliseconds(1);
   o.writer.rechecked_delay = std::chrono::milliseconds(1);
   return o;
@@ -531,3 +533,83 @@ TEST(a_change_is_written_soon_and_what_waits_goes_with_it) {
   CHECK(counting->applies == 1 && counting->batches[0].changed.size() == 2);
 }
 
+
+namespace {
+StoreOptions withInterval(const std::shared_ptr<FactStore> & facts, Clock & clock) {
+  StoreOptions o = optionsFor(facts, clock);
+  o.recheck_interval = std::chrono::hours(1);
+  o.writer.rechecked_delay = std::chrono::milliseconds(1);
+  return o;
+}
+size_t factsApplied(CountingFacts & c) {
+  std::lock_guard lock(c.mutex);
+  size_t n = 0;
+  for (const FactBatch & b : c.batches) n += b.changed.size() + b.rechecked.size();
+  return n;
+}
+}  // namespace
+
+TEST(a_fact_said_again_within_the_interval_is_not_written_or_published_and_after_it_is_written_with_the_new_time) {
+  auto counting = std::make_shared<CountingFacts>();
+  Clock clock;
+  auto store = makeMemoryStore(withInterval(counting, clock));
+  InstrumentId nokia = store->addInstrument("NOKIA", "Nokia", InstrumentKind::Company, kIsin);
+  store->setAttribute(nokia, {"shares", int64_t{5}});
+  store->flush();
+  const size_t written = factsApplied(*counting);
+  const uint64_t revision = store->snapshot()->revision();
+
+  clock.now = 1000 + 59 * 60 * 1000;  // within the hour
+  store->setAttribute(nokia, {"shares", int64_t{5}});
+  store->flush();
+  CHECK(factsApplied(*counting) == written && store->snapshot()->revision() == revision);
+  CHECK(store->snapshot()->fact(nokia, "shares")->updated == 1000);  // the time stands
+
+  clock.now = 1000 + 61 * 60 * 1000;  // past it: said again, and the time moves
+  const uint64_t version = store->snapshot()->version();
+  store->setAttribute(nokia, {"shares", int64_t{5}});
+  store->flush();
+  CHECK(factsApplied(*counting) == written + 1 && store->snapshot()->revision() == revision + 1);
+  CHECK(store->snapshot()->version() == version);  // still no new version
+  {
+    std::lock_guard lock(counting->mutex);
+    const FactBatch & last = counting->batches.back();
+    CHECK(last.changed.size() == 1 && last.changed[0].updated == clock.now);  // the writer hands on what waited as one list
+  }
+
+  // A changed value is written at once, whatever the interval.
+  clock.now += 1000;
+  store->setAttribute(nokia, {"shares", int64_t{6}});
+  store->flush();
+  {
+    std::lock_guard lock(counting->mutex);
+    const FactBatch & last = counting->batches.back();
+    CHECK(last.changed.size() == 1 && std::get<int64_t>(last.changed[0].value) == 6 && last.changed[0].updated == clock.now);
+  }
+  CHECK(store->snapshot()->version() == version + 1);
+}
+
+TEST(a_refresh_that_repeats_a_thousand_instruments_ten_minutes_later_writes_nothing) {
+  auto counting = std::make_shared<CountingFacts>();
+  Clock clock;
+  auto store = makeMemoryStore(withInterval(counting, clock));
+  auto refresh = [&] {
+    for (int i = 0; i < 1000; i++) {
+      InstrumentId id = store->addInstrument("", "Instrument", InstrumentKind::Company, testIsin(200000 + i));
+      std::vector<Attribute> facts;
+      for (int a = 0; a < 10; a++) facts.push_back({"attribute" + std::to_string(a), int64_t{a}});
+      store->setAttributes(id, facts);
+    }
+    store->flush();
+  };
+  refresh();
+  const size_t first = factsApplied(*counting);
+  CHECK(first >= 10000);
+  const uint64_t revision = store->snapshot()->revision();
+  clock.now += 10 * 60 * 1000;
+  refresh();
+  CHECK(factsApplied(*counting) == first && store->snapshot()->revision() == revision);
+  clock.now += 60 * 60 * 1000;  // an hour on, they are old enough to be said again
+  refresh();
+  CHECK(factsApplied(*counting) >= first * 2);
+}

@@ -318,6 +318,68 @@ TEST(each_period_asks_once_per_edge_for_the_rows_wanted_and_a_month_shares_the_q
   CHECK(http.urls.size() == 3 + 1 + 1 + 2);
 }
 
+TEST(a_wanted_edge_is_requested_again_once_its_request_has_expired_and_not_before) {
+  World w;
+  EdgeKey a = w.edge(InstrumentKind::Company, "book-a"), b = w.edge(InstrumentKind::Company, "book-b");
+  FakeHttp http;
+  http.answer = [](const std::string &) { return ok(intraday("MIN_5", 3, 300, 9.5)); };
+  HistoryLoader::Options o = quickly();
+  o.day_lifetime = std::chrono::milliseconds(150);
+  HistoryLoader loader(w.store, borrow(http), o, [] {});
+  loader.want({a, b}, Period::Day);
+  loader.waitIdle();
+  CHECK(http.urls.size() == 2);
+  loader.want({a, b}, Period::Day);
+  loader.waitIdle();
+  CHECK(http.urls.size() == 2);  // the store has the bars and the request is young
+  std::this_thread::sleep_for(std::chrono::milliseconds(250));
+  loader.want({a}, Period::Day);  // b is not wanted: it is not asked for, whatever its age
+  loader.waitIdle();
+  CHECK(http.urls.size() == 3 && http.urls[2].find("book-a") != std::string::npos);
+  loader.want({a}, Period::Day);
+  loader.waitIdle();
+  CHECK(http.urls.size() == 3);  // the time starts again from the new load
+  loader.want({b}, Period::Day);
+  loader.waitIdle();
+  CHECK(http.urls.size() == 4 && http.urls[3].find("book-b") != std::string::npos);
+}
+
+TEST(an_expired_request_queued_again_by_want_is_fetched_and_not_dropped_as_done) {
+  World w;
+  EdgeKey a = w.edge(InstrumentKind::Company, "book-a");
+  FakeHttp http;
+  http.answer = [](const std::string &) { return ok(intraday("MIN_5", 3, 300, 9.5)); };
+  HistoryLoader::Options o = quickly();
+  o.day_lifetime = std::chrono::milliseconds(30);
+  HistoryLoader loader(w.store, borrow(http), o, [] {});
+  for (size_t round = 1; round <= 3; round++) {
+    loader.want({a}, Period::Day);  // expired since the last round: queued, popped by run() (which finds it in done_) and loaded
+    loader.waitIdle();
+    CHECK(http.urls.size() == round);
+    std::this_thread::sleep_for(std::chrono::milliseconds(60));
+  }
+}
+
+TEST(the_quarter_never_expires_and_a_failure_is_not_asked_again) {
+  World w;
+  EdgeKey a = w.edge(InstrumentKind::Company, "book-a"), gone = w.edge(InstrumentKind::Company, "book-gone");
+  FakeHttp http;
+  http.answer = [](const std::string & url) {
+    if (url.find("book-gone") != std::string::npos) return failed(404);
+    return ok(fixture("history-stock-day.json"));
+  };
+  HistoryLoader::Options o = quickly();
+  o.day_lifetime = o.week_lifetime = o.year_lifetime = std::chrono::milliseconds(20);
+  HistoryLoader loader(w.store, borrow(http), o, [] {});
+  loader.want({a, gone}, Period::Quarter);
+  loader.waitIdle();
+  CHECK(http.urls.size() == 2);
+  std::this_thread::sleep_for(std::chrono::milliseconds(60));
+  loader.want({a, gone}, Period::Quarter);
+  loader.waitIdle();
+  CHECK(http.urls.size() == 2);
+}
+
 TEST(a_fund_has_no_intraday_so_its_day_and_week_are_the_daily_request_and_what_the_store_has_is_used_first) {
   World w;
   EdgeKey fund = w.edge(InstrumentKind::Fund, "book-f");

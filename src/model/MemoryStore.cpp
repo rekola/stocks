@@ -350,7 +350,9 @@ void Snapshot::setAttributes(NodeRef n, const std::vector<Attribute> & in) {
       index(fresh);
       changed.push_back(attrs.size() - 1);
     } else if (at->value == a.value) {
-      if (at->updated != now_) {
+      // Said again: `updated` is within the interval, so a value that is not old enough to need saying again changes nothing.
+      const bool fresh = recheck_.count() > 0 && at->updated > now_ - recheck_.count();
+      if (!fresh && at->updated != now_) {
         at->updated = now_;
         rechecked.push_back(static_cast<size_t>(at - attrs.begin()));
       }
@@ -557,6 +559,7 @@ class MemoryStore : public Store {
  public:
   explicit MemoryStore(StoreOptions options)
       : current_(std::make_shared<const Snapshot>()),
+        recheck_(options.recheck_interval),
         clock_(std::move(options.clock)),
         notice_(std::move(options.notice)) {
     if (!clock_)
@@ -632,6 +635,7 @@ class MemoryStore : public Store {
     std::shared_ptr<const Snapshot> old = current_.load();
     Snapshot next = *old;
     next.setTime(clock_());
+    next.setRecheckInterval(recheck_);
     const auto finish = [&] {
       tell(next.takeNotices());
       FactBatch facts = next.takeFacts();
@@ -650,6 +654,7 @@ class MemoryStore : public Store {
 
   std::mutex mutex_;
   SnapshotSlot current_;
+  std::chrono::milliseconds recheck_;
   std::function<TimestampMs()> clock_;
   std::function<void(const std::string &)> notice_;
   std::set<std::string> told_;          // what notice_ has been told, which it is told once
