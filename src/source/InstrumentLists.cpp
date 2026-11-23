@@ -1,5 +1,6 @@
 #include "source/InstrumentLists.h"
 
+#include "source/DataDirectory.h"
 #include "source/KnownMarkets.h"
 
 #include <algorithm>
@@ -144,12 +145,8 @@ InstrumentList onlyMarkets(const InstrumentList & list, const std::vector<std::s
 }
 
 std::filesystem::path findListsDirectory(const std::string & given) {
-  std::error_code ec;
   if (!given.empty()) return given;
-  for (const std::filesystem::path & candidate : {std::filesystem::path("data") / "lists",
-                                                    std::filesystem::path(STOCKS_DATA_DIR) / "lists"})
-    if (std::filesystem::is_directory(candidate, ec)) return candidate;
-  return {};
+  return findDataDirectory("lists");
 }
 
 InstrumentList resolveList(const ListSpec & spec, std::string & error) {

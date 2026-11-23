@@ -2,6 +2,7 @@
 
 #include "model/Dates.h"
 #include "model/Isin.h"
+#include "source/DataDirectory.h"
 #include "model/NodeKey.h"
 
 #include <chrono>
@@ -262,14 +263,15 @@ bool FundSchema::parse(const std::string & text, FundSchema & out, std::string &
 }
 
 bool FundSchema::load(const std::string & nameOrPath, FundSchema & out, std::string & error) {
-  // A name is a file of the schema directory (data/funds here, else the source tree's); anything with a path or an extension is a file as it is.
+  // A name is a file of the schema directory (data/funds: here, beside the program, installed or in the source tree); anything with a path or an
+  // extension is a file as it is.
   std::filesystem::path path = nameOrPath;
   std::error_code ec;
   if (nameOrPath.find_first_of("/\\") == std::string::npos && path.extension() != ".json") {
     path.clear();
-    for (const std::filesystem::path & dir : {std::filesystem::path("data") / "funds", std::filesystem::path(STOCKS_DATA_DIR) / "funds"})
-      if (std::filesystem::is_regular_file(dir / (nameOrPath + ".json"), ec)) {
-        path = dir / (nameOrPath + ".json");
+    for (const std::filesystem::path & root : dataRoots(executableDirectory()))
+      if (std::filesystem::is_regular_file(root / "funds" / (nameOrPath + ".json"), ec)) {
+        path = root / "funds" / (nameOrPath + ".json");
         break;
       }
     if (path.empty()) {

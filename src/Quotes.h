@@ -63,8 +63,8 @@ class Quotes : public cellui::TableModel {
         kind; // only edges whose base is of this kind, where set
     bool resolved() const { return all || market.has_value(); }
     bool has(const Snapshot &snapshot, const EdgeKey &key) const {
-      return all || (market && key.market == *market &&
-                     (!kind || snapshot.kind(key.base) == *kind));
+      return (all || (market && key.market == *market)) &&
+             (!kind || snapshot.kind(key.base) == *kind);
     }
   };
   // Whether the store has rows this model has not looked at: one comparison, so a refresh that brings only new bars for the rows

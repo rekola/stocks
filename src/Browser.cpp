@@ -15,7 +15,7 @@ namespace {
 
 // A preset is a selection of edges: a market (by its MIC; the indices, spot
 // prices and currency pairs are on no market, XXXX) and, where that holds
-// several kinds, the kind of the base. No mic is everything.
+// several kinds, the kind of the base. No mic is every market, of the kind where there is one.
 struct Preset {
   const char * tag;
   const char * command;
@@ -27,6 +27,7 @@ constexpr Preset kPresets[] = {
     {"Nasdaq Helsinki", "show-nasdaq-helsinki", "XHEL"},
     {"Currencies", "show-currencies", kNoMarket, InstrumentKind::Currency},
     {"Indices", "show-indices", kNoMarket, InstrumentKind::Index},
+    {"Funds", "show-funds", nullptr, InstrumentKind::Fund},  // of every market, whoever lists them
     {"All", "show-all"}};
 
 // What the buttons at the end of a row do: a glyph and the command that runs for the selected row. A new action is a new line.
@@ -38,14 +39,18 @@ constexpr RowAction kRowActions[] = {{kInfoGlyph, "show-info"}};
 
 Quotes::Scope scopeOf(const Snapshot & snapshot, const Preset & preset) {
   if (!preset.mic)
-    return {.all = true};
+    return {.all = true, .kind = preset.kind};
   return {.market = snapshot.findMarket(preset.mic), .kind = preset.kind};
 }
 
 // The edges of a preset: a market's, or everything.
 std::vector<EdgeKey> edgesOf(const Snapshot & snapshot, const Preset & preset) {
-  if (!preset.mic)
-    return allQuoteEdges(snapshot);
+  if (!preset.mic) {
+    std::vector<EdgeKey> keys = allQuoteEdges(snapshot);
+    if (preset.kind)
+      std::erase_if(keys, [&](const EdgeKey & k) { return snapshot.kind(k.base) != *preset.kind; });
+    return keys;
+  }
   const std::optional<MarketId> market = snapshot.findMarket(preset.mic);
   return market ? quoteEdges(snapshot, *market, preset.kind)
                 : std::vector<EdgeKey>{};
