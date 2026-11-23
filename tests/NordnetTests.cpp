@@ -8,6 +8,7 @@
 #include "source/NordnetSource.h"
 
 #include <fstream>
+#include <set>
 #include <sstream>
 
 namespace {
@@ -62,8 +63,17 @@ TEST(a_market_is_named_by_its_nordnet_id_where_that_is_known) {
   CHECK(std::string(NordnetSource::knownMarketName(14)) == "Nasdaq Copenhagen");
   CHECK(std::string(NordnetSource::knownMarketName(24)) == "Nasdaq Helsinki");  // the same market as the Yahoo lists name
   CHECK(std::string(NordnetSource::knownMarketName(53)) == "First North Sweden");
+  CHECK(std::string(NordnetSource::knownMarketName(19)) == "Nasdaq" && std::string(NordnetSource::knownMarketMic(19)) == "XNAS");
+  CHECK(std::string(NordnetSource::knownMarketName(49)) == "Euronext Growth Oslo");
   CHECK(NordnetSource::knownMarketName(61) == nullptr);  // not known
   CHECK(std::string(NordnetSource::knownMarketMic(24)) == "XHEL" && NordnetSource::knownMarketMic(53) == nullptr);
+  // A code identifies a market, so two markets never share one (Oslo's growth market has its segment's, not Oslo Børs's), nor a name.
+  std::set<std::string> codes, names;
+  for (int id = 0; id < 200; id++) {
+    if (const char * name = NordnetSource::knownMarketName(id)) CHECK(names.insert(name).second);
+    if (const char * mic = NordnetSource::knownMarketMic(id)) CHECK(codes.insert(mic).second);
+  }
+  CHECK(names.size() >= 29);
 }
 
 TEST(a_page_of_certificates_has_the_same_shape) {
@@ -386,7 +396,7 @@ TEST(a_market_is_found_by_its_nordnet_id_or_its_name_and_made_when_neither_is_th
 
   // A Nordnet market with a known name is found by it: Xetra is one market with a name and Nordnet's id.
   Market xetra = *s->findMarket("Xetra");
-  CHECK(s->findMarketByAttribute(predicate::nordnetId, "4")->id == xetra.id && s->attributes(xetra.id).size() == 3);  // the id, the name and the country
+  CHECK(s->findMarketByAttribute(predicate::nordnetId, "4")->id == xetra.id && s->attributes(xetra.id).size() == 4);  // the id, the code, the name and the country
 
   // One with no name is found by the id alone, and has no name yet.
   Market unnamed = *s->findMarketByAttribute(predicate::nordnetId, "61");
