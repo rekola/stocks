@@ -557,3 +557,33 @@ TEST(the_loader_stopping_cancels_the_request_in_progress) {
   }
   CHECK(std::chrono::steady_clock::now() - start < std::chrono::seconds(10));
 }
+
+namespace {
+// Another dataset's history, with a long pause of its own after each request.
+struct SlowProvider : HistoryProvider {
+  std::string dataset() const override { return "other"; }
+  std::chrono::milliseconds pause() const override { return std::chrono::milliseconds(400); }
+  Outcome load(Store &, Http &, const EdgeKey &) override { return Outcome::Ok; }
+};
+}  // namespace
+
+TEST(a_providers_pause_is_not_kept_for_the_nordnet_asks_after_it) {
+  World w;
+  EdgeKey provided = w.edge(InstrumentKind::Fund, "", /*nordnetData=*/false);
+  EdgeKey a = w.edge(InstrumentKind::Company, "book-1"), b = w.edge(InstrumentKind::Company, "book-2");
+  FakeHttp http;
+  std::vector<std::chrono::steady_clock::time_point> times;
+  http.answer = [&](const std::string &) {
+    times.push_back(std::chrono::steady_clock::now());
+    return ok(fixture("history-stock-day.json"));
+  };
+  HistoryLoader::Options options = quickly();
+  options.pause = std::chrono::milliseconds(10);
+  HistoryLoader loader(w.store, borrow(http), options, [] {});
+  loader.addProvider(std::make_shared<SlowProvider>());
+  loader.want({provided, a, b});
+  loader.waitIdle();
+  CHECK(times.size() == 2);
+  // The second Nordnet ask waited the loader's own pause after the first, not the provider's.
+  CHECK(times.size() == 2 && times[1] - times[0] < std::chrono::milliseconds(300));
+}

@@ -344,6 +344,7 @@ bool HistoryLoader::loadProvided(const Ask & wanted, bool & network) {
 }
 
 bool HistoryLoader::load(const Ask & wanted, bool & network) {
+  extra_pause_ = std::chrono::milliseconds(0);  // a provider's own is set again by its asks, and is not Nordnet's
   if (wanted.request == kProvided) return loadProvided(wanted, network);
   const EdgeKey & edge = wanted.edge;
   auto snapshot = store_->snapshot();
