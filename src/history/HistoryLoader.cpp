@@ -137,6 +137,7 @@ HistoryLoader::~HistoryLoader() {
     std::lock_guard lock(mutex_);
     stop_ = true;
   }
+  if (http_) http_->cancel();  // a request in progress ends too
   wake_.notify_all();
   if (thread_.joinable()) thread_.join();
 }

@@ -21,6 +21,13 @@
 #include <sstream>
 #include <stdexcept>
 
+#ifndef _WIN32
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
+#endif
+
 namespace {
 
 std::string fixture(const std::string & name) {
@@ -658,4 +665,70 @@ TEST(a_yahoo_answer_that_lacks_a_column_parses_without_crashing) {
       R"({"chart":{"result":[{"timestamp":[1767254400],"indicators":{"quote":[{"open":[1],"high":[2],"low":[0.5],"close":[1.5]}]},)"
       R"("events":{"dividends":{"a":7,"b":{"date":"x"}},"splits":{"a":[1],"b":{"date":1767254400,"numerator":"2","denominator":1}}}}]}})",
       entry("NOKIA.HE"), *store, error));
+}
+
+#ifndef _WIN32
+TEST(a_cancelled_http_ends_the_request_in_progress_and_makes_no_more) {
+  // A server on this machine that takes the connection and never answers: without a cancel the request would wait for
+  // the read timeout (20 s).
+  const int server = socket(AF_INET, SOCK_STREAM, 0);
+  sockaddr_in address{};
+  address.sin_family = AF_INET;
+  address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+  CHECK(bind(server, reinterpret_cast<sockaddr *>(&address), sizeof address) == 0 && listen(server, 4) == 0);
+  socklen_t length = sizeof address;
+  getsockname(server, reinterpret_cast<sockaddr *>(&address), &length);
+  const std::string url = "http://127.0.0.1:" + std::to_string(ntohs(address.sin_port)) + "/";
+
+  std::unique_ptr<Http> http = makeHttp();
+  std::atomic<bool> returned{false};
+  HttpResult result;
+  std::thread request([&] {
+    result = http->get(url);
+    returned = true;
+  });
+  const int connection = accept(server, nullptr, nullptr);  // the request is in progress
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+  CHECK(!returned);
+  const auto cancelled = std::chrono::steady_clock::now();
+  http->cancel();
+  request.join();
+  CHECK(std::chrono::steady_clock::now() - cancelled < std::chrono::seconds(5));
+  CHECK(result.status == 0 && result.error == "cancelled");
+  // A later request is not made.
+  const auto again = std::chrono::steady_clock::now();
+  CHECK(http->get(url).status == 0 && std::chrono::steady_clock::now() - again < std::chrono::milliseconds(500));
+  if (connection >= 0) close(connection);
+  close(server);
+}
+#endif
+
+namespace {
+// A source whose load waits like a request that gets no answer, until its Http is cancelled (for a minute at most).
+class WaitingSource : public Source {
+ public:
+  explicit WaitingSource(std::atomic<bool> & waiting) : waiting_(waiting) {}
+  std::string name() const override { return "waiting"; }
+  std::string description() const override { return ""; }
+  void load(Store &, Http & http, SourceListener &) override {
+    waiting_ = true;
+    for (int i = 0; i < 6000 && !http.cancelled(); i++) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+
+ private:
+  std::atomic<bool> & waiting_;
+};
+}  // namespace
+
+TEST(the_runner_stopping_cancels_its_sources_http) {
+  std::shared_ptr<Store> store = makeMemoryStore();
+  std::atomic<bool> waiting{false};
+  const auto start = std::chrono::steady_clock::now();
+  {
+    std::vector<std::unique_ptr<Source>> sources;
+    sources.push_back(std::make_unique<WaitingSource>(waiting));
+    SourceRunner runner(store, std::move(sources), [] {}, [](std::string) {});
+    CHECK(waitFor([&] { return waiting.load(); }));
+  }
+  CHECK(std::chrono::steady_clock::now() - start < std::chrono::seconds(10));
 }

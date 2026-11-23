@@ -11,6 +11,7 @@
 #include <mutex>
 #include <sstream>
 #include <stdexcept>
+#include <thread>
 
 namespace {
 
@@ -469,4 +470,28 @@ TEST(a_provider_that_throws_counts_as_missing_and_the_queue_goes_on) {
   CHECK(provider->loads == 2);  // the first is not asked again, nor the second, which is done
   std::lock_guard lock(mutex);
   CHECK(messages.size() == 1 && messages[0].find("broken answer") != std::string::npos);
+}
+
+TEST(the_loader_stopping_cancels_the_request_in_progress) {
+  World w;
+  EdgeKey k = w.edge(InstrumentKind::Company, "book-1");
+  // A request that gets no answer until the Http is cancelled (for a minute at most).
+  struct Waiting : Http {
+    std::atomic<bool> & entered;
+    explicit Waiting(std::atomic<bool> & e) : entered(e) {}
+    HttpResult get(const std::string &, const HttpHeaders &) override {
+      entered = true;
+      for (int i = 0; i < 6000 && !cancelled(); i++) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+      return failed(0);
+    }
+  };
+  std::atomic<bool> entered{false};
+  const auto start = std::chrono::steady_clock::now();
+  {
+    HistoryLoader loader(w.store, std::make_unique<Waiting>(entered), quickly(), [] {});
+    loader.want({k});
+    for (int i = 0; i < 1000 && !entered; i++) std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    CHECK(entered);
+  }
+  CHECK(std::chrono::steady_clock::now() - start < std::chrono::seconds(10));
 }

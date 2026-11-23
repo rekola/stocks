@@ -34,10 +34,10 @@ SourceRunner::SourceRunner(std::shared_ptr<Store> store, std::vector<std::unique
                            std::function<void()> onChanged, std::function<void(std::string)> onMessage) {
   // A source of its own thread each, with an Http of its own: one that is slow or waits between requests does not hold up the others.
   for (std::unique_ptr<Source> & owned : sources) {
-    threads_.emplace_back([this, store, source = std::move(owned), onChanged, onMessage]() {
+    https_.push_back(makeHttp());
+    threads_.emplace_back([this, store, source = std::move(owned), http = https_.back().get(), onChanged, onMessage]() {
       using Clock = std::chrono::steady_clock;
       Listener listener(stop_, mutex_, wake_, onChanged, onMessage);
-      std::unique_ptr<Http> http = makeHttp();
       // When the source is loaded again, and when it is asked for another batch of its details; max: not again.
       Clock::time_point loadDue = Clock::now(), detailsDue = Clock::time_point::max();
       std::unique_lock lock(mutex_);
@@ -88,6 +88,7 @@ SourceRunner::~SourceRunner() {
     std::lock_guard lock(mutex_);
     stop_ = true;
   }
+  for (auto & http : https_) http->cancel();  // a request in progress ends too
   wake_.notify_all();
   wait();
 }

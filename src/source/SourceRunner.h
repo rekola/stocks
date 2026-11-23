@@ -12,7 +12,7 @@
 
 // Runs sources one after another on a thread of its own, and then again whenever one of them asks to be refreshed (its
 // refreshInterval, from the end of its last load). Its callbacks run on that thread: a program hands them to the UI
-// thread (cellui's ThreadInbox). Stops, even in the middle of a load, and joins when destroyed.
+// thread (cellui's ThreadInbox). Stops, even in the middle of a load or a request, and joins when destroyed.
 class SourceRunner {
  public:
   SourceRunner(std::shared_ptr<Store> store, std::vector<std::unique_ptr<Source>> sources, std::function<void()> onChanged,
@@ -28,6 +28,7 @@ class SourceRunner {
  private:
   class Listener;
   std::atomic<bool> stop_{false};
+  std::vector<std::unique_ptr<Http>> https_;  // one a source, cancelled by the destructor
   std::mutex mutex_;
   std::condition_variable wake_;
   std::vector<std::thread> threads_;

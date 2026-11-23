@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <memory>
 #include <string>
 #include <utility>
@@ -20,6 +21,13 @@ class Http {
  public:
   virtual ~Http() = default;
   virtual HttpResult get(const std::string & url, const HttpHeaders & headers = {}) = 0;
+  // For a thread that is to stop: the request in progress ends soon (httpclient asks about once a second) and every later
+  // one at once, with no answer (status 0). Any thread may call it.
+  void cancel() { cancelled_ = true; }
+  bool cancelled() const { return cancelled_; }
+
+ private:
+  std::atomic<bool> cancelled_{false};
 };
 
 std::unique_ptr<Http> makeHttp();
