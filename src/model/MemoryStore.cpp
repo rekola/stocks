@@ -31,23 +31,55 @@ Seq<T> slice(const Seq<T> & v, TimeRange r) {
 
 // `v` with `item` put in: in place of an element at the same time that `same` calls the same one, otherwise after the
 // elements at that time. The usual case, a new last element, is a push.
-template <class T, class Same>
-Seq<T> upsert(const Seq<T> & v, const T & item, Same same) {
-  if (v.empty() || v.back().time < item.time) return v.push_back(item);
+// `changed` is set when the series is not the one it was: a replacement `equal` to the element it replaces changes nothing.
+template <class T, class Same, class Equal>
+Seq<T> upsert(const Seq<T> & v, const T & item, Same same, Equal equal, bool & changed) {
+  if (v.empty() || v.back().time < item.time) {
+    changed = true;
+    return v.push_back(item);
+  }
   size_t lo = lowerIndex(v, item.time);
   size_t hi = lo;
   while (hi < v.size() && v[hi].time == item.time) {
-    if (same(v[hi], item)) return v.set(hi, item);
+    if (same(v[hi], item)) {
+      if (equal(v[hi], item)) return v;
+      changed = true;
+      return v.set(hi, item);
+    }
     hi++;
   }
+  changed = true;
   return v.take(hi).push_back(item) + v.drop(hi);
 }
 
-template <class K, class V, class Same>
-void appendTo(auto & map, const K & key, const std::vector<V> & items, Same same) {
+// Puts `items` into the series of `key`; false, and the map untouched, where that changed nothing.
+template <class K, class V, class Same, class Equal>
+bool appendTo(auto & map, const K & key, const std::vector<V> & items, Same same, Equal equal) {
   Seq<V> seq = map.count(key) ? map.at(key) : Seq<V>{};
-  for (const V & i : items) seq = upsert(seq, i, same);
-  map = map.set(key, seq);
+  bool changed = false;
+  for (const V & i : items) seq = upsert(seq, i, same, equal, changed);
+  if (changed) map = map.set(key, seq);
+  return changed;
+}
+
+// Numbers as a bar says them: an undefined one (NaN) is the same as another.
+bool sameNumber(double a, double b) { return a == b || (std::isnan(a) && std::isnan(b)); }
+bool sameBar(const Candle & a, const Candle & b) {
+  return a.time == b.time && sameNumber(a.open, b.open) && sameNumber(a.high, b.high) && sameNumber(a.low, b.low) &&
+         sameNumber(a.close, b.close) && sameNumber(a.volume, b.volume);
+}
+bool sameLevels(const std::vector<BookLevel> & a, const std::vector<BookLevel> & b) {
+  return std::equal(a.begin(), a.end(), b.begin(), b.end(),
+                    [](const BookLevel & x, const BookLevel & y) { return sameNumber(x.price, y.price) && sameNumber(x.size, y.size); });
+}
+bool sameBook(const BookSnapshot & a, const BookSnapshot & b) {
+  return sameNumber(a.time, b.time) && sameLevels(a.bids, b.bids) && sameLevels(a.asks, b.asks);
+}
+bool sameAnnouncement(const Announcement & a, const Announcement & b) {
+  return a.time == b.time && a.category == b.category && a.headline == b.headline && a.body == b.body && a.url == b.url;
+}
+bool sameAction(const CorporateAction & a, const CorporateAction & b) {
+  return a.time == b.time && a.kind == b.kind && sameNumber(a.value, b.value) && a.currency == b.currency && a.note == b.note;
 }
 
 template <class Id, class T>
@@ -494,7 +526,9 @@ void Snapshot::appendCandles(const EdgeKey & k, Resolution r, const std::vector<
   const SeriesKey key{k, r};
   const auto * old = series_.find(key);
   Seq<Candle> bars = old ? *old : Seq<Candle>{};
-  for (const Candle & c : in) bars = upsert(bars, c, [](const Candle &, const Candle &) { return true; });
+  bool changed = false;
+  for (const Candle & c : in) bars = upsert(bars, c, [](const Candle &, const Candle &) { return true; }, sameBar, changed);
+  if (!changed) return;  // the same bars again: no new version, nothing for a reader to refresh
   series_ = series_.set(key, bars);
   const auto * known = resolutions_.find(k);
   if (r == Resolution::Day && !(known && known->count(static_cast<int>(r)))) quoteRows_ = quoteRows_.push_back(k);
@@ -507,7 +541,7 @@ void Snapshot::appendBooks(const EdgeKey & k, const std::vector<BookSnapshot> & 
   require(k);
   if (in.empty())
     return;
-  appendTo(books_, k, in, [](const BookSnapshot &, const BookSnapshot &) { return true; });
+  if (!appendTo(books_, k, in, [](const BookSnapshot &, const BookSnapshot &) { return true; }, sameBook)) return;
   addEdge(k);
   version_++;
 }
@@ -516,8 +550,9 @@ void Snapshot::appendAnnouncements(const EventKey & k, const std::vector<Announc
   require(k);
   if (in.empty())
     return;
-  appendTo(announcements_, k, in,
-           [](const Announcement & a, const Announcement & b) { return a.headline == b.headline; });
+  if (!appendTo(announcements_, k, in, [](const Announcement & a, const Announcement & b) { return a.headline == b.headline; },
+                sameAnnouncement))
+    return;
   const auto * set = eventsByInstrument_.find(k.instrument);
   eventsByInstrument_ = eventsByInstrument_.set(k.instrument, (set ? *set : immer::set<EventKey>{}).insert(k));
   version_++;
@@ -527,7 +562,8 @@ void Snapshot::appendActions(const EventKey & k, const std::vector<CorporateActi
   require(k);
   if (in.empty())
     return;
-  appendTo(actions_, k, in, [](const CorporateAction & a, const CorporateAction & b) { return a.kind == b.kind; });
+  if (!appendTo(actions_, k, in, [](const CorporateAction & a, const CorporateAction & b) { return a.kind == b.kind; }, sameAction))
+    return;
   const auto * set = eventsByInstrument_.find(k.instrument);
   eventsByInstrument_ = eventsByInstrument_.set(k.instrument, (set ? *set : immer::set<EventKey>{}).insert(k));
   version_++;

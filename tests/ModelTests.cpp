@@ -479,3 +479,28 @@ TEST(a_listing_said_before_the_data_gives_the_same_reads_as_after_it) {
     CHECK(s->findEdge("NOKIA", w->hel) == edge && s->symbol(edge) == "NOKIA");
   }
 }
+
+TEST(the_same_bars_again_make_no_new_version_and_a_changed_close_does) {
+  World w;
+  const EdgeKey edge = w.key(w.hel, w.a);
+  const Candle gap{1, kUndefined, kUndefined, kUndefined, 5, kUndefined};  // undefined numbers are NaN
+  w.store->appendCandles(edge, Resolution::Day, {gap, bar(2, 6)});
+  const auto first = w.snap();
+  w.store->appendCandles(edge, Resolution::Day, {gap, bar(2, 6)});
+  CHECK(w.snap() == first && w.snap()->version() == first->version());
+  w.store->appendCandles(edge, Resolution::Day, {bar(2, 7)});
+  CHECK(w.snap()->version() == first->version() + 1);
+  CHECK(w.snap()->lastCandles(edge, Resolution::Day, 1).candles[0].close == 7);
+  // The other series are the same: a repeat changes nothing.
+  const Announcement news{10, "c", "headline", "body", "url"};
+  const CorporateAction action{10, ActionKind::Split, 2, {}, ""};
+  const BookSnapshot book{1.5, {{10, 1}}, {{11, 1}}};
+  const EventKey event{w.nokia, w.a};
+  for (int i = 0; i < 2; i++) {
+    const uint64_t before = w.snap()->version();
+    w.store->appendAnnouncements(event, {news});
+    w.store->appendActions(event, {action});
+    w.store->appendBooks(edge, {book});
+    CHECK(w.snap()->version() == before + (i == 0 ? 3 : 0));
+  }
+}
