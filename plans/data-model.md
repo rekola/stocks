@@ -1,10 +1,8 @@
 # Data model
 
-Status: steps 1 to 4 are built (`src/model/`: `Types.h`, `Store.h`,
-`MemoryStore.cpp`, tests in `tests/ModelTests.cpp`), as an immutable persistent
-store. The table shows what the store holds, filled by a data source (or made-up data)
-on a thread of its own. The order book, announcements and a universal scraper
-are not built yet.
+Status: built as an immutable persistent store (`src/model/`: `Types.h`, `Store.h`, `MemoryStore.cpp`, tests in
+`tests/ModelTests.cpp`). The table shows what the store holds, filled by a data source (or made-up data) on a thread of its own.
+The order book, announcements and a universal scraper are not built yet.
 
 ## Goals
 
@@ -87,11 +85,27 @@ the same keys.
 
 ## What the application shows
 
-**A preset names a market, not instruments.** Choosing a tag (Commodities,
-Nasdaq Helsinki, Currencies) selects markets. The system looks up which edges
-have data there and shows **one table row per edge**. If two datasets have data
-for the same instrument on the selected market, they are two rows. Merging such
-rows is later work.
+**A preset is a selection of edges**, and the table shows **one row per edge** in it. If two datasets have data for the same
+instrument on a market, they are two rows. Merging such rows is later work.
+
+Today a preset is one market by name (or All), the simplest selection, and it will not stay the only one. The ones to expect:
+
+- **A set of markets.** "Commodities" is the commodity markets together (the futures market of each exchange, and the spot-like
+  ones), a regional preset the markets of several countries, All every market.
+- **A filter** on the edges of those markets: by the base instrument's kind or type (every commodity, wherever it trades), by the
+  country of the market, by the dataset.
+- **The user's own preset: the edges she follows.** An explicit list of edges (four keys each), added to and removed from with
+  commands on a row (follow, unfollow). It is the user's data, not a fact of any node, so it lives in a file of her own beside the
+  facts file (and, with a server, per user). An edge's four keys are the same in every run, so the list survives a restart, which
+  it could not while ids belonged to one run.
+- **A combination**, such as what she follows together with everything in a preset.
+
+A preset is then data and not code: a name and a selection (markets, filters, a list of edges), read from a file; the built-in ones
+are a file that comes with the program, and hers is another. `Snapshot::edges(market)` becomes a selection that gives the edges
+of several markets (`edgeMarkets()` is where it starts), and the table is told what it shows by `Quotes::follow` as now.
+Open: how a selection names "these markets", by a list of names or by a fact on the market ("group: commodities"). A fact keeps
+the preset file short, but then whose fact it is (which dataset says that a market is a commodity market) is the statements
+question in `server.md`.
 
 A row needs the instrument's symbol and name, the dataset, the latest price and
 the change over the last day (from `lastCandles` of the daily series; an edge with
@@ -138,7 +152,7 @@ everything else on them are not kept, and there is no server in this step.
   changed: the data is loaded too seldom to know that, so no such claim is made. `Snapshot::attributes()` and
   `Snapshot::fact()` return it (`Attribute::updated`); `Attribute` equality ignores it. A write of an unchanged value moves
   `updated` and makes **no new version**, so nothing that watches the version (the table) wakes; a changed value makes one.
-- **A node is named by its key** (`src/model/NodeKey.h`, see "Nodes without records"), the same number in every run, so the file
+- **A node is named by its key** (`src/model/NodeKey.h`, see "Node keys"), the same number in every run, so the file
   needs no matching up: a fact is kept under the key of its node. A node is what is said of it, and a node that has no
   edge is simply not shown by anything.
 - **Restoring** reads the file into the store before the sources run: the facts are the node's facts, found by what they say
@@ -173,75 +187,70 @@ everything else on them are not kept, and there is no server in this step.
 - **Not done**: any loader that writes new facts (they will be ordinary attributes through the same writes), node-valued links,
   and a rule for which source stands when two disagree (the last said stands).
 
-## Nodes without records
+## Node keys
 
-A table shows listing edges only, so what nodes the store holds does not matter, and a node has no data of its own, not even
-that it exists, beyond the facts said of it and the edges that have it as an end. So the store keeps no `Instrument`, `Market` or
-`Dataset` records and no sequences of nodes, and its ids do not belong to one run: a node's id is its **key**, the same in every
-run, so that the facts file, the edges and a server all name a node in the same way.
+A node has no record of its own: it is its **key** (`src/model/NodeKey.h`), the same number in every run, and what is said of it
+is facts. A table shows listing edges only, so what nodes the store holds does not matter. `InstrumentId`, `MarketId` and
+`DatasetId` hold a key, so a market cannot be given where an instrument is wanted; zero is no key. The calls that make or find a
+node return its id (`addInstrument()`, `resolveInstrument()`, `addMarket()`, `resolveMarket()`, `addDataset()`) and what is
+said of it is read with `Snapshot::name()`, `symbol()`, `kind()`, `isin()`, `said()` and `attribute()`; `nodeCount()` and
+`edgeMarkets()` take the place of sequences of nodes.
 
-**The key** (`src/model/NodeKey.h`) is one 64-bit number, below 2^62 (so a positive `int64` in SQLite), with the kind of node in
-its top two bits and the identity of the node in the low sixty. `InstrumentId`, `MarketId` and `DatasetId` hold one, so a market
-cannot be given where an instrument is wanted. Zero is no key.
+A key is one 64-bit number below 2^62 (a positive `int64` in SQLite), with the kind of node in bits 61-60 and its identity in the
+low sixty:
 
-| bits 61-60 | node | low 60 bits |
+| kind | node | low 60 bits |
 |---|---|---|
 | 0 | instrument | its ISIN: 26 x 26 country letters and nine letters or digits make 56 bits, plus one so that AA0000000000 is not zero; the check digit is not stored, since `isinCheckDigit()` gives it back |
 | 1 | currency or unit | its code: up to ten letters or digits, six bits each (0 is the end, 1 to 62 are `0-9A-Za-z`), case kept (`pts`) |
 | 2 | market | sixty random bits, made by the store the first time a market is said |
 | 3 | dataset | its code, packed in the same way as a currency's |
 
-- **ISINs are not interned.** They fit: 2 letters and 9 characters of 36 make 6.9 x 10^16 values, under 2^56. The ISINs we make
-  ourselves (`ZZ` and nine characters, `privateIsin()`) are valid ISINs and pack the same way. Only a valid ISIN is accepted by
-  the store; one that is not is refused and told of.
-- **An instrument is an ISIN, or a currency or a unit.** One given no ISIN that is not a currency or a unit is given one of
-  ours, made from its symbol or else its name; one that cannot is refused and told of. The instrument says its ISIN as a fact,
-  its own too.
-- **Currency and unit codes**: `EUR`, `USD`, and units such as `pts`. The code is its own key, up to ten characters of
-  `0-9A-Za-z`, compared exactly. A longer code or another character is refused with a notice. Unpacking gives the text.
-- **Markets** have no identifier all of them have (some have no MIC), so a market's key is a surrogate, and its MIC, its id at a
-  source and its name are facts of it like any other. A market is found by what it is said to be (the first of the given facts that
-  a market has), and made, with a key, when none is there. Open: the key is minted where the store is, so it is stable on one
-  machine only. With a server the catalog has to be the one that mints, and a client asks it, or the markets two machines learn
-  of are matched by their MICs and ids when they meet.
-- **Datasets** cannot be keyed by name: a name is what a person reads, and it should be free to change. Each adapter defines its
-  **dataset code**, a constant in the adapter, up to ten characters of `0-9A-Za-z` (`nordnet`, `yahoo`, `synthetic`), and the
-  name is a fact of the dataset that is the code until something says otherwise. A schema-driven adapter (a fund company's
-  schema file) names its code in the schema, and the schema is refused with a code that does not fit. Rules: a code is
-  permanent, and a dataset whose meaning changes gets a new code, since bars under the old one keep the old meaning.
-  Decided: ten characters, and a string and not a number, so that no list of numbers has to be kept and a schema file or a model
-  can name its dataset without asking anyone. Two sources that write the same code are refused at start-up (`datasetCodeClash()`, `Source::datasetCodes()`), and a test holds the shipped fund schemas to distinct codes. Dataset code and not name is what the history loader and the details look a dataset up by, since a name can change.
+- **An instrument is an ISIN**, or a currency or a unit. An index, a fund or a commodity is an instrument like a share, with an
+  ISIN: no kind of its own. One given no ISIN that is not a currency or a unit is given one of ours (`ZZ` and nine characters, made
+  from its symbol or else its name, `privateIsin()`); one that cannot be keyed, or whose ISIN is not valid, is refused and told of
+  (`StoreOptions::notice`), and what is said of an edge with a part that was refused is said of nothing.
+- **A market** has no identifier all of them have (some have no MIC), so its key is a surrogate, and its MIC, its id at a source and
+  its name are facts of it like any other. It is found by the first of the given facts that a market has, and made, with a minted
+  key, when none is there. No two markets say the same MIC or the same id at a source (`isUnique()`): the first keeps it, and the
+  second is refused and told of. Merging two markets that turn out to be one is not attempted.
+- **A dataset** is its **code**, one to ten letters or digits that its adapter defines and never changes (`source/DatasetCodes.h`; a
+  fund schema names its own); two sources may not write the same one. Its name is a fact that is the code until something says
+  otherwise. A name can change, so a dataset is looked up by its code.
+- **Order** of rows: by the keys (an instrument's ISIN, then the quote and the dataset). A key's order means nothing of its own, so
+  nothing relies on it, and a heading sorts by what a person looks for. Listing by symbol was tried and costs the symbol lookup of
+  every edge on every refresh (about 60 ms of 100 on a market of 50,000 rows).
+- **Size.** An `EdgeKey` is four keys of eight bytes. On 50,000 edges of 60 daily bars (`stocks_period_bench`, Release) the store
+  takes 310 MB against 317 with the earlier ids, and the edge list, a refresh, a period, a sort and a frame cost the same within
+  the noise: the bars are nearly all of the memory.
+- The server adopts these keys (`server.md`, "Keys"); who mints a market's key there is open.
 
-**Done**: the keys and their packing; ids that are keys; the facts in one map from key to facts, with the index from a fact's text
-to the keys that say it (`findByAttribute`; what resolving and the unique rule use); no stored records, no `Instrument` record or view either (`nodeCount()` and `edgeMarkets()` take the place of the node sequences); **no
-instrument, market or dataset record at all**: an instrument is its `InstrumentId` (its ISIN is `Snapshot::isin()`, a currency's code its `symbol()`), a market its `MarketId`, a dataset its
-`DatasetId` (its code is `datasetCode()`), and what is said of them is facts read with `name()`, `symbol()`, `kind()`, `said()` and
-`attribute()`, so `addInstrument(symbol, name, kind, isin, type)`, `resolveInstrument(facts)`,
-`addMarket(name)`, `resolveMarket(facts)` and `addDataset(code, name)` return the id and `findInstrument()`, `findInstrumentByIsin()`, `findMarket()` and `findDataset()` an optional one; restoring that is loading; schema 2 and the conversion of the first; dataset codes and their uniqueness; rows in the order of their keys (an instrument's ISIN, then the quote and the dataset): that order is stable and costs nothing, and a heading sorts by what a person looks for. Ordering by symbol was tried and costs a lookup of the symbol of every edge on every refresh, about 60 ms of 100 on a market of 50,000 rows.
+### Countries (planned)
 
-**Not done**
-- Nothing of the above needs more. `EdgeKey`, `EventKey`, `SeriesKey` and `Listing` hold four keys of eight bytes where there
-  were four of four, and measured with `stocks_period_bench` on 50,000 edges of 60 daily bars (a Release build, before and after the
-  keys): the store takes 310 MB against 317, the edge list 18 ms against 17 to 25, a refresh 38 ms against 37 to 59, and what a period,
-  a sort and a frame cost is the same within the noise. The bars are nearly all of the memory.
-- A node that a source looks up before it says it (a currency by its symbol) is not said again after a restart, so its `updated`
-  stays at the run that last said it. That is true: `updated` is when a source last said it. Not changed.
-- **The server** (`server.md`): its `edge_id` becomes a hash of the four keys, or a catalog sequence, and "an internal
-  instrument id plus the ISIN" becomes the packed ISIN. A currency pair's quote and base are currency codes, which settles
-  what identifies instruments with no ISIN there. The market key authority above is its open question.
+A country is a node of its own kind: kind 4, which takes bit 62 of the key, so every key above stays what it is and keys stay
+below 2^63. Its key is its ISO 3166-1 alpha-2 code, packed as a code is (`FI`, `SE`; `XK` for Kosovo, which the standard leaves to
+its users). Countries that no longer exist (`SU`, `YU`) are kept: markets and ISINs of them do.
+
+- **What is said of one**: its name, its alpha-3 and numeric codes, its currency and its region, said once and not for every
+  market of it.
+- **Where it is used.** A market's `country` fact is the country's two letters, so it already names the node: the key is
+  `countryKey(text)`, and nothing needs a link before one exists. A preset by country ("every market in Finland") selects on
+  it. The first two letters of an ISIN are the country of the issuer or of the numbering agency, which a preset by the country of
+  an instrument can use (some are no country: `XS` is international, `EU` the European union). Later the node-valued links
+  below make a company's country of domicile and a currency's country links like any other.
+- **Open**: whether the `country` fact of a market becomes a node-valued link when there are such links, and the names of a
+  country in several languages.
+
+### Not done
+
+- Any loader that writes new facts (they will be ordinary attributes through the same writes).
+- **Links between nodes** (a company's `ceo`, issued by, tracks, underlying of, a market's country): a value that refers to
+  another node, with a validity period, an index on such objects and a link in the attribute viewer. See `server.md`.
+- A rule for which source stands when two disagree (the last said stands).
 
 ## Steps
 
-1. ~~Types, with tests.~~ Done.
-2. ~~In-memory `Store`, with tests.~~ Done.
-3. ~~Wire the table to it~~ Done: a preset is a market of the same name, rows
-   are edges (`QuoteRow` is the display row built from a snapshot), a Dataset
-   column, latest price and change from the candles. Rows come in the store's
-   key order.
-4. ~~A first real source~~ Done: a candle source (see Sources). The table follows the
-   store as sources write to it.
-5. The simple order-book view for the prediction models, once the questions
-   below are settled.
+1. The simple order-book view for the prediction models, once the questions below are settled.
 
 ## Sources
 
@@ -308,7 +317,7 @@ Not done:
   commodity, index, ETF, certificate, other) is the combined vocabulary: each adapter
   maps its provider's types onto it (`src/source/InstrumentTypes.cpp`: UETF
   and KETF are ETFs and PTC are certificates; EQUITY, ETF, INDEX, FUTURE and
-  CURRENCY), and keeps the provider's own type beside it (`Instrument::type`) as what
+  CURRENCY), and keeps the provider's own type beside it (the `type` fact) as what
   the mapping came from. A certificate is a certificate whoever lists it. Selecting
   edges by type is not used yet (see server.md for what is hard about it).
 
