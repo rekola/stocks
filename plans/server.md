@@ -47,7 +47,7 @@ their visualizations, which read long histories of many instruments at once.
 ## Keys
 
 Every node has a **key**, one 64-bit number that means the same in every run, in the app, in the catalog and on the wire
-(`src/model/NodeKey.h`, and "Nodes without records" in `data-model.md`). The server adopts it as it is, so that nothing
+(`src/model/NodeKey.h`, and "Node keys" in `data-model.md`). The server adopts it as it is, so that nothing
 anywhere translates between ids, and no table holds an "internal id" of its own:
 
 - an **instrument** is its ISIN, packed (56 bits, the check digit left out); a **currency or a unit** its code (up to ten letters or
@@ -55,8 +55,9 @@ anywhere translates between ids, and no table holds an "internal id" of its own:
 - the kind of node is in the top bits, and a key is below 2^62, so it is a positive `BIGINT` in MariaDB and a `UInt64` in ClickHouse;
 - in text, an instrument is its ISIN, a currency or dataset its code and a market its fifteen hex digits (`describe()`), which is
   what a URL carries;
-- more kinds of node (an issuer, a person, an index) take the kind values 4 to 7 in bit 62, and keys stay below 2^63, so none of
-  the keys above changes.
+- more kinds of node take the kind values 4 to 7 in bit 62, and keys stay below 2^63, so none of the keys above changes. The
+  first is the **country** (kind 4: its key is its ISO 3166-1 alpha-2 code, see "Countries" in `data-model.md`); an issuer or a
+  person would come after. An index is not a kind: it is an instrument, identified by its ISIN like a share.
 
 **Who mints a market's key.** The key of an instrument, a currency or a dataset is made from what it is, so any machine makes the
 same one. A market has no such identity (some have no MIC), so its key is minted where the market is first said, and two
@@ -406,9 +407,18 @@ see data-model.md).
   instrument on a market in a currency, as a dataset reports it), aliases per
   provider (its ids for the instrument and the listing), adapter state (what was
   loaded, when, how far). A version sequence for ingest batches. New tables in a
-  schema of their own, next to the legacy ones. **Every node table is keyed by the node's key**
-  (see Keys): there is no auto-increment id anywhere, so the app's facts, the bars and the catalog
-  join on the same number. A dataset's row has its code, its name and what its days and prices mean.
+  schema of their own, next to the legacy ones.
+  **The catalog is the server's database of what things are and what is said of them** (MariaDB), apart from the bars and the books
+  (ClickHouse). It has no table for each kind of node, and no auto-increment id anywhere: it is the shape of the app's facts file
+  (`data-model.md`) with a few tables added, all joined on the node key (see Keys), so the bars, the catalog and a client's facts
+  speak of a node by one number. A new kind of node or a new predicate is rows, not a table.
+  - **`facts`**: what is said of any node, instrument, market, dataset or country alike: (node key, predicate, value, when it was
+    last said), and with statements, who said it (a dataset key). A dataset's code, name and what its days and prices mean are
+    facts of it, as a market's MIC and country are of the market.
+  - **`edges`**: the fat edges, the four keys of an edge and what the market says of the instrument there (the symbol, its own id,
+    the order book, the provider's type, the name), kept apart from the facts as in the app.
+  - **`aliases`**: each provider's ids for an instrument, a market and a listing.
+  - Adapter state, and the sequence of ingest batches.
 - **Nodes and edges: a node is seen only through an edge.** All the possible nodes
   of the universe exist in the catalog, and an edge exists only when it has data. A
   node with no edge is invisible, because every preset selects edges, so there is
@@ -774,6 +784,10 @@ Sketch:
     GET /v1/edges?market=...&summary=1
         one answer for every edge of a market: latest bar, change and a short
         trace, precomputed at ingest, so a table fills with one request
+    GET /v1/edges?markets=...&kind=...&country=...&summary=1
+        the same for a selection (a set of markets, filters: see "What the application shows" in `data-model.md`); the user's own
+        preset, the edges she follows, is a list of four-key edges that she keeps and the
+        client sends, or the server keeps per user once there is one
     GET /v1/series/{base}/{quote}/{market}/{dataset}?interval=1d&from=...&to=...&asof=VERSION
         a columnar chunk; an edge is its four keys in text: an ISIN or a code, a code,
         the market's fifteen hex digits, a dataset's code
