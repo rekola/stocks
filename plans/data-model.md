@@ -213,14 +213,13 @@ cannot be given where an instrument is wanted. Zero is no key.
   can name its dataset without asking anyone. Two sources that write the same code are refused at start-up (`datasetCodeClash()`, `Source::datasetCodes()`), and a test holds the shipped fund schemas to distinct codes. Dataset code and not name is what the history loader and the details look a dataset up by, since a name can change.
 
 **Done**: the keys and their packing; ids that are keys; the facts in one map from key to facts, with the index from a fact's text
-to the keys that say it (`findByAttribute`; what resolving and the unique rule use); no stored records, the view `instrument()` being made from the facts when asked (`nodeCount()` and `edgeMarkets()` take the place
-of the node sequences); **no market or dataset record at all**: a market is its `MarketId`, a dataset its `DatasetId` (its code is
-`datasetCode()`), and the name of either is a fact read with `Snapshot::name()`, so `addMarket(name)`, `resolveMarket(facts)` and
-`addDataset(code, name)` return the id and `findMarket()` and `findDataset()` an optional one; restoring that is loading; schema 2 and the conversion of the first; dataset codes and their uniqueness; rows in the order of their keys (an instrument's ISIN, then the quote and the dataset): that order is stable and costs nothing, and a heading sorts by what a person looks for. Ordering by symbol was tried and costs a lookup of the symbol of every edge on every refresh, about 60 ms of 100 on a market of 50,000 rows.
+to the keys that say it (`findByAttribute`; what resolving and the unique rule use); no stored records, no `Instrument` record or view either (`nodeCount()` and `edgeMarkets()` take the place of the node sequences); **no
+instrument, market or dataset record at all**: an instrument is its `InstrumentId` (its ISIN is `Snapshot::isin()`, a currency's code its `symbol()`), a market its `MarketId`, a dataset its
+`DatasetId` (its code is `datasetCode()`), and what is said of them is facts read with `name()`, `symbol()`, `kind()`, `said()` and
+`attribute()`, so `addInstrument(symbol, name, kind, isin, type)`, `resolveInstrument(facts)`,
+`addMarket(name)`, `resolveMarket(facts)` and `addDataset(code, name)` return the id and `findInstrument()`, `findInstrumentByIsin()`, `findMarket()` and `findDataset()` an optional one; restoring that is loading; schema 2 and the conversion of the first; dataset codes and their uniqueness; rows in the order of their keys (an instrument's ISIN, then the quote and the dataset): that order is stable and costs nothing, and a heading sorts by what a person looks for. Ordering by symbol was tried and costs a lookup of the symbol of every edge on every refresh, about 60 ms of 100 on a market of 50,000 rows.
 
 **Not done**
-- The view `Instrument` (symbol, name, kind, ISIN, type) is still a type the calls return, made from the facts when asked.
-  Whether it goes too is to be decided with the table, which reads a few facts of each row.
 - Nothing of the above needs more. `EdgeKey`, `EventKey`, `SeriesKey` and `Listing` hold four keys of eight bytes where there
   were four of four, and measured with `stocks_period_bench` on 50,000 edges of 60 daily bars (a Release build, before and after the
   keys): the store takes 310 MB against 317, the edge list 18 ms against 17 to 25, a refresh 38 ms against 37 to 59, and what a period,

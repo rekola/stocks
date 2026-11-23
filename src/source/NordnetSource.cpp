@@ -346,7 +346,7 @@ size_t NordnetSource::loadIndicators(const List & list, Store & store, Http & ht
   size_t written = 0;
   for (NordnetIndicator & row : rows) {
     row.list = list.name;
-    Instrument base, quote;
+    InstrumentId base, quote;
     if (row.type == "CURRENCY") {
       // A pair is an edge between two currencies: the name is "EUR/USD".
       const size_t slash = row.name.find('/');
@@ -365,12 +365,12 @@ size_t NordnetSource::loadIndicators(const List & list, Store & store, Http & ht
                                      {predicate::nordnetInstrument, row.instrumentId}};
       if (kind != InstrumentKind::Other) rest.push_back({predicate::kind, kindName(kind)});
       base = store.resolveInstrument(identifying, rest);
-      store.setAttribute(base.id, {predicate::country, row.country});  // of an index
+      store.setAttribute(base, {predicate::country, row.country});  // of an index
       // An index is in points. The answer gives a commodity no currency; the owner's table has them all in dollars.
       quote = row.type == "INDEX" ? quoteNode(store, "pts") : currencyNode(store, "USD");
     }
     if (row.hasBar) {
-      const EdgeKey edge{base.id, quote.id, market, dataset};
+      const EdgeKey edge{base, quote, market, dataset};
       store.appendCandles(edge, Resolution::Day, {row.bar});
       store.setListing({edge, row.symbol, "", row.orderBookId, row.type, row.name});
     }
@@ -434,13 +434,13 @@ void NordnetSource::load(Store & store, Http & http, SourceListener & listener) 
         if (const char * name = knownMarketName(l.marketId)) says.push_back({predicate::name, name});
         const MarketId market = store.resolveMarket(says);
         store.setAttribute(market, {predicate::country, l.country});
-        Instrument base = store.addInstrument({{}, "", l.name, kindOfNordnetType(l.type), l.isin, l.type});
-        Instrument quote = currencyNode(store, l.currency);
+        const InstrumentId base = store.addInstrument("", l.name, kindOfNordnetType(l.type), l.isin, l.type);
+        const InstrumentId quote = currencyNode(store, l.currency);
         // What Nordnet says of the instrument itself: thin edges, of the types it has.
-        store.setAttributes(base.id, l.attributes);
+        store.setAttributes(base, l.attributes);
         // Today's bar makes the edge; a listing with none stays a node nothing selects.
         if (l.hasBar) {
-          const EdgeKey edge{base.id, quote.id, market, dataset};
+          const EdgeKey edge{base, quote, market, dataset};
           store.appendCandles(edge, Resolution::Day, {l.bar});
           // What the market says of it: what it calls it, its own id for it and the order book its history is asked for by.
           store.setListing({edge, l.symbol, l.identifier, l.bookId, l.type, l.name});

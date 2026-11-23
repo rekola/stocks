@@ -10,14 +10,14 @@ namespace {
 
 struct World {
   std::unique_ptr<Store> store = makeMemoryStore();
-  Instrument nokia = store->addInstrument({{}, "NOKIA", "Nokia", InstrumentKind::Company});
-  Instrument eur = store->addInstrument({{}, "EUR", "Euro", InstrumentKind::Currency});
+  InstrumentId nokia = store->addInstrument("NOKIA", "Nokia", InstrumentKind::Company);
+  InstrumentId eur = store->addInstrument("EUR", "Euro", InstrumentKind::Currency);
   MarketId hel = store->addMarket("Nasdaq Helsinki");
   MarketId sto = store->addMarket("Nasdaq Stockholm");
   DatasetId a = store->addDataset("providera");
   DatasetId b = store->addDataset("providerb");
   std::shared_ptr<const Snapshot> snap() const { return store->snapshot(); }
-  EdgeKey key(MarketId m, DatasetId d) const { return {nokia.id, eur.id, m, d}; }
+  EdgeKey key(MarketId m, DatasetId d) const { return {nokia, eur, m, d}; }
 };
 
 Candle bar(Timestamp t, double close) { return {t, close, close, close, close, 1}; }
@@ -26,8 +26,8 @@ Candle bar(Timestamp t, double close) { return {t, close, close, close, close, 1
 
 TEST(adding_the_same_symbol_or_name_returns_the_record_already_there) {
   World w;
-  Instrument again = w.store->addInstrument({{}, "NOKIA", "Other name", InstrumentKind::Index});
-  CHECK(again.id == w.nokia.id && again.name == "Other name" && again.kind == InstrumentKind::Index);  // the last said stands
+  InstrumentId again = w.store->addInstrument("NOKIA", "Other name", InstrumentKind::Index);
+  CHECK(again == w.nokia && w.snap()->name(again) == "Other name" && w.snap()->kind(again) == InstrumentKind::Index);  // the last said stands
   CHECK(w.store->addMarket("Nasdaq Helsinki") == w.hel);
   CHECK(w.store->addDataset("providera") == w.a);
   CHECK(w.snap()->nodeCount(NodeType::Instrument) == 2 && w.snap()->nodeCount(NodeType::Market) == 2 && w.snap()->nodeCount(NodeType::Dataset) == 2);
@@ -35,10 +35,10 @@ TEST(adding_the_same_symbol_or_name_returns_the_record_already_there) {
 
 TEST(records_are_found_by_id_and_by_name) {
   World w;
-  CHECK(w.snap()->instrument(w.eur.id)->symbol == "EUR");
-  CHECK(w.snap()->findInstrument("NOKIA")->id == w.nokia.id);
+  CHECK(w.snap()->symbol(w.eur) == "EUR");
+  CHECK(*w.snap()->findInstrument("NOKIA") == w.nokia);
   CHECK(!w.snap()->findInstrument("NOPE"));
-  CHECK(!w.snap()->instrument({}) && !w.snap()->instrument({99}));
+  CHECK(!w.snap()->known(NodeRef(InstrumentId{})) && !w.snap()->known(NodeRef(InstrumentId{99})));
   CHECK(*w.snap()->findMarket("Nasdaq Stockholm") == w.sto && w.snap()->name(w.hel) == "Nasdaq Helsinki");
   CHECK(*w.snap()->findDataset("providerb") == w.b && !w.snap()->findDataset("provider-b") && w.snap()->name(NodeRef(DatasetId{})).empty());
 }
@@ -160,7 +160,7 @@ TEST(order_book_snapshots_are_keyed_by_floating_point_seconds) {
 
 TEST(announcements_are_kept_per_instrument_and_dataset_in_time_order) {
   World w;
-  EventKey ka{w.nokia.id, w.a}, kb{w.nokia.id, w.b};
+  EventKey ka{w.nokia, w.a}, kb{w.nokia, w.b};
   w.store->appendAnnouncements(ka, {{2000, "results", "Q2 results", "Q2", ""}, {1000, "guidance", "Raises guidance", "", ""}});
   w.store->appendAnnouncements(ka, {{2000, "results", "Q2 results", "Q2 (corrected)", ""}});  // same time and headline
   w.store->appendAnnouncements(ka, {{2000, "mgmt", "New CFO", "", ""}});                      // same time, other headline
@@ -169,31 +169,31 @@ TEST(announcements_are_kept_per_instrument_and_dataset_in_time_order) {
   CHECK(a.size() == 3 && a[0].headline == "Raises guidance" && a[1].body == "Q2 (corrected)" && a[2].headline == "New CFO");
   CHECK(w.snap()->announcements(ka, {1500, 2500}).size() == 2);
   CHECK(w.snap()->announcements(kb).size() == 1);
-  CHECK(w.snap()->announcements({w.eur.id, w.a}).empty());
+  CHECK(w.snap()->announcements({w.eur, w.a}).empty());
 }
 
 TEST(corporate_actions_carry_their_kind_and_value) {
   World w;
-  EventKey k{w.nokia.id, w.a};
-  CorporateAction div{5000, ActionKind::Dividend, 0.14, w.eur.id, ""};
+  EventKey k{w.nokia, w.a};
+  CorporateAction div{5000, ActionKind::Dividend, 0.14, w.eur, ""};
   CorporateAction split{3000, ActionKind::Split, 2.0, {}, "2:1"};
   w.store->appendActions(k, {div, split});
   auto acts = w.snap()->actions(k);
   CHECK(acts.size() == 2 && acts[0].kind == ActionKind::Split && acts[1].kind == ActionKind::Dividend);
   CHECK_NEAR(acts[1].value, 0.14, 1e-12);
-  CHECK(acts[1].currency == w.eur.id);
-  w.store->appendActions(k, {{5000, ActionKind::Dividend, 0.15, w.eur.id, "revised"}});
+  CHECK(acts[1].currency == w.eur);
+  w.store->appendActions(k, {{5000, ActionKind::Dividend, 0.15, w.eur, "revised"}});
   CHECK(w.snap()->actions(k).size() == 2 && w.snap()->actions(k)[1].note == "revised");
 }
 
 TEST(events_lists_the_datasets_that_say_something_about_an_instrument) {
   World w;
-  CHECK(w.snap()->events(w.nokia.id).empty());
-  w.store->appendAnnouncements({w.nokia.id, w.a}, {{1, "x", "x", "", ""}});
-  w.store->appendActions({w.nokia.id, w.a}, {{1, ActionKind::Split, 2, {}, ""}});
-  w.store->appendActions({w.nokia.id, w.b}, {{1, ActionKind::Split, 2, {}, ""}});
-  CHECK(w.snap()->events(w.nokia.id).size() == 2);
-  CHECK(w.snap()->events(w.eur.id).empty());
+  CHECK(w.snap()->events(w.nokia).empty());
+  w.store->appendAnnouncements({w.nokia, w.a}, {{1, "x", "x", "", ""}});
+  w.store->appendActions({w.nokia, w.a}, {{1, ActionKind::Split, 2, {}, ""}});
+  w.store->appendActions({w.nokia, w.b}, {{1, ActionKind::Split, 2, {}, ""}});
+  CHECK(w.snap()->events(w.nokia).size() == 2);
+  CHECK(w.snap()->events(w.eur).empty());
 }
 
 TEST(a_snapshot_never_changes_and_a_write_makes_a_new_one_that_shares_the_old) {
@@ -214,7 +214,7 @@ TEST(a_snapshot_never_changes_and_a_write_makes_a_new_one_that_shares_the_old) {
 TEST(only_a_write_that_changes_something_makes_a_new_version) {
   World w;
   uint64_t v = w.snap()->version();
-  w.store->addInstrument({{}, "NOKIA", "Nokia", InstrumentKind::Company});
+  w.store->addInstrument("NOKIA", "Nokia", InstrumentKind::Company);
   w.store->appendCandles(w.key(w.hel, w.a), Resolution::Min1, {});
   w.store->appendBooks(w.key(w.hel, w.a), {});
   CHECK(w.snap()->version() == v);
@@ -263,21 +263,21 @@ TEST(two_writers_do_not_lose_each_others_bars) {
 
 TEST(an_instrument_is_its_isin_whatever_its_symbol_or_market) {
   World w;
-  Instrument a = w.store->addInstrument({{}, "", "Xtrackers AI", InstrumentKind::Etf, "IE00BGV5VN51"});
-  Instrument again = w.store->addInstrument({{}, "", "Other name", InstrumentKind::Etf, "IE00BGV5VN51"});  // another listing
-  CHECK(a.id.valid() && again.id == a.id);
-  CHECK(w.snap()->findInstrumentByIsin("IE00BGV5VN51")->id == a.id);
+  InstrumentId a = w.store->addInstrument("", "Xtrackers AI", InstrumentKind::Etf, "IE00BGV5VN51");
+  InstrumentId again = w.store->addInstrument("", "Other name", InstrumentKind::Etf, "IE00BGV5VN51");  // another listing
+  CHECK(a.valid() && again == a);
+  CHECK(*w.snap()->findInstrumentByIsin("IE00BGV5VN51") == a);
   CHECK(!w.snap()->findInstrumentByIsin("IE0000000004"));
-  Instrument b = w.store->addInstrument({{}, "", "A different fund", InstrumentKind::Etf, "LU0000000009"});
-  CHECK(b.id.valid() && b.id != a.id);
+  InstrumentId b = w.store->addInstrument("", "A different fund", InstrumentKind::Etf, "LU0000000009");
+  CHECK(b.valid() && b != a);
   // A currency has no ISIN, and is its code.
-  CHECK(w.store->addInstrument({{}, "EUR", "Euro", InstrumentKind::Currency}).id == w.eur.id);
+  CHECK(w.store->addInstrument("EUR", "Euro", InstrumentKind::Currency) == w.eur);
 }
 
 TEST(a_fat_edge_has_a_typed_listing_and_only_once_it_has_data) {
   World w;
-  Instrument fund = w.store->addInstrument({{}, "", "Xtrackers AI", InstrumentKind::Etf, "IE00BGV5VN51"});
-  const EdgeKey onHel{fund.id, w.eur.id, w.hel, w.a}, onSto{fund.id, w.eur.id, w.sto, w.a};
+  InstrumentId fund = w.store->addInstrument("", "Xtrackers AI", InstrumentKind::Etf, "IE00BGV5VN51");
+  const EdgeKey onHel{fund, w.eur, w.hel, w.a}, onSto{fund, w.eur, w.sto, w.a};
 
   // An edge exists once it has data: before that it takes nothing.
   w.store->setListing({onHel, "XAIX", "XAIX", "book-h", "UETF"});
@@ -294,7 +294,7 @@ TEST(a_fat_edge_has_a_typed_listing_and_only_once_it_has_data) {
   CHECK(*w.snap()->findEdge("XAIX", w.hel) == onHel);
   CHECK(!w.snap()->findEdge("XAIX", w.sto));  // that market calls it something else
   CHECK(*w.snap()->findEdge("XAIX-S", w.sto) == onSto);
-  CHECK(w.snap()->findEdge("XAIX", w.hel)->base == fund.id);
+  CHECK(w.snap()->findEdge("XAIX", w.hel)->base == fund);
 
   // A symbol changing replaces the old, and the old finds nothing; an unchanged write makes no new version.
   w.store->setListing({onHel, "XAIX2", "XAIX", "book-h", "UETF"});
@@ -304,7 +304,7 @@ TEST(a_fat_edge_has_a_typed_listing_and_only_once_it_has_data) {
   CHECK(w.snap()->version() == version);
 
   // The same data from another dataset is another edge, with its own listing.
-  const EdgeKey other{fund.id, w.eur.id, w.hel, w.b};
+  const EdgeKey other{fund, w.eur, w.hel, w.b};
   w.store->appendCandles(other, Resolution::Day, {bar(1, 10)});
   w.store->setListing({other, "XAIX.HE", "", "", "ETF"});
   CHECK(w.snap()->symbol(other) == "XAIX.HE" && *w.snap()->findEdge("XAIX2", w.hel) == onHel);
@@ -312,7 +312,7 @@ TEST(a_fat_edge_has_a_typed_listing_and_only_once_it_has_data) {
 
 TEST(a_thin_edge_is_a_triple_of_a_node_with_no_dataset_and_a_value_that_changes_replaces_it) {
   World w;
-  const NodeRef nokia = w.nokia.id;
+  const NodeRef nokia = w.nokia;
   CHECK(!w.snap()->attribute(nokia, predicate::iconUrl));
   const size_t own = w.snap()->attributes(nokia).size();  // the instrument's own: symbol, name, kind
 
@@ -333,7 +333,7 @@ TEST(a_thin_edge_is_a_triple_of_a_node_with_no_dataset_and_a_value_that_changes_
   CHECK(s->attributes(nokia).size() == own + 5);
 
   // The same node says the same things as before and more: the name, found by its text, beside the icon.
-  CHECK(w.snap()->findInstrument("NOKIA")->id == w.nokia.id);
+  CHECK(*w.snap()->findInstrument("NOKIA") == w.nokia);
 
   // A value that changes replaces the one there; one that does not makes no new version.
   const uint64_t version = s->version();
@@ -350,29 +350,60 @@ TEST(a_thin_edge_is_a_triple_of_a_node_with_no_dataset_and_a_value_that_changes_
   CHECK(w.snap()->attributes(nokia).size() == s->attributes(nokia).size() && w.snap()->version() == version + 1);
 
   // Text is found by its value; other values are not.
-  CHECK(w.snap()->findByAttribute(NodeType::Instrument, predicate::iconUrl, "https://x/nokia.png")->id == w.nokia.id.value);
+  CHECK(w.snap()->findByAttribute(NodeType::Instrument, predicate::iconUrl, "https://x/nokia.png")->id == w.nokia.value);
   CHECK(!w.snap()->findByAttribute(NodeType::Instrument, "owners", "1234"));
 }
 
 TEST(edges_can_be_selected_by_the_type_of_their_base_instrument) {
   World w;
-  Instrument etf = w.store->addInstrument({{}, "FLXK", "A fund", InstrumentKind::Etf, "IE00BHZRR030", "UETF"});
-  Instrument cert = w.store->addInstrument({{}, "4GLD", "A certificate", InstrumentKind::Other, "DE000A0S9GB0", "PTC"});
-  EdgeKey a{etf.id, w.eur.id, w.hel, w.a}, b{cert.id, w.eur.id, w.hel, w.a}, c{w.nokia.id, w.eur.id, w.hel, w.a};
+  InstrumentId etf = w.store->addInstrument("FLXK", "A fund", InstrumentKind::Etf, "IE00BHZRR030", "UETF");
+  InstrumentId cert = w.store->addInstrument("4GLD", "A certificate", InstrumentKind::Other, "DE000A0S9GB0", "PTC");
+  EdgeKey a{etf, w.eur, w.hel, w.a}, b{cert, w.eur, w.hel, w.a}, c{w.nokia, w.eur, w.hel, w.a};
   for (const EdgeKey & k : {a, b, c}) w.store->appendCandles(k, Resolution::Min1, {bar(0, 1)});
-  CHECK(w.snap()->findInstrument("FLXK")->type == "UETF" && w.snap()->findInstrument("NOKIA")->type.empty());
+  CHECK(w.snap()->said(NodeRef(*w.snap()->findInstrument("FLXK")), predicate::type) == "UETF" && w.snap()->said(NodeRef(*w.snap()->findInstrument("NOKIA")), predicate::type).empty());
   CHECK(w.snap()->edges(w.hel).size() == 3);
-  auto isType = [](const char * t) { return [t](const Instrument & i) { return i.type == t; }; };
+  auto isType = [&w](const char * t) { return [&w, t](InstrumentId i) { return w.snap()->said(NodeRef(i), predicate::type) == t; }; };
   CHECK(w.snap()->edges(w.hel, isType("PTC")).size() == 1 && w.snap()->edges(w.hel, isType("PTC"))[0] == b);
   CHECK(w.snap()->edges(w.hel, isType("UETF")).size() == 1);
   CHECK(w.snap()->edges(w.hel, isType("nothing")).empty());
-  CHECK(w.snap()->edges(w.hel, [](const Instrument & i) { return i.kind == InstrumentKind::Etf; }).size() == 1);
+  CHECK(w.snap()->edges(w.hel, [&w](InstrumentId i) { return w.snap()->kind(i) == InstrumentKind::Etf; }).size() == 1);
   CHECK(w.snap()->edges(w.sto, isType("PTC")).empty());
 }
 
 TEST(an_instrument_with_no_edge_is_not_seen_by_a_market) {
   World w;
-  w.store->addInstrument({{}, "LONELY", "No data", InstrumentKind::Etf, "XX0000000002", "UETF"});
+  w.store->addInstrument("LONELY", "No data", InstrumentKind::Etf, "XX0000000002", "UETF");
   CHECK(w.snap()->findInstrument("LONELY"));  // it exists, as a node
   CHECK(w.snap()->edges(w.hel).empty() && w.snap()->edges(w.sto).empty() && w.snap()->edgeMarkets().empty());
+}
+
+TEST(an_instrument_is_its_id_and_what_is_said_of_it_is_read_from_the_facts) {
+  World w;
+  auto s = w.snap();
+  const InstrumentId ericsson = w.store->addInstrument("ERIC", "Ericsson", InstrumentKind::Company, "SE0000108656", "EQUITY");
+  s = w.snap();
+  CHECK(s->isin(ericsson) == "SE0000108656" && s->symbol(ericsson) == "ERIC" && s->name(ericsson) == "Ericsson");
+  CHECK(s->kind(ericsson) == InstrumentKind::Company && s->said(NodeRef(ericsson), predicate::type) == "EQUITY");
+  CHECK(s->known(NodeRef(ericsson)) && *s->findInstrumentByIsin("SE0000108656") == ericsson && *s->findInstrument("ERIC") == ericsson);
+  // A currency has no ISIN: its code is its key and its symbol.
+  CHECK(s->isin(w.eur).empty() && s->symbol(w.eur) == "EUR" && s->kind(w.eur) == InstrumentKind::Currency);
+  // What nothing is said of reads as nothing.
+  const InstrumentId nobody{};
+  CHECK(!s->known(NodeRef(nobody)) && s->symbol(nobody).empty() && s->name(nobody).empty() && s->kind(nobody) == InstrumentKind::Other);
+  CHECK(!s->findInstrumentByIsin("SE0000000009") && !s->findInstrument("NOPE"));
+}
+
+TEST(what_is_said_of_an_edge_with_a_part_that_was_refused_is_said_of_nothing) {
+  World w;
+  const InstrumentId refused = w.store->addInstrument("X", "A wrong ISIN", InstrumentKind::Company, "FI0009000680");  // the check digit is wrong
+  CHECK(!refused.valid());
+  const uint64_t version = w.snap()->version();
+  const EdgeKey bad{refused, w.eur, w.hel, w.a};
+  w.store->appendCandles(bad, Resolution::Day, {bar(1, 1.0)});
+  w.store->appendBooks(bad, {BookSnapshot{}});
+  w.store->setPreviousClose(bad, 1, 1.0);
+  w.store->appendAnnouncements({refused, w.a}, {Announcement{}});
+  w.store->appendActions({refused, w.a}, {CorporateAction{}});
+  CHECK(w.snap()->version() == version);  // nothing changed: no edge under an instrument that is none
+  CHECK(w.snap()->edges(w.hel).empty() && !w.snap()->hasCandles(bad, Resolution::Day) && w.snap()->events(refused).empty());
 }

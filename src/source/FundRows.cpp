@@ -145,10 +145,10 @@ std::optional<EdgeKey> writeFund(Store & store, const std::string & datasetName,
   if (bars.empty() || !isValidIsin(f.isin)) return std::nullopt;
   const DatasetId dataset = store.addDataset(datasetName);
   const MarketId market = store.addMarket(marketName);
-  Instrument base = store.addInstrument({{}, "", f.name, InstrumentKind::Fund, f.isin, "FUND"});
-  Instrument quote = currencyNode(store, "EUR");
-  store.setAttributes(base.id, attributesOf(f));
-  const EdgeKey edge{base.id, quote.id, market, dataset};
+  const InstrumentId base = store.addInstrument("", f.name, InstrumentKind::Fund, f.isin, "FUND");
+  const InstrumentId quote = currencyNode(store, "EUR");
+  store.setAttributes(base, attributesOf(f));
+  const EdgeKey edge{base, quote, market, dataset};
   store.appendCandles(edge, Resolution::Day, bars);
   store.setListing({edge, f.symbol.empty() ? f.isin : f.symbol, f.identifier, "", "FUND", f.name});
   return edge;

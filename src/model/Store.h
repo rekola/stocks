@@ -20,10 +20,16 @@ class Snapshot {
   // Which version of the store this is; each change that changed something makes the next number.
   uint64_t version() const { return version_; }
 
-  // A node is what is said of it, and these are views made from its facts, never stored: none where nothing is said of the key.
-  std::optional<Instrument> instrument(InstrumentId) const;
+  // A node is what is said of it, and none of these is a record: each reads facts (an instrument's ISIN is its key).
+  // Whether anything is said of a node.
+  bool known(NodeRef) const;
+  // The text said of a node under a predicate, else empty.
+  std::string said(NodeRef, const std::string & predicate) const;
+  std::string symbol(InstrumentId) const;  // the symbol said of the instrument itself (a currency's code); the ones markets give are on edges
+  InstrumentKind kind(InstrumentId) const;
+  std::string isin(InstrumentId) const;  // an instrument with an ISIN is that ISIN; empty for a currency or a unit
   // By a symbol said of the instrument itself (a currency's code).
-  std::optional<Instrument> findInstrument(const std::string & symbol) const;
+  std::optional<InstrumentId> findInstrument(const std::string & symbol) const;
   // The fat edge's listing: what a dataset says of the instrument on the market. Only an edge that has data has one.
   std::optional<Listing> listing(const EdgeKey &) const;
   // What the market calls the base instrument there, else the instrument's own symbol.
@@ -35,7 +41,7 @@ class Snapshot {
   // The same with its time: when a source last said it (`updated`), whether or not the value was the same as before, in
   // milliseconds UTC as the store took it where the write happened.
   std::optional<Attribute> fact(NodeRef, const std::string & predicate) const;
-  std::optional<Instrument> findInstrumentByIsin(const std::string & isin) const;
+  std::optional<InstrumentId> findInstrumentByIsin(const std::string & isin) const;  // if anything is said of it
   // A market is its key: found by what is said of it, and named by a fact.
   std::optional<MarketId> findMarket(const std::string & name) const;  // by its name attribute
   std::optional<MarketId> findMarketByAttribute(const std::string & predicate, const std::string & value) const;
@@ -56,7 +62,7 @@ class Snapshot {
   // reader that shows them puts them in an order of its own. An instrument with no edge is not seen: nothing selects it.
   std::vector<EdgeKey> edges(MarketId) const;
   // The same, only those whose base instrument `keep` accepts (by its kind, its type, ...).
-  std::vector<EdgeKey> edges(MarketId, const std::function<bool(const Instrument &)> & keep) const;
+  std::vector<EdgeKey> edges(MarketId, const std::function<bool(InstrumentId)> & keep) const;
 
   // The bars of the edge at `resolution` in `range` (in slot numbers, or day numbers for a date resolution), oldest first;
   // an empty series if there are none.
@@ -83,8 +89,8 @@ class Snapshot {
 
   // Changes, for a store to make on its own copy before publishing it. Nothing that holds a published snapshot
   // can call them, because it holds it const. Each one that changes something bumps the version.
-  Instrument add(Instrument);
-  Instrument resolveInstrument(const std::vector<Attribute> & identifying, const std::vector<Attribute> & rest);
+  InstrumentId addInstrument(const std::string & symbol, const std::string & name, InstrumentKind, const std::string & isin, const std::string & type);
+  InstrumentId resolveInstrument(const std::vector<Attribute> & identifying, const std::vector<Attribute> & rest);
   void setListing(const Listing &);
   MarketId resolveMarket(const std::vector<Attribute> &);
   void setAttribute(NodeRef, const Attribute &);
@@ -146,11 +152,12 @@ class Store {
   //
   // An instrument is its ISIN: it is found by it, and what a market calls it is on its edge there, not on the
   // instrument. One without an ISIN (a currency, whose symbol is its code) is found by its symbol. Its symbol, name,
-  // ISIN, type and kind (unless Other) are then set. The returned record carries the assigned id.
-  virtual Instrument addInstrument(Instrument) = 0;
+  // ISIN, type and kind (unless Other) are then set. The id returned is the instrument's key, none if it cannot be given one.
+  virtual InstrumentId addInstrument(const std::string & symbol, const std::string & name, InstrumentKind kind, const std::string & isin = {},
+                                     const std::string & type = {}) = 0;
   // An instrument by the first of the identifying attributes that finds one, made if none does; then all the
   // attributes, the identifying ones too, are set.
-  virtual Instrument resolveInstrument(const std::vector<Attribute> & identifying, const std::vector<Attribute> & rest) = 0;
+  virtual InstrumentId resolveInstrument(const std::vector<Attribute> & identifying, const std::vector<Attribute> & rest) = 0;
   // The market that has any of these attributes, tried in the order given; where none has, a market is made. The
   // attributes are then set on it, so a market first seen by its Nordnet id is given its name when it is learned.
   virtual MarketId resolveMarket(const std::vector<Attribute> &) = 0;

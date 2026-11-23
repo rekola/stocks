@@ -277,8 +277,7 @@ void Browser::showInfo() {
   const EdgeKey edge = quotes->edge(row);
   auto snapshot = store_->snapshot();
   std::string label = snapshot->symbol(edge);
-  if (label.empty())
-    if (auto base = snapshot->instrument(edge.base)) label = base->name;
+  if (label.empty()) label = snapshot->name(edge.base);
   std::string title = "Info: " + label;
   AttributeModal modal(app_.widgets(), app_.root(), app_.backend().eventLoop(), std::move(title), snapshot, buildInfo(*snapshot, edge));
   // The input that got us here does not return until the modal closes, so no frame follows it: ask for the one that shows
