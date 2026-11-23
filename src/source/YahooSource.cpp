@@ -162,8 +162,8 @@ void YahooSource::load(Store & store, Http & http, SourceListener & listener) {
     for (const char * host : kHosts) {  // the second host answers when the first does not
       HttpResult r = http.get(std::string("https://") + host + "/v8/finance/chart/" + encoded(e.yahoo) + "?range=" + range_ +
                               "&interval=1d&events=div%7Csplit");
-      if (r.status == 429) {
-        listener.message("yahoo: rate limited, stopping");
+      if (r.status == 429 || r.status == 403) {
+        listener.message(r.status == 429 ? "yahoo: rate limited, stopping" : "yahoo: refused, stopping");
         return;
       }
       if (!r.ok()) {

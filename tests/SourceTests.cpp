@@ -235,6 +235,16 @@ TEST(a_rate_limit_stops_the_load) {
   CHECK(http.urls.size() == 1 && listener.messages.size() == 1 && listener.changes == 0);
 }
 
+TEST(a_refusal_stops_the_load_as_a_rate_limit_does) {
+  auto store = makeMemoryStore();
+  FakeHttp http;
+  http.answer = [](const std::string &) { return failed(403); };
+  Listener listener;
+  YahooSource(testList(), "1y", std::chrono::milliseconds(0)).load(*store, http, listener);
+  CHECK(http.urls.size() == 1 && listener.messages.size() == 1 && listener.changes == 0);
+  CHECK(listener.messages[0] == "yahoo: refused, stopping");
+}
+
 TEST(a_cancelled_load_stops_between_requests) {
   auto store = makeMemoryStore();
     FakeHttp http;
