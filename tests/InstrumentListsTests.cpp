@@ -51,6 +51,30 @@ TEST(a_list_file_is_one_market_of_comma_separated_rows) {
   CHECK(u[3].market == "Second" && u[3].kind == InstrumentKind::Commodity);  // files in name order
 }
 
+TEST(a_row_is_on_the_market_its_code_names_and_a_file_needs_no_market_line_for_such_rows) {
+  TempDirectory dir;
+  dir.write("shares.csv",
+            "kind,base,quote,name,yahoo,isin,mic\n"
+            "company,NOKIA,EUR,Nokia Oyj,NOKIA.HE,FI0009000681,XHEL\n"
+            "company,VOD,GBP,Vodafone,VOD.L,GB00BH4HKS39,XLON\n"
+            "company,SAP,EUR,SAP,SAP.DE,DE0007164600\n");  // the last has no code and no market line
+  std::string error;
+  InstrumentList u = loadInstrumentLists(dir.path, error);
+  CHECK(u.empty() && error.find("a row with no market code before") != std::string::npos);
+  dir.write("shares.csv",
+            "# market: Elsewhere\n"
+            "kind,base,quote,name,yahoo,isin,mic\n"
+            "company,NOKIA,EUR,Nokia Oyj,NOKIA.HE,FI0009000681,XHEL\n"
+            "company,VOD,GBP,Vodafone,VOD.L,GB00BH4HKS39,XLON\n"
+            "company,SAP,EUR,SAP,SAP.DE,DE0007164600\n");  // the last has none: the file's market
+  error.clear();
+  u = loadInstrumentLists(dir.path, error);
+  CHECK(error.empty() && u.size() == 3);
+  CHECK(u[0].mic == "XHEL" && u[0].market == "Nasdaq Helsinki");
+  CHECK(u[1].mic == "XLON" && u[1].market == "London Stock Exchange");
+  CHECK(u[2].mic.empty() && u[2].market == "Elsewhere");
+}
+
 TEST(a_wrong_list_is_refused_with_where_it_is_wrong) {
   auto refused = [](const std::string & text, const std::string & message_part) {
     TempDirectory dir;
@@ -62,12 +86,13 @@ TEST(a_wrong_list_is_refused_with_where_it_is_wrong) {
     if (error.find(message_part) == std::string::npos) std::fprintf(stderr, "  error was: %s\n", error.c_str());
   };
   refused("company,NOKIA,EUR,Nokia,NOKIA.HE,FI0009000681\n", "before the '# market:'");
-  refused("kind,base,quote,name,yahoo,isin\n", "no '# market:' line");
-  refused("# market: M\ncompany,NOKIA,EUR,Nokia\n", "x.csv:2: expected 6 fields");
+  refused("kind,base,quote,name,yahoo,isin\n", "no instruments");
+  refused("# market: M\ncompany,NOKIA,EUR,Nokia\n", "x.csv:2: expected 6 or 7 fields");
   refused("# market: M\nshare,NOKIA,EUR,Nokia,NOKIA.HE,FI0009000681\n", "unknown kind 'share'");
   refused("# market: M\ncompany,,EUR,Nokia,NOKIA.HE,FI0009000681\n", "cannot be empty");
   refused("# market: M\ncompany,NOKIA,EUR,Nokia,NOKIA.HE,\n", "has no ISIN");  // only a currency is without
   refused("# market: M\n", "");  // a market without rows is no instruments at all
+  refused("company,NOKIA,EUR,Nokia,NOKIA.HE,FI0009000681,XXXX\n", "unknown market code 'XXXX'");
 
   std::string error;
   CHECK(loadInstrumentLists(fs::temp_directory_path() / "stocks_no_such_directory", error).empty() && !error.empty());
@@ -135,7 +160,9 @@ TEST(the_lists_on_disk_are_consistent) {
   // the other countries Nordnet lists (their ISINs are Nordnet's).
   CHECK(perMarket.size() >= 18);
   CHECK(perMarket["Nasdaq Helsinki"] >= 90 && perMarket["Indices"] >= 5);
-  for (const char * country : {"US", "Canada", "United Kingdom", "Germany", "France", "Sweden", "Switzerland"}) CHECK(perMarket[country] >= 20);
+  for (const char * market : {"Nasdaq", "New York Stock Exchange", "Toronto Stock Exchange", "London Stock Exchange", "Xetra", "Euronext Paris",
+                              "Nasdaq Stockholm", "SIX Swiss Exchange"})
+    CHECK(perMarket[market] >= 20);
   CHECK(perMarket["Currencies"] >= 80);
   // Every currency that is a quote has a name, shown beside the pair.
   for (const ListEntry & e : u) CHECK(std::string(currencyName(e.quote)) != "" || e.kind != InstrumentKind::Currency);

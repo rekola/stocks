@@ -77,7 +77,8 @@ bool YahooSource::parse(const std::string & body, const ListEntry & e, Store & s
   }
 
   const DatasetId dataset = store.addDataset(kYahooDataset);
-  const MarketId market = store.addMarket(e.market);
+  // By its code where the row has one, so that it is the market the other providers made; else by its name.
+  const MarketId market = e.mic.empty() ? store.addMarket(e.market) : store.resolveMarket({{predicate::mic, e.mic}, {predicate::name, e.market}});
   const InstrumentId base = baseOf(store, e);
   const InstrumentId quote = quoteNode(store, e.quote);
   const EdgeKey edge{base, quote, market, dataset};

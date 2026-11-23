@@ -13,13 +13,16 @@ struct ListEntry {
   std::string market, base, quote, name, yahoo;
   InstrumentKind kind = InstrumentKind::Other;  // of the base
   std::string isin;  // of the base: what the instrument is (empty only for a currency, which is its code)
+  std::string mic;  // the market's ISO 10383 code, if the row gives one: what finds the market another provider also made
 };
 using InstrumentList = std::vector<ListEntry>;
 
-// Reads every *.csv in `directory`, in file name order. A file is one market:
-//   # market: Nasdaq Helsinki          the market's name (required; other # lines are comments)
-//   kind,base,quote,name,yahoo,isin   the header (optional)
-//   company,NOKIA,EUR,Nokia Oyj,NOKIA.HE,FI0009000681
+// Reads every *.csv in `directory`, in file name order. A row is on a market, given by its code (a seventh field) or, for a row
+// with none, by the file's name for it:
+//   # market: Currencies               the market of the rows with no code (other # lines are comments)
+//   kind,base,quote,name,yahoo,isin,mic   the header (optional; the last field may be left out of a row)
+//   company,NOKIA,EUR,Nokia Oyj,NOKIA.HE,FI0009000681,XHEL
+// The code finds the market the other providers made, and names it where it is made first (KnownMarkets); a code not known is refused.
 // A currency has no ISIN and is its code; anything else must have one (Yahoo gives none, so the data does). An
 // index is quoted in `pts`, index points.
 // `kind` is company, currency, commodity, index, etf, certificate or other; a field with a comma is in double quotes. Returns nothing,

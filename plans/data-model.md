@@ -269,8 +269,10 @@ for a frame. The UI never waits on a source.
   no build system of its own, so `CMakeLists.txt` compiles the two backend
   sources it needs.
 - **Instrument lists** (`src/source/InstrumentLists.cpp`, `data/lists/*.csv`):
-  the candle source has no discovery, so its adapter has lists of its own, one file per
-  market, with the source's ticker for each instrument, and reads them when it loads. They
+  the candle source has no discovery, so its adapter has lists of its own, each row with
+  the source's ticker for the instrument and the code (ISO 10383) of its market, which finds
+  the market the other adapters made (a row with none is on the market its file names), and
+  reads them when it loads. They
   stand in until every adapter finds its own instruments, and then they go; the synthetic
   source follows them meanwhile. They are checked against the source by
   `tools/lists/build_lists.py` and are not complete: about 100 Helsinki shares, 30
