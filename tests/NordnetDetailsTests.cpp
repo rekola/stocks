@@ -29,10 +29,10 @@ void addInstruments(Store & store) {
   Instrument eur = store.addInstrument({{}, "EUR", "Euro", InstrumentKind::Currency});
   Instrument stock = store.addInstrument({{}, "", "AbbVie", InstrumentKind::Company, "US00287Y1091"});
   Instrument fund = store.addInstrument({{}, "", "A fund", InstrumentKind::Fund, "LU0231483743"});
-  Market market = store.addMarket({{}, "Somewhere"});
-  Dataset data = store.addDataset({{}, "nordnet"});
+  MarketId market = store.addMarket("Somewhere");
+  DatasetId data = store.addDataset("nordnet");
   for (auto [instrument, book] : {std::pair{stock, "stock-book"}, std::pair{fund, "fund-book"}}) {
-    EdgeKey key{instrument.id, eur.id, market.id, data.id};
+    EdgeKey key{instrument.id, eur.id, market, data};
     store.appendCandles(key, Resolution::Day, {{dayNumber(2026, 1, 2), 1, 1, 1, 4.2, 1}});
     store.setListing({key, instrument.name, "id", book, "X", instrument.name});
   }

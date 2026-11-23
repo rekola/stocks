@@ -9,7 +9,7 @@ namespace {
 
 // What a market is called in a row: its name, else Nordnet's id for it (one it has no name for yet), else its number.
 std::string labelOf(const Snapshot & snapshot, MarketId id) {
-  if (auto m = snapshot.market(id); m && !m->name.empty()) return m->name;
+  if (std::string name = snapshot.name(id); !name.empty()) return name;
   if (auto v = snapshot.attribute(id, predicate::nordnetId))
     if (auto text = asText(*v)) return "Nordnet " + *text;
   return "#" + describe(NodeKey{id.value});
@@ -58,7 +58,7 @@ void appendRows(const Snapshot & snapshot, MarketId market, Period period, std::
     if (auto url = snapshot.attribute(key.base, predicate::iconUrl)) r.icon_url = asText(*url).value_or("");
     r.name = nameOf(snapshot, key);
     r.quote = quoteOf(snapshot, key);
-    if (auto dataset = snapshot.dataset(key.dataset)) r.dataset = dataset->name;
+    r.dataset = snapshot.name(key.dataset);
     r.history = std::move(view.closes);
     r.price = last.candles.back().close;
     r.change = view.change();
@@ -146,8 +146,7 @@ const std::string & Quotes::marketLabel(MarketId id) const {
 const std::string & Quotes::datasetName(DatasetId id) const {
   auto it = datasetNames_.find(id.value);
   if (it == datasetNames_.end()) {
-    auto d = snapshot_->dataset(id);
-    it = datasetNames_.emplace(id.value, d ? d->name : std::string()).first;
+    it = datasetNames_.emplace(id.value, snapshot_->name(id)).first;
   }
   return it->second;
 }

@@ -113,19 +113,11 @@ std::optional<Instrument> Snapshot::instrument(InstrumentId id) const {
   return Instrument{id, textFact(*attrs, predicate::symbol), textFact(*attrs, predicate::name), kindOfName(textFact(*attrs, predicate::kind)),
                     textFact(*attrs, predicate::isin), textFact(*attrs, predicate::type)};
 }
-std::optional<Market> Snapshot::market(MarketId id) const {
-  if (NodeKey{id.value}.kind() != NodeKind::Market) return std::nullopt;
-  const auto * attrs = attributes_.find(NodeRef(id));
-  if (!attrs) return std::nullopt;
-  return Market{id, textFact(*attrs, predicate::name)};
-}
-std::optional<Dataset> Snapshot::dataset(DatasetId id) const {
-  if (NodeKey{id.value}.kind() != NodeKind::Dataset) return std::nullopt;
-  const auto * attrs = attributes_.find(NodeRef(id));
-  if (!attrs) return std::nullopt;
-  std::string code = text(NodeKey{id.value});
-  std::string name = textFact(*attrs, predicate::name);
-  return Dataset{id, code, name.empty() ? code : name};
+std::string Snapshot::name(NodeRef n) const {
+  const auto * attrs = attributes_.find(n);
+  std::string name = attrs ? textFact(*attrs, predicate::name) : std::string();
+  if (name.empty() && n.type == NodeType::Dataset && attrs) return text(NodeKey{n.id});  // the code, until a name is said
+  return name;
 }
 std::optional<Instrument> Snapshot::findInstrument(const std::string & s) const {
   auto n = findByAttribute(NodeType::Instrument, predicate::symbol, s);
@@ -162,12 +154,12 @@ std::optional<Instrument> Snapshot::findInstrumentByIsin(const std::string & isi
   const auto key = instrumentKey(isin);
   return key ? instrument(InstrumentId{key->value}) : std::nullopt;
 }
-std::optional<Market> Snapshot::findMarket(const std::string & s) const {
+std::optional<MarketId> Snapshot::findMarket(const std::string & s) const {
   return findMarketByAttribute(predicate::name, s);
 }
-std::optional<Market> Snapshot::findMarketByAttribute(const std::string & p, const std::string & v) const {
+std::optional<MarketId> Snapshot::findMarketByAttribute(const std::string & p, const std::string & v) const {
   auto n = findByAttribute(NodeType::Market, p, v);
-  return n ? market(MarketId{n->id}) : std::nullopt;
+  return n ? std::optional<MarketId>(MarketId{n->id}) : std::nullopt;
 }
 std::vector<Attribute> Snapshot::attributes(NodeRef n) const {
   const auto * a = attributes_.find(n);
@@ -176,9 +168,10 @@ std::vector<Attribute> Snapshot::attributes(NodeRef n) const {
 std::optional<NodeRef> Snapshot::findByAttribute(NodeType t, const std::string & p, const std::string & v) const {
   return lowest(byAttribute_.find(indexKey(t, p, v)), t);
 }
-std::optional<Dataset> Snapshot::findDataset(const std::string & code) const {
+std::optional<DatasetId> Snapshot::findDataset(const std::string & code) const {
   const auto key = datasetKey(code);
-  return key ? dataset(DatasetId{key->value}) : std::nullopt;
+  if (!key || !attributes_.find(refOf(*key))) return std::nullopt;
+  return DatasetId{key->value};
 }
 size_t Snapshot::nodeCount(NodeType type) const {
   size_t n = 0;
@@ -189,8 +182,7 @@ std::vector<MarketId> Snapshot::edgeMarkets() const {
   std::vector<std::pair<std::string, MarketId>> named;
   for (const auto & [market, edges] : edgesByMarket_)
     if (edges.size() > 0) {
-      const auto m = this->market(market);
-      named.emplace_back(m ? m->name : std::string(), market);
+      named.emplace_back(name(NodeRef(market)), market);
     }
   std::sort(named.begin(), named.end());
   std::vector<MarketId> out;
@@ -431,36 +423,34 @@ Instrument Snapshot::add(Instrument i) {
 // A market has no identifier all of them have, so its key is minted when it is first said, and it is found again by what is said
 // of it (the first of these that a market has, in the order given). What it is said to be that another market is said to be
 // too is refused: that is two records of one market, which this does not settle.
-Market Snapshot::resolve(const std::vector<Attribute> & attributes) {
+MarketId Snapshot::resolveMarket(const std::vector<Attribute> & attributes) {
   std::optional<NodeRef> found;
   for (const Attribute & a : attributes)
     if (const auto * text = std::get_if<std::string>(&a.value); text && !found) found = findByAttribute(NodeType::Market, a.predicate, *text);
   MarketId id{found ? found->id : 0};
   if (!id.valid()) {
-    if (!mint_ || !*mint_) return Market{};
+    if (!mint_ || !*mint_) return MarketId{};
     for (int tries = 0; tries < 8 && !id.valid(); tries++) {
       const NodeKey candidate = marketKey((*mint_)());
       if (!attributes_.find(refOf(candidate))) id = MarketId{candidate.value};
     }
-    if (!id.valid()) return Market{};
+    if (!id.valid()) return MarketId{};
   }
   setAttributes(NodeRef(id), attributes);
-  return Market{id, textFact(this->attributes(NodeRef(id)), predicate::name)};
+  return id;
 }
 
 // A dataset is its code. Its name is a fact of it that is the code until something says otherwise.
-Dataset Snapshot::add(Dataset d) {
-  const auto key = datasetKey(d.code);
+DatasetId Snapshot::addDataset(const std::string & code, const std::string & name) {
+  const auto key = datasetKey(code);
   if (!key) {
-    notices_.push_back("dataset: the code " + d.code + " is not one to ten letters or digits, so it is not kept");
-    return Dataset{};
+    notices_.push_back("dataset: the code " + code + " is not one to ten letters or digits, so it is not kept");
+    return DatasetId{};
   }
   const DatasetId id{key->value};
-  if (!d.name.empty())
-    setAttributes(NodeRef(id), {{predicate::name, d.name}});
-  else if (!fact(NodeRef(id), predicate::name))
-    setAttributes(NodeRef(id), {{predicate::name, d.code}});
-  return dataset(id).value_or(Dataset{});
+  if (!name.empty()) setAttributes(NodeRef(id), {{predicate::name, name}});
+  else if (!fact(NodeRef(id), predicate::name)) setAttributes(NodeRef(id), {{predicate::name, code}});
+  return id;
 }
 
 namespace {
@@ -596,8 +586,8 @@ class MemoryStore : public Store {
   Instrument addInstrument(Instrument i) override {
     return write([&](Snapshot & s) { return s.add(std::move(i)); });
   }
-  Market resolveMarket(const std::vector<Attribute> & a) override {
-    return write([&](Snapshot & s) { return s.resolve(a); });
+  MarketId resolveMarket(const std::vector<Attribute> & a) override {
+    return write([&](Snapshot & s) { return s.resolveMarket(a); });
   }
   void setAttributes(NodeRef n, const std::vector<Attribute> & a) override {
     write([&](Snapshot & s) { s.setAttributes(n, a); });
@@ -608,8 +598,8 @@ class MemoryStore : public Store {
   void setAttribute(NodeRef n, const Attribute & a) override {
     write([&](Snapshot & s) { s.setAttribute(n, a); });
   }
-  Dataset addDataset(Dataset d) override {
-    return write([&](Snapshot & s) { return s.add(std::move(d)); });
+  DatasetId addDataset(const std::string & code, const std::string & name) override {
+    return write([&](Snapshot & s) { return s.addDataset(code, name); });
   }
   void appendCandles(const EdgeKey & k, Resolution r, const std::vector<Candle> & c) override {
     write([&](Snapshot & s) { s.appendCandles(k, r, c); });

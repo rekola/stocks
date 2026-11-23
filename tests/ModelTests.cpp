@@ -12,10 +12,10 @@ struct World {
   std::unique_ptr<Store> store = makeMemoryStore();
   Instrument nokia = store->addInstrument({{}, "NOKIA", "Nokia", InstrumentKind::Company});
   Instrument eur = store->addInstrument({{}, "EUR", "Euro", InstrumentKind::Currency});
-  Market hel = store->addMarket({{}, "Nasdaq Helsinki"});
-  Market sto = store->addMarket({{}, "Nasdaq Stockholm"});
-  Dataset a = store->addDataset({{}, "providera"});
-  Dataset b = store->addDataset({{}, "providerb"});
+  MarketId hel = store->addMarket("Nasdaq Helsinki");
+  MarketId sto = store->addMarket("Nasdaq Stockholm");
+  DatasetId a = store->addDataset("providera");
+  DatasetId b = store->addDataset("providerb");
   std::shared_ptr<const Snapshot> snap() const { return store->snapshot(); }
   EdgeKey key(MarketId m, DatasetId d) const { return {nokia.id, eur.id, m, d}; }
 };
@@ -28,8 +28,8 @@ TEST(adding_the_same_symbol_or_name_returns_the_record_already_there) {
   World w;
   Instrument again = w.store->addInstrument({{}, "NOKIA", "Other name", InstrumentKind::Index});
   CHECK(again.id == w.nokia.id && again.name == "Other name" && again.kind == InstrumentKind::Index);  // the last said stands
-  CHECK(w.store->addMarket({{}, "Nasdaq Helsinki"}).id == w.hel.id);
-  CHECK(w.store->addDataset({{}, "providera"}).id == w.a.id);
+  CHECK(w.store->addMarket("Nasdaq Helsinki") == w.hel);
+  CHECK(w.store->addDataset("providera") == w.a);
   CHECK(w.snap()->nodeCount(NodeType::Instrument) == 2 && w.snap()->nodeCount(NodeType::Market) == 2 && w.snap()->nodeCount(NodeType::Dataset) == 2);
 }
 
@@ -39,13 +39,13 @@ TEST(records_are_found_by_id_and_by_name) {
   CHECK(w.snap()->findInstrument("NOKIA")->id == w.nokia.id);
   CHECK(!w.snap()->findInstrument("NOPE"));
   CHECK(!w.snap()->instrument({}) && !w.snap()->instrument({99}));
-  CHECK(w.snap()->findMarket("Nasdaq Stockholm")->id == w.sto.id && w.snap()->market(w.hel.id)->name == "Nasdaq Helsinki");
-  CHECK(w.snap()->findDataset("providerb")->id == w.b.id && !w.snap()->dataset({}));
+  CHECK(*w.snap()->findMarket("Nasdaq Stockholm") == w.sto && w.snap()->name(w.hel) == "Nasdaq Helsinki");
+  CHECK(*w.snap()->findDataset("providerb") == w.b && !w.snap()->findDataset("provider-b") && w.snap()->name(NodeRef(DatasetId{})).empty());
 }
 
 TEST(candles_stay_time_ordered_and_a_bar_at_a_known_time_replaces_it) {
   World w;
-  EdgeKey k = w.key(w.hel.id, w.a.id);
+  EdgeKey k = w.key(w.hel, w.a);
   w.store->appendCandles(k, Resolution::Min5, {bar(120000, 3), bar(0, 1)});
   w.store->appendCandles(k, Resolution::Min5, {bar(60000, 2), bar(120000, 30)});
   CandleSeries s = w.snap()->candles(k, Resolution::Min5);
@@ -56,22 +56,22 @@ TEST(candles_stay_time_ordered_and_a_bar_at_a_known_time_replaces_it) {
 
 TEST(candle_ranges_are_half_open_and_last_candles_takes_the_tail) {
   World w;
-  EdgeKey k = w.key(w.hel.id, w.a.id);
+  EdgeKey k = w.key(w.hel, w.a);
   w.store->appendCandles(k, Resolution::Min1, {bar(0, 1), bar(1000, 2), bar(2000, 3), bar(3000, 4)});
   CandleSeries r = w.snap()->candles(k, Resolution::Min1, {1000, 3000});
   CHECK(r.candles.size() == 2 && r.candles[0].time == 1000 && r.candles[1].time == 2000);
   CandleSeries t = w.snap()->lastCandles(k, Resolution::Min1, 2);
   CHECK(t.candles.size() == 2 && t.candles[0].time == 2000 && t.candles[1].time == 3000);
   CHECK(w.snap()->lastCandles(k, Resolution::Min1, 99).candles.size() == 4);
-  CHECK(w.snap()->candles(w.key(w.hel.id, w.b.id), Resolution::Min1).candles.empty());
-  CHECK(w.snap()->lastCandles(w.key(w.hel.id, w.b.id), Resolution::Min1, 3).candles.empty());
+  CHECK(w.snap()->candles(w.key(w.hel, w.b), Resolution::Min1).candles.empty());
+  CHECK(w.snap()->lastCandles(w.key(w.hel, w.b), Resolution::Min1, 3).candles.empty());
 }
 
 TEST(an_edge_has_a_series_for_each_resolution_it_has_data_in) {
   World w;
-  EdgeKey k = w.key(w.hel.id, w.a.id);
+  EdgeKey k = w.key(w.hel, w.a);
   w.store->appendCandles(k, Resolution::Day, {});  // nothing to add makes nothing
-  CHECK(w.snap()->resolutions(k).empty() && w.snap()->edges(w.hel.id).empty());
+  CHECK(w.snap()->resolutions(k).empty() && w.snap()->edges(w.hel).empty());
 
   const int64_t today = dayNumber(2026, 11, 20);
   w.store->appendCandles(k, Resolution::Day, {bar(today - 1, 10), bar(today, 11)});  // keyed by date
@@ -84,7 +84,7 @@ TEST(an_edge_has_a_series_for_each_resolution_it_has_data_in) {
   CHECK(s->candles(k, Resolution::Hour1).candles.size() == 3 && s->candles(k, Resolution::Min5).candles.size() == 1);
   CHECK(s->candles(k, Resolution::Week).candles.empty());  // a resolution it has no data in
   CHECK(s->lastCandles(k, Resolution::Hour1, 1).candles[0].close == 3);
-  CHECK(s->edges(w.hel.id).size() == 1);  // one edge, whatever the number of series
+  CHECK(s->edges(w.hel).size() == 1);  // one edge, whatever the number of series
 
   // A correction in one series leaves the others alone.
   w.store->appendCandles(k, Resolution::Hour1, {bar(hour + 1, 20)});
@@ -108,30 +108,30 @@ TEST(resolutions_are_codes_with_a_name_and_the_intraday_ones_a_length) {
 
 TEST(sources_that_disagree_about_one_pair_on_one_market_both_stay) {
   World w;
-  w.store->appendCandles(w.key(w.hel.id, w.a.id), Resolution::Min1, {bar(0, 5.0)});
-  w.store->appendCandles(w.key(w.hel.id, w.b.id), Resolution::Min1, {bar(0, 5.1)});
-  CHECK_NEAR(w.snap()->candles(w.key(w.hel.id, w.a.id), Resolution::Min1).candles[0].close, 5.0, 1e-9);
-  CHECK_NEAR(w.snap()->candles(w.key(w.hel.id, w.b.id), Resolution::Min1).candles[0].close, 5.1, 1e-9);
-  CHECK(w.snap()->edges(w.hel.id).size() == 2);
+  w.store->appendCandles(w.key(w.hel, w.a), Resolution::Min1, {bar(0, 5.0)});
+  w.store->appendCandles(w.key(w.hel, w.b), Resolution::Min1, {bar(0, 5.1)});
+  CHECK_NEAR(w.snap()->candles(w.key(w.hel, w.a), Resolution::Min1).candles[0].close, 5.0, 1e-9);
+  CHECK_NEAR(w.snap()->candles(w.key(w.hel, w.b), Resolution::Min1).candles[0].close, 5.1, 1e-9);
+  CHECK(w.snap()->edges(w.hel).size() == 2);
 }
 
 TEST(edges_lists_the_keys_with_data_in_a_market) {
   World w;
-  CHECK(w.snap()->edges(w.hel.id).empty());
-  w.store->appendCandles(w.key(w.hel.id, w.a.id), Resolution::Min1, {bar(0, 1)});
-  w.store->appendCandles(w.key(w.sto.id, w.a.id), Resolution::Min1, {bar(0, 1)});
-  w.store->appendCandles(w.key(w.hel.id, w.a.id), Resolution::Min1, {});  // nothing to add creates nothing
-  w.store->appendCandles(w.key(w.sto.id, w.b.id), Resolution::Min1, {});
-  w.store->appendBooks(w.key(w.hel.id, w.b.id), {{0, {{1, 1}}, {{2, 1}}}});  // a book alone makes an edge too
-  std::vector<EdgeKey> hel = w.snap()->edges(w.hel.id);
+  CHECK(w.snap()->edges(w.hel).empty());
+  w.store->appendCandles(w.key(w.hel, w.a), Resolution::Min1, {bar(0, 1)});
+  w.store->appendCandles(w.key(w.sto, w.a), Resolution::Min1, {bar(0, 1)});
+  w.store->appendCandles(w.key(w.hel, w.a), Resolution::Min1, {});  // nothing to add creates nothing
+  w.store->appendCandles(w.key(w.sto, w.b), Resolution::Min1, {});
+  w.store->appendBooks(w.key(w.hel, w.b), {{0, {{1, 1}}, {{2, 1}}}});  // a book alone makes an edge too
+  std::vector<EdgeKey> hel = w.snap()->edges(w.hel);
   CHECK(hel.size() == 2);
-  CHECK(w.snap()->edges(w.sto.id).size() == 1);
-  CHECK(hel[0].market == w.hel.id && hel[1].market == w.hel.id);
+  CHECK(w.snap()->edges(w.sto).size() == 1);
+  CHECK(hel[0].market == w.hel && hel[1].market == w.hel);
 }
 
 TEST(a_book_at_a_time_is_the_latest_snapshot_at_or_before_it) {
   World w;
-  EdgeKey k = w.key(w.hel.id, w.a.id);
+  EdgeKey k = w.key(w.hel, w.a);
   BookSnapshot s1{1000, {{9.9, 100}, {9.8, 200}}, {{10.1, 150}}};
   BookSnapshot s2{2000, {{10.0, 50}}, {{10.2, 60}, {10.3, 70}}};
   w.store->appendBooks(k, {s2, s1});
@@ -139,7 +139,7 @@ TEST(a_book_at_a_time_is_the_latest_snapshot_at_or_before_it) {
   CHECK(w.snap()->bookAt(k, 1000)->bids.size() == 2);
   CHECK(w.snap()->bookAt(k, 1999)->time == 1000);
   CHECK(w.snap()->bookAt(k, 5000)->asks.size() == 2);
-  CHECK(!w.snap()->bookAt(w.key(w.hel.id, w.b.id), 5000));
+  CHECK(!w.snap()->bookAt(w.key(w.hel, w.b), 5000));
   CHECK(w.snap()->books(k, {1500, 3000}).size() == 1);
   w.store->appendBooks(k, {{2000, {}, {}}});  // same time: replaced
   CHECK(w.snap()->books(k).size() == 2 && w.snap()->bookAt(k, 2000)->asks.empty());
@@ -147,7 +147,7 @@ TEST(a_book_at_a_time_is_the_latest_snapshot_at_or_before_it) {
 
 TEST(order_book_snapshots_are_keyed_by_floating_point_seconds) {
   World w;
-  EdgeKey k = w.key(w.hel.id, w.a.id);
+  EdgeKey k = w.key(w.hel, w.a);
   w.store->appendBooks(k, {{1000.75, {{1, 1}}, {{2, 1}}}, {1000.25, {{1, 2}}, {{2, 2}}}, {1000.5, {{1, 3}}, {{2, 3}}}});
   auto s = w.snap();
   auto all = s->books(k);
@@ -160,7 +160,7 @@ TEST(order_book_snapshots_are_keyed_by_floating_point_seconds) {
 
 TEST(announcements_are_kept_per_instrument_and_dataset_in_time_order) {
   World w;
-  EventKey ka{w.nokia.id, w.a.id}, kb{w.nokia.id, w.b.id};
+  EventKey ka{w.nokia.id, w.a}, kb{w.nokia.id, w.b};
   w.store->appendAnnouncements(ka, {{2000, "results", "Q2 results", "Q2", ""}, {1000, "guidance", "Raises guidance", "", ""}});
   w.store->appendAnnouncements(ka, {{2000, "results", "Q2 results", "Q2 (corrected)", ""}});  // same time and headline
   w.store->appendAnnouncements(ka, {{2000, "mgmt", "New CFO", "", ""}});                      // same time, other headline
@@ -169,12 +169,12 @@ TEST(announcements_are_kept_per_instrument_and_dataset_in_time_order) {
   CHECK(a.size() == 3 && a[0].headline == "Raises guidance" && a[1].body == "Q2 (corrected)" && a[2].headline == "New CFO");
   CHECK(w.snap()->announcements(ka, {1500, 2500}).size() == 2);
   CHECK(w.snap()->announcements(kb).size() == 1);
-  CHECK(w.snap()->announcements({w.eur.id, w.a.id}).empty());
+  CHECK(w.snap()->announcements({w.eur.id, w.a}).empty());
 }
 
 TEST(corporate_actions_carry_their_kind_and_value) {
   World w;
-  EventKey k{w.nokia.id, w.a.id};
+  EventKey k{w.nokia.id, w.a};
   CorporateAction div{5000, ActionKind::Dividend, 0.14, w.eur.id, ""};
   CorporateAction split{3000, ActionKind::Split, 2.0, {}, "2:1"};
   w.store->appendActions(k, {div, split});
@@ -189,16 +189,16 @@ TEST(corporate_actions_carry_their_kind_and_value) {
 TEST(events_lists_the_datasets_that_say_something_about_an_instrument) {
   World w;
   CHECK(w.snap()->events(w.nokia.id).empty());
-  w.store->appendAnnouncements({w.nokia.id, w.a.id}, {{1, "x", "x", "", ""}});
-  w.store->appendActions({w.nokia.id, w.a.id}, {{1, ActionKind::Split, 2, {}, ""}});
-  w.store->appendActions({w.nokia.id, w.b.id}, {{1, ActionKind::Split, 2, {}, ""}});
+  w.store->appendAnnouncements({w.nokia.id, w.a}, {{1, "x", "x", "", ""}});
+  w.store->appendActions({w.nokia.id, w.a}, {{1, ActionKind::Split, 2, {}, ""}});
+  w.store->appendActions({w.nokia.id, w.b}, {{1, ActionKind::Split, 2, {}, ""}});
   CHECK(w.snap()->events(w.nokia.id).size() == 2);
   CHECK(w.snap()->events(w.eur.id).empty());
 }
 
 TEST(a_snapshot_never_changes_and_a_write_makes_a_new_one_that_shares_the_old) {
   World w;
-  EdgeKey k = w.key(w.hel.id, w.a.id);
+  EdgeKey k = w.key(w.hel, w.a);
   w.store->appendCandles(k, Resolution::Min1, {bar(0, 1), bar(1000, 2)});
   auto before = w.snap();
   uint64_t v = before->version();
@@ -215,16 +215,16 @@ TEST(only_a_write_that_changes_something_makes_a_new_version) {
   World w;
   uint64_t v = w.snap()->version();
   w.store->addInstrument({{}, "NOKIA", "Nokia", InstrumentKind::Company});
-  w.store->appendCandles(w.key(w.hel.id, w.a.id), Resolution::Min1, {});
-  w.store->appendBooks(w.key(w.hel.id, w.a.id), {});
+  w.store->appendCandles(w.key(w.hel, w.a), Resolution::Min1, {});
+  w.store->appendBooks(w.key(w.hel, w.a), {});
   CHECK(w.snap()->version() == v);
-  w.store->appendCandles(w.key(w.hel.id, w.a.id), Resolution::Min1, {bar(0, 1)});
+  w.store->appendCandles(w.key(w.hel, w.a), Resolution::Min1, {bar(0, 1)});
   CHECK(w.snap()->version() == v + 1);
 }
 
 TEST(readers_see_whole_consistent_snapshots_while_a_writer_appends) {
   World w;
-  EdgeKey k = w.key(w.hel.id, w.a.id);
+  EdgeKey k = w.key(w.hel, w.a);
   const int kBars = 3000;
   std::atomic<bool> done{false};
   std::atomic<int> bad{0};
@@ -251,7 +251,7 @@ TEST(readers_see_whole_consistent_snapshots_while_a_writer_appends) {
 
 TEST(two_writers_do_not_lose_each_others_bars) {
   World w;
-  EdgeKey ka = w.key(w.hel.id, w.a.id), kb = w.key(w.hel.id, w.b.id);
+  EdgeKey ka = w.key(w.hel, w.a), kb = w.key(w.hel, w.b);
   auto write = [&](EdgeKey k) {
     for (int i = 0; i < 500; i++) w.store->appendCandles(k, Resolution::Min1, {bar(static_cast<Timestamp>(i) * 1000, i)});
   };
@@ -277,11 +277,11 @@ TEST(an_instrument_is_its_isin_whatever_its_symbol_or_market) {
 TEST(a_fat_edge_has_a_typed_listing_and_only_once_it_has_data) {
   World w;
   Instrument fund = w.store->addInstrument({{}, "", "Xtrackers AI", InstrumentKind::Etf, "IE00BGV5VN51"});
-  const EdgeKey onHel{fund.id, w.eur.id, w.hel.id, w.a.id}, onSto{fund.id, w.eur.id, w.sto.id, w.a.id};
+  const EdgeKey onHel{fund.id, w.eur.id, w.hel, w.a}, onSto{fund.id, w.eur.id, w.sto, w.a};
 
   // An edge exists once it has data: before that it takes nothing.
   w.store->setListing({onHel, "XAIX", "XAIX", "book-h", "UETF"});
-  CHECK(!w.snap()->listing(onHel) && !w.snap()->findEdge("XAIX", w.hel.id));
+  CHECK(!w.snap()->listing(onHel) && !w.snap()->findEdge("XAIX", w.hel));
 
   w.store->appendCandles(onHel, Resolution::Day, {bar(1, 10)});
   w.store->appendCandles(onSto, Resolution::Day, {bar(1, 11)});
@@ -291,23 +291,23 @@ TEST(a_fat_edge_has_a_typed_listing_and_only_once_it_has_data) {
   // One instrument, a listing for each market's edge, found by the market.
   CHECK(w.snap()->symbol(onHel) == "XAIX" && w.snap()->symbol(onSto) == "XAIX-S");
   CHECK(w.snap()->listing(onSto)->identifier == "419021" && w.snap()->listing(onSto)->orderBook == "book-s");
-  CHECK(*w.snap()->findEdge("XAIX", w.hel.id) == onHel);
-  CHECK(!w.snap()->findEdge("XAIX", w.sto.id));  // that market calls it something else
-  CHECK(*w.snap()->findEdge("XAIX-S", w.sto.id) == onSto);
-  CHECK(w.snap()->findEdge("XAIX", w.hel.id)->base == fund.id);
+  CHECK(*w.snap()->findEdge("XAIX", w.hel) == onHel);
+  CHECK(!w.snap()->findEdge("XAIX", w.sto));  // that market calls it something else
+  CHECK(*w.snap()->findEdge("XAIX-S", w.sto) == onSto);
+  CHECK(w.snap()->findEdge("XAIX", w.hel)->base == fund.id);
 
   // A symbol changing replaces the old, and the old finds nothing; an unchanged write makes no new version.
   w.store->setListing({onHel, "XAIX2", "XAIX", "book-h", "UETF"});
-  CHECK(!w.snap()->findEdge("XAIX", w.hel.id) && *w.snap()->findEdge("XAIX2", w.hel.id) == onHel);
+  CHECK(!w.snap()->findEdge("XAIX", w.hel) && *w.snap()->findEdge("XAIX2", w.hel) == onHel);
   const uint64_t version = w.snap()->version();
   w.store->setListing({onHel, "XAIX2", "XAIX", "book-h", "UETF"});
   CHECK(w.snap()->version() == version);
 
   // The same data from another dataset is another edge, with its own listing.
-  const EdgeKey other{fund.id, w.eur.id, w.hel.id, w.b.id};
+  const EdgeKey other{fund.id, w.eur.id, w.hel, w.b};
   w.store->appendCandles(other, Resolution::Day, {bar(1, 10)});
   w.store->setListing({other, "XAIX.HE", "", "", "ETF"});
-  CHECK(w.snap()->symbol(other) == "XAIX.HE" && *w.snap()->findEdge("XAIX2", w.hel.id) == onHel);
+  CHECK(w.snap()->symbol(other) == "XAIX.HE" && *w.snap()->findEdge("XAIX2", w.hel) == onHel);
 }
 
 TEST(a_thin_edge_is_a_triple_of_a_node_with_no_dataset_and_a_value_that_changes_replaces_it) {
@@ -358,21 +358,21 @@ TEST(edges_can_be_selected_by_the_type_of_their_base_instrument) {
   World w;
   Instrument etf = w.store->addInstrument({{}, "FLXK", "A fund", InstrumentKind::Etf, "IE00BHZRR030", "UETF"});
   Instrument cert = w.store->addInstrument({{}, "4GLD", "A certificate", InstrumentKind::Other, "DE000A0S9GB0", "PTC"});
-  EdgeKey a{etf.id, w.eur.id, w.hel.id, w.a.id}, b{cert.id, w.eur.id, w.hel.id, w.a.id}, c{w.nokia.id, w.eur.id, w.hel.id, w.a.id};
+  EdgeKey a{etf.id, w.eur.id, w.hel, w.a}, b{cert.id, w.eur.id, w.hel, w.a}, c{w.nokia.id, w.eur.id, w.hel, w.a};
   for (const EdgeKey & k : {a, b, c}) w.store->appendCandles(k, Resolution::Min1, {bar(0, 1)});
   CHECK(w.snap()->findInstrument("FLXK")->type == "UETF" && w.snap()->findInstrument("NOKIA")->type.empty());
-  CHECK(w.snap()->edges(w.hel.id).size() == 3);
+  CHECK(w.snap()->edges(w.hel).size() == 3);
   auto isType = [](const char * t) { return [t](const Instrument & i) { return i.type == t; }; };
-  CHECK(w.snap()->edges(w.hel.id, isType("PTC")).size() == 1 && w.snap()->edges(w.hel.id, isType("PTC"))[0] == b);
-  CHECK(w.snap()->edges(w.hel.id, isType("UETF")).size() == 1);
-  CHECK(w.snap()->edges(w.hel.id, isType("nothing")).empty());
-  CHECK(w.snap()->edges(w.hel.id, [](const Instrument & i) { return i.kind == InstrumentKind::Etf; }).size() == 1);
-  CHECK(w.snap()->edges(w.sto.id, isType("PTC")).empty());
+  CHECK(w.snap()->edges(w.hel, isType("PTC")).size() == 1 && w.snap()->edges(w.hel, isType("PTC"))[0] == b);
+  CHECK(w.snap()->edges(w.hel, isType("UETF")).size() == 1);
+  CHECK(w.snap()->edges(w.hel, isType("nothing")).empty());
+  CHECK(w.snap()->edges(w.hel, [](const Instrument & i) { return i.kind == InstrumentKind::Etf; }).size() == 1);
+  CHECK(w.snap()->edges(w.sto, isType("PTC")).empty());
 }
 
 TEST(an_instrument_with_no_edge_is_not_seen_by_a_market) {
   World w;
   w.store->addInstrument({{}, "LONELY", "No data", InstrumentKind::Etf, "XX0000000002", "UETF"});
   CHECK(w.snap()->findInstrument("LONELY"));  // it exists, as a node
-  CHECK(w.snap()->edges(w.hel.id).empty() && w.snap()->edges(w.sto.id).empty() && w.snap()->edgeMarkets().empty());
+  CHECK(w.snap()->edges(w.hel).empty() && w.snap()->edges(w.sto).empty() && w.snap()->edgeMarkets().empty());
 }

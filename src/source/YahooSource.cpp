@@ -76,11 +76,11 @@ bool YahooSource::parse(const std::string & body, const ListEntry & e, Store & s
     return false;
   }
 
-  Dataset dataset = store.addDataset({{}, "yahoo"});
-  Market market = store.addMarket({{}, e.market});
+  const DatasetId dataset = store.addDataset("yahoo");
+  const MarketId market = store.addMarket(e.market);
   Instrument base = baseOf(store, e);
   Instrument quote = quoteNode(store, e.quote);
-  const EdgeKey edge{base.id, quote.id, market.id, dataset.id};
+  const EdgeKey edge{base.id, quote.id, market, dataset};
   store.appendCandles(edge, Resolution::Day, bars);
   // What Yahoo calls it, its own type (below) and the name a row shows: a pair is named by its two currencies, not by the
   // base's name, which every pair of that base would share.
@@ -94,7 +94,7 @@ bool YahooSource::parse(const std::string & body, const ListEntry & e, Store & s
     if (first != meta->end() && first->is_number_integer() && first->get<int64_t>() > 0)
       said.push_back({predicate::firstTradeDay, int64_t(dayNumberOfInstant(first->get<int64_t>(), utcOffset))});
     auto zone = meta->find("exchangeTimezoneName");
-    if (zone != meta->end() && zone->is_string()) store.setAttribute(market.id, {predicate::timezone, zone->get<std::string>()});
+    if (zone != meta->end() && zone->is_string()) store.setAttribute(market, {predicate::timezone, zone->get<std::string>()});
   }
   store.setListing(listing);
   store.setAttributes(base.id, said);
@@ -112,7 +112,7 @@ bool YahooSource::parse(const std::string & body, const ListEntry & e, Store & s
         if (s.contains("date") && s["date"].is_number_integer() && num > 0 && den > 0)
           actions.push_back({tradingDateOfDailyStamp(s["date"].get<int64_t>(), utcOffset), ActionKind::Split, num / den, {}, s.value("splitRatio", std::string())});
       }
-    store.appendActions({base.id, dataset.id}, actions);
+    store.appendActions({base.id, dataset}, actions);
   }
   return true;
 }

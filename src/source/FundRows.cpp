@@ -143,12 +143,12 @@ std::vector<Attribute> attributesOf(const FundRow & f) {
 std::optional<EdgeKey> writeFund(Store & store, const std::string & datasetName, const std::string & marketName, const FundRow & f,
                                  const std::vector<Candle> & bars) {
   if (bars.empty() || !isValidIsin(f.isin)) return std::nullopt;
-  Dataset dataset = store.addDataset({{}, datasetName});
-  Market market = store.addMarket({{}, marketName});
+  const DatasetId dataset = store.addDataset(datasetName);
+  const MarketId market = store.addMarket(marketName);
   Instrument base = store.addInstrument({{}, "", f.name, InstrumentKind::Fund, f.isin, "FUND"});
   Instrument quote = currencyNode(store, "EUR");
   store.setAttributes(base.id, attributesOf(f));
-  const EdgeKey edge{base.id, quote.id, market.id, dataset.id};
+  const EdgeKey edge{base.id, quote.id, market, dataset};
   store.appendCandles(edge, Resolution::Day, bars);
   store.setListing({edge, f.symbol.empty() ? f.isin : f.symbol, f.identifier, "", "FUND", f.name});
   return edge;

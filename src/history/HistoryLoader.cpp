@@ -169,18 +169,18 @@ void HistoryLoader::want(const std::vector<EdgeKey> & edges, Period period) {
     queue_.clear();
     std::unordered_set<Ask> seen;
     for (const EdgeKey & k : edges) {
-      auto dataset = snapshot->dataset(k.dataset);
+      const std::string dataset = datasetCode(k.dataset);  // a dataset is looked up by its code: its name is a fact that can change
       auto listing = snapshot->listing(k);
-      if (!dataset) continue;
-      if (auto provider = providerOf(dataset->name)) {
+      if (dataset.empty()) continue;
+      if (auto provider = providerOf(dataset)) {
         // Another dataset's edge: once each, unless the store has the bars already (the quarter's, as a fund's).
         const Ask ask{k, kProvided};
-        if (blocked_.count(dataset->name) || done_.count(ask) || failed_.count(ask) || !seen.insert(ask).second) continue;
+        if (blocked_.count(dataset) || done_.count(ask) || failed_.count(ask) || !seen.insert(ask).second) continue;
         if (!provider->wants(*snapshot, k) || periodView(*snapshot, k, Period::Quarter, false).primary) continue;
         queue_.push_back(ask);
         continue;
       }
-      if (dataset->name != "nordnet" || !listing || listing->orderBook.empty()) continue;
+      if (dataset != "nordnet" || !listing || listing->orderBook.empty()) continue;
       if (options_.depth == Depth::Full) {
         // More than today's bar: the bars are there already (loaded before, or from elsewhere).
         if (done_.count({k, kDaily}) || failed_.count({k, kDaily}) || !seen.insert({k, kDaily}).second) continue;
@@ -245,11 +245,11 @@ HistoryLoader::Outcome HistoryLoader::request(const std::string & book, const st
 
 bool HistoryLoader::loadProvided(const Ask & wanted, bool & network) {
   auto snapshot = store_->snapshot();
-  auto dataset = snapshot->dataset(wanted.edge.dataset);
+  const std::string dataset = datasetCode(wanted.edge.dataset);
   std::shared_ptr<HistoryProvider> provider;
   {
     std::lock_guard lock(mutex_);
-    if (dataset) provider = providerOf(dataset->name);
+    if (!dataset.empty()) provider = providerOf(dataset);
   }
   if (!provider) return false;
   network = true;
@@ -258,14 +258,13 @@ bool HistoryLoader::loadProvided(const Ask & wanted, bool & network) {
     case HistoryProvider::Outcome::Refused: {
       {
         std::lock_guard lock(mutex_);
-        blocked_.insert(dataset->name);
+        blocked_.insert(dataset);
         // Its edges still in the queue are not asked for.
         std::erase_if(queue_, [&](const Ask & a) {
-          auto d = snapshot->dataset(a.edge.dataset);
-          return a.request == kProvided && d && d->name == dataset->name;
+          return a.request == kProvided && datasetCode(a.edge.dataset) == dataset;
         });
       }
-      if (message_) message_("history: " + dataset->name + " refused the request, stopping it");
+      if (message_) message_("history: " + snapshot->name(wanted.edge.dataset) + " refused the request, stopping it");
       idle_.notify_all();
       return false;
     }

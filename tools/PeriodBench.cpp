@@ -8,6 +8,7 @@
 //   frame      the cells of 50 rows read as a frame does: text, colour, trace of the Change and trace columns
 #include "Quotes.h"
 #include "model/Dates.h"
+#include "model/Isin.h"
 
 #include <algorithm>
 #include <chrono>
@@ -18,6 +19,12 @@
 #include <string>
 
 using Clock = std::chrono::steady_clock;
+// A valid ISIN for the row: ZZ (private use), the number as nine digits and the check digit.
+static std::string isinOf(int n) {
+  const std::string digits = std::to_string(n);
+  const std::string first11 = "ZZ" + std::string(9 - digits.size(), '0') + digits;
+  return first11 + isinCheckDigit(first11);
+}
 static double since(Clock::time_point t) { return std::chrono::duration<double, std::milli>(Clock::now() - t).count(); }
 
 int main(int argc, char ** argv) {
@@ -25,14 +32,14 @@ int main(int argc, char ** argv) {
   const bool full = argc > 2 && std::string(argv[2]) == "full";
   auto store = makeMemoryStore();
   Instrument usd = store->addInstrument({{}, "USD", "US dollar", InstrumentKind::Currency});
-  Market market = store->addMarket({{}, "Nasdaq Helsinki"});
-  Dataset dataset = store->addDataset({{}, "nordnet"});
+  const MarketId market = store->addMarket("Nasdaq Helsinki");
+  const DatasetId dataset = store->addDataset("nordnet");
   const int64_t today = dayNumber(2026, 12, 1), dayStart = (today - kUnixEpochDayNumber) * 86400 + 7 * 3600;
   std::mt19937 rng(1);
   std::uniform_real_distribution<double> step(-0.02, 0.021);
   for (int i = 0; i < rows; i++) {
-    Instrument inst = store->addInstrument({{}, "", "Stock " + std::to_string(i), InstrumentKind::Company, "XX" + std::to_string(100000 + i)});
-    EdgeKey k{inst.id, usd.id, market.id, dataset.id};
+    Instrument inst = store->addInstrument({{}, "", "Stock " + std::to_string(i), InstrumentKind::Company, isinOf(i)});
+    EdgeKey k{inst.id, usd.id, market, dataset};
     double p = 50;
     auto series = [&](int n, auto key) {
       std::vector<Candle> bars;
