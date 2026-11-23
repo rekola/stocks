@@ -11,7 +11,6 @@
 #include <set>
 
 #include <optional>
-#include <thread>
 
 using nlohmann::json;
 
@@ -353,7 +352,7 @@ void NordnetSource::load(Store & store, Http & http, SourceListener & listener) 
       if (listener.cancelled()) return;
       const size_t n = loadIndicators(list, store, http, listener, stop);
       if (n) counts += (counts.empty() ? "" : ", ") + list.name + " " + std::to_string(n);
-      if (!stop && pause_.count() > 0) std::this_thread::sleep_for(pause_);
+      if (!stop && pause_.count() > 0 && !listener.pause(pause_)) return;
       continue;
     }
     size_t found = 0, offset = 0;
@@ -426,10 +425,10 @@ void NordnetSource::load(Store & store, Http & http, SourceListener & listener) 
 
       offset += static_cast<size_t>(page.rows);
       if (page.rows == 0 || offset >= static_cast<size_t>(page.total)) break;
-      if (pause_.count() > 0) std::this_thread::sleep_for(pause_);
+      if (pause_.count() > 0 && !listener.pause(pause_)) return;
     }
     if (found) counts += (counts.empty() ? "" : ", ") + list.name + " " + std::to_string(found);
-    if (!stop && pause_.count() > 0) std::this_thread::sleep_for(pause_);
+    if (!stop && pause_.count() > 0 && !listener.pause(pause_)) return;
   }
   if (!counts.empty())
     listener.message("nordnet: " + std::to_string(listings_.size() + indicators_.size()) + " listings (" + counts + ")" +

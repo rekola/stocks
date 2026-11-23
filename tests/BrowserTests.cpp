@@ -502,6 +502,54 @@ TEST(the_rows_on_screen_have_their_history_loaded_and_the_table_follows) {
   CHECK(http.urls.size() == requested);
 }
 
+TEST(a_sort_tells_the_history_loader_the_edges_it_brings_on_screen) {
+  std::shared_ptr<Store> store = makeMemoryStore();
+  InstrumentId usd = store->addInstrument("USD", "US dollar", InstrumentKind::Currency);
+  MarketId market = store->addMarket("XHEL", "Nasdaq Helsinki");
+  DatasetId nordnet = store->addDataset("nordnet");
+  for (int i = 0; i < 100; i++) {  // more than the screens the loader is told of
+    // The first row, which is selected, sorts first by name either way, so the sort does not scroll to it.
+    const std::string name = i == 0 ? "Stock 999" : "Stock " + std::to_string(100 + i);
+    InstrumentId inst = store->addInstrument("", name, InstrumentKind::Company, testIsin(100000 + i));
+    EdgeKey k{inst, usd, market, nordnet};
+    store->appendCandles(k, Resolution::Day, {{dayNumber(2026, 12, 1), kUndefined, 1, 1, 1, kUndefined}});
+    store->setListing({k, "S" + std::to_string(100 + i), "", "book-" + std::to_string(100 + i), "ESH", name});
+  }
+  FakeHttp http;
+  http.answer = [](const std::string &) { return failed(404); };  // no bars: each edge is asked for once, and stays as it was
+  struct Borrowed : Http {
+    FakeHttp * inner = nullptr;
+    HttpResult get(const std::string & url, const HttpHeaders & h) override { return inner->get(url, h); }
+  };
+  auto lend = std::make_unique<Borrowed>();
+  lend->inner = &http;
+  HistoryLoader::Options quick;
+  quick.pause = std::chrono::milliseconds(0);
+  auto history = std::make_shared<HistoryLoader>(store, std::move(lend), quick, [] {});
+  auto app = Application::adopt(std::make_unique<test::TestBackend>(24, 100));
+  Browser browser(*app, store, nullptr, history);
+  app->execute("show-nasdaq-helsinki");
+  app->present();
+  history->waitIdle();
+  auto asked = [&](const std::string & book) {
+    for (const std::string & url : http.urls)
+      if (url.find("identifier/" + book + "?") != std::string::npos) return true;
+    return false;
+  };
+  CHECK(asked("book-100") && !asked("book-199"));
+
+  // The last rows come to the top: the positions, the row count and the period are what they were, the edges are not.
+  browser.table().sortBy(Quotes::NAME, SortOrder::DESCENDING);
+  CHECK(browser.table().firstVisiblePosition() == 0 && browser.table().rowAt(0) == 0);
+  app->present();
+  history->waitIdle();
+  CHECK(asked("book-199") && asked("book-190"));
+  const size_t requested = http.urls.size();
+  app->present();  // nothing changed since: nothing more
+  history->waitIdle();
+  CHECK(http.urls.size() == requested);
+}
+
 TEST(the_all_preset_shows_every_market_and_the_market_column_tells_the_rows_apart) {
   Fixture f;
   f.app->execute("show-all");

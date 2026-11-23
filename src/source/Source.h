@@ -7,6 +7,7 @@
 #include <chrono>
 #include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 // What a source tells whoever runs it. Called on the source's thread.
@@ -16,6 +17,13 @@ class SourceListener {
   virtual void changed() {}                  // the store has new data
   virtual void message(const std::string &) {}  // something to show: a failure, a note
   virtual bool cancelled() const { return false; }  // true: stop soon
+  // Waits `d` between two requests; false if the source was cancelled, before or during the wait, and is to return now.
+  // The default sleeps; a runner wakes it when it stops.
+  virtual bool pause(std::chrono::milliseconds d) {
+    if (cancelled()) return false;
+    std::this_thread::sleep_for(d);
+    return !cancelled();
+  }
 };
 
 // A data adapter: reads one provider and writes what it finds into the store, as its own dataset. Blocking; the
