@@ -11,6 +11,12 @@ compatibility, no migrations of `facts.sqlite` or any other kept data (a file of
 another schema starts over), and no compatibility shims or fallbacks for old
 data or keys. Change the format and bump the schema version.
 
+## Providers
+
+One adapter per provider, in `src/source/`: only that adapter knows its endpoints, headers and formats (what it asks for, how it
+asks, how an answer reads), history and details included (`HistoryProvider`, handed over by `Source::historyProvider()`). A loader,
+the store and the UI name no provider; the only place that lists the adapters is `main.cpp`.
+
 ## Git and sessions
 
 - Never link to the chat/session that produced a change: no

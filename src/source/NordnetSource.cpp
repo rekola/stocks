@@ -5,6 +5,7 @@
 #include "source/InstrumentLists.h"
 #include "source/InstrumentTypes.h"
 #include "source/KnownMarkets.h"
+#include "source/NordnetHeaders.h"
 
 #include <algorithm>
 #include <nlohmann/json.hpp>
@@ -15,19 +16,6 @@
 using nlohmann::json;
 
 namespace {
-
-// What the endpoint expects of a browser; no cookie is sent.
-const HttpHeaders kHeaders = {{"Accept", "application/json"},
-                              {"Accept-Language", "en-US,en;q=0.9,fi;q=0.8"},
-                              {"Origin", "https://www.nordnet.fi"},
-                              {"Referer", "https://www.nordnet.fi/"},
-                              {"Client-Id", "NEXT"}};
-
-// The indicator endpoint answers to this and to a Nordic locale only (the names come in that language).
-const HttpHeaders kIndicatorHeaders = {{"Accept", "*/*"},
-                                       {"Origin", "https://www.nordnet.fi"},
-                                       {"Referer", "https://www.nordnet.fi/"},
-                                       {"x-locale", "fi-FI"}};
 
 std::string text(const json & o, const char * key) {
   auto it = o.find(key);
@@ -279,7 +267,7 @@ bool NordnetSource::parseIndicators(const std::string & body, std::vector<Nordne
 }
 
 size_t NordnetSource::loadIndicators(const List & list, Store & store, Http & http, SourceListener & listener, bool & stop) {
-  HttpResult r = http.get(list.url, kIndicatorHeaders);
+  HttpResult r = http.get(list.url, nordnet::marketDataHeaders());
   if (!r.ok()) {
     const bool refused = r.status == 429 || r.status == 403;
     listener.message("nordnet: " + list.name + ": " +
@@ -363,7 +351,7 @@ void NordnetSource::load(Store & store, Http & http, SourceListener & listener) 
       if (listener.cancelled()) return;
       std::string url = list.url + "&limit=" + std::to_string(list.pageSize);
       if (offset) url += "&offset=" + std::to_string(offset);
-      HttpResult r = http.get(url, kHeaders);
+      HttpResult r = http.get(url, nordnet::searchHeaders());
       if (!r.ok()) {
         const bool refused = r.status == 429 || r.status == 403;
         listener.message("nordnet: " + list.name + ": " +

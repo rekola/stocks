@@ -2,6 +2,7 @@
 
 #include "source/DatasetCodes.h"
 #include "source/NordnetDetails.h"
+#include "source/NordnetHistory.h"
 #include "source/Source.h"
 
 #include <chrono>
@@ -77,6 +78,8 @@ class NordnetSource : public Source {
 
   // What load() found, for the history step. Valid once load() has returned.
   const std::vector<NordnetListing> & listings() const { return listings_; }
+  // What loads the price history of the edges it found, when they are wanted.
+  std::shared_ptr<HistoryProvider> historyProvider() override { return history_; }
 
   // One page of a list.
   struct Page {
@@ -105,6 +108,7 @@ class NordnetSource : public Source {
   std::vector<NordnetListing> listings_;
   std::vector<NordnetIndicator> indicators_;
   NordnetDetails details_;
+  std::shared_ptr<NordnetHistory> history_ = std::make_shared<NordnetHistory>();
   size_t loadIndicators(const List &, Store &, Http &, SourceListener &, bool & stop);
   std::map<std::string, std::chrono::steady_clock::time_point> loaded_;  // when each list was last loaded
 };

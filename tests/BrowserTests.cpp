@@ -6,6 +6,7 @@
 #include "Quotes.h"
 #include "Synthetic.h"
 #include "model/Dates.h"
+#include "source/NordnetHistory.h"
 #include "source/Source.h"
 #include "source/InstrumentLists.h"
 
@@ -519,6 +520,7 @@ TEST(the_rows_on_screen_have_their_history_loaded_and_the_table_follows) {
   HistoryLoader::Options quick;
   quick.pause = std::chrono::milliseconds(0);
   auto history = std::make_shared<HistoryLoader>(store, std::move(lend), quick, [] {});
+  history->addProvider(std::make_shared<NordnetHistory>());
 
   auto owned = std::make_unique<test::TestBackend>(24, 100);
   auto app = Application::adopt(std::move(owned));
@@ -563,6 +565,7 @@ TEST(a_sort_tells_the_history_loader_the_edges_it_brings_on_screen) {
   HistoryLoader::Options quick;
   quick.pause = std::chrono::milliseconds(0);
   auto history = std::make_shared<HistoryLoader>(store, std::move(lend), quick, [] {});
+  history->addProvider(std::make_shared<NordnetHistory>());
   auto app = Application::adopt(std::make_unique<test::TestBackend>(24, 100));
   Browser browser(*app, store, nullptr, history);
   app->execute("show-nasdaq-helsinki");
@@ -610,8 +613,10 @@ TEST(a_sort_still_tells_the_history_loader_the_edges_where_the_day_is_asked_agai
   lend->inner = &http;
   HistoryLoader::Options quick;
   quick.pause = std::chrono::milliseconds(0);
-  quick.day_lifetime = std::chrono::hours(1);  // the loader is told again every minute for its expiry: a sort must still get through
   auto history = std::make_shared<HistoryLoader>(store, std::move(lend), quick, [] {});
+  NordnetHistory::Options lifetimes;
+  lifetimes.day_lifetime = std::chrono::hours(1);  // the loader is told again every minute for its expiry: a sort must still get through
+  history->addProvider(std::make_shared<NordnetHistory>(lifetimes));
   auto app = Application::adopt(std::make_unique<test::TestBackend>(24, 100));
   Browser browser(*app, store, nullptr, history);
   app->execute("show-period-day");
