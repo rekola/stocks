@@ -611,7 +611,7 @@ TEST(the_indicator_lists_make_indices_in_points_currency_pairs_and_commodities_i
 
   // One with no ISIN gets one of ours, in the private namespace, from its symbol.
   const std::string bric = privateIsin("BRIC50D");
-  CHECK(bric == "ZZBRIC50D00" + std::string(1, bric.back()) && isValidIsin(bric));
+  CHECK(bric.rfind("ZZ", 0) == 0 && isValidIsin(bric));
   CHECK(s->findInstrumentByIsin(bric) && s->kind(*s->findInstrumentByIsin(bric)) == InstrumentKind::Index);
   CHECK(s->kind(*s->findInstrumentByIsin(privateIsin("LEAD"))) == InstrumentKind::Commodity);
 
@@ -722,8 +722,13 @@ TEST(a_private_isin_is_made_from_what_the_thing_is_in_a_namespace_nobody_issues_
     CHECK(isValidIsin(isin));
   CHECK(!isValidIsin("DE0008469009") && !isValidIsin("DE000846900") && !isValidIsin(""));
   const std::string zinc = privateIsin("ZINC");
-  CHECK(zinc.substr(0, 11) == "ZZZINC00000" && isValidIsin(zinc));  // there is one zinc: no source in it
-  CHECK(privateIsin("zinc") == zinc && privateIsin("Z-I NC") == zinc);  // case and punctuation do not matter
+  CHECK(zinc.rfind("ZZ", 0) == 0 && isValidIsin(zinc));  // there is one zinc: no source in it
   CHECK(privateIsin("LEAD") != zinc);
-  CHECK(privateIsin("TOOLONGNAME").empty() && privateIsin("").empty());
+  // The exact text is the key: case and punctuation tell things apart.
+  CHECK(privateIsin("zinc") != zinc && privateIsin("Z-I NC") != zinc && privateIsin("GC=F") != privateIsin("GCF"));
+  CHECK(privateIsin("abc") != privateIsin("ABC") && isValidIsin(privateIsin("abc")) && isValidIsin(privateIsin("ABC")));
+  // A long one has one too, and only nothing has none.
+  CHECK(isValidIsin(privateIsin("A TEXT THAT IS MUCH LONGER THAN NINE CHARACTERS")) && privateIsin("").empty());
+  // A fixed hash: the same on every run and platform.
+  CHECK(zinc == "ZZSEZBQVPB31");
 }

@@ -193,7 +193,7 @@ TEST(what_cannot_be_given_a_key_is_refused_and_told_of) {
   options.notice = [&](const std::string & text) { told.push_back(text); };
   auto store = makeMemoryStore(std::move(options));
   CHECK(!store->addInstrument("NOKIA", "Nokia", InstrumentKind::Company, "FI0009000680").valid());  // the check digit is wrong
-  CHECK(!store->addInstrument("", "A name that is much too long for a private ISIN", InstrumentKind::Other).valid());
+  CHECK(!store->addInstrument("", "", InstrumentKind::Other).valid());
   CHECK(!store->addInstrument("A CURRENCY CODE", "Too long", InstrumentKind::Currency).valid());
   CHECK(!store->addDataset("provider-a").valid());  // a code is letters and digits
   CHECK(!store->addDataset("morethanten1").valid());

@@ -13,7 +13,7 @@ namespace {
 
 namespace fs = std::filesystem;
 
-constexpr int kSchemaVersion = 3;
+constexpr int kSchemaVersion = 4;  // 4: private ISINs are a hash of the exact text
 // SQLite's result codes for a damaged database and for a file that is none (kCorrupt, kNotADatabase): SQLiteCpp does
 // not show sqlite3.h, and nothing of SQLite itself is called from here.
 constexpr int kCorrupt = 11, kNotADatabase = 26;
