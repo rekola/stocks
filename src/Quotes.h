@@ -55,6 +55,9 @@ class Quotes : public cellui::TableModel {
   Period period() const { return period_; }
   // Shows other edges, or the same from a newer snapshot: the caches go.
   void reset(std::shared_ptr<const Snapshot> snapshot, std::vector<EdgeKey> keys);
+  // The same edges from a newer snapshot: the caches go, the rows and their order stay.
+  void setSnapshot(std::shared_ptr<const Snapshot> snapshot);
+  const std::vector<EdgeKey> & edges() const { return keys_; }
 
   int rowCount() const override { return static_cast<int>(keys_.size()); }
   std::string text(int r, int c) const override;

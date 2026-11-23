@@ -89,6 +89,8 @@ add_executable(stocks src/main.cpp)
 target_link_libraries(stocks PRIVATE stocks_lib)
 
 # What a period costs on tens of thousands of rows (run it in a Release build; see the file).
+add_executable(stocks_frame_bench tools/FrameBench.cpp)
+target_link_libraries(stocks_frame_bench PRIVATE stocks_lib)
 add_executable(stocks_period_bench tools/PeriodBench.cpp)
 target_link_libraries(stocks_period_bench PRIVATE stocks_lib)
 

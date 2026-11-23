@@ -125,8 +125,12 @@ std::shared_ptr<const cellui::TableIcon> Quotes::icon(int r, int c) const {
 }
 
 void Quotes::reset(std::shared_ptr<const Snapshot> snapshot, std::vector<EdgeKey> keys) {
-  snapshot_ = std::move(snapshot);
   keys_ = std::move(keys);
+  setSnapshot(std::move(snapshot));
+}
+
+void Quotes::setSnapshot(std::shared_ptr<const Snapshot> snapshot) {
+  snapshot_ = std::move(snapshot);
   marketLabels_.clear();
   datasetNames_.clear();
   traces_.clear();

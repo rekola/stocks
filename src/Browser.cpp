@@ -163,13 +163,17 @@ void Browser::showPreset(int i) {
 
 void Browser::requestRefresh() {
   const auto now = std::chrono::steady_clock::now();
-  if (std::chrono::duration<double>(now - last_refresh_).count() < min_refresh_) {
+  // A refresh lists every row again and sorts them (tens of milliseconds at 30 000 rows) and data keeps arriving for minutes: wait
+  // at least ten times what the last one cost, so it takes a tenth of the time at most. A test that sets no wait gets none.
+  const double wait = min_refresh_ > 0 ? std::max(min_refresh_, 10 * refresh_cost_) : 0;
+  if (std::chrono::duration<double>(now - last_refresh_).count() < wait) {
     pending_ = true;  // the next frame asks again
     return;
   }
   pending_ = false;
   last_refresh_ = now;
   refresh();
+  refresh_cost_ = std::chrono::duration<double>(std::chrono::steady_clock::now() - now).count();
 }
 
 void Browser::requestIcons() {
@@ -218,9 +222,15 @@ void Browser::refresh() {
   if (quotes && preset == shown_preset_) {
     // The same preset with new data: change the rows in place, which keeps the scroll position, the sort and the selection
     // (setModel would put the table back at the top).
-    quotes->reset(snapshot, edgesOf(*snapshot, kPresets[preset]));
+    // Most changes are new bars for rows already listed: then the rows stay as they are, and with no sort the order too, so the
+    // table is drawn again and nothing is sorted or put in order again.
+    std::vector<EdgeKey> edges = edgesOf(*snapshot, kPresets[preset]);
+    const bool same_rows = edges == quotes->edges();
+    if (same_rows) quotes->setSnapshot(snapshot);
+    else quotes->reset(snapshot, std::move(edges));
     shown_version_ = snapshot->version();
-    table_.modelChanged();
+    if (same_rows && table_.sortColumn() < 0) table_.render();
+    else table_.modelChanged();
   } else {
     const int column = table_.sortColumn();
     const SortOrder order = table_.sortOrder();
