@@ -1,0 +1,53 @@
+# market: Spain
+# kind,base,quote,name,yahoo,isin: what one unit of `base` costs in `quote`; `yahoo` is Yahoo's ticker
+kind,base,quote,name,yahoo,isin
+company,ACS.MC,EUR,ACS Actividades de Construccion y Servicios SA,ACS.MC,ES0167050915
+company,ACX.MC,EUR,Acerinox SA,ACX.MC,ES0132105018
+company,AENA.MC,EUR,Aena S.M.E. S.A.,AENA.MC,ES0105046017
+company,ALM.MC,EUR,Almirall SA,ALM.MC,ES0157097017
+company,AMS.MC,EUR,Amadeus IT Group S.A.,AMS.MC,ES0109067019
+company,ANA.MC,EUR,Acciona SA,ANA.MC,ES0125220311
+company,ANE.MC,EUR,Corporacion Acciona Energias Renovables S.A. Unipersonal,ANE.MC,ES0105563003
+company,BBVA.MC,EUR,Banco Bilbao Vizcaya Argentaria S.A.,BBVA.MC,ES0113211835
+company,BKT.MC,EUR,Bankinter SA,BKT.MC,ES0113679I37
+company,CABK.MC,EUR,"CaixaBank, S.A",CABK.MC,ES0140609019
+company,CAF.MC,EUR,"Construcciones Y Auxiliar De Ferrocarriles, S.A.",CAF.MC,ES0121975009
+company,CIE.MC,EUR,CIE Automotive S.A.,CIE.MC,ES0105630315
+company,CIRSA.MC,EUR,Cirsa Enterprises S.A.,CIRSA.MC,ES0105884011
+company,CLNX.MC,EUR,Cellnex Telecom S.A.,CLNX.MC,ES0105066007
+company,COL.MC,EUR,Colonial Sfl Socimi S.A.,COL.MC,ES0139140174
+company,DIA.MC,EUR,Distribuidora Internacional de Alimentacion SA,DIA.MC,ES0126775008
+company,DIGIS.MC,EUR,Digi Spain Telecom S.A.U.,DIGIS.MC,ES0106043005
+company,EBRO.MC,EUR,Ebro Foods SA,EBRO.MC,ES0112501012
+company,ELE.MC,EUR,Endesa S.A.,ELE.MC,ES0130670112
+company,ENG.MC,EUR,Enagas SA,ENG.MC,ES0130960018
+company,ENO.MC,EUR,Elecnor SA.,ENO.MC,ES0129743318
+company,FCC.MC,EUR,Fomento de Construcciones y Contratas SA,FCC.MC,ES0122060314
+company,FDR.MC,EUR,Fluidra,FDR.MC,ES0137650018
+company,GEST.MC,EUR,Gestamp Automocion S.A.,GEST.MC,ES0105223004
+company,GRE.MC,EUR,Grenergy Renovables,GRE.MC,ES0105079000
+company,GRF.MC,EUR,Grifols SA,GRF.MC,ES0171996087
+company,HBX.MC,EUR,HBX Group International Plc,HBX.MC,GB00BNXJB679
+company,HOME.MC,EUR,Neinor Homes,HOME.MC,ES0105251005
+company,IBE.MC,EUR,Iberdrola SA,IBE.MC,ES0144580Y14
+company,IDR.MC,EUR,Indra Sistemas SA,IDR.MC,ES0118594417
+company,ITX.MC,EUR,Industria De Diseno Textil SA,ITX.MC,ES0148396007
+company,LOG.MC,EUR,Companiaa De Distribucion Integral Logista Holdings S.A.,LOG.MC,ES0105027009
+company,MAP.MC,EUR,Mapfre SA,MAP.MC,ES0124244E34
+company,MEL.MC,EUR,Melia Hotels International S A,MEL.MC,ES0176252718
+company,MRL.MC,EUR,MERLIN PROPERTIES,MRL.MC,ES0105025003
+company,MVC.MC,EUR,Metrovacesa,MVC.MC,ES0105122024
+company,NTGY.MC,EUR,Naturgy Energy Group S.A.,NTGY.MC,ES0116870314
+company,PUIG.MC,EUR,Puig Brands S.A.,PUIG.MC,ES0105777017
+company,RED.MC,EUR,Redeia Corporacion S.A.,RED.MC,ES0173093024
+company,REP.MC,EUR,Repsol SA,REP.MC,ES0173516115
+company,ROVI.MC,EUR,Laboratorios Farmaceuticos Rovi S.A.,ROVI.MC,ES0157261019
+company,SAB.MC,EUR,Banco de Sabadell SA,SAB.MC,ES0113860A34
+company,SAN.MC,EUR,Banco Santander SA,SAN.MC,ES0113900J37
+company,SCYR.MC,EUR,Sacyr S.A.,SCYR.MC,ES0182870214
+company,SLR.MC,EUR,Solaria Energia Y Medio Ambiente SA,SLR.MC,ES0165386014
+company,TEF.MC,EUR,Telefonica S.A,TEF.MC,ES0178430E18
+company,TRE.MC,EUR,Tecnicas Reunidas SA,TRE.MC,ES0178165017
+company,UNI.MC,EUR,Unicaja Banco S.A.,UNI.MC,ES0180907000
+company,VID.MC,EUR,Vidrala S.A.,VID.MC,ES0183746314
+company,VIS.MC,EUR,Viscofan S.A.,VIS.MC,ES0184262212

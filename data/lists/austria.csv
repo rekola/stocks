@@ -1,0 +1,28 @@
+# market: Austria
+# kind,base,quote,name,yahoo,isin: what one unit of `base` costs in `quote`; `yahoo` is Yahoo's ticker
+kind,base,quote,name,yahoo,isin
+company,AMAG.VI,EUR,AMAG Austria Metall AG,AMAG.VI,AT00000AMAG3
+company,ANDR.VI,EUR,Andritz AG,ANDR.VI,AT0000730007
+company,ATS.VI,EUR,AT & S Austria Technologie & Systemtechnik Aktiengesellschaft,ATS.VI,AT0000969985
+company,BG.VI,EUR,Bawag Group AG,BG.VI,AT0000BAWAG2
+company,BMAG.VI,EUR,BAJAJ Mobility AG,BMAG.VI,AT0000KTMI02
+company,CAI.VI,EUR,CA Immobilien Anlagen AG,CAI.VI,AT0000641352
+company,CPI.VI,EUR,CPI Europe AG,CPI.VI,AT0000A21KS2
+company,DOC.VI,EUR,Do & Co Restaur.& Catering AG,DOC.VI,AT0000818802
+company,EBS.VI,EUR,Erste Group Bank AG,EBS.VI,AT0000652011
+company,EVN.VI,EUR,EVN AG,EVN.VI,AT0000741053
+company,FLU.VI,EUR,Flughafen Wien AG,FLU.VI,AT00000VIE62
+company,MMK.VI,EUR,Mayr Melnhof Karton AG,MMK.VI,AT0000938204
+company,OMV.VI,EUR,OMV AG,OMV.VI,AT0000743059
+company,PAL.VI,EUR,Palfinger AG,PAL.VI,AT0000758305
+company,POS.VI,EUR,PORR AG,POS.VI,AT0000609607
+company,POST.VI,EUR,Oesterreichische Post AG,POST.VI,AT0000APOST4
+company,RBI.VI,EUR,Raiffeisen Bank International AG,RBI.VI,AT0000606306
+company,RHIM.VI,EUR,RHI Magnesita N.V.,RHIM.VI,NL0012650360
+company,STR.VI,EUR,Strabag SE,STR.VI,AT000000STR1
+company,TKA.VI,EUR,Telekom Austria AG,TKA.VI,AT0000720008
+company,UQA.VI,EUR,UNIQA Insurance Group AG,UQA.VI,AT0000821103
+company,VER.VI,EUR,Verbund AG,VER.VI,AT0000746409
+company,VIG.VI,EUR,Vienna Insurance Group AG Wiener Versicherung Gruppe,VIG.VI,AT0000908504
+company,VOE.VI,EUR,Voestalpine AG,VOE.VI,AT0000937503
+company,WIE.VI,EUR,Wienerberger AG,WIE.VI,AT0000831706

@@ -184,9 +184,15 @@ TEST(the_table_shows_an_icon_once_it_has_loaded_and_keeps_its_place) {
   f.app->widgets().postToRoot(IconsLoaded{});  // what the loader thread's post turns into
   f.app->present();
   CHECK(table.selectedRow() == selected);
-  int shown = 0;  // pictures where the display has them: the two rows of the brand show the one picture
-  for (const ImagePlacement & p : f.backend->images()) shown += p.shared.valid() && std::string(p.shared.kind) == "icon";
-  CHECK(shown == 2);
+  // Pictures where the display has them: the two rows of the brand show the one picture, and the selected row of a table that
+  // has the focus shows it inverted, as a picture of its own.
+  int plain = 0, inverted = 0;
+  for (const ImagePlacement & p : f.backend->images()) {
+    if (!p.shared.valid()) continue;
+    plain += std::string(p.shared.kind) == "icon";
+    inverted += std::string(p.shared.kind) == "icon-inverted";
+  }
+  CHECK(plain == 1 && inverted == 1);
 }
 
 TEST(requests_go_in_bursts_and_every_wanted_url_still_arrives) {

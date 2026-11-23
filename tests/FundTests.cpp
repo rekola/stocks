@@ -216,9 +216,9 @@ TEST(the_history_of_a_fund_is_loaded_when_it_is_wanted_and_once) {
   CHECK(online && asReal(*online) == 0.0);  // the online fee, not the ordinary 1 %
   auto page = s->attribute(base.id, predicate::webUrl);
   CHECK(page && asText(*page) && asText(*page)->rfind("https://", 0) == 0 && asText(*page)->find("/sijoituskohteet/") != std::string::npos);  // the product page of the answer
-  auto assets = s->attribute(base.id, "fund-assets");
+  auto assets = s->attribute(base.id, "net-assets");
   CHECK(assets && std::fabs(*asReal(*assets) - 43998919.16) < 1e-6);
-  auto founded = s->attribute(base.id, "fund-start-day");
+  auto founded = s->attribute(base.id, "start-day");
   CHECK(founded && asInteger(*founded) == dayNumber(2023, 8, 15));  // a date
   CHECK(history.urls.size() == 2 && asked(history, "details/ALPHANORDIC") && asked(history, "rates/ALPHANORDIC"));
   // The info panel shows what is said of the fund.
@@ -227,8 +227,8 @@ TEST(the_history_of_a_fund_is_loaded_when_it_is_wanted_and_once) {
     for (const InfoRow & row : section.rows) shown += section.title + "/" + row.predicate + "=" + row.value.text + "\n";
   CHECK(shown.find("Instrument/redemption-fee=1") != std::string::npos);
   CHECK(shown.find("Instrument/management-fee=1.53") != std::string::npos);
-  CHECK(shown.find("Instrument/fund-risk-class=6") != std::string::npos);
-  CHECK(shown.find("Instrument/fund-morningstar-rating=4") != std::string::npos);
+  CHECK(shown.find("Instrument/risk-class=6") != std::string::npos);
+  CHECK(shown.find("Instrument/morningstar-rating=4") != std::string::npos);
   loader.want({*edge});  // not again
   loader.waitIdle();
   CHECK(history.urls.size() == 2);

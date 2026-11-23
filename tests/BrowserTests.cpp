@@ -456,7 +456,7 @@ TEST(the_all_preset_shows_every_market_and_the_market_column_tells_the_rows_apar
   CHECK(t.model()->rowCount() > 100);
   std::set<std::string> markets;
   for (int r = 0; r < t.model()->rowCount(); r++) markets.insert(t.model()->text(r, Quotes::MARKET));
-  CHECK((markets == std::set<std::string>{"Currencies", "Indices", "Nasdaq Helsinki"}));  // the made-up data's markets
+  CHECK(markets.count("Currencies") && markets.count("Indices") && markets.count("Nasdaq Helsinki") && markets.count("Sweden"));  // the made-up data's markets
 
   // A market with no name yet is told by Nordnet's id for it, and one with neither by its number.
   Fixture g(false);

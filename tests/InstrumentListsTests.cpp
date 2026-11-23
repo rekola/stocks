@@ -131,8 +131,11 @@ TEST(the_lists_on_disk_are_consistent) {
     if (!e.isin.empty()) CHECK(isins.insert(e.market + "|" + e.isin).second);
     if (e.market == "Indices") CHECK(e.kind == InstrumentKind::Index && e.quote == "pts");
   }
-  CHECK(perMarket.size() == 3);  // no commodities: Yahoo's are futures contracts, not the commodity's price
+  // No commodities: Yahoo's are futures contracts, not the commodity's price. The stocks are Helsinki's and the largest of
+  // the other countries Nordnet lists (their ISINs are Nordnet's).
+  CHECK(perMarket.size() >= 18);
   CHECK(perMarket["Nasdaq Helsinki"] >= 90 && perMarket["Indices"] >= 5);
+  for (const char * country : {"US", "Canada", "United Kingdom", "Germany", "France", "Sweden", "Switzerland"}) CHECK(perMarket[country] >= 20);
   CHECK(perMarket["Currencies"] >= 80);
   // Every currency that is a quote has a name, shown beside the pair.
   for (const ListEntry & e : u) CHECK(std::string(currencyName(e.quote)) != "" || e.kind != InstrumentKind::Currency);

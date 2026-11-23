@@ -23,7 +23,7 @@
    "managementFee": 100
   },
   "attributes": {
-   "fund-sfdr-class": "/esgArt",
+   "sfdr-class": "/esgArt",
    "fund-subcategory": "/productSubcategoryEn"
   }
  },
@@ -82,10 +82,10 @@
    "subscriptionFee": 100
   },
   "attributes": {
-   "fund-assets": "/values/aum/value",
-   "fund-start-day": "/values/dateFounded/value",
-   "fund-volatility": "/values/volatility/value",
-   "fund-sharpe-ratio": "/values/sharpeRatio/value"
+   "net-assets": "/values/aum/value",
+   "start-day": "/values/dateFounded/value",
+   "volatility": "/values/volatility/value",
+   "sharpe-ratio": "/values/sharpeRatio/value"
   }
  },
  "history": {

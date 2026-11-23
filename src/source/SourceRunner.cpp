@@ -28,12 +28,26 @@ SourceRunner::SourceRunner(std::shared_ptr<Store> store, std::vector<std::unique
       using Clock = std::chrono::steady_clock;
       Listener listener(stop_, onChanged, onMessage);
       std::unique_ptr<Http> http = makeHttp();
+      // When the source is loaded again, and when it is asked for another batch of its details; max: not again.
+      Clock::time_point loadDue = Clock::now(), detailsDue = Clock::time_point::max();
+      std::unique_lock lock(mutex_);
       while (!stop_) {
-        source->load(*store, *http, listener);
-        const auto interval = source->refreshInterval();
-        if (interval.count() <= 0) return;  // once
-        std::unique_lock lock(mutex_);
-        wake_.wait_until(lock, Clock::now() + interval, [this] { return stop_.load(); });
+        const Clock::time_point next = std::min(loadDue, detailsDue);
+        if (next == Clock::time_point::max()) return;  // nothing is refreshed: done
+        wake_.wait_until(lock, next, [this] { return stop_.load(); });
+        if (stop_) return;
+        lock.unlock();
+        if (loadDue <= Clock::now()) {
+          source->load(*store, *http, listener);
+          const auto interval = source->refreshInterval();
+          loadDue = interval.count() > 0 ? Clock::now() + interval : Clock::time_point::max();
+          if (detailsDue == Clock::time_point::max()) detailsDue = Clock::now();  // a load may have found instruments to fill in
+        }
+        if (!stop_ && detailsDue <= Clock::now()) {
+          const bool more = source->loadDetails(*store, *http, listener);
+          detailsDue = more ? Clock::now() + source->detailsInterval() : Clock::time_point::max();
+        }
+        lock.lock();
       }
     });
   }

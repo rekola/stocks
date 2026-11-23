@@ -1,0 +1,83 @@
+# market: Switzerland
+# kind,base,quote,name,yahoo,isin: what one unit of `base` costs in `quote`; `yahoo` is Yahoo's ticker
+kind,base,quote,name,yahoo,isin
+company,ADEN.SW,CHF,Adecco Group AG,ADEN.SW,CH0012138605
+company,ALLN.SW,CHF,Allreal Holding AG,ALLN.SW,CH0008837566
+company,ALSN.SW,CHF,Also Holding AG,ALSN.SW,CH0024590272
+company,AVOL.SW,CHF,Avolta AG,AVOL.SW,CH0023405456
+company,BAER.SW,CHF,Julius Baer Group Ltd,BAER.SW,CH0102484968
+company,BANB.SW,CHF,Bachem Holding AG,BANB.SW,CH1176493729
+company,BARN.SW,CHF,Barry Callebaut AG,BARN.SW,CH0009002962
+company,BCGE.SW,CHF,Banque Cantonale de Geneve,BCGE.SW,CH1485899350
+company,BCVN.SW,CHF,Banque Cantonale Vaudoise.,BCVN.SW,CH0531751755
+company,BEAN.SW,CHF,BELIMO Holding AG,BEAN.SW,CH1101098163
+company,BEKN.SW,CHF,Berner Kantonalbank AG,BEKN.SW,CH0009691608
+company,BION.SW,CHF,BB Biotech AG,BION.SW,CH0038389992
+company,BKW.SW,CHF,BKW AG,BKW.SW,CH0130293662
+company,BOSN.SW,CHF,Bossard Holding AG,BOSN.SW,CH0238627142
+company,BUCN.SW,CHF,Bucher Industries AG,BUCN.SW,CH0002432174
+company,CFR.SW,CHF,Compagnie Financiere Richemont Sa,CFR.SW,CH0210483332
+company,CFT.SW,CHF,Compagnie financiere Tradition SA,CFT.SW,CH0014345117
+company,CLN.SW,CHF,Clariant AG,CLN.SW,CH0012142631
+company,CMBN.SW,CHF,Cembra Money Bank AG,CMBN.SW,CH0225173167
+company,COTN.SW,CHF,Comet Holding AG,COTN.SW,CH0360826991
+company,DAE.SW,CHF,Datwyler Holding AG,DAE.SW,CH0030486770
+company,DESN.SW,CHF,Dottikon ES Holding AG,DESN.SW,CH0582581713
+company,DKSH.SW,CHF,DKSH Holding AG,DKSH.SW,CH0126673539
+company,DOKA.SW,CHF,Dormakaba Holding AG,DOKA.SW,CH1486524122
+company,EFGN.SW,CHF,EFG International AG,EFGN.SW,CH0022268228
+company,EMMN.SW,CHF,Emmi AG,EMMN.SW,CH0012829898
+company,EMSN.SW,CHF,Ems-Chemie Holding AG,EMSN.SW,CH0016440353
+company,FHZN.SW,CHF,Flughafen Zurich AG.,FHZN.SW,CH0319416936
+company,GALE.SW,CHF,Galenica AG,GALE.SW,CH0360674466
+company,GEBN.SW,CHF,Geberit AG,GEBN.SW,CH0030170408
+company,GF.SW,CHF,Georg Fischer AG,GF.SW,CH1169151003
+company,GIVN.SW,CHF,Givaudan SA,GIVN.SW,CH0010645932
+company,HBAN.SW,CHF,Helvetia Baloise Holding AG,HBAN.SW,CH0466642201
+company,HOLN.SW,CHF,Holcim Ltd,HOLN.SW,CH0012214059
+company,HUBN.SW,CHF,Huber & Suhner AG,HUBN.SW,CH0030380734
+company,IREN.SW,CHF,Investis Holding SA,IREN.SW,CH0325094297
+company,KNIN.SW,CHF,Kuehne + Nagel International AG,KNIN.SW,CH0025238863
+company,LISN.SW,CHF,LINDT N,LISN.SW,CH0010570759
+company,LISP.SW,CHF,LINDT PS,LISP.SW,CH0010570767
+company,LLBN.SW,CHF,Liechtensteinische Landesbank AG,LLBN.SW,LI0355147575
+company,LONN.SW,CHF,Lonza Group AG,LONN.SW,CH0013841017
+company,LUKN.SW,CHF,Luzerner Kantonalbank AG,LUKN.SW,CH1252930610
+company,MOBN.SW,CHF,Mobimo Hldg AG,MOBN.SW,CH0011108872
+company,MOVE.SW,CHF,Medacta Group SA,MOVE.SW,CH0468525222
+company,NESN.SW,CHF,Nestle SA,NESN.SW,CH0038863350
+company,PGHN.SW,CHF,Partners Group Holding AG,PGHN.SW,CH0024608827
+company,PSPN.SW,CHF,PSP Swiss Property AG,PSPN.SW,CH0018294154
+company,RO.SW,CHF,Roche Holding AG,RO.SW,CH0012032113
+company,ROP.SW,CHF,Roche Holding AG,ROP.SW,CH1499059983
+company,SCHN.SW,CHF,Schindler Holding AG,SCHN.SW,CH0024638212
+company,SCHP.SW,CHF,Schindler Holding AG,SCHP.SW,CH0024638196
+company,SCMN.SW,CHF,Swisscom AG,SCMN.SW,CH0008742519
+company,SFSN.SW,CHF,SFS Group AG,SFSN.SW,CH0239229302
+company,SFZN.SW,CHF,Siegfried Holding AG,SFZN.SW,CH1429326825
+company,SGKN.SW,CHF,St Galler Kantonalbank AG,SGKN.SW,CH0011484067
+company,SGSN.SW,CHF,SGS SA,SGSN.SW,CH1256740924
+company,SIGN.SW,CHF,SIG Group AG,SIGN.SW,CH0435377954
+company,SIKA.SW,CHF,Sika AG,SIKA.SW,CH0418792922
+company,SLHN.SW,CHF,Swiss Life Holding AG,SLHN.SW,CH0014852781
+company,SMG.SW,CHF,SMG Swiss Marketplace Group Holding AG,SMG.SW,CH1484953687
+company,SOON.SW,CHF,Sonova Holding AG,SOON.SW,CH0012549785
+company,SPSN.SW,CHF,Swiss Prime Site AG,SPSN.SW,CH0008038389
+company,SQN.SW,CHF,Swissquote Group Holding,SQN.SW,CH1548235246
+company,SRAIL.SW,CHF,Stadler Rail AG,SRAIL.SW,CH0002178181
+company,STMN.SW,CHF,Straumann Holding AG,STMN.SW,CH1175448666
+company,SUN.SW,CHF,Sulzer AG,SUN.SW,CH0038388911
+company,SUNN.SW,CHF,Sunrise Communications AG,SUNN.SW,CH1386220409
+company,TECN.SW,CHF,Tecan Group AG,TECN.SW,CH0012100191
+company,TXGN.SW,CHF,TX Group AG,TXGN.SW,CH0011178255
+company,UHR.SW,CHF,Swatch Group AG/The,UHR.SW,CH0012255151
+company,UHRN.SW,CHF,Swatch Group AG/The,UHRN.SW,CH0012255144
+company,VACN.SW,CHF,VAT Group AG,VACN.SW,CH0311864901
+company,VAHN.SW,CHF,Vaudoise Versicherungen Holding,VAHN.SW,CH0021545667
+company,VATN.SW,CHF,Valiant Holding AG,VATN.SW,CH0014786500
+company,VONN.SW,CHF,Vontobel Holding AG,VONN.SW,CH0012335540
+company,VZN.SW,CHF,VZ Holdings,VZN.SW,CH0528751586
+company,WKBN.SW,CHF,Walliser Kantonalbank,WKBN.SW,CH0305951201
+company,YPSN.SW,CHF,Ypsomed Holding AG,YPSN.SW,CH0019396990
+company,ZUGER.SW,CHF,Zuger Kantonalbank,ZUGER.SW,CH0493891243
+company,ZUGN.SW,CHF,Zug Estates Holding AG,ZUGN.SW,CH0148052126

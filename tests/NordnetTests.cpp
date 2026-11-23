@@ -585,18 +585,18 @@ TEST(what_a_row_says_of_the_instrument_becomes_triples_of_the_predicates_it_has)
   CHECK(asReal(*said(abbvie, "dividend-amount")) == 1.66 && asText(*said(abbvie, "dividend-currency")) == "EUR");
   CHECK(*asInteger(*said(abbvie, "dividend-ex-day")) < *asInteger(*said(abbvie, "dividend-pay-day")));  // the ex-date first
   CHECK(asText(*said(abbvie, "report-type")) == "FOURTH_QUARTER_EARNINGS_RESULTS" && !said(abbvie, "pb"));
-  CHECK(!said(abbvie, "fund-category") && !said(abbvie, "leverage"));
+  CHECK(!said(abbvie, "category") && !said(abbvie, "leverage"));
   CHECK(asBoolean(*said(abbvie, "tradable")) == true && asInteger(*said(abbvie, "owners")) == 1);
 
   // A fund.
   const NordnetListing & fund = funds.listings[0];
-  CHECK(asText(*said(fund, "fund-category")) == "Greater China Equity" && asInteger(*said(fund, "fund-risk-class")) == 5);
-  CHECK(asInteger(*said(fund, "fund-morningstar-rating")) == 2);
-  CHECK(asReal(*said(fund, "fund-yearly-fee")) == 1.93 && asReal(*said(fund, "fund-assets")) == 255946937.0);
-  CHECK(asBoolean(*said(fund, "fund-low-carbon")) == true && asText(*said(fund, "fund-universe-currency")) == "EUR");
-  CHECK(asInteger(*said(fund, "fund-start-day")) == dayNumberOfInstant(704376000) && !said(fund, "pe"));
+  CHECK(asText(*said(fund, "category")) == "Greater China Equity" && asInteger(*said(fund, "risk-class")) == 5);
+  CHECK(asInteger(*said(fund, "morningstar-rating")) == 2);
+  CHECK(asReal(*said(fund, "yearly-fee")) == 1.93 && asReal(*said(fund, "net-assets")) == 255946937.0);
+  CHECK(asBoolean(*said(fund, "low-carbon")) == true && asText(*said(fund, "universe-currency")) == "EUR");
+  CHECK(asInteger(*said(fund, "start-day")) == dayNumberOfInstant(704376000) && !said(fund, "pe"));
   CHECK(asInteger(*said(fund, "owners")) == 95 && asInteger(*said(fund, "collateral-percent")) == 70);
-  CHECK(asText(*said(fund, "fund-sfdr-article")) == "Artikla 8");
+  CHECK(asText(*said(fund, "sfdr-article")) == "Artikla 8");
 
   // A certificate: leverage, direction, the underlying.
   const NordnetListing & bull = certificates.listings[1];
@@ -615,7 +615,7 @@ TEST(what_a_row_says_reaches_the_instrument_and_a_reload_changes_nothing) {
   quick().load(*store, http, listener);
   auto s = store->snapshot();
   const NodeRef xaix = s->findInstrumentByIsin("IE00BGV5VN51")->id;
-  CHECK(s->attribute(xaix, "tradable") && s->attribute(xaix, "fund-category") && !s->attribute(xaix, "pe"));  // an ETF has no P/E
+  CHECK(s->attribute(xaix, "tradable") && s->attribute(xaix, "category") && !s->attribute(xaix, "pe"));  // an ETF has no P/E
   const NodeRef gold = s->findInstrumentByIsin("DE000A0S9GB0")->id;
   CHECK(asInteger(*s->attribute(gold, "leverage")) == 1);
 

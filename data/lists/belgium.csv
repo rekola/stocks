@@ -1,0 +1,33 @@
+# market: Belgium
+# kind,base,quote,name,yahoo,isin: what one unit of `base` costs in `quote`; `yahoo` is Yahoo's ticker
+kind,base,quote,name,yahoo,isin
+company,ABI.BR,EUR,Anheuser-Busch InBev SA/NV,ABI.BR,BE0974293251
+company,ACKB.BR,EUR,Ackermans & van Haaren NV,ACKB.BR,BE0003764785
+company,AED.BR,EUR,Aedifica SA,AED.BR,BE0003851681
+company,AGS.BR,EUR,Ageas,AGS.BR,BE0974264930
+company,ARGX.BR,EUR,argenx,ARGX.BR,NL0010832176
+company,AZE.BR,EUR,Azelis Group NV,AZE.BR,BE0974400328
+company,BEKB.BR,EUR,NV Bekaert SA.,BEKB.BR,BE0974258874
+company,BREB.BR,EUR,Brederode S.A.,BREB.BR,LU1068091351
+company,CENER.BR,EUR,Cenergy Holdings,CENER.BR,BE0974303357
+company,COLR.BR,EUR,Colruyt Group N.V.,COLR.BR,BE0974256852
+company,DEME.BR,EUR,Deme Group N.V.,DEME.BR,BE0974413453
+company,DIE.BR,EUR,D`ieteren Group,DIE.BR,BE0974259880
+company,ELI.BR,EUR,Elia Group SA/NV,ELI.BR,BE0003822393
+company,GBLB.BR,EUR,Groupe Bruxelles Lambert SA,GBLB.BR,BE0003797140
+company,KBC.BR,EUR,KBC Groupe NV,KBC.BR,BE0003565737
+company,KBCA.BR,EUR,KBC Ancora SA,KBCA.BR,BE0003867844
+company,LOTB.BR,EUR,Lotus Bakeries NV,LOTB.BR,BE0003604155
+company,MELE.BR,EUR,Melexis NV,MELE.BR,BE0165385973
+company,PROX.BR,EUR,Proximus SA,PROX.BR,BE0003810273
+company,SHUR.BR,EUR,Shurgard Self Storage Ltd,SHUR.BR,GG00BQZCBZ44
+company,SOF.BR,EUR,Sofina SA,SOF.BR,BE0003717312
+company,SOLB.BR,EUR,Solvay SA,SOLB.BR,BE0003470755
+company,SYENS.BR,EUR,Syensqo S.A.,SYENS.BR,BE0974464977
+company,TITC.BR,EUR,TITAN S.A.,TITC.BR,BE0974338700
+company,TUB.BR,EUR,Financiere de Tubize S.A.,TUB.BR,BE0003823409
+company,UCB.BR,EUR,UCB SA,UCB.BR,BE0003739530
+company,UMI.BR,EUR,Umicore SA,UMI.BR,BE0974320526
+company,VGP.BR,EUR,VGP N.V.,VGP.BR,BE0003878957
+company,VIO.BR,EUR,Viohalco S.A.,VIO.BR,BE0974271034
+company,WDP.BR,EUR,Warehouses De Pauw SA,WDP.BR,BE0974349814
