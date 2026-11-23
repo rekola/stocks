@@ -176,7 +176,7 @@ void HistoryLoader::want(const std::vector<EdgeKey> & edges, Period period) {
       if (auto provider = providerOf(dataset)) {
         // Another dataset's edge: once each, unless the store has the bars already (the quarter's, as a fund's).
         const Ask ask{k, kProvided};
-        if (blocked_.count(dataset) || done_.count(ask) || failed_.count(ask) || !seen.insert(ask).second) continue;
+        if (blocked_.count(dataset) || done_.count(ask) || failed_.count(ask) || loading_ == ask || !seen.insert(ask).second) continue;
         if (!provider->wants(*snapshot, k) || periodView(*snapshot, k, Period::Quarter, false).primary) continue;
         queue_.push_back(ask);
         continue;
@@ -184,15 +184,16 @@ void HistoryLoader::want(const std::vector<EdgeKey> & edges, Period period) {
       if (dataset != kNordnetDataset || !listing || listing->orderBook.empty()) continue;
       if (options_.depth == Depth::Full) {
         // More than today's bar: the bars are there already (loaded before, or from elsewhere).
-        if (done_.count({k, kDaily}) || failed_.count({k, kDaily}) || !seen.insert({k, kDaily}).second) continue;
+        const Ask ask{k, kDaily};
+        if (done_.count(ask) || failed_.count(ask) || loading_ == ask || !seen.insert(ask).second) continue;
         if (snapshot->lastCandles(k, Resolution::Day, 6).candles.size() >= 6) continue;
-        queue_.push_back({k, kDaily});
+        queue_.push_back(ask);
         continue;
       }
       const bool nav = snapshot->kind(k.base) == InstrumentKind::Fund;
       const int request = requestOf(period, nav);
       const Ask ask{k, request};
-      if (done_.count(ask) || failed_.count(ask) || !seen.insert(ask).second) continue;
+      if (done_.count(ask) || failed_.count(ask) || loading_ == ask || !seen.insert(ask).second) continue;
       // The store has the period's bars already (loaded before, or from elsewhere): no request. A fund's day and week are
       // its daily bars.
       const Period shown = nav && request == kDaily && period != Period::Month ? Period::Quarter : period;
@@ -215,12 +216,25 @@ void HistoryLoader::run() {
     }
     const Ask ask = queue_.front();
     queue_.pop_front();
+    if (done_.count(ask) || failed_.count(ask)) {  // queued before its answer came: not asked again
+      if (queue_.empty()) idle_.notify_all();
+      continue;
+    }
     busy_ = true;
+    loading_ = ask;  // want() leaves it out until it is done or failed
     lock.unlock();
     bool network = false;
     const bool wrote = load(ask, network);
     if (wrote && changed_) changed_();
     lock.lock();
+    loading_.reset();
+    if (retry_) {
+      // No answer: first in the queue, for after the pause. Here and not in load(), so that a want() meanwhile, which left it
+      // out as the one being loaded, does not drop it; and only once.
+      retry_ = false;
+      std::erase(queue_, ask);
+      queue_.push_front(ask);
+    }
     busy_ = false;
     if (network) {
       const auto pause = std::max(options_.pause, extra_pause_);
@@ -271,7 +285,7 @@ bool HistoryLoader::loadProvided(const Ask & wanted, bool & network) {
     case HistoryProvider::Outcome::Offline: {
       std::lock_guard lock(mutex_);
       offline_until_ = std::chrono::steady_clock::now() + options_.offline_pause;
-      queue_.push_front(wanted);  // again afterwards
+      retry_ = true;  // again afterwards
       return false;
     }
     case HistoryProvider::Outcome::Missing: {
@@ -312,7 +326,7 @@ bool HistoryLoader::load(const Ask & wanted, bool & network) {
       case Outcome::Offline: {
         std::lock_guard lock(mutex_);
         offline_until_ = std::chrono::steady_clock::now() + options_.offline_pause;
-        queue_.push_front(wanted);  // again afterwards
+        retry_ = true;  // again afterwards
         return false;
       }
       case Outcome::Missing: {

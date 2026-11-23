@@ -6,7 +6,9 @@
 #include "model/Dates.h"
 
 #include <atomic>
+#include <condition_variable>
 #include <fstream>
+#include <mutex>
 #include <sstream>
 
 namespace {
@@ -352,4 +354,82 @@ TEST(a_dataset_is_found_by_its_code_and_not_by_a_name_that_can_change) {
   loader.want({k});
   loader.waitIdle();
   CHECK(http.urls.size() == 1 && w.days(k).candles.size() > 1);  // the history was loaded, as before the name changed
+}
+
+namespace {
+
+// A gate the loader's thread waits at, in the middle of a request, until the test opens it.
+struct Gate {
+  std::mutex mutex;
+  std::condition_variable cv;
+  bool arrived = false, open = false;
+  void wait() {  // on the loader's thread
+    std::unique_lock lock(mutex);
+    arrived = true;
+    cv.notify_all();
+    cv.wait(lock, [&] { return open; });
+  }
+  void awaitArrival() {
+    std::unique_lock lock(mutex);
+    cv.wait(lock, [&] { return arrived; });
+  }
+  void release() {
+    std::lock_guard lock(mutex);
+    open = true;
+    cv.notify_all();
+  }
+};
+
+// Another dataset's history, that waits at a gate in its first load and counts the loads.
+struct GatedProvider : HistoryProvider {
+  Gate gate;
+  std::atomic<int> loads{0};
+  std::string dataset() const override { return "other"; }
+  Outcome load(Store &, Http &, const EdgeKey &) override {
+    if (loads++ == 0) gate.wait();
+    return Outcome::Ok;
+  }
+};
+
+}  // namespace
+
+TEST(an_edge_wanted_again_while_its_request_is_in_flight_is_asked_for_once) {
+  World w;
+  EdgeKey k = w.edge(InstrumentKind::Company, "book-1");
+  FakeHttp http;
+  Gate gate;
+  std::atomic<int> requests{0};
+  http.answer = [&](const std::string &) {
+    if (requests++ == 0) gate.wait();
+    return ok(fixture("history-stock-day.json"));
+  };
+  HistoryLoader loader(w.store, borrow(http), quickly(), [] {});
+  loader.want({k});
+  gate.awaitArrival();
+  // The rows on screen change while the first request is out: the edge is wanted again, with its bars not in the store yet.
+  loader.want({k});
+  loader.want({k});
+  gate.release();
+  loader.waitIdle();
+  CHECK(requests == 1);
+  loader.want({k});
+  loader.waitIdle();
+  CHECK(requests == 1);
+}
+
+TEST(a_providers_edge_wanted_again_while_it_loads_is_loaded_once) {
+  World w;
+  EdgeKey k = w.edge(InstrumentKind::Fund, "", /*nordnetData=*/false);
+  auto provider = std::make_shared<GatedProvider>();
+  FakeHttp http;
+  http.answer = [](const std::string &) { return failed(500); };
+  HistoryLoader loader(w.store, borrow(http), quickly(), [] {});
+  loader.addProvider(provider);
+  loader.want({k});
+  provider->gate.awaitArrival();
+  loader.want({k});
+  provider->gate.release();
+  loader.waitIdle();
+  CHECK(provider->loads == 1);
+  CHECK(http.urls.empty());
 }
