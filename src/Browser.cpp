@@ -214,8 +214,9 @@ void Browser::requestHistory() {
   auto * quotes = dynamic_cast<const Quotes *>(table_.model().get());
   if (!history_ || !quotes) return;
   const int count = quotes->rowCount(), first = table_.firstVisiblePosition(), view = std::max(1, table_.visibleRows());
-  const HistoryView now{quotes, first, view, count, period_, true};
-  if (now == history_view_) return;  // the same rows as the last time: the loader has them
+  const int64_t minute = std::chrono::duration_cast<std::chrono::minutes>(std::chrono::steady_clock::now().time_since_epoch()).count();
+  const HistoryView now{quotes, first, view, count, period_, minute, true};
+  if (now == history_view_) return;  // the same rows as the minute before: the loader has them
   history_view_ = now;
   std::vector<EdgeKey> edges;
   auto add = [&](int position) {

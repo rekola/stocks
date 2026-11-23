@@ -79,6 +79,7 @@ class Browser {
     const void * model = nullptr;
     int first = -1, rows = -1, count = -1;
     Period period = Period::Day;
+    int64_t minute = 0;  // the wall minute: what is wanted is told again every minute, for the requests that have expired
     bool set = false;
     bool operator==(const HistoryView &) const = default;
   } history_view_;              // what the history loader was last told is wanted
