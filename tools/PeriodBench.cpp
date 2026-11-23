@@ -31,15 +31,15 @@ int main(int argc, char ** argv) {
   const int rows = argc > 1 ? std::atoi(argv[1]) : 50000;
   const bool full = argc > 2 && std::string(argv[2]) == "full";
   auto store = makeMemoryStore();
-  Instrument usd = store->addInstrument({{}, "USD", "US dollar", InstrumentKind::Currency});
+  const InstrumentId usd = store->addInstrument("USD", "US dollar", InstrumentKind::Currency);
   const MarketId market = store->addMarket("Nasdaq Helsinki");
   const DatasetId dataset = store->addDataset("nordnet");
   const int64_t today = dayNumber(2026, 12, 1), dayStart = (today - kUnixEpochDayNumber) * 86400 + 7 * 3600;
   std::mt19937 rng(1);
   std::uniform_real_distribution<double> step(-0.02, 0.021);
   for (int i = 0; i < rows; i++) {
-    Instrument inst = store->addInstrument({{}, "", "Stock " + std::to_string(i), InstrumentKind::Company, isinOf(i)});
-    EdgeKey k{inst.id, usd.id, market, dataset};
+    const InstrumentId inst = store->addInstrument("", "Stock " + std::to_string(i), InstrumentKind::Company, isinOf(i));
+    EdgeKey k{inst, usd, market, dataset};
     double p = 50;
     auto series = [&](int n, auto key) {
       std::vector<Candle> bars;

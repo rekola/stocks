@@ -189,8 +189,7 @@ void HistoryLoader::want(const std::vector<EdgeKey> & edges, Period period) {
         queue_.push_back({k, kDaily});
         continue;
       }
-      auto base = snapshot->instrument(k.base);
-      const bool nav = base && base->kind == InstrumentKind::Fund;
+      const bool nav = snapshot->kind(k.base) == InstrumentKind::Fund;
       const int request = requestOf(period, nav);
       const Ask ask{k, request};
       if (done_.count(ask) || failed_.count(ask) || !seen.insert(ask).second) continue;
@@ -292,9 +291,8 @@ bool HistoryLoader::load(const Ask & wanted, bool & network) {
   const EdgeKey & edge = wanted.edge;
   auto snapshot = store_->snapshot();
   auto listing = snapshot->listing(edge);
-  auto base = snapshot->instrument(edge.base);
-  if (!listing || !base) return false;
-  const bool nav = base->kind == InstrumentKind::Fund;
+  if (!listing || !snapshot->known(NodeRef(edge.base))) return false;
+  const bool nav = snapshot->kind(edge.base) == InstrumentKind::Fund;
 
   bool wrote = false, complete = false;
   auto ask = [&](const std::string & period, const std::string & resolution) -> bool {  // false: stop for this edge

@@ -20,9 +20,9 @@ std::optional<double> number(const json & column, size_t i) {
 }
 
 // The instrument an entry is about: its ISIN is in the data (Yahoo gives none); a currency is its code.
-Instrument baseOf(Store & store, const ListEntry & e) {
+InstrumentId baseOf(Store & store, const ListEntry & e) {
   if (e.kind == InstrumentKind::Currency) return currencyNode(store, e.base);
-  return store.addInstrument({{}, "", e.name, e.kind, e.isin});
+  return store.addInstrument("", e.name, e.kind, e.isin);
 }
 
 // The ticker as a path segment: an index's caret is escaped.
@@ -78,9 +78,9 @@ bool YahooSource::parse(const std::string & body, const ListEntry & e, Store & s
 
   const DatasetId dataset = store.addDataset(kYahooDataset);
   const MarketId market = store.addMarket(e.market);
-  Instrument base = baseOf(store, e);
-  Instrument quote = quoteNode(store, e.quote);
-  const EdgeKey edge{base.id, quote.id, market, dataset};
+  const InstrumentId base = baseOf(store, e);
+  const InstrumentId quote = quoteNode(store, e.quote);
+  const EdgeKey edge{base, quote, market, dataset};
   store.appendCandles(edge, Resolution::Day, bars);
   // What Yahoo calls it, its own type (below) and the name a row shows: a pair is named by its two currencies, not by the
   // base's name, which every pair of that base would share.
@@ -97,7 +97,7 @@ bool YahooSource::parse(const std::string & body, const ListEntry & e, Store & s
     if (zone != meta->end() && zone->is_string()) store.setAttribute(market, {predicate::timezone, zone->get<std::string>()});
   }
   store.setListing(listing);
-  store.setAttributes(base.id, said);
+  store.setAttributes(base, said);
 
   if (result.contains("events") && result["events"].is_object()) {
     const json & events = result["events"];
@@ -105,14 +105,14 @@ bool YahooSource::parse(const std::string & body, const ListEntry & e, Store & s
     if (events.contains("dividends") && events["dividends"].is_object())
       for (const auto & [key, d] : events["dividends"].items())
         if (d.contains("date") && d.contains("amount") && d["date"].is_number_integer() && d["amount"].is_number())
-          actions.push_back({tradingDateOfDailyStamp(d["date"].get<int64_t>(), utcOffset), ActionKind::Dividend, d["amount"].get<double>(), quote.id, ""});
+          actions.push_back({tradingDateOfDailyStamp(d["date"].get<int64_t>(), utcOffset), ActionKind::Dividend, d["amount"].get<double>(), quote, ""});
     if (events.contains("splits") && events["splits"].is_object())
       for (const auto & [key, s] : events["splits"].items()) {
         double num = s.value("numerator", 0.0), den = s.value("denominator", 0.0);
         if (s.contains("date") && s["date"].is_number_integer() && num > 0 && den > 0)
           actions.push_back({tradingDateOfDailyStamp(s["date"].get<int64_t>(), utcOffset), ActionKind::Split, num / den, {}, s.value("splitRatio", std::string())});
       }
-    store.appendActions({base.id, dataset}, actions);
+    store.appendActions({base, dataset}, actions);
   }
   return true;
 }

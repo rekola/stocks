@@ -75,7 +75,7 @@ std::optional<EdgeKey> edgeOf(const Snapshot & s, const char * isin, const char 
   auto d = s.findDataset(dataset);
   auto q = s.findInstrument("EUR");
   if (!b || !m || !d || !q) return std::nullopt;
-  return EdgeKey{b->id, q->id, *m, *d};
+  return EdgeKey{*b, *q, *m, *d};
 }
 
 }  // namespace
@@ -170,7 +170,7 @@ TEST(the_funds_are_shown_at_once_from_the_list_alone) {
   auto previous = s->previousClose(*edge, dayNumber(2026, 11, 19));
   CHECK(previous && std::fabs(*previous - 3.3099 / (1 - 0.005887)) < 1e-9);
   CHECK(s->listing(*edge)->identifier == "ALPHANORDIC");
-  CHECK(s->findInstrumentByIsin("FI0008810569")->kind == InstrumentKind::Fund);
+  CHECK(s->kind(*s->findInstrumentByIsin("FI0008810569")) == InstrumentKind::Fund);
   CHECK(edgeOf(*s, "LU0823428346", "Alpha Funds", "alpha").has_value());  // the ISIN in the id
   CHECK(edgeOf(*s, "FI4000297817", "Alpha Funds", "alpha").has_value());  // the ISIN in the details
   CHECK(said(listener, "found in the details at /identifiers/isin"));
@@ -210,15 +210,15 @@ TEST(the_history_of_a_fund_is_loaded_when_it_is_wanted_and_once) {
   CHECK(changes >= 1);
   // The details came with it: the fees, beside what the list said.
   auto base = *s->findInstrumentByIsin("FI0008810569");
-  auto fee = s->attribute(base.id, "redemption-fee");
+  auto fee = s->attribute(base, "redemption-fee");
   CHECK(fee && asReal(*fee) == 1.0);  // a fraction in the answer, per cent here
-  auto online = s->attribute(base.id, "subscription-fee");
+  auto online = s->attribute(base, "subscription-fee");
   CHECK(online && asReal(*online) == 0.0);  // the online fee, not the ordinary 1 %
-  auto page = s->attribute(base.id, predicate::webUrl);
+  auto page = s->attribute(base, predicate::webUrl);
   CHECK(page && asText(*page) && asText(*page)->rfind("https://", 0) == 0 && asText(*page)->find("/sijoituskohteet/") != std::string::npos);  // the product page of the answer
-  auto assets = s->attribute(base.id, "net-assets");
+  auto assets = s->attribute(base, "net-assets");
   CHECK(assets && std::fabs(*asReal(*assets) - 43998919.16) < 1e-6);
-  auto founded = s->attribute(base.id, "start-day");
+  auto founded = s->attribute(base, "start-day");
   CHECK(founded && asInteger(*founded) == dayNumber(2023, 8, 15));  // a date
   CHECK(history.urls.size() == 2 && asked(history, "details/ALPHANORDIC") && asked(history, "rates/ALPHANORDIC"));
   // The info panel shows what is said of the fund.
@@ -312,7 +312,7 @@ TEST(a_source_with_a_token_asks_for_its_history_with_it) {
   CHECK(s->candles(*edge, Resolution::Day).candles[0].close == 20.25);
   CHECK(!s->previousClose(*edge, dayNumber(2026, 11, 19)));  // the list has no change
   auto base = *s->findInstrumentByIsin("FI0008800511");
-  auto url = s->attribute(base.id, predicate::webUrl);
+  auto url = s->attribute(base, predicate::webUrl);
   CHECK(url && asText(*url) && *asText(*url) == "https://beta.example/funds/beta-world/");
   CHECK(!http.headers.empty() && http.headers[0].size() == 2);  // asked for with a Referer and an Origin
 
@@ -447,8 +447,7 @@ TEST(a_real_discovery_answer_shows_the_funds_with_an_isin_and_a_new_nav_and_says
     for (MarketId market : snapshot->edgeMarkets())
       for (const EdgeKey & edge : snapshot->edges(market)) {
         edges++;
-        auto base = snapshot->instrument(edge.base);
-        CHECK(base && base->kind == InstrumentKind::Fund && isValidIsin(base->isin));
+        CHECK(snapshot->kind(edge.base) == InstrumentKind::Fund && isValidIsin(snapshot->isin(edge.base)));
         auto bars = snapshot->candles(edge, Resolution::Day).candles;
         CHECK(bars.size() == 1 && bars[0].close > 0 && bars[0].time <= dayNumber(2026, 11, 20));
       }
@@ -475,7 +474,7 @@ TEST(a_real_discovery_answer_shows_the_funds_with_an_isin_and_a_new_nav_and_says
       bool found = false;
       for (MarketId market : snapshot->edgeMarkets())
         for (const EdgeKey & edge : snapshot->edges(market))
-          if (edge.base == instrument->id) found = snapshot->listing(edge)->identifier == id;
+          if (edge.base == *instrument) found = snapshot->listing(edge)->identifier == id;
       CHECK(found);
     }
   }
