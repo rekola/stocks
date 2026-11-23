@@ -4,6 +4,7 @@
 #include <cctype>
 #include <cmath>
 #include <cstdlib>
+#include <set>
 
 namespace {
 
@@ -127,6 +128,21 @@ std::shared_ptr<const cellui::TableIcon> Quotes::icon(int r, int c) const {
 void Quotes::reset(std::shared_ptr<const Snapshot> snapshot, std::vector<EdgeKey> keys) {
   keys_ = std::move(keys);
   setSnapshot(std::move(snapshot));
+}
+
+bool Quotes::follow(std::shared_ptr<const Snapshot> snapshot, const std::vector<EdgeKey> & edges) {
+  std::vector<EdgeKey> ordered;
+  ordered.reserve(edges.size());
+  const std::set<EdgeKey> wanted(edges.begin(), edges.end());
+  std::set<EdgeKey> placed;
+  for (const EdgeKey & key : keys_)
+    if (wanted.count(key) && placed.insert(key).second) ordered.push_back(key);
+  for (const EdgeKey & key : edges)
+    if (placed.insert(key).second) ordered.push_back(key);
+  const bool changed = ordered != keys_;
+  if (changed) keys_ = std::move(ordered);
+  setSnapshot(std::move(snapshot));
+  return changed;
 }
 
 void Quotes::setSnapshot(std::shared_ptr<const Snapshot> snapshot) {

@@ -57,6 +57,10 @@ class Quotes : public cellui::TableModel {
   void reset(std::shared_ptr<const Snapshot> snapshot, std::vector<EdgeKey> keys);
   // The same edges from a newer snapshot: the caches go, the rows and their order stay.
   void setSnapshot(std::shared_ptr<const Snapshot> snapshot);
+  // Shows `edges` from a newer snapshot with the rows already shown where they are: one that has gone is dropped and one that
+  // has appeared goes last, so new data never shifts what is on the screen (the order `edges` is in is only the first order;
+  // a sort is the user's to ask for). Returns whether the rows changed; the caches go either way.
+  bool follow(std::shared_ptr<const Snapshot> snapshot, const std::vector<EdgeKey> & edges);
   const std::vector<EdgeKey> & edges() const { return keys_; }
 
   int rowCount() const override { return static_cast<int>(keys_.size()); }
