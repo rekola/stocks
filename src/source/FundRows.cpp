@@ -51,10 +51,10 @@ std::optional<int64_t> looseDay(const json & v) {
   auto n = looseNumber(v);
   if (!n || *n <= 0) return std::nullopt;
   const int64_t seconds = *n > 1e11 ? static_cast<int64_t>(*n / 1000) : static_cast<int64_t>(*n);  // milliseconds are the larger numbers
-  return dayNumberOfInstant(seconds, 12 * 3600);
+  return dayNumberOfInstant(seconds, 3 * 3600);
 }
 
-int64_t navDay(int64_t ms) { return dayNumberOfInstant(ms / 1000, 12 * 3600); }
+int64_t navDay(int64_t ms) { return dayNumberOfInstant(ms / 1000, 3 * 3600); }
 
 namespace {
 
@@ -135,6 +135,7 @@ std::vector<Attribute> attributesOf(const FundRow & f) {
   if (f.risk) said.push_back({"fund-risk-class", *f.risk});
   if (f.rating) said.push_back({"fund-morningstar-rating", *f.rating});
   if (f.esg) said.push_back({"fund-esg-rating", *f.esg});
+  said.insert(said.end(), f.extra.begin(), f.extra.end());
   return said;
 }
 

@@ -22,7 +22,8 @@
 //   list                      {url, rows, fields, scale, linkPrefix}: the list answer. `rows` points at the array of funds ("" for the answer itself).
 //                             `fields` gives, of each row: id (what the details and the history are asked for by), symbol, name, isin, risk, rating, esg,
 //                             managementFee, subscriptionFee, redemptionFee, link, and the latest NAV: price, date (a date or an instant) and change
-//                             (from the NAV before it, as a fraction). A fund with a price and a date is shown at once, from the list alone. `scale` multiplies a number (a fraction to per cent); `linkPrefix` is put
+//                             (from the NAV before it, as a fraction). A fund with a price and a date is shown at once, from the list alone.
+//                             `attributes` keeps more of the row, by predicate: a number, a text or a truth value as it is, a date for a predicate that ends in -day. `scale` multiplies a number (a fraction to per cent); `linkPrefix` is put
 //                             before a link that is a path.
 //   isinFromId                a regex whose first capture is the ISIN, where the id holds it
 //   isins                     an ISIN by id or by ISIN: an empty one says that the fund is known and not wanted (closed, joined, priced less often than daily)
@@ -40,6 +41,7 @@ struct FundSchema {
     std::string url;
     std::map<std::string, Pointers> fields;
     std::map<std::string, double> scale;
+    std::map<std::string, Pointers> attributes;  // predicate to where it is: kept of the fund as it is (a predicate ending in -day is a date)
     std::string rows, linkPrefix;
   };
   std::string name, market, dataset;

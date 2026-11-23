@@ -4,6 +4,7 @@
 #include "model/Isin.h"
 
 #include <chrono>
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -51,6 +52,11 @@ std::optional<std::pair<std::string, std::string>> findIsin(const json & doc, co
       if (auto found = findIsin(doc[i], path + "/" + std::to_string(i))) return found;
   }
   return std::nullopt;
+}
+
+std::string trimmed(const std::string & s) {
+  const size_t from = s.find_first_not_of(" \t\r\n"), to = s.find_last_not_of(" \t\r\n");
+  return from == std::string::npos ? std::string() : s.substr(from, to - from + 1);
 }
 
 std::string trimmedToken(const std::string & token) {
@@ -109,6 +115,20 @@ bool requestOf(const json & o, const char * what, FundSchema::Request & r, std::
       r.fields[key] = std::move(p);
     }
   }
+  if (auto attributes = o.find("attributes"); attributes != o.end()) {
+    if (!attributes->is_object()) {
+      error = std::string(what) + ": attributes is not an object";
+      return false;
+    }
+    for (const auto & [key, v] : attributes->items()) {
+      FundSchema::Pointers p;
+      if (!pointersOf(v, p)) {
+        error = std::string(what) + ": attribute " + key + " is not a JSON pointer or a list of them";
+        return false;
+      }
+      r.attributes[key] = std::move(p);
+    }
+  }
   if (auto scale = o.find("scale"); scale != o.end() && scale->is_object())
     for (const auto & [key, v] : scale->items())
       if (v.is_number()) r.scale[key] = v.get<double>();
@@ -125,8 +145,8 @@ void applyFields(const FundSchema::Request & request, const json & doc, FundRow 
       return n && s != request.scale.end() ? std::optional<double>(*n * s->second) : n;
     };
     if (key == "id") id = textOf(*v);
-    else if (key == "symbol") fund.symbol = textOf(*v);
-    else if (key == "name") fund.name = textOf(*v);
+    else if (key == "symbol") fund.symbol = trimmed(textOf(*v));
+    else if (key == "name") fund.name = trimmed(textOf(*v));
     else if (key == "isin") fund.isin = textOf(*v);
     else if (key == "risk") fund.risk = looseInteger(*v);
     else if (key == "rating") fund.rating = looseInteger(*v);
@@ -135,13 +155,29 @@ void applyFields(const FundSchema::Request & request, const json & doc, FundRow 
     else if (key == "subscriptionFee") fund.subscriptionFee = scaled(looseNumber(*v));
     else if (key == "redemptionFee") fund.redemptionFee = scaled(looseNumber(*v));
     else if (key == "price") fund.price = looseNumber(*v);
-    else if (key == "change") fund.change = looseNumber(*v);
+    else if (key == "change") fund.change = scaled(looseNumber(*v));
     else if (key == "date") fund.day = looseDay(*v);
     else if (key == "link") {
       std::string link = textOf(*v);
       if (!link.empty() && link.rfind("http", 0) != 0) link = request.linkPrefix + (link[0] == '/' ? link : "/" + link);
       fund.url = link;
     }
+  }
+  for (const auto & [predicate, pointers] : request.attributes) {
+    const json * v = firstOf(doc, pointers);
+    if (!v) continue;
+    const bool day = predicate.size() > 4 && predicate.compare(predicate.size() - 4, 4, "-day") == 0;
+    auto at = std::find_if(fund.extra.begin(), fund.extra.end(), [&](const Attribute & a) { return a.predicate == predicate; });
+    std::optional<Attribute> said;
+    if (day) {
+      if (auto d = looseDay(*v)) said = Attribute(predicate, *d);
+    } else if (v->is_string()) said = Attribute(predicate, trimmed(v->get<std::string>()));
+    else if (v->is_boolean()) said = Attribute(predicate, v->get<bool>());
+    else if (v->is_number_integer()) said = Attribute(predicate, v->get<int64_t>());
+    else if (v->is_number()) said = Attribute(predicate, v->get<double>());
+    if (!said) continue;
+    if (at != fund.extra.end()) *at = *said;
+    else fund.extra.push_back(*said);
   }
 }
 

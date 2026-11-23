@@ -121,8 +121,8 @@ TEST(the_online_fee_is_preferred_to_the_ordinary_one) {
   FundSource::Entry e;
   std::string error;
   CHECK(s.parseDetail(fixture("funds/alpha-details.json"), e, error));
-  CHECK(e.fund.subscriptionFee && *e.fund.subscriptionFee == 0.0);  // the online fee, not 1.0
-  CHECK(e.fund.redemptionFee && *e.fund.redemptionFee == 0.5);
+  CHECK(e.fund.subscriptionFee && *e.fund.subscriptionFee == 0.0);  // the online fee, not the ordinary 1 %
+  CHECK(e.fund.redemptionFee && *e.fund.redemptionFee == 1.0);
   CHECK(!s.parseDetail("[]", e, error));
 }
 
@@ -211,15 +211,21 @@ TEST(the_history_of_a_fund_is_loaded_when_it_is_wanted_and_once) {
   // The details came with it: the fees, beside what the list said.
   auto base = *s->findInstrumentByIsin("FI0008810569");
   auto fee = s->attribute(base.id, "redemption-fee");
-  CHECK(fee && asReal(*fee) == 0.5);
+  CHECK(fee && asReal(*fee) == 1.0);  // a fraction in the answer, per cent here
   auto online = s->attribute(base.id, "subscription-fee");
-  CHECK(online && asReal(*online) == 0.0);  // the online fee, not the ordinary 1.0
+  CHECK(online && asReal(*online) == 0.0);  // the online fee, not the ordinary 1 %
+  auto page = s->attribute(base.id, predicate::webUrl);
+  CHECK(page && asText(*page) == "https://www.aktia.fi/fi/sijoituskohteet/aktia-passiivi-eurooppa");
+  auto assets = s->attribute(base.id, "fund-assets");
+  CHECK(assets && std::fabs(*asReal(*assets) - 43998919.16) < 1e-6);
+  auto founded = s->attribute(base.id, "fund-start-day");
+  CHECK(founded && asInteger(*founded) == dayNumber(2023, 8, 15));  // a date
   CHECK(history.urls.size() == 2 && asked(history, "details/ALPHANORDIC") && asked(history, "rates/ALPHANORDIC"));
   // The info panel shows what is said of the fund.
   std::string shown;
   for (const InfoSection & section : buildInfo(*s, *edge))
     for (const InfoRow & row : section.rows) shown += section.title + "/" + row.predicate + "=" + row.value.text + "\n";
-  CHECK(shown.find("Instrument/redemption-fee=0.5") != std::string::npos);
+  CHECK(shown.find("Instrument/redemption-fee=1") != std::string::npos);
   CHECK(shown.find("Instrument/management-fee=1.53") != std::string::npos);
   CHECK(shown.find("Instrument/fund-risk-class=6") != std::string::npos);
   CHECK(shown.find("Instrument/fund-morningstar-rating=4") != std::string::npos);
@@ -343,6 +349,8 @@ TEST(the_dates_a_list_gives_are_day_numbers) {
   CHECK(looseDay(json("1795046400")) == dayNumber(2026, 11, 19));          // a string of them
   CHECK(looseDay(json(1795046400000.0)) == dayNumber(2026, 11, 19));       // milliseconds
   CHECK(looseDay(json(1795046400 - 3 * 3600)) == dayNumber(2026, 11, 19));  // midnight in Helsinki, in UTC
+  CHECK(looseDay(json(1795046400 - 2 * 3600)) == dayNumber(2026, 11, 19));  // and in winter
+  CHECK(looseDay(json(1795046400 + 12 * 3600)) == dayNumber(2026, 11, 19));  // noon UTC
   CHECK(!looseDay(json("soon")) && !looseDay(json(0)) && !looseDay(json("2026-13-40")));
 }
 TEST(schemas_are_read_from_json_and_a_wrong_one_says_what_is_wrong) {
@@ -410,10 +418,21 @@ TEST(a_real_discovery_answer_shows_the_funds_with_an_isin_and_a_new_nav_and_says
     std::string error;
     CHECK(FundSchema::load(stem, schema, error));
     schema.pause = std::chrono::milliseconds(0);
-    CHECK(schema.tokenPage.empty());  // a list that needs a token is not asked for here
-    const std::string listUrl = FundSource::expand(schema.list.url, "", "");
+    // A list that needs a token has the page that hands it out beside it (NAME.page.html).
+    std::string token, pageUrl;
+    size_t requests = 1;
+    if (!schema.tokenPage.empty()) {
+      pageUrl = schema.tokenPage;
+      CHECK(FundSource::parseToken(fixture("funds/discovery/" + stem + ".page.html"), schema.tokenRegex, token, error));
+      requests++;
+    }
+    const std::string listUrl = FundSource::expand(schema.list.url, "", token);
     FakeHttp http;
-    http.answer = [&](const std::string & url) { return url == listUrl ? ok(list) : failed(404); };
+    http.answer = [&](const std::string & url) {
+      if (url == listUrl) return ok(list);
+      if (!pageUrl.empty() && url == pageUrl) return ok(fixture("funds/discovery/" + stem + ".page.html"));
+      return failed(404);
+    };
     auto store = makeMemoryStore();
     Listener listener;
     FundSource funds(schema);
@@ -421,7 +440,7 @@ TEST(a_real_discovery_answer_shows_the_funds_with_an_isin_and_a_new_nav_and_says
     funds.load(*store, http, listener);
     auto snapshot = store->snapshot();
 
-    CHECK(json::parse(list).size() == expected["rows"].get<size_t>());
+    CHECK(json::parse(list)[json::json_pointer(schema.list.rows)].size() == expected["rows"].get<size_t>());
     // Every edge is a fund with a valid ISIN, one bar with a close and a change to say the NAV before it; nothing is asked for but the list and the details of
     // the funds with no ISIN.
     size_t edges = 0;
@@ -434,13 +453,21 @@ TEST(a_real_discovery_answer_shows_the_funds_with_an_isin_and_a_new_nav_and_says
         CHECK(bars.size() == 1 && bars[0].close > 0 && bars[0].time <= dayNumber(2026, 11, 20));
       }
     CHECK(edges == expected["shown"].get<size_t>());
-    for (const std::string & url : http.urls) CHECK(url == listUrl || url.find("details") != std::string::npos);
+    for (const std::string & url : http.urls) CHECK(url == listUrl || url == pageUrl || url.find("details") != std::string::npos);
     CHECK(said(listener, std::to_string(expected["stale"].get<int>()) + " left out for an old NAV"));
     for (const std::string & id : expected["noIsin"]) CHECK(said(listener, "no ISIN for " + id + " ("));
-    CHECK(http.urls.size() == 1 + expected["noIsin"].size());  // the list, and the details of each of those
+    CHECK(http.urls.size() == requests + expected["noIsin"].size());  // the page and the list, and the details of each of those
+    // The change the list gives is the NAV before the latest, which the history of the day before says too.
+    for (const auto & [id, close] : expected["previousClose"].items()) {
+      std::optional<double> previous;
+      for (const Market & market : snapshot->markets())
+        for (const EdgeKey & edge : snapshot->edges(market.id))
+          if (snapshot->listing(edge)->identifier == id) previous = snapshot->previousClose(edge, snapshot->candles(edge, Resolution::Day).candles.back().time);
+      CHECK(previous && std::fabs(*previous - close.get<double>()) < 0.005);
+    }
     http.urls.clear();  // the next load asks for the list only: what has no ISIN is not asked for again
     funds.load(*store, http, listener);
-    CHECK(http.urls.size() == 1);
+    CHECK(http.urls.size() == requests);
     for (const auto & [id, isin] : expected["isins"].items()) {
       auto instrument = snapshot->findInstrumentByIsin(isin.get<std::string>());
       CHECK(instrument.has_value());
@@ -453,4 +480,20 @@ TEST(a_real_discovery_answer_shows_the_funds_with_an_isin_and_a_new_nav_and_says
     }
   }
   CHECK(files >= 1);
+}
+
+// The histories as the companies give them, in part: a day stamped at midnight in Helsinki, with the points out of order, and a day stamped at noon UTC.
+TEST(real_history_answers_are_days_in_order_whichever_way_the_company_stamps_them) {
+  std::vector<Candle> bars;
+  std::string error;
+  CHECK(parseNavSeries(fixture("funds/real-history-a.json"), bars, error));
+  CHECK(bars.size() == 17);
+  CHECK(bars.front().time == dayNumber(2006, 5, 15) && bars.back().time == dayNumber(2026, 11, 19));
+  for (size_t i = 1; i < bars.size(); i++) CHECK(bars[i - 1].time < bars[i].time);  // sorted, though the answer was not
+  CHECK(bars.back().close == 3.3099 && !isDefined(bars.back().open));  // the list's NAV of that day
+  CHECK(parseNavSeries(fixture("funds/real-history-b.json"), bars, error));
+  CHECK(bars.size() == 6);
+  CHECK(bars.front().time == dayNumber(2011, 9, 29) && bars.front().close == 100);
+  CHECK(bars.back().time == dayNumber(2026, 11, 19) && bars.back().close == 347.11);
+  for (size_t i = 1; i < bars.size(); i++) CHECK(bars[i].time - bars[i - 1].time < 10000);
 }

@@ -21,6 +21,10 @@
   },
   "scale": {
    "managementFee": 100
+  },
+  "attributes": {
+   "fund-sfdr-class": "/esgArt",
+   "fund-subcategory": "/productSubcategoryEn"
   }
  },
  "isinFromId": "^([A-Z]{2}[A-Z0-9]{9}[0-9])EUR$",
@@ -57,7 +61,8 @@
   "AKTABAB": "FI0008811799",
   "AKTEURSMAB": "FI4000583109",
   "AKTPROSPB": "FI4000582259",
-  "AKTIACAPB": "FI0008801071"
+  "AKTIACAPB": "FI0008801071",
+  "AKTIASOLIB": "FI0008804919"
  },
  "detail": {
   "url": "https://misc.aktia.fi/data-service/investment/formatted/product-base-details/{id}",
@@ -69,7 +74,18 @@
    "subscriptionFee": [
     "/values/onlineSubscriptionFee/value",
     "/values/subscriptionFee/value"
-   ]
+   ],
+   "link": "/values/productUrlFi/value"
+  },
+  "scale": {
+   "redemptionFee": 100,
+   "subscriptionFee": 100
+  },
+  "attributes": {
+   "fund-assets": "/values/aum/value",
+   "fund-start-day": "/values/dateFounded/value",
+   "fund-volatility": "/values/volatility/value",
+   "fund-sharpe-ratio": "/values/sharpeRatio/value"
   }
  },
  "history": {

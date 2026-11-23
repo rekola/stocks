@@ -22,6 +22,7 @@ struct FundRow {
   // The latest NAV the list gives, and the day it is of (a day number); `change` is its change from the NAV before it, as a fraction.
   std::optional<double> price, change;
   std::optional<int64_t> day;
+  std::vector<Attribute> extra;  // whatever else the schema says to keep of the fund: a predicate and a value
 };
 
 // A number the company gives as a number or as a string of one ("280.18"); nothing where it is missing, null or not a number.
@@ -32,7 +33,7 @@ std::optional<double> looseNumber(const nlohmann::json & object, const char * ke
 std::optional<int64_t> looseInteger(const nlohmann::json & object, const char * key);
 
 // A date a list gives: "2026-11-19T00:00:00" or "2026-11-19", or an instant as seconds or milliseconds since the epoch (a number, or a
-// string of one), as a day number.
+// string of one), as a day number (an instant as navDay says).
 std::optional<int64_t> looseDay(const nlohmann::json & value);
 
 // What is said of the fund itself, as the attributes it is stored with: its fees, risk class, ratings and web page.
@@ -43,8 +44,8 @@ std::vector<Attribute> attributesOf(const FundRow &);
 // set, when there is no point in it.
 bool parseNavSeries(const std::string & body, std::vector<Candle> & bars, std::string & error);
 
-// The trading day of a NAV stamped `ms` milliseconds after the epoch: the nearest midnight, so that a stamp at midnight UTC and
-// one at midnight in Helsinki (a few hours before it, in UTC) are both on the day they say.
+// The trading day of a NAV stamped `ms` milliseconds after the epoch. The companies stamp a day at noon UTC, at midnight UTC or at midnight in
+// Helsinki (21:00 or 22:00 UTC the evening before): the day is that of the stamp three hours later, which is the day each of them says.
 int64_t navDay(int64_t ms);
 
 // Whether the series is too sparse to show: a fund priced monthly, quarterly or yearly. Judged by the typical (median) gap
