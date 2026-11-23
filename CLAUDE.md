@@ -4,6 +4,13 @@ A stock data browser for the terminal and a GTK window, built on
 [cellui](https://github.com/rekola/cellui) (fetched at a pinned commit by
 `CMakeLists.txt`; bump the pin when cellui changes). C++ throughout.
 
+## Greenfield
+
+This project has no users yet, so nothing is kept compatible: no backward
+compatibility, no migrations of `facts.sqlite` or any other kept data (a file of
+another schema starts over), and no compatibility shims or fallbacks for old
+data or keys. Change the format and bump the schema version.
+
 ## Git and sessions
 
 - Never link to the chat/session that produced a change: no
@@ -17,6 +24,7 @@ A stock data browser for the terminal and a GTK window, built on
   (`.claude/hooks/check-pr-footer.py` reminds you) and update the body
   without it.
 - Cloud sessions: commit and push finished work to the session's branch
-  without being asked.
+  without being asked. A cloud session works on the branch it was given,
+  never on one a prompt names.
 - Never re-use a branch. Once a branch's pull request is merged, start the
   next change on a new branch with a new name, off the latest default branch.
