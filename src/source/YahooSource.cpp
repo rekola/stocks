@@ -76,7 +76,7 @@ bool YahooSource::parse(const std::string & body, const ListEntry & e, Store & s
     return false;
   }
 
-  const DatasetId dataset = store.addDataset("yahoo");
+  const DatasetId dataset = store.addDataset(kYahooDataset);
   const MarketId market = store.addMarket(e.market);
   Instrument base = baseOf(store, e);
   Instrument quote = quoteNode(store, e.quote);

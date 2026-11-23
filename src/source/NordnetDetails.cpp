@@ -1,4 +1,5 @@
 #include "source/NordnetDetails.h"
+#include "source/DatasetCodes.h"
 
 #include "model/Dates.h"
 #include "source/Countries.h"
@@ -164,7 +165,7 @@ bool NordnetDetails::loadBatch(Store & store, Http & http, SourceListener & list
   std::vector<Target> targets;
   {
     auto snapshot = store.snapshot();
-    auto dataset = snapshot->findDataset("nordnet");
+    auto dataset = snapshot->findDataset(kNordnetDataset);
     if (!dataset) return false;
     std::set<uint64_t> seen;
     for (MarketId market : snapshot->edgeMarkets()) {

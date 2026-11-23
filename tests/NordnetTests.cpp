@@ -303,7 +303,7 @@ TEST(a_listing_without_a_price_is_a_node_and_has_no_edge) {
   quick().load(*store, http, listener);
   auto s = store->snapshot();
   CHECK(s->findInstrumentByIsin("ZZ0000000016") && s->findInstrumentByIsin("ZZ0000000024") && s->findInstrumentByIsin("ZZ0000000032"));  // all three are nodes
-  CHECK(s->edges(*s->findMarket("Xetra")).size() == 1);                             // only the traded one is seen
+  CHECK(s->edges(*s->findMarket("Xetra")).size() == 1);                                                                                  // only the traded one is seen
   CHECK(s->edges(*s->findMarket("Xetra"))[0].base == s->findInstrumentByIsin("ZZ0000000016")->id);
 }
 
@@ -471,7 +471,7 @@ TEST(a_market_is_found_by_its_code_before_its_name) {
   auto store = makeMemoryStore();
   MarketId first = store->resolveMarket({{predicate::mic, "XHEL"}, {predicate::name, "Helsingin pörssi"}});  // a provider that names it so
   MarketId found = store->resolveMarket({{predicate::nordnetId, "24"}, {predicate::mic, "XHEL"}, {predicate::name, "Nasdaq Helsinki"}});
-  CHECK(found == first && found.name == "Nasdaq Helsinki");  // the code found it; the name said now stands
+  CHECK(found == first && store->snapshot()->name(found) == "Nasdaq Helsinki");  // the code found it; the name said now stands
   CHECK(store->snapshot()->nodeCount(NodeType::Market) == 1);
 }
 

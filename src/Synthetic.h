@@ -1,5 +1,6 @@
 #pragma once
 
+#include "source/DatasetCodes.h"
 #include "model/Store.h"
 #include "source/Source.h"
 #include "source/InstrumentLists.h"
@@ -16,6 +17,7 @@ class SyntheticSource : public Source {
   explicit SyntheticSource(ListSpec spec) : spec_(std::move(spec)), fromFiles_(true) {}
 
   std::string name() const override { return "synthetic"; }
+  std::vector<std::string> datasetCodes() const override { return {kSyntheticDataset}; }
   std::string description() const override { return "Made-up prices, the same every run"; }
   void load(Store & store, Http &, SourceListener & listener) override {
     InstrumentList list = list_;

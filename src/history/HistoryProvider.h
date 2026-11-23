@@ -18,7 +18,7 @@ class HistoryProvider {
     Offline,  // no answer: the edge is asked for again after a pause
   };
   virtual ~HistoryProvider() = default;
-  // The name of the dataset whose edges it loads.
+  // The code of the dataset whose edges it loads.
   virtual std::string dataset() const = 0;
   // Whether it can load this edge (it has what it needs of it).
   virtual bool wants(const Snapshot &, const EdgeKey &) const { return true; }

@@ -1,4 +1,5 @@
 #include "history/HistoryLoader.h"
+#include "source/DatasetCodes.h"
 
 #include "model/Dates.h"
 
@@ -180,7 +181,7 @@ void HistoryLoader::want(const std::vector<EdgeKey> & edges, Period period) {
         queue_.push_back(ask);
         continue;
       }
-      if (dataset != "nordnet" || !listing || listing->orderBook.empty()) continue;
+      if (dataset != kNordnetDataset || !listing || listing->orderBook.empty()) continue;
       if (options_.depth == Depth::Full) {
         // More than today's bar: the bars are there already (loaded before, or from elsewhere).
         if (done_.count({k, kDaily}) || failed_.count({k, kDaily}) || !seen.insert({k, kDaily}).second) continue;

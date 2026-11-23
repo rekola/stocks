@@ -1,5 +1,6 @@
 #pragma once
 
+#include "source/DatasetCodes.h"
 #include "source/Source.h"
 #include "source/InstrumentLists.h"
 
@@ -19,6 +20,7 @@ class YahooSource : public Source {
       : spec_(std::move(spec)), fromFiles_(true), range_(std::move(range)), pause_(pause) {}
 
   std::string name() const override { return "yahoo"; }
+  std::vector<std::string> datasetCodes() const override { return {kYahooDataset}; }
   std::string description() const override { return "Yahoo Finance: daily candles, dividends and splits (no key)"; }
   void load(Store &, Http &, SourceListener &) override;
 

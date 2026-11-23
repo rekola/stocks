@@ -7,6 +7,7 @@
 #include <chrono>
 #include <memory>
 #include <string>
+#include <vector>
 
 // What a source tells whoever runs it. Called on the source's thread.
 class SourceListener {
@@ -24,6 +25,9 @@ class Source {
   virtual ~Source() = default;
   virtual std::string name() const = 0;  // what the user types to pick it, e.g. "yahoo"
   virtual std::string description() const = 0;
+  // The codes of the datasets this source writes (a code is permanent, and no two sources write the same one: a source that did
+  // would be putting its data under another's). Empty for a source that writes none, such as a test's.
+  virtual std::vector<std::string> datasetCodes() const { return {}; }
   virtual void load(Store &, Http &, SourceListener &) = 0;
   // How often to load again, measured from when the last load ended; zero (the default) is once.
   virtual std::chrono::milliseconds refreshInterval() const { return std::chrono::milliseconds(0); }
@@ -42,3 +46,6 @@ struct StoreChanged {};
 struct SourceMessage {
   std::string text;
 };
+
+// What is wrong with the sources that are to run together: two of them that write the same dataset. Empty if nothing.
+std::string datasetCodeClash(const std::vector<std::unique_ptr<Source>> & sources);

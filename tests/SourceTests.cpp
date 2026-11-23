@@ -3,11 +3,16 @@
 #include "FakeHttp.h"
 #include "Synthetic.h"
 #include "model/Dates.h"
+#include "source/AutoSource.h"
+#include "source/FundSource.h"
+#include "source/NordnetSource.h"
 #include "source/SourceRunner.h"
 #include "source/YahooSource.h"
 
 #include <atomic>
 #include <chrono>
+#include <set>
+#include <filesystem>
 #include <thread>
 #include <fstream>
 #include <functional>
@@ -443,4 +448,34 @@ TEST(a_stopped_primary_has_not_failed) {
   } listener;
   source.load(*store, http, listener);
   CHECK(f->loads == 0 && listener.messages.empty());  // cancelled: nothing is decided
+}
+
+TEST(two_sources_do_not_write_the_same_dataset) {
+  std::vector<std::unique_ptr<Source>> sources;
+  sources.push_back(std::make_unique<NordnetSource>());
+  sources.push_back(std::make_unique<YahooSource>(InstrumentList{}));
+  sources.push_back(std::make_unique<SyntheticSource>(InstrumentList{}));
+  CHECK(datasetCodeClash(sources).empty());
+  // Nordnet twice, or auto (which is Nordnet and Yahoo) beside either, would put one's data under the other's.
+  sources.push_back(std::make_unique<AutoSource>(std::make_unique<NordnetSource>(), std::make_unique<YahooSource>(InstrumentList{})));
+  const std::string clash = datasetCodeClash(sources);
+  CHECK(clash.find("nordnet") != std::string::npos && clash.find("auto") != std::string::npos);
+  std::vector<std::unique_ptr<Source>> twice;
+  twice.push_back(std::make_unique<NordnetSource>());
+  twice.push_back(std::make_unique<NordnetSource>());
+  CHECK(!datasetCodeClash(twice).empty());
+}
+
+TEST(the_datasets_of_the_shipped_fund_schemas_are_codes_that_no_other_source_has) {
+  std::set<std::string> codes = {kNordnetDataset, kYahooDataset, kSyntheticDataset};
+  size_t schemas = 0;
+  for (const auto & entry : std::filesystem::directory_iterator(std::string(STOCKS_DATA_DIR) + "/funds")) {
+    if (entry.path().extension() != ".json") continue;
+    FundSchema schema;
+    std::string error;
+    CHECK(FundSchema::load(entry.path().string(), schema, error));  // a schema is refused with a dataset that is no code
+    CHECK(codes.insert(schema.dataset).second);                     // and no two have the same
+    schemas++;
+  }
+  CHECK(schemas >= 2);
 }

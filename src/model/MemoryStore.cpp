@@ -448,8 +448,10 @@ DatasetId Snapshot::addDataset(const std::string & code, const std::string & nam
     return DatasetId{};
   }
   const DatasetId id{key->value};
-  if (!name.empty()) setAttributes(NodeRef(id), {{predicate::name, name}});
-  else if (!fact(NodeRef(id), predicate::name)) setAttributes(NodeRef(id), {{predicate::name, code}});
+  if (!name.empty())
+    setAttributes(NodeRef(id), {{predicate::name, name}});
+  else if (!fact(NodeRef(id), predicate::name))
+    setAttributes(NodeRef(id), {{predicate::name, code}});
   return id;
 }
 

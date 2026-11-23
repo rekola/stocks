@@ -7,7 +7,7 @@
 
 void fillSyntheticData(Store & store, const InstrumentList & list) {
   const int64_t kStart = dayNumber(2026, 1, 1);  // the first trading date: a day number
-  const DatasetId synthetic = store.addDataset("synthetic");
+  const DatasetId synthetic = store.addDataset(kSyntheticDataset);
   std::string market;
   unsigned preset = 0;
   std::mt19937 rng;

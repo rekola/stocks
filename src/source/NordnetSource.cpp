@@ -341,7 +341,7 @@ size_t NordnetSource::loadIndicators(const List & list, Store & store, Http & ht
     listener.message("nordnet: " + list.name + ": " + error);
     return 0;
   }
-  const DatasetId dataset = store.addDataset("nordnet");
+  const DatasetId dataset = store.addDataset(kNordnetDataset);
   const MarketId market = store.addMarket(list.market);
   size_t written = 0;
   for (NordnetIndicator & row : rows) {
@@ -423,7 +423,7 @@ void NordnetSource::load(Store & store, Http & http, SourceListener & listener) 
       skipped += page.skipped;
 
       // To the store as each page arrives, not all at the end.
-      const DatasetId dataset = store.addDataset("nordnet");
+      const DatasetId dataset = store.addDataset(kNordnetDataset);
       for (NordnetListing & l : page.listings) {
         l.list = list.name;
         // The market with Nordnet's id, or the one with the name where that is known (one a provider with that name

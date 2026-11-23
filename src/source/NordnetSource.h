@@ -1,5 +1,6 @@
 #pragma once
 
+#include "source/DatasetCodes.h"
 #include "source/NordnetDetails.h"
 #include "source/Source.h"
 
@@ -65,6 +66,7 @@ class NordnetSource : public Source {
       : lists_(std::move(lists)), pause_(pause), refresh_(refresh) {}
 
   std::string name() const override { return "nordnet"; }
+  std::vector<std::string> datasetCodes() const override { return {kNordnetDataset}; }
   std::string description() const override { return "Nordnet: instrument discovery (ETFs, certificates, funds, stocks), no key"; }
   void load(Store &, Http &, SourceListener &) override;
   std::chrono::milliseconds refreshInterval() const override { return refresh_; }

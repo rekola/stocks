@@ -72,7 +72,6 @@ std::map<std::pair<uint64_t, std::string>, StoredFact> byKey(const std::vector<S
 
 // The number of a key, or zero where there is none (no test wants a missing one to stop it).
 uint64_t numberOf(const std::optional<NodeKey> & key) { return key ? key->value : 0; }
-std::string nameOf(const std::optional<Dataset> & d) { return d ? d->name : std::string(); }
 
 // One fact of a map, or an empty one (no test wants a missing one to stop it).
 StoredFact at(const std::map<std::pair<uint64_t, std::string>, StoredFact> & facts, uint64_t node, const std::string & predicate) {
@@ -154,7 +153,7 @@ TEST(a_node_is_what_is_said_of_it_so_a_restart_shows_facts_and_no_edges) {
   const auto nokia = s->findInstrumentByIsin(kIsin);
   const auto hel = s->findMarket("Nasdaq Helsinki");
   CHECK(nokia && nokia->name == "Nokia" && hel && s->findDataset("providera"));
-  CHECK(hel && s->edges(hel->id).empty() && s->edgeMarkets().empty());
+  CHECK(hel && s->edges(*hel).empty() && s->edgeMarkets().empty());
 }
 
 TEST(an_instrument_is_its_isin_and_a_currency_or_unit_its_code) {
@@ -195,8 +194,8 @@ TEST(what_cannot_be_given_a_key_is_refused_and_told_of) {
   CHECK(!store->addInstrument({{}, "NOKIA", "Nokia", InstrumentKind::Company, "FI0009000680"}).id.valid());  // the check digit is wrong
   CHECK(!store->addInstrument({{}, "", "A name that is much too long for a private ISIN", InstrumentKind::Other}).id.valid());
   CHECK(!store->addInstrument({{}, "A CURRENCY CODE", "Too long", InstrumentKind::Currency}).id.valid());
-  CHECK(!store->addDataset("provider-a").id.valid());  // a code is letters and digits
-  CHECK(!store->addDataset("morethanten1").id.valid());
+  CHECK(!store->addDataset("provider-a").valid());  // a code is letters and digits
+  CHECK(!store->addDataset("morethanten1").valid());
   CHECK(told.size() == 5);
   CHECK(store->snapshot()->nodeCount(NodeType::Instrument) == 0 && store->snapshot()->nodeCount(NodeType::Dataset) == 0);
 }
@@ -205,11 +204,11 @@ TEST(a_dataset_is_its_code_and_its_name_is_a_fact_that_is_the_code_until_said) {
   Clock clock;
   auto store = makeMemoryStore(optionsFor(nullptr, clock));
   DatasetId d = store->addDataset("nordnet");
-  CHECK(d.valid() && d.code == "nordnet" && d.name == "nordnet" && d.value == numberOf(datasetKey("nordnet")));
+  CHECK(d.valid() && datasetCode(d) == "nordnet" && store->snapshot()->name(d) == "nordnet" && d.value == numberOf(datasetKey("nordnet")));
   store->addDataset("nordnet", "Nordnet");
-  CHECK(nameOf(store->snapshot()->dataset(d)) == "Nordnet");
+  CHECK(store->snapshot()->name(d) == "Nordnet");
   store->addDataset("nordnet");  // said again with no name: the name that was said stays
-  CHECK(nameOf(store->snapshot()->dataset(d)) == "Nordnet" && nameOf(store->snapshot()->findDataset("nordnet")) == "Nordnet");
+  CHECK(store->snapshot()->name(d) == "Nordnet" && store->snapshot()->findDataset("nordnet") == d);
 }
 
 TEST(a_file_of_the_first_schema_is_converted_to_keys) {
@@ -366,7 +365,7 @@ TEST(a_market_is_kept_under_a_key_of_its_own_and_its_mic_is_a_fact) {
   {
     auto store = makeMemoryStore(optionsFor(openSqliteFactStore(t.file), clock));
     MarketId hel = store->resolveMarket({{predicate::name, "Nasdaq Helsinki"}});  // known by its name first
-    store->setAttribute(hel, {predicate::mic, "XHEL"});                      // its MIC learned later
+    store->setAttribute(hel, {predicate::mic, "XHEL"});                           // its MIC learned later
     MarketId other = store->resolveMarket({{predicate::nordnetId, "7"}});         // one with no MIC and no name
     store->setAttribute(other, {predicate::country, "SE"});
   }
@@ -466,7 +465,7 @@ TEST(a_mic_that_a_market_of_the_file_has_is_not_given_to_another) {
   CHECK(!store->snapshot()->fact(other, predicate::mic) && told.size() == 1);
   // Said first of the market that is meant, it is that market: the held one is found by its MIC.
   MarketId hel = store->resolveMarket({{predicate::mic, "XHEL"}});
-  CHECK(hel.name == "Nasdaq Helsinki" && hel.value != other.value && told.size() == 1);
+  CHECK(store->snapshot()->name(hel) == "Nasdaq Helsinki" && hel.value != other.value && told.size() == 1);
 }
 
 TEST(a_file_that_gives_two_markets_the_same_mic_is_told_of) {
@@ -483,7 +482,7 @@ TEST(a_file_that_gives_two_markets_the_same_mic_is_told_of) {
   options.notice = [&](const std::string & text) { told.push_back(text); };
   auto store = makeMemoryStore(std::move(options));
   CHECK(told.size() == 1 && told[0].find("mic XHEL") != std::string::npos && told[0].find("2 markets") != std::string::npos);
-  CHECK(store->resolveMarket({{predicate::mic, "XHEL"}}).id.valid());  // and goes on: the lowest key is the market
+  CHECK(store->resolveMarket({{predicate::mic, "XHEL"}}).valid());  // and goes on: the lowest key is the market
 }
 
 TEST(a_file_that_is_no_database_is_moved_aside_and_replaced) {

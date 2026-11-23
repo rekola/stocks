@@ -340,3 +340,16 @@ TEST(a_fund_has_no_intraday_so_its_day_and_week_are_the_daily_request_and_what_t
   loader.waitIdle();
   CHECK(http.urls.size() == 2);
 }
+
+TEST(a_dataset_is_found_by_its_code_and_not_by_a_name_that_can_change) {
+  World w;
+  EdgeKey k = w.edge(InstrumentKind::Company, "book-1");
+  w.store->addDataset("nordnet", "Nordnet, as a person calls it");  // the name is a fact, and it was changed
+  CHECK(w.store->snapshot()->name(w.nordnet) == "Nordnet, as a person calls it");
+  FakeHttp http;
+  http.answer = [](const std::string &) { return ok(fixture("history-stock-day.json")); };
+  HistoryLoader loader(w.store, borrow(http), quickly(), [] {});
+  loader.want({k});
+  loader.waitIdle();
+  CHECK(http.urls.size() == 1 && w.days(k).candles.size() > 1);  // the history was loaded, as before the name changed
+}
