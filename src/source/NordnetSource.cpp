@@ -412,7 +412,12 @@ void NordnetSource::load(Store & store, Http & http, SourceListener & listener) 
           const MarketId market =
               b.addMarket(mic, marketName ? marketName : "");
           b.setAttribute(market, {predicate::country, l.country});
-          const InstrumentId base = b.addInstrument("", l.name, kindOfNordnetType(l.type), l.isin, l.type);
+          // Nordnet says the name and type of an instrument from its home listing (the market of the ISIN's country); a
+        // listing elsewhere says them only where none are said yet, so two listings do not take turns at it.
+        const std::string country = b.view().said(NodeRef(market), predicate::country);
+        const bool home = !country.empty() && l.isin.compare(0, 2, country) == 0;
+        const InstrumentId base = home ? b.addInstrument("", l.name, kindOfNordnetType(l.type), l.isin, l.type)
+                                       : addInstrumentUnlessSaid(b, "", l.name, kindOfNordnetType(l.type), l.isin, l.type);
           const InstrumentId quote = currencyNode(b, l.currency);
           // What Nordnet says of the instrument itself: thin edges, of the types it has.
           b.setAttributes(base, l.attributes);

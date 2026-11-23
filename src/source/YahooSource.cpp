@@ -28,7 +28,7 @@ std::optional<double> number(const json & column, size_t i) {
 // The instrument an entry is about: its ISIN is in the data (Yahoo gives none); a currency is its code.
 InstrumentId baseOf(Batch & store, const ListEntry & e) {
   if (e.kind == InstrumentKind::Currency) return currencyNode(store, e.base);
-  return store.addInstrument("", e.name, e.kind, e.isin);
+  return addInstrumentUnlessSaid(store, "", e.name, e.kind, e.isin);
 }
 
 // The ticker as a path segment: an index's caret is escaped.

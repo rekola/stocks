@@ -7,6 +7,8 @@
 #include "source/InstrumentTypes.h"
 #include "source/NordnetSource.h"
 
+#include <nlohmann/json.hpp>
+
 #include <fstream>
 #include <set>
 #include <sstream>
@@ -185,6 +187,61 @@ TEST(a_page_of_a_list_is_one_publication) {
   const auto after = store->snapshot();
   CHECK(http.urls.size() == 1 && listener.changes == 1);
   CHECK(after->version() == before->version() + 1 && after->quoteRowCount() > 0 && before->quoteRowCount() == 0);
+}
+
+namespace {
+
+// A page of the ETF list holding the first fixture row once per (market id, country, name), all of one ISIN.
+std::string pageOfListings(const std::string & isin, const std::vector<std::tuple<int, std::string, std::string>> & rows) {
+  using nlohmann::json;
+  const json first = json::parse(fixture("etflist-1.json"))["results"][0];
+  json page = {{"rows", rows.size()}, {"total_hits", rows.size()}, {"results", json::array()}};
+  for (const auto & [market, country, name] : rows) {
+    json row = first;
+    row["instrument_info"]["isin"] = isin;
+    row["instrument_info"]["long_name"] = name;
+    row["market_info"]["market_id"] = market;
+    row["exchange_info"] = {{"exchange_country", country}};
+    page["results"].push_back(row);
+  }
+  return page.dump();
+}
+
+}  // namespace
+
+TEST(listings_of_one_isin_with_different_names_leave_one_name_and_no_change_on_the_next_pass) {
+  // Xetra (DE), Stockholm (SE) and Copenhagen (DK): the home listing of a DE ISIN is the first, of an IE one there is none.
+  for (const std::string isin : {"DE0007164600", "IE00BHZRR030"}) {
+    auto store = makeMemoryStore();
+    FakeHttp http;
+    const bool hasHome = isin.substr(0, 2) == "DE";
+    http.answer = [&](const std::string &) {
+      return ok(pageOfListings(isin, {{11, "SE", "Abroad"}, {4, "DE", "Home"}, {14, "DK", "Elsewhere"}}));
+    };
+    Listener listener;
+    auto lists = NordnetSource::defaultLists();
+    lists.resize(1);
+    NordnetSource source(lists, std::chrono::milliseconds(0));
+    source.load(*store, http, listener);
+    const auto id = store->snapshot()->findInstrumentByIsin(isin);
+    CHECK(id.has_value());
+    // With a home listing its name stands; without one, the first said does (the Xetra row is the second here).
+    const std::string name = store->snapshot()->name(NodeRef(*id));
+    CHECK(name == (hasHome ? "Home" : "Abroad"));
+    const uint64_t version = store->snapshot()->version();
+    source.load(*store, http, listener);
+    CHECK(store->snapshot()->name(NodeRef(*id)) == name && store->snapshot()->version() == version);
+  }
+}
+
+TEST(a_source_that_is_not_the_instruments_own_says_its_name_and_type_only_where_none_is_said) {
+  auto store = makeMemoryStore();
+  store->batch([&](Batch & b) {
+    addInstrumentUnlessSaid(b, "", "First", InstrumentKind::Fund, "IE00BGV5VN51", "FUND");
+    addInstrumentUnlessSaid(b, "", "Second", InstrumentKind::Fund, "IE00BGV5VN51", "OTHER");
+  });
+  const auto id = *store->snapshot()->findInstrumentByIsin("IE00BGV5VN51");
+  CHECK(store->snapshot()->name(NodeRef(id)) == "First" && store->snapshot()->said(NodeRef(id), predicate::type) == "FUND");
 }
 
 TEST(loading_again_replaces_todays_bars_and_a_new_day_adds_one) {

@@ -186,7 +186,11 @@ everything else on them are not kept, and there is no server in this step.
   `%LOCALAPPDATA%\stocks` on Windows); `--no-facts` runs without. `makeMemoryStore()` with no argument keeps nothing, which
   is what the tests use.
 - **Not done**: any loader that writes new facts (they will be ordinary attributes through the same writes), node-valued links,
-  and a rule for which source stands when two disagree (the last said stands).
+  and a rule for which source stands when two disagree beyond the one below.
+- **Whose name and type stand**: an instrument's `name` and `type` are last said, so two sources or two listings with different
+  words would take turns on every pass. The sources decide what they say, not the store: Nordnet says them from the home
+  listing (the market whose `country` is the ISIN's first two letters) and from another listing only where none are said yet;
+  Yahoo and the fund sources say them only where none are said yet. `kind` and `isin` are the same wherever they come from.
 
 ## Node keys
 
@@ -251,7 +255,7 @@ its users). Countries that no longer exist (`SU`, `YU`) are kept: markets and IS
 - Any loader that writes new facts (they will be ordinary attributes through the same writes).
 - **Links between nodes** (a company's `ceo`, issued by, tracks, underlying of, a market's country): a value that refers to
   another node, with a validity period, an index on such objects and a link in the attribute viewer. See `server.md`.
-- A rule for which source stands when two disagree (the last said stands).
+- A rule for which source stands when two disagree, beyond whose name and type stand (above); otherwise the last said stands.
 
 ## Steps
 
