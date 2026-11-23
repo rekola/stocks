@@ -148,10 +148,13 @@ country) are kept in a local SQLite file, so a restart shows what an earlier run
 everything else on them are not kept, and there is no server in this step.
 
 - **A fact** is `(node, predicate, value, updated)`. `updated` is when a source last *said* it, whether or not the value
-  was the same as before, taken by the store where the write happens (UTC, milliseconds). It is not when the value last
+  was the same as before, taken by the store where the write happens (UTC, milliseconds), and only to within the recheck
+  interval (`StoreOptions::recheck_interval`, an hour by default): a value said again that was last said less than the
+  interval ago changes nothing at all, so a refresh that repeats thousands of facts every few minutes writes none of them;
+  an older one gets the time of the write. A changed value is written at once. It is not when the value last
   changed: the data is loaded too seldom to know that, so no such claim is made. `Snapshot::attributes()` and
-  `Snapshot::fact()` return it (`Attribute::updated`); `Attribute` equality ignores it. A write of an unchanged value moves
-  `updated` and makes **no new version**, so nothing that watches the version (the table) wakes; a changed value makes one.
+  `Snapshot::fact()` return it (`Attribute::updated`); `Attribute` equality ignores it. A write of an unchanged value that is
+  older than the interval moves `updated` and makes **no new version**, so nothing that watches the version (the table) wakes; a changed value makes one.
 - **A node is named by its key** (`src/model/NodeKey.h`, see "Node keys"), the same number in every run, so the file
   needs no matching up: a fact is kept under the key of its node. A node is what is said of it, and a node that has no
   edge is simply not shown by anything.

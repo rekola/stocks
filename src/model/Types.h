@@ -75,8 +75,9 @@ inline std::optional<bool> asBoolean(const Value & v) {
 // there are is data. Edges are not nodes: a fat edge is a Listing, below, which has the dataset.
 //
 // A fact also says when it was stored: `updated` is when a source last said it, whether or not the value was the same as
-// before (set by the store where the write happens, 0 on one a source has just made). It does not say when the value
-// last changed: sources are read too seldom to know that. Two attributes are equal when they say the same, whatever the
+// before, to within the store's recheck interval (an hour by default): a value said again sooner than that after `updated`
+// leaves it as it was. It is set by the store where the write happens, 0 on one a source has just made. It does not say when
+// the value last changed: sources are read too seldom to know that. Two attributes are equal when they say the same, whatever the
 // time: "did it change" never looks at it.
 struct Attribute {
   std::string predicate;
