@@ -222,9 +222,15 @@ void Browser::refresh() {
   if (quotes && preset == shown_preset_) {
     // The same preset with new data: change the rows in place, which keeps the scroll position, the sort and the selection
     // (setModel would put the table back at the top).
-    quotes->reset(snapshot, edgesOf(*snapshot, kPresets[preset]));
+    // Most changes are new bars for rows already listed: then the rows stay as they are, and with no sort the order too, so the
+    // table is drawn again and nothing is sorted or put in order again.
+    std::vector<EdgeKey> edges = edgesOf(*snapshot, kPresets[preset]);
+    const bool same_rows = edges == quotes->edges();
+    if (same_rows) quotes->setSnapshot(snapshot);
+    else quotes->reset(snapshot, std::move(edges));
     shown_version_ = snapshot->version();
-    table_.modelChanged();
+    if (same_rows && table_.sortColumn() < 0) table_.render();
+    else table_.modelChanged();
   } else {
     const int column = table_.sortColumn();
     const SortOrder order = table_.sortOrder();
