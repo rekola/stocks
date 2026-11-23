@@ -367,14 +367,14 @@ TEST(without_a_sort_the_rows_stay_where_they_are_and_a_new_row_goes_last) {
 
 TEST(a_new_row_in_another_market_is_not_shown_and_one_in_the_shown_market_goes_last) {
   Fixture f(false);
-  Instrument eur = f.store->addInstrument({{}, "EUR", "Euro", InstrumentKind::Currency});
-  Instrument usd = f.store->addInstrument({{}, "USD", "US dollar", InstrumentKind::Currency});
-  Instrument aud = f.store->addInstrument({{}, "AUD", "Australian dollar", InstrumentKind::Currency});
-  Instrument gbp = f.store->addInstrument({{}, "GBP", "British pound", InstrumentKind::Currency});
-  Market currencies = f.store->addMarket({{}, "Currencies"});
-  Market other = f.store->addMarket({{}, "Other"});
-  Dataset a = f.store->addDataset({{}, "providera"});
-  EdgeKey eurusd{eur.id, usd.id, currencies.id, a.id}, audusd{aud.id, usd.id, currencies.id, a.id}, gbpusd{gbp.id, usd.id, other.id, a.id};
+  InstrumentId eur = f.store->addInstrument("EUR", "Euro", InstrumentKind::Currency);
+  InstrumentId usd = f.store->addInstrument("USD", "US dollar", InstrumentKind::Currency);
+  InstrumentId aud = f.store->addInstrument("AUD", "Australian dollar", InstrumentKind::Currency);
+  InstrumentId gbp = f.store->addInstrument("GBP", "British pound", InstrumentKind::Currency);
+  MarketId currencies = f.store->addMarket("Currencies");
+  MarketId other = f.store->addMarket("Other");
+  DatasetId a = f.store->addDataset("providera");
+  EdgeKey eurusd{eur, usd, currencies, a}, audusd{aud, usd, currencies, a}, gbpusd{gbp, usd, other, a};
   const std::vector<Candle> bars = {{0, 1, 1, 1, 1.0, 1}, {1000, 1, 1, 1, 1.1, 1}};
   f.store->appendCandles(eurusd, Resolution::Day, bars);
   f.app->execute("show-currencies");
