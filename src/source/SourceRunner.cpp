@@ -27,15 +27,21 @@ SourceRunner::SourceRunner(std::shared_ptr<Store> store, std::vector<std::unique
     using Clock = std::chrono::steady_clock;
     Listener listener(stop_, std::move(onChanged), std::move(onMessage));
     std::unique_ptr<Http> http = makeHttp();
-    std::vector<Clock::time_point> due(sources.size(), Clock::time_point::max());  // max: not again
-
+    const size_t n = sources.size();
+    // When each source is loaded again, then when each is asked for another batch of its details; max: not again.
+    std::vector<Clock::time_point> due(2 * n, Clock::time_point::max());
     auto load = [&](size_t i) {
       sources[i]->load(*store, *http, listener);
       auto interval = sources[i]->refreshInterval();
       if (interval.count() > 0) due[i] = Clock::now() + interval;
       else due[i] = Clock::time_point::max();
+      if (due[n + i] == Clock::time_point::max()) due[n + i] = Clock::now();  // a load may have found instruments to fill in
     };
-    for (size_t i = 0; i < sources.size(); i++) {  // each once, in order
+    auto details = [&](size_t i) {
+      bool more = sources[i]->loadDetails(*store, *http, listener);
+      due[n + i] = more ? Clock::now() + sources[i]->detailsInterval() : Clock::time_point::max();
+    };
+    for (size_t i = 0; i < n; i++) {  // each once, in order
       if (stop_) return;
       load(i);
     }
@@ -46,8 +52,10 @@ SourceRunner::SourceRunner(std::shared_ptr<Store> store, std::vector<std::unique
       wake_.wait_until(lock, next, [this] { return stop_.load(); });
       if (stop_) return;
       lock.unlock();
-      for (size_t i = 0; i < sources.size() && !stop_; i++)
+      for (size_t i = 0; i < n && !stop_; i++) {
         if (due[i] <= Clock::now()) load(i);
+        if (!stop_ && due[n + i] <= Clock::now()) details(i);
+      }
       lock.lock();
     }
   });

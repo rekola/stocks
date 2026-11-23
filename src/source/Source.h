@@ -25,6 +25,12 @@ class Source {
   virtual void load(Store &, Http &, SourceListener &) = 0;
   // How often to load again, measured from when the last load ended; zero (the default) is once.
   virtual std::chrono::milliseconds refreshInterval() const { return std::chrono::milliseconds(0); }
+  // What a provider says of each instrument beyond its lists (a description, the number of shares, ratings and fees), asked
+  // for one instrument at a time. Few sources have any. It fills in one batch, so that the lists are not kept waiting, and
+  // says whether more remain; the runner calls it again after `detailsInterval()`, and after every load, which may have
+  // found new instruments.
+  virtual bool loadDetails(Store &, Http &, SourceListener &) { return false; }
+  virtual std::chrono::milliseconds detailsInterval() const { return std::chrono::seconds(30); }
 };
 
 // Posted to the UI thread when a source has changed the store, and when it has something to say.

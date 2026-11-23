@@ -1,0 +1,49 @@
+{
+ "companyProfile": {
+  "isin": "US00287Y1091",
+  "companyIdentity": {
+   "companyName": "AbbVie, Inc.",
+   "businessDescription": "AbbVie, Inc. on tutkimuspohjainen biofarmaseuttinen yritys, joka harjoittaa lääketuotteiden kehitystä ja myyntiä. Se keskittyy hoitamaan sairauksia, kuten kroon",
+   "websiteUrl": "http://www.abbvie.com"
+  },
+  "address": {
+   "country": "USA"
+  },
+  "marketInfo": {
+   "publicShares": 1767616306,
+   "commonSharesOutstandingBasic": 1769000000,
+   "commonSharesOutstandingDiluted": 1772000000
+  },
+  "classification": {
+   "economy": {
+    "displayName": "Terveydenhuolto",
+    "economy": "HEALTHCARE"
+   },
+   "sector": {
+    "displayName": "Terveydenhuolto",
+    "sector": "HEALTHCARE"
+   },
+   "industry": {
+    "displayName": "Lääkevalmistajat",
+    "industry": "DRUG_MANUFACTURERS_MAJOR"
+   }
+  }
+ },
+ "keyFiguresPreviews": [
+  {
+   "keyFigureType": "REVENUE",
+   "currentValue": 61160000000.0,
+   "unit": "CURRENCY"
+  },
+  {
+   "keyFigureType": "EBIT",
+   "currentValue": 20913000000.0,
+   "unit": "CURRENCY"
+  },
+  {
+   "keyFigureType": "PRICE_EARNINGS_RATIO",
+   "currentValue": 48.7978659323638,
+   "unit": "NONE"
+  }
+ ]
+}

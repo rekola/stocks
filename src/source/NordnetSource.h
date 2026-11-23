@@ -1,5 +1,6 @@
 #pragma once
 
+#include "source/NordnetDetails.h"
 #include "source/Source.h"
 
 #include <chrono>
@@ -67,6 +68,10 @@ class NordnetSource : public Source {
   std::string description() const override { return "Nordnet: instrument discovery (ETFs, certificates, funds, stocks), no key"; }
   void load(Store &, Http &, SourceListener &) override;
   std::chrono::milliseconds refreshInterval() const override { return refresh_; }
+  // The description, shares, ratings and fees of the instruments the lists found, 300 at a time.
+  bool loadDetails(Store & store, Http & http, SourceListener & listener) override {
+    return details_.loadBatch(store, http, listener, pause_, 300);
+  }
 
   // What load() found, for the history step. Valid once load() has returned.
   const std::vector<NordnetListing> & listings() const { return listings_; }
@@ -97,6 +102,7 @@ class NordnetSource : public Source {
   std::chrono::milliseconds refresh_;
   std::vector<NordnetListing> listings_;
   std::vector<NordnetIndicator> indicators_;
+  NordnetDetails details_;
   size_t loadIndicators(const List &, Store &, Http &, SourceListener &, bool & stop);
   std::map<std::string, std::chrono::steady_clock::time_point> loaded_;  // when each list was last loaded
 };

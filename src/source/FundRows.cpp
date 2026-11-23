@@ -124,9 +124,9 @@ bool writeFund(Store & store, const std::string & datasetName, const std::string
   if (f.managementFee) said.push_back({"management-fee", *f.managementFee});
   if (f.subscriptionFee) said.push_back({"subscription-fee", *f.subscriptionFee});
   if (f.redemptionFee) said.push_back({"redemption-fee", *f.redemptionFee});
-  if (f.risk) said.push_back({"fund-risk-class", *f.risk});
-  if (f.rating) said.push_back({"fund-morningstar-rating", *f.rating});
-  if (f.esg) said.push_back({"fund-esg-rating", *f.esg});
+  if (f.risk) said.push_back({"risk-class", *f.risk});
+  if (f.rating) said.push_back({"morningstar-rating", *f.rating});
+  if (f.esg) said.push_back({"esg-rating", *f.esg});
   store.setAttributes(base.id, said);
   const EdgeKey edge{base.id, quote.id, market.id, dataset.id};
   store.appendCandles(edge, Resolution::Day, bars);

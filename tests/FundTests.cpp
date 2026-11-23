@@ -142,8 +142,8 @@ TEST(the_fund_source_writes_funds_as_nav_bars_and_drops_sparse_series) {
     for (const InfoRow & row : section.rows) shown += section.title + "/" + row.predicate + "=" + row.value.text + "\n";
   CHECK(shown.find("Instrument/redemption-fee=0.5") != std::string::npos);
   CHECK(shown.find("Instrument/management-fee=1.53") != std::string::npos);
-  CHECK(shown.find("Instrument/fund-risk-class=6") != std::string::npos);
-  CHECK(shown.find("Instrument/fund-morningstar-rating=4") != std::string::npos);
+  CHECK(shown.find("Instrument/risk-class=6") != std::string::npos);
+  CHECK(shown.find("Instrument/morningstar-rating=4") != std::string::npos);
 }
 
 TEST(an_op_page_gives_its_token_without_a_leading_ampersand) {
