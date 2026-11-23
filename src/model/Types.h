@@ -125,7 +125,7 @@ inline constexpr double kUndefined = std::numeric_limits<double>::quiet_NaN();
 inline bool isDefined(double v) { return v == v; }
 
 // What an instrument is, in one vocabulary for all providers: each adapter maps its own types onto these (Nordnet's UETF
-// and PTC, Yahoo's EQUITY and FUTURE, ...). The provider's own type is kept beside it, in `Instrument::type`.
+// and PTC, Yahoo's EQUITY and FUTURE, ...). The provider's own type is kept beside it, under `predicate::type`.
 enum class InstrumentKind { Company, Currency, Commodity, Index, Etf, Certificate, Fund, Unit, Other };  // a unit: what an index is quoted in
 
 inline const char * kindName(InstrumentKind k) {
@@ -149,14 +149,9 @@ inline InstrumentKind kindOfName(const std::string & s) {
   return InstrumentKind::Other;
 }
 
-// The resolved view of an instrument's attributes, for the app.
-struct Instrument {
-  InstrumentId id;
-  std::string symbol, name;  // a symbol said of the instrument itself (a currency's code); the ones markets give are on edges
-  InstrumentKind kind = InstrumentKind::Other;
-  std::string isin;  // an instrument with an ISIN is that ISIN: one listed on two markets is one instrument
-  std::string type;  // the provider's own type ("UETF", "EQUITY"), beside the combined kind
-};
+// An instrument is not a record either: it is its `InstrumentId` (an ISIN, or a currency's or a unit's code), and what is said of it
+// is facts: the symbol, the name, the kind and the provider's own type ("UETF", "EQUITY"), read with `Snapshot::symbol()`, `name()`,
+// `kind()` and `said()`; the ISIN is the id itself (`Snapshot::isin()`). One listed on two markets is one instrument.
 
 // A market and a dataset are not records: a market is its key (`MarketId`, minted when it was first said) and a dataset is its
 // code (`DatasetId`, one to ten letters or digits that its adapter defines and never changes); what is said of either, its name

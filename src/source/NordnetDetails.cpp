@@ -172,11 +172,11 @@ bool NordnetDetails::loadBatch(Store & store, Http & http, SourceListener & list
       for (const EdgeKey & edge : snapshot->edges(market)) {
         if (edge.dataset != *dataset || tried_.count(edge.base.value) || !seen.insert(edge.base.value).second) continue;
         auto listing = snapshot->listing(edge);
-        auto instrument = snapshot->instrument(edge.base);
-        if (!listing || listing->orderBook.empty() || !instrument) continue;
+        if (!listing || listing->orderBook.empty() || !snapshot->known(NodeRef(edge.base))) continue;
         if (snapshot->attribute(edge.base, "description")) continue;  // asked for in an earlier run
-        bool fund = instrument->kind == InstrumentKind::Fund || instrument->kind == InstrumentKind::Etf;
-        if (!fund && instrument->kind != InstrumentKind::Company) continue;
+        const InstrumentKind kind = snapshot->kind(edge.base);
+        const bool fund = kind == InstrumentKind::Fund || kind == InstrumentKind::Etf;
+        if (!fund && kind != InstrumentKind::Company) continue;
         targets.push_back({edge.base, listing->orderBook, fund});
       }
     }

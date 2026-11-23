@@ -24,15 +24,15 @@ static double since(Clock::time_point t) { return std::chrono::duration<double, 
 int main(int argc, char ** argv) {
   const int rows = argc > 1 ? std::atoi(argv[1]) : 30000;
   std::shared_ptr<Store> store = makeMemoryStore();
-  Instrument usd = store->addInstrument({{}, "USD", "US dollar", InstrumentKind::Currency});
+  const InstrumentId usd = store->addInstrument("USD", "US dollar", InstrumentKind::Currency);
   const MarketId market = store->addMarket("Nasdaq Helsinki");
   const DatasetId dataset = store->addDataset("nordnet");
   const int64_t today = dayNumber(2026, 12, 1);
   std::mt19937 rng(1);
   std::uniform_real_distribution<double> step(-0.02, 0.021);
   for (int i = 0; i < rows; i++) {
-    Instrument inst = store->addInstrument({{}, "", "Stock " + std::to_string(i), InstrumentKind::Company, isinOf(i)});
-    EdgeKey k{inst.id, usd.id, market, dataset};
+    const InstrumentId inst = store->addInstrument("", "Stock " + std::to_string(i), InstrumentKind::Company, isinOf(i));
+    EdgeKey k{inst, usd, market, dataset};
     double p = 50;
     std::vector<Candle> bars;
     for (int j = 60; j >= 0; j--) bars.push_back({today - j, p, p, p, p *= 1.0 + step(rng), 1000});

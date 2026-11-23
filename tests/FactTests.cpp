@@ -140,10 +140,10 @@ TEST(a_node_is_what_is_said_of_it_so_a_restart_shows_facts_and_no_edges) {
   Clock clock;
   {
     auto store = makeMemoryStore(optionsFor(openSqliteFactStore(t.file), clock));
-    Instrument nokia = store->resolveInstrument({{predicate::isin, kIsin}}, {{predicate::name, "Nokia"}});
+    InstrumentId nokia = store->resolveInstrument({{predicate::isin, kIsin}}, {{predicate::name, "Nokia"}});
     MarketId hel = store->resolveMarket({{predicate::mic, "XHEL"}, {predicate::name, "Nasdaq Helsinki"}});
     DatasetId d = store->addDataset("providera");
-    store->appendCandles({nokia.id, nokia.id, hel, d}, Resolution::Day, {{1, 1, 1, 1, 1, 1}});
+    store->appendCandles({nokia, nokia, hel, d}, Resolution::Day, {{1, 1, 1, 1, 1, 1}});
   }
   auto store = makeMemoryStore(optionsFor(openSqliteFactStore(t.file), clock));
   auto s = store->snapshot();
@@ -152,7 +152,7 @@ TEST(a_node_is_what_is_said_of_it_so_a_restart_shows_facts_and_no_edges) {
   CHECK(s->nodeCount(NodeType::Instrument) == 1 && s->nodeCount(NodeType::Market) == 1 && s->nodeCount(NodeType::Dataset) == 1);
   const auto nokia = s->findInstrumentByIsin(kIsin);
   const auto hel = s->findMarket("Nasdaq Helsinki");
-  CHECK(nokia && nokia->name == "Nokia" && hel && s->findDataset("providera"));
+  CHECK(nokia && s->name(*nokia) == "Nokia" && hel && s->findDataset("providera"));
   CHECK(hel && s->edges(*hel).empty() && s->edgeMarkets().empty());
 }
 
@@ -162,9 +162,9 @@ TEST(an_instrument_is_its_isin_and_a_currency_or_unit_its_code) {
   InstrumentId eur, pts, nokia;
   {
     auto store = makeMemoryStore(optionsFor(openSqliteFactStore(t.file), clock));
-    eur = store->addInstrument({{}, "EUR", "Euro", InstrumentKind::Currency}).id;
-    pts = store->addInstrument({{}, "pts", "Index points", InstrumentKind::Unit}).id;
-    nokia = store->addInstrument({{}, "NOKIA", "Nokia", InstrumentKind::Company, kIsin}).id;
+    eur = store->addInstrument("EUR", "Euro", InstrumentKind::Currency);
+    pts = store->addInstrument("pts", "Index points", InstrumentKind::Unit);
+    nokia = store->addInstrument("NOKIA", "Nokia", InstrumentKind::Company, kIsin);
     store->setAttribute(eur, {"country", "EU"});
   }
   CHECK(eur.value == numberOf(currencyKey("EUR")) && pts.value == numberOf(currencyKey("pts")) && nokia.value == numberOf(instrumentKey(kIsin)));
@@ -176,13 +176,13 @@ TEST(an_instrument_is_its_isin_and_a_currency_or_unit_its_code) {
 TEST(an_instrument_with_no_isin_that_is_no_currency_is_given_one_of_ours) {
   Clock clock;
   auto store = makeMemoryStore(optionsFor(nullptr, clock));
-  Instrument acme = store->addInstrument({{}, "ACME", "Acme Corporation", InstrumentKind::Company});
-  CHECK(acme.id.valid() && acme.isin == privateIsin("ACME") && acme.symbol == "ACME");
-  CHECK(acme.id.value == numberOf(instrumentKey(privateIsin("ACME"))));
-  CHECK(store->addInstrument({{}, "ACME", "Acme again", InstrumentKind::Company}).id == acme.id);  // the same one: said by its symbol again
+  InstrumentId acme = store->addInstrument("ACME", "Acme Corporation", InstrumentKind::Company);
+  CHECK(acme.valid() && store->snapshot()->isin(acme) == privateIsin("ACME") && store->snapshot()->symbol(acme) == "ACME");
+  CHECK(acme.value == numberOf(instrumentKey(privateIsin("ACME"))));
+  CHECK(store->addInstrument("ACME", "Acme again", InstrumentKind::Company) == acme);  // the same one: said by its symbol again
   // One with no symbol is made from its name, if that fits.
-  Instrument named = store->addInstrument({{}, "", "Zinc", InstrumentKind::Commodity});
-  CHECK(named.isin == privateIsin("Zinc") && named.id.valid());
+  InstrumentId named = store->addInstrument("", "Zinc", InstrumentKind::Commodity);
+  CHECK(store->snapshot()->isin(named) == privateIsin("Zinc") && named.valid());
 }
 
 TEST(what_cannot_be_given_a_key_is_refused_and_told_of) {
@@ -191,9 +191,9 @@ TEST(what_cannot_be_given_a_key_is_refused_and_told_of) {
   StoreOptions options = optionsFor(nullptr, clock);
   options.notice = [&](const std::string & text) { told.push_back(text); };
   auto store = makeMemoryStore(std::move(options));
-  CHECK(!store->addInstrument({{}, "NOKIA", "Nokia", InstrumentKind::Company, "FI0009000680"}).id.valid());  // the check digit is wrong
-  CHECK(!store->addInstrument({{}, "", "A name that is much too long for a private ISIN", InstrumentKind::Other}).id.valid());
-  CHECK(!store->addInstrument({{}, "A CURRENCY CODE", "Too long", InstrumentKind::Currency}).id.valid());
+  CHECK(!store->addInstrument("NOKIA", "Nokia", InstrumentKind::Company, "FI0009000680").valid());  // the check digit is wrong
+  CHECK(!store->addInstrument("", "A name that is much too long for a private ISIN", InstrumentKind::Other).valid());
+  CHECK(!store->addInstrument("A CURRENCY CODE", "Too long", InstrumentKind::Currency).valid());
   CHECK(!store->addDataset("provider-a").valid());  // a code is letters and digits
   CHECK(!store->addDataset("morethanten1").valid());
   CHECK(told.size() == 5);
@@ -248,22 +248,22 @@ TEST(a_file_of_the_first_schema_is_converted_to_keys) {
 TEST(an_unchanged_write_moves_updated_and_makes_no_version) {
   Clock clock;
   auto store = makeMemoryStore(optionsFor(nullptr, clock));
-  Instrument nokia = store->addInstrument({{}, "NOKIA", "Nokia", InstrumentKind::Company, kIsin});
-  store->setAttribute(nokia.id, {predicate::iconUrl, "http://icons/nokia.png"});
+  InstrumentId nokia = store->addInstrument("NOKIA", "Nokia", InstrumentKind::Company, kIsin);
+  store->setAttribute(nokia, {predicate::iconUrl, "http://icons/nokia.png"});
   const uint64_t version = store->snapshot()->version();
-  auto first = store->snapshot()->fact(nokia.id, predicate::iconUrl);
+  auto first = store->snapshot()->fact(nokia, predicate::iconUrl);
   CHECK(first && first->updated == 1000);
 
   clock.now = 2000;
-  store->setAttribute(nokia.id, {predicate::iconUrl, "http://icons/nokia.png"});
-  auto again = store->snapshot()->fact(nokia.id, predicate::iconUrl);
+  store->setAttribute(nokia, {predicate::iconUrl, "http://icons/nokia.png"});
+  auto again = store->snapshot()->fact(nokia, predicate::iconUrl);
   CHECK(store->snapshot()->version() == version);
   CHECK(again && again->updated == 2000);  // said again: stored again, whatever the value
-  CHECK(std::get<std::string>(valueOf(*store->snapshot(), nokia.id, predicate::iconUrl)) == "http://icons/nokia.png");
+  CHECK(std::get<std::string>(valueOf(*store->snapshot(), nokia, predicate::iconUrl)) == "http://icons/nokia.png");
 
   // The times are on what attributes() returns too, and do not take part in equality.
   bool found = false;
-  for (const Attribute & a : store->snapshot()->attributes(nokia.id))
+  for (const Attribute & a : store->snapshot()->attributes(nokia))
     if (a.predicate == predicate::iconUrl) found = a.updated == 2000;
   CHECK(found);
   Attribute x(predicate::iconUrl, "x"), y = x;
@@ -271,8 +271,8 @@ TEST(an_unchanged_write_moves_updated_and_makes_no_version) {
   CHECK(x == y);
 
   clock.now = 3000;
-  store->setAttribute(nokia.id, {predicate::iconUrl, "http://icons/new.png"});
-  auto changed = store->snapshot()->fact(nokia.id, predicate::iconUrl);
+  store->setAttribute(nokia, {predicate::iconUrl, "http://icons/new.png"});
+  auto changed = store->snapshot()->fact(nokia, predicate::iconUrl);
   CHECK(store->snapshot()->version() == version + 1);
   CHECK(changed && changed->updated == 3000);
 }
@@ -282,9 +282,9 @@ TEST(a_value_nobody_can_say_is_not_said_or_kept) {
   Clock clock;
   {
     auto store = makeMemoryStore(optionsFor(openSqliteFactStore(t.file), clock));
-    Instrument nokia = store->addInstrument({{}, "NOKIA", "Nokia", InstrumentKind::Company, kIsin});
-    store->setAttribute(nokia.id, {"shares", std::nan("")});
-    CHECK(!store->snapshot()->fact(nokia.id, "shares"));
+    InstrumentId nokia = store->addInstrument("NOKIA", "Nokia", InstrumentKind::Company, kIsin);
+    store->setAttribute(nokia, {"shares", std::nan("")});
+    CHECK(!store->snapshot()->fact(nokia, "shares"));
   }
   for (const StoredFact & f : openSqliteFactStore(t.file)->loadAll()) CHECK(f.predicate != "shares");
 }
@@ -294,30 +294,30 @@ TEST(a_restart_shows_what_was_said_and_when_it_was_last_stored) {
   Clock clock;
   {
     auto store = makeMemoryStore(optionsFor(openSqliteFactStore(t.file), clock));
-    Instrument nokia = store->addInstrument({{}, "NOKIA", "Nokia", InstrumentKind::Company, kIsin});
-    store->setAttributes(nokia.id, {{"shares", int64_t{5'600'000'000}}, {"free-float", 0.75}, {"halal", true}});
+    InstrumentId nokia = store->addInstrument("NOKIA", "Nokia", InstrumentKind::Company, kIsin);
+    store->setAttributes(nokia, {{"shares", int64_t{5'600'000'000}}, {"free-float", 0.75}, {"halal", true}});
     MarketId hel = store->resolveMarket({{predicate::mic, "XHEL"}, {predicate::name, "Nasdaq Helsinki"}});
     store->setAttribute(hel, {predicate::country, "FI"});
     clock.now = 1500;
-    store->setAttribute(nokia.id, {"shares", int64_t{5'600'000'000}});  // said again: only updated moves, and is kept without a version
+    store->setAttribute(nokia, {"shares", int64_t{5'600'000'000}});  // said again: only updated moves, and is kept without a version
   }  // the store's end writes everything
 
   clock.now = 9000;
   auto store = makeMemoryStore(optionsFor(openSqliteFactStore(t.file), clock));
-  Instrument nokia = store->addInstrument({{}, "NOKIA", "Nokia", InstrumentKind::Company, kIsin});
-  Attribute shares = factOf(*store->snapshot(), nokia.id, "shares");
+  InstrumentId nokia = store->addInstrument("NOKIA", "Nokia", InstrumentKind::Company, kIsin);
+  Attribute shares = factOf(*store->snapshot(), nokia, "shares");
   CHECK(std::get<int64_t>(shares.value) == 5'600'000'000 && shares.updated == 1500);
-  CHECK(std::get<double>(valueOf(*store->snapshot(), nokia.id, "free-float")) == 0.75);
-  CHECK(std::get<bool>(valueOf(*store->snapshot(), nokia.id, "halal")) == true);
+  CHECK(std::get<double>(valueOf(*store->snapshot(), nokia, "free-float")) == 0.75);
+  CHECK(std::get<bool>(valueOf(*store->snapshot(), nokia, "halal")) == true);
 
   // Said again after a restart: stored again, and no new version, since the value is what was kept.
   const uint64_t version = store->snapshot()->version();
-  store->setAttribute(nokia.id, {"shares", int64_t{5'600'000'000}});
+  store->setAttribute(nokia, {"shares", int64_t{5'600'000'000}});
   CHECK(store->snapshot()->version() == version);
-  shares = factOf(*store->snapshot(), nokia.id, "shares");
+  shares = factOf(*store->snapshot(), nokia, "shares");
   CHECK(shares.updated == 9000);
-  store->setAttribute(nokia.id, {"shares", int64_t{5'500'000'000}});
-  shares = factOf(*store->snapshot(), nokia.id, "shares");
+  store->setAttribute(nokia, {"shares", int64_t{5'500'000'000}});
+  shares = factOf(*store->snapshot(), nokia, "shares");
   CHECK(shares.updated == 9000);
 
   MarketId hel = store->resolveMarket({{predicate::name, "Nasdaq Helsinki"}, {predicate::mic, "XHEL"}});
@@ -351,12 +351,12 @@ TEST(what_another_source_does_not_say_survives_its_load) {
   }
   auto store = makeMemoryStore(optionsFor(openSqliteFactStore(t.file), clock));
   // A source that knows names and a type, and nothing of shares or icons.
-  Instrument i = store->resolveInstrument({{predicate::isin, kIsin}}, {{predicate::name, "Nokia Oyj"}, {predicate::type, "EQUITY"}});
+  InstrumentId i = store->resolveInstrument({{predicate::isin, kIsin}}, {{predicate::name, "Nokia Oyj"}, {predicate::type, "EQUITY"}});
   auto s = store->snapshot();
-  CHECK(i.name == "Nokia Oyj" && i.type == "EQUITY" && i.isin == kIsin);
-  CHECK(std::get<int64_t>(valueOf(*s, i.id, "shares")) == 100);
-  CHECK(std::get<std::string>(valueOf(*s, i.id, predicate::iconUrl)) == "a.png");
-  CHECK(s->findByAttribute(NodeType::Instrument, predicate::iconUrl, "a.png").value_or(NodeRef{}).id == i.id.value);  // and found by it
+  CHECK(s->name(i) == "Nokia Oyj" && s->said(NodeRef(i), predicate::type) == "EQUITY" && s->isin(i) == kIsin);
+  CHECK(std::get<int64_t>(valueOf(*s, i, "shares")) == 100);
+  CHECK(std::get<std::string>(valueOf(*s, i, predicate::iconUrl)) == "a.png");
+  CHECK(s->findByAttribute(NodeType::Instrument, predicate::iconUrl, "a.png").value_or(NodeRef{}).id == i.value);  // and found by it
 }
 
 TEST(a_market_is_kept_under_a_key_of_its_own_and_its_mic_is_a_fact) {

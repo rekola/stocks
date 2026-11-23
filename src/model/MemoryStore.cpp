@@ -100,28 +100,33 @@ std::optional<NodeRef> lowest(const immer::set<uint64_t> * ids, NodeType t) {
   return n;
 }
 
+// A key with all of its parts: an instrument that was refused (no ISIN, a code that does not fit) has none, and what is said of
+// an edge or an event that has it is said of nothing.
+bool whole(const EdgeKey & k) { return k.base.valid() && k.quote.valid() && k.market.valid() && k.dataset.valid(); }
+bool whole(const EventKey & k) { return k.instrument.valid() && k.dataset.valid(); }
+
 std::string symbolKey(MarketId m, const std::string & symbol) { return std::to_string(m.value) + '\0' + symbol; }
 
 }  // namespace
 
-// A node is what is said of it: these are views made from its facts, and none is stored.
-std::optional<Instrument> Snapshot::instrument(InstrumentId id) const {
-  const NodeKey key{id.value};
-  if (key.kind() != NodeKind::Instrument && key.kind() != NodeKind::Currency) return std::nullopt;
-  const auto * attrs = attributes_.find(NodeRef(id));
-  if (!attrs) return std::nullopt;
-  return Instrument{id, textFact(*attrs, predicate::symbol), textFact(*attrs, predicate::name), kindOfName(textFact(*attrs, predicate::kind)),
-                    textFact(*attrs, predicate::isin), textFact(*attrs, predicate::type)};
+// A node is what is said of it: these read its facts, and no record is stored.
+bool Snapshot::known(NodeRef n) const { return attributes_.find(n) != nullptr; }
+std::string Snapshot::said(NodeRef n, const std::string & predicate) const {
+  const auto * attrs = attributes_.find(n);
+  return attrs ? textFact(*attrs, predicate.c_str()) : std::string();
 }
+std::string Snapshot::symbol(InstrumentId id) const { return said(NodeRef(id), predicate::symbol); }
+InstrumentKind Snapshot::kind(InstrumentId id) const { return kindOfName(said(NodeRef(id), predicate::kind)); }
+std::string Snapshot::isin(InstrumentId id) const { return NodeKey{id.value}.kind() == NodeKind::Instrument ? text(NodeKey{id.value}) : std::string(); }
 std::string Snapshot::name(NodeRef n) const {
   const auto * attrs = attributes_.find(n);
   std::string name = attrs ? textFact(*attrs, predicate::name) : std::string();
   if (name.empty() && n.type == NodeType::Dataset && attrs) return text(NodeKey{n.id});  // the code, until a name is said
   return name;
 }
-std::optional<Instrument> Snapshot::findInstrument(const std::string & s) const {
+std::optional<InstrumentId> Snapshot::findInstrument(const std::string & s) const {
   auto n = findByAttribute(NodeType::Instrument, predicate::symbol, s);
-  return n ? instrument(InstrumentId{n->id}) : std::nullopt;
+  return n ? std::optional<InstrumentId>(InstrumentId{n->id}) : std::nullopt;
 }
 std::optional<Listing> Snapshot::listing(const EdgeKey & k) const {
   const Listing * l = listings_.find(k);
@@ -129,8 +134,7 @@ std::optional<Listing> Snapshot::listing(const EdgeKey & k) const {
 }
 std::string Snapshot::symbol(const EdgeKey & k) const {
   if (const Listing * l = listings_.find(k); l && !l->symbol.empty()) return l->symbol;
-  auto i = instrument(k.base);
-  return i ? i->symbol : std::string();
+  return symbol(k.base);
 }
 std::optional<EdgeKey> Snapshot::findEdge(const std::string & symbol, MarketId m) const {
   const EdgeKey * k = edgeBySymbol_.find(symbolKey(m, symbol));
@@ -150,9 +154,10 @@ std::optional<Attribute> Snapshot::fact(NodeRef n, const std::string & predicate
     if (a.predicate == predicate) return a;
   return std::nullopt;
 }
-std::optional<Instrument> Snapshot::findInstrumentByIsin(const std::string & isin) const {
+std::optional<InstrumentId> Snapshot::findInstrumentByIsin(const std::string & isin) const {
   const auto key = instrumentKey(isin);
-  return key ? instrument(InstrumentId{key->value}) : std::nullopt;
+  if (!key || !attributes_.find(refOf(*key))) return std::nullopt;
+  return InstrumentId{key->value};
 }
 std::optional<MarketId> Snapshot::findMarket(const std::string & s) const {
   return findMarketByAttribute(predicate::name, s);
@@ -191,12 +196,10 @@ std::vector<MarketId> Snapshot::edgeMarkets() const {
 }
 
 std::vector<EdgeKey> Snapshot::edges(MarketId m) const { return sorted(edgesByMarket_.find(m)); }
-std::vector<EdgeKey> Snapshot::edges(MarketId m, const std::function<bool(const Instrument &)> & keep) const {
+std::vector<EdgeKey> Snapshot::edges(MarketId m, const std::function<bool(InstrumentId)> & keep) const {
   std::vector<EdgeKey> out;
-  for (const EdgeKey & k : edges(m)) {
-    auto base = instrument(k.base);
-    if (base && keep(*base)) out.push_back(k);
-  }
+  for (const EdgeKey & k : edges(m))
+    if (known(NodeRef(k.base)) && keep(k.base)) out.push_back(k);
   return out;
 }
 std::vector<EventKey> Snapshot::events(InstrumentId i) const { return sorted(eventsByInstrument_.find(i)); }
@@ -215,7 +218,7 @@ std::optional<double> Snapshot::previousClose(const EdgeKey & k, int64_t day) co
   return p->second;
 }
 void Snapshot::setPreviousClose(const EdgeKey & k, int64_t day, double close) {
-  if (!isDefined(close)) return;
+  if (!isDefined(close) || !whole(k)) return;
   const auto * p = previousClose_.find(k);
   if (p && *p == std::make_pair(day, close)) return;
   previousClose_ = previousClose_.set(k, {day, close});
@@ -388,7 +391,7 @@ bool isCurrencyKind(const std::string & kind) { return kind == kindName(Instrume
 
 // An instrument is its ISIN; a currency or a unit its code; anything else that has no ISIN is given one of our own, made from its
 // symbol or else its name (isin.h), the way a thing is given a name nobody else uses. What cannot be given a key is refused.
-Instrument Snapshot::resolveInstrument(const std::vector<Attribute> & identifying, const std::vector<Attribute> & rest) {
+InstrumentId Snapshot::resolveInstrument(const std::vector<Attribute> & identifying, const std::vector<Attribute> & rest) {
   std::vector<Attribute> all = identifying;
   all.insert(all.end(), rest.begin(), rest.end());
   const std::string isin = textFact(all, predicate::isin), symbol = textFact(all, predicate::symbol), name = textFact(all, predicate::name);
@@ -405,18 +408,18 @@ Instrument Snapshot::resolveInstrument(const std::vector<Attribute> & identifyin
         if (const std::string own = privateIsin(candidate); !own.empty()) key = instrumentKey(own);
     if (!key) notices_.push_back("instrument: " + (symbol.empty() ? name : symbol) + " has no ISIN and none can be made for it, so it is not kept");
   }
-  if (!key) return Instrument{};
+  if (!key) return InstrumentId{};
   const InstrumentId id{key->value};
   // An instrument that is an ISIN says it, even one of ours.
   if (key->kind() == NodeKind::Instrument && isin.empty()) all.emplace_back(predicate::isin, text(*key));
   setAttributes(NodeRef(id), all);
-  return instrument(id).value_or(Instrument{});
+  return id;
 }
-Instrument Snapshot::add(Instrument i) {
-  std::vector<Attribute> rest = {{predicate::name, i.name}, {predicate::type, i.type}};
-  if (!i.symbol.empty()) rest.push_back({predicate::symbol, i.symbol});
-  if (!i.isin.empty()) rest.push_back({predicate::isin, i.isin});
-  if (i.kind != InstrumentKind::Other) rest.push_back({predicate::kind, kindName(i.kind)});
+InstrumentId Snapshot::addInstrument(const std::string & symbol, const std::string & name, InstrumentKind kind, const std::string & isin, const std::string & type) {
+  std::vector<Attribute> rest = {{predicate::name, name}, {predicate::type, type}};
+  if (!symbol.empty()) rest.push_back({predicate::symbol, symbol});
+  if (!isin.empty()) rest.push_back({predicate::isin, isin});
+  if (kind != InstrumentKind::Other) rest.push_back({predicate::kind, kindName(kind)});
   return resolveInstrument({}, rest);
 }
 
@@ -478,7 +481,7 @@ void Snapshot::setListing(const Listing & l) {
 }
 
 void Snapshot::appendCandles(const EdgeKey & k, Resolution r, const std::vector<Candle> & in) {
-  if (in.empty()) return;
+  if (in.empty() || !whole(k)) return;
   const SeriesKey key{k, r};
   const auto * old = series_.find(key);
   Seq<Candle> bars = old ? *old : Seq<Candle>{};
@@ -492,7 +495,7 @@ void Snapshot::appendCandles(const EdgeKey & k, Resolution r, const std::vector<
 }
 
 void Snapshot::appendBooks(const EdgeKey & k, const std::vector<BookSnapshot> & in) {
-  if (in.empty()) return;
+  if (in.empty() || !whole(k)) return;
   appendTo(books_, k, in, [](const BookSnapshot &, const BookSnapshot &) { return true; });
   const auto * set = edgesByMarket_.find(k.market);
   edgesByMarket_ = edgesByMarket_.set(k.market, (set ? *set : immer::set<EdgeKey>{}).insert(k));
@@ -500,7 +503,7 @@ void Snapshot::appendBooks(const EdgeKey & k, const std::vector<BookSnapshot> & 
 }
 
 void Snapshot::appendAnnouncements(const EventKey & k, const std::vector<Announcement> & in) {
-  if (in.empty()) return;
+  if (in.empty() || !whole(k)) return;
   appendTo(announcements_, k, in,
            [](const Announcement & a, const Announcement & b) { return a.headline == b.headline; });
   const auto * set = eventsByInstrument_.find(k.instrument);
@@ -509,7 +512,7 @@ void Snapshot::appendAnnouncements(const EventKey & k, const std::vector<Announc
 }
 
 void Snapshot::appendActions(const EventKey & k, const std::vector<CorporateAction> & in) {
-  if (in.empty()) return;
+  if (in.empty() || !whole(k)) return;
   appendTo(actions_, k, in, [](const CorporateAction & a, const CorporateAction & b) { return a.kind == b.kind; });
   const auto * set = eventsByInstrument_.find(k.instrument);
   eventsByInstrument_ = eventsByInstrument_.set(k.instrument, (set ? *set : immer::set<EventKey>{}).insert(k));
@@ -582,11 +585,11 @@ class MemoryStore : public Store {
 
   std::shared_ptr<const Snapshot> snapshot() const override { return current_.load(); }
 
-  Instrument resolveInstrument(const std::vector<Attribute> & identifying, const std::vector<Attribute> & rest) override {
+  InstrumentId resolveInstrument(const std::vector<Attribute> & identifying, const std::vector<Attribute> & rest) override {
     return write([&](Snapshot & s) { return s.resolveInstrument(identifying, rest); });
   }
-  Instrument addInstrument(Instrument i) override {
-    return write([&](Snapshot & s) { return s.add(std::move(i)); });
+  InstrumentId addInstrument(const std::string & symbol, const std::string & name, InstrumentKind kind, const std::string & isin, const std::string & type) override {
+    return write([&](Snapshot & s) { return s.addInstrument(symbol, name, kind, isin, type); });
   }
   MarketId resolveMarket(const std::vector<Attribute> & a) override {
     return write([&](Snapshot & s) { return s.resolveMarket(a); });

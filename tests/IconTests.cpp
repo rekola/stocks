@@ -152,12 +152,12 @@ struct IconFixture {
     backend = owned.get();
     app = Application::adopt(std::move(owned));
     MarketId market = store->addMarket("Commodities");
-    Instrument usd = store->addInstrument({{}, "USD", "US dollar", InstrumentKind::Currency});
+    InstrumentId usd = store->addInstrument("USD", "US dollar", InstrumentKind::Currency);
     DatasetId dataset = store->addDataset("test");
     for (const char * symbol : {"AAA", "BBB", "CCC"}) {
-      Instrument i = store->addInstrument({{}, symbol, symbol, InstrumentKind::Company});
-      if (std::string(symbol) != "CCC") store->setAttribute(i.id, {predicate::iconUrl, "https://cdn/brand.png"});
-      store->appendCandles({i.id, usd.id, market, dataset}, Resolution::Day, {{0, 1, 1, 1, 1.0, 1}, {1000, 1, 1, 1, 2.0, 1}});
+      InstrumentId i = store->addInstrument(symbol, symbol, InstrumentKind::Company);
+      if (std::string(symbol) != "CCC") store->setAttribute(i, {predicate::iconUrl, "https://cdn/brand.png"});
+      store->appendCandles({i, usd, market, dataset}, Resolution::Day, {{0, 1, 1, 1, 1.0, 1}, {1000, 1, 1, 1, 2.0, 1}});
     }
     browser = std::make_unique<Browser>(*app, store, std::shared_ptr<IconLoader>(rig->loader.get(), [](IconLoader *) {}));
   }

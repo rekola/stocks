@@ -26,15 +26,15 @@ const Attribute * find(const std::vector<Attribute> & said, const std::string & 
 
 // A stock and a fund on one market, each with the order book id its details are asked for by.
 void addInstruments(Store & store) {
-  Instrument eur = store.addInstrument({{}, "EUR", "Euro", InstrumentKind::Currency});
-  Instrument stock = store.addInstrument({{}, "", "AbbVie", InstrumentKind::Company, "US00287Y1091"});
-  Instrument fund = store.addInstrument({{}, "", "A fund", InstrumentKind::Fund, "LU0231483743"});
+  InstrumentId eur = store.addInstrument("EUR", "Euro", InstrumentKind::Currency);
+  InstrumentId stock = store.addInstrument("", "AbbVie", InstrumentKind::Company, "US00287Y1091");
+  InstrumentId fund = store.addInstrument("", "A fund", InstrumentKind::Fund, "LU0231483743");
   MarketId market = store.addMarket("Somewhere");
   DatasetId data = store.addDataset("nordnet");
   for (auto [instrument, book] : {std::pair{stock, "stock-book"}, std::pair{fund, "fund-book"}}) {
-    EdgeKey key{instrument.id, eur.id, market, data};
+    EdgeKey key{instrument, eur, market, data};
     store.appendCandles(key, Resolution::Day, {{dayNumber(2026, 1, 2), 1, 1, 1, 4.2, 1}});
-    store.setListing({key, instrument.name, "id", book, "X", instrument.name});
+    store.setListing({key, store.snapshot()->name(instrument), "id", book, "X", store.snapshot()->name(instrument)});
   }
 }
 
@@ -94,9 +94,9 @@ TEST(the_details_are_asked_by_order_book_once_and_written_to_the_instruments) {
   auto stock = snapshot->findInstrumentByIsin("US00287Y1091");
   auto fund = snapshot->findInstrumentByIsin("LU0231483743");
   CHECK(stock && fund);
-  CHECK(snapshot->attribute(stock->id, "shares-outstanding").has_value());
-  CHECK(snapshot->attribute(fund->id, "fund-cut-off").has_value());
-  CHECK(!snapshot->attribute(stock->id, "fund-cut-off"));
+  CHECK(snapshot->attribute(*stock, "shares-outstanding").has_value());
+  CHECK(snapshot->attribute(*fund, "fund-cut-off").has_value());
+  CHECK(!snapshot->attribute(*stock, "fund-cut-off"));
   // Nothing is asked twice, by this source or after what it said was kept.
   source.loadBatch(*store, http, listener, std::chrono::milliseconds(0), 300);
   CHECK(http.urls.size() == 2);

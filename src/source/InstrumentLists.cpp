@@ -176,14 +176,14 @@ const char * currencyName(const std::string & symbol) {
   return "";
 }
 
-Instrument currencyNode(Store & store, const std::string & symbol) {
+InstrumentId currencyNode(Store & store, const std::string & symbol) {
   if (auto known = store.snapshot()->findInstrument(symbol)) return *known;
   const char * label = currencyName(symbol);
-  return store.addInstrument({{}, symbol, *label ? label : symbol, InstrumentKind::Currency});
+  return store.addInstrument(symbol, *label ? label : symbol, InstrumentKind::Currency);
 }
 
-Instrument quoteNode(Store & store, const std::string & code) {
+InstrumentId quoteNode(Store & store, const std::string & code) {
   if (code != "pts") return currencyNode(store, code);
   if (auto known = store.snapshot()->findInstrument(code)) return *known;
-  return store.addInstrument({{}, code, "Index points", InstrumentKind::Unit});
+  return store.addInstrument(code, "Index points", InstrumentKind::Unit);
 }

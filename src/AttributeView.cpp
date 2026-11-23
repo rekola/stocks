@@ -88,7 +88,7 @@ std::vector<InfoSection> buildInfo(const Snapshot & snapshot, const EdgeKey & ed
   }
   add("dataset", snapshot.name(edge.dataset));
   add("market", snapshot.name(edge.market));
-  if (auto q = snapshot.instrument(edge.quote)) add("quote currency", q->symbol);
+  if (snapshot.known(NodeRef(edge.quote))) add("quote currency", snapshot.symbol(edge.quote));
   out.push_back(std::move(listing));
 
   out.push_back({"Instrument", attributeRows(snapshot, NodeRef(edge.base), {predicate::isin, predicate::name, predicate::kind})});

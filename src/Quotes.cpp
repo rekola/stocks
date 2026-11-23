@@ -29,13 +29,11 @@ std::string baseOf(const Snapshot & snapshot, const EdgeKey & key) {
 // gives an instrument listed on several; the instrument's own where there is none.
 std::string nameOf(const Snapshot & snapshot, const EdgeKey & key) {
   if (auto listing = snapshot.listing(key); listing && !listing->name.empty()) return listing->name;
-  auto base = snapshot.instrument(key.base);
-  return base ? base->name : std::string();
+  return snapshot.name(key.base);
 }
 
 std::string quoteOf(const Snapshot & snapshot, const EdgeKey & key) {
-  auto quote = snapshot.instrument(key.quote);
-  return quote ? quote->symbol : std::string();
+  return snapshot.symbol(key.quote);
 }
 
 // The rows of a market in the order of their keys: an instrument's ISIN, then the quote, then the dataset. That order is stable

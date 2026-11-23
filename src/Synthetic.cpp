@@ -18,8 +18,8 @@ void fillSyntheticData(Store & store, const InstrumentList & list) {
       rng.seed(preset++ * 7919u + 1u);
     }
     const MarketId m = store.addMarket(e.market);
-    Instrument base = e.kind == InstrumentKind::Currency ? currencyNode(store, e.base) : store.addInstrument({{}, "", e.name, e.kind, e.isin});
-    Instrument quote = quoteNode(store, e.quote);
+    const InstrumentId base = e.kind == InstrumentKind::Currency ? currencyNode(store, e.base) : store.addInstrument("", e.name, e.kind, e.isin);
+    const InstrumentId quote = quoteNode(store, e.quote);
     std::vector<Candle> bars;
     double p = start(rng);
     for (int d = 0; d < 60; d++) {
@@ -28,6 +28,6 @@ void fillSyntheticData(Store & store, const InstrumentList & list) {
       bars.push_back({kStart + d, open, std::max(open, p) * (1 + wick(rng)), std::min(open, p) * (1 - wick(rng)), p,
                       volume(rng)});
     }
-    store.appendCandles({base.id, quote.id, m, synthetic}, Resolution::Day, bars);
+    store.appendCandles({base, quote, m, synthetic}, Resolution::Day, bars);
   }
 }
