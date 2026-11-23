@@ -380,18 +380,20 @@ void NordnetSource::load(Store & store, Http & http, SourceListener & listener) 
 
       // To the store as each page arrives, not all at the end.
       const DatasetId dataset = store.addDataset(kNordnetDataset);
-      const auto unknown = std::remove_if(
-          page.listings.begin(), page.listings.end(),
-          [](const NordnetListing &l) { return !knownMarketMic(l.marketId); });
-      if (unknown != page.listings.end()) {
-        std::set<int> ids;
-        for (auto it = unknown; it != page.listings.end(); ++it)
-          ids.insert(it->marketId);
+      std::set<int> ids; // the markets with no MIC; read before the rows go, as
+                         // what remove_if leaves at the end is unspecified
+      for (const NordnetListing &l : page.listings)
+        if (!knownMarketMic(l.marketId))
+          ids.insert(l.marketId);
+      if (!ids.empty()) {
         std::string text;
         for (int id : ids)
           text += (text.empty() ? "" : ", ") + std::to_string(id);
-        skipped += static_cast<int>(page.listings.end() - unknown);
-        page.listings.erase(unknown, page.listings.end());
+        const size_t before = page.listings.size();
+        std::erase_if(page.listings, [](const NordnetListing &l) {
+          return !knownMarketMic(l.marketId);
+        });
+        skipped += static_cast<int>(before - page.listings.size());
         listener.message(
             "nordnet: " + list.name +
             ": rows on markets with no known MIC left out (Nordnet market " +

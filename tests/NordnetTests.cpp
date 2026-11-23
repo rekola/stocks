@@ -66,7 +66,9 @@ TEST(a_market_is_named_by_its_nordnet_id_where_that_is_known) {
   CHECK(std::string(NordnetSource::knownMarketName(19)) == "Nasdaq" && std::string(NordnetSource::knownMarketMic(19)) == "XNAS");
   CHECK(std::string(NordnetSource::knownMarketName(49)) == "Euronext Growth Oslo");
   CHECK(NordnetSource::knownMarketName(61) == nullptr);  // not known
-  CHECK(std::string(NordnetSource::knownMarketMic(24)) == "XHEL" && NordnetSource::knownMarketMic(53) == nullptr);
+  CHECK(std::string(NordnetSource::knownMarketMic(24)) == "XHEL" &&
+        NordnetSource::knownMarketMic(53) == std::string("FNSE") &&
+        NordnetSource::knownMarketMic(61) == nullptr);
   // A code identifies a market, so two markets never share one (Oslo's growth market has its segment's, not Oslo Børs's), nor a name.
   std::set<std::string> codes, names;
   for (int id = 0; id < 200; id++) {
@@ -127,32 +129,34 @@ TEST(loading_pages_through_every_list_and_stores_instruments_markets_and_edges) 
 
   // The store is told after each page, not once at the end.
   CHECK(listener.changes == 3);
-  // Three certificates are on markets Nordnet gives no MIC for (53, 54 and 61):
-  // they are said once and left out.
+  // One certificate is on a market this table has no MIC for (61): it is said
+  // once and left out.
   CHECK(listener.messages.size() == 2 &&
-        listener.messages[0].find("Nordnet market 53, 54, 61") !=
-            std::string::npos);
+        listener.messages[0].find("Nordnet market 61") != std::string::npos);
   CHECK(listener.messages[1] ==
-        "nordnet: 6 listings (etflist 5, certificatelist 1), 3 rows left out");
-  CHECK(source.listings().size() == 6 &&
+        "nordnet: 8 listings (etflist 5, certificatelist 3), 1 rows left out");
+  CHECK(source.listings().size() == 8 &&
         source.listings()[0].list == "etflist" &&
-        source.listings()[5].list == "certificatelist");
+        source.listings()[7].list == "certificatelist");
 
   auto s = store->snapshot();
-  // Five instruments (one ETF is listed on two markets) and the three quote
+  // Seven instruments (one ETF is listed on two markets) and the four quote
   // currencies.
-  CHECK(s->nodeCount(NodeType::Instrument) == 8);
+  CHECK(s->nodeCount(NodeType::Instrument) == 11);
   InstrumentId xaix = *s->findInstrumentByIsin("IE00BGV5VN51");
   CHECK(s->kind(xaix) == InstrumentKind::Etf && s->isin(xaix) == "IE00BGV5VN51");
   CHECK(s->kind(*s->findInstrumentByIsin("DE000A0S9GB0")) == InstrumentKind::Certificate);  // a certificate, whoever lists it
   CHECK(s->kind(*s->findInstrument("EUR")) == InstrumentKind::Currency && s->name(*s->findInstrument("EUR")) == "Euro");
   CHECK(s->name(*s->findInstrument("DKK")) == "Danish krone");
-  CHECK(s->nodeCount(NodeType::Market) == 3);
+  CHECK(s->nodeCount(NodeType::Market) == 5);
   MarketId xetra = *s->findMarket("XETR"), stockholm = *s->findMarket("XSTO");
   CHECK(s->findMarket("XCSE"));
   CHECK(s->edges(xetra).size() == 3 && s->edges(stockholm).size() == 2);  // FLXK, XAIX, 4GLD; XACT BULL, XAIX
   CHECK(!s->findInstrumentByIsin(
-      "NO0010903685")); // on a market with no MIC: not made
+      "DE000SU696R4")); // on a market with no MIC: not made
+  // No tick time: a node, and no edge.
+  CHECK(s->findInstrumentByIsin("NO0010903685") &&
+        s->edges(*s->findMarket("FNSE")).empty());
   DatasetId nordnet = *s->findDataset("nordnet");
   EdgeKey onXetra{xaix, *s->findInstrument("EUR"), xetra, nordnet};
   EdgeKey onStockholm{xaix, *s->findInstrument("SEK"), stockholm, nordnet};
@@ -180,8 +184,8 @@ TEST(loading_again_replaces_todays_bars_and_a_new_day_adds_one) {
   // The same nodes and edges, and today's bar replaced, not added again.
   CHECK(second->nodeCount(NodeType::Instrument) ==
             first->nodeCount(NodeType::Instrument) &&
-        second->nodeCount(NodeType::Instrument) == 8);
-  CHECK(source.listings().size() == 6);
+        second->nodeCount(NodeType::Instrument) == 11);
+  CHECK(source.listings().size() == 8);
   MarketId xetra = *second->findMarket("XETR");
   CHECK(second->edges(xetra) == first->edges(xetra));
   for (const EdgeKey & k : second->edges(xetra)) CHECK(second->candles(k, Resolution::Day).candles.size() == 1);
@@ -226,8 +230,8 @@ TEST(another_failure_ends_only_that_list) {
   CHECK(listener.messages.size() == 3 &&
         listener.messages[0] == "nordnet: etflist: HTTP 500");
   CHECK(listener.messages[2] ==
-        "nordnet: 1 listings (certificatelist 1), 3 rows left out");
-  CHECK(source.listings().size() == 1);
+        "nordnet: 3 listings (certificatelist 3), 1 rows left out");
+  CHECK(source.listings().size() == 3);
 
   FakeHttp none;
   none.answer = [](const std::string &) { return failed(0); };
@@ -250,9 +254,9 @@ TEST(an_answer_that_is_not_a_list_ends_that_list_and_keeps_what_came_before) {
   CHECK(listener.messages.size() == 3 &&
         listener.messages[0] == "nordnet: etflist: not an instrument list");
   CHECK(listener.messages[2] ==
-        "nordnet: 4 listings (etflist 3, certificatelist 1), 3 rows left out");
+        "nordnet: 6 listings (etflist 3, certificatelist 3), 1 rows left out");
   CHECK(store->snapshot()->nodeCount(NodeType::Instrument) ==
-        3 + 1 + 3); // three ETFs, one certificate and their currencies
+        3 + 3 + 4); // three ETFs, three certificates and their currencies
 }
 
 TEST(an_empty_page_ends_the_load_even_if_the_total_says_more) {
@@ -420,7 +424,7 @@ TEST(
   CHECK(s->name(helsinki) == "Helsinki (other name)");
   // Markets Nordnet gives only an id for are not markets here: no edge is made
   // on them, and the load says so.
-  CHECK(!s->findMarket("FNSE"));
+  CHECK(!s->findMarket("XNYS"));
   bool said = false;
   for (const std::string &m : listener.messages)
     said = said || m.find("no known MIC") != std::string::npos;
