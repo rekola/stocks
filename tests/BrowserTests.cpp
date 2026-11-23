@@ -365,6 +365,33 @@ TEST(without_a_sort_the_rows_stay_where_they_are_and_a_new_row_goes_last) {
   CHECK(t.model()->text(t.rowAt(1), Quotes::BASE) == "AUD");
 }
 
+TEST(a_new_row_in_another_market_is_not_shown_and_one_in_the_shown_market_goes_last) {
+  Fixture f(false);
+  Instrument eur = f.store->addInstrument({{}, "EUR", "Euro", InstrumentKind::Currency});
+  Instrument usd = f.store->addInstrument({{}, "USD", "US dollar", InstrumentKind::Currency});
+  Instrument aud = f.store->addInstrument({{}, "AUD", "Australian dollar", InstrumentKind::Currency});
+  Instrument gbp = f.store->addInstrument({{}, "GBP", "British pound", InstrumentKind::Currency});
+  Market currencies = f.store->addMarket({{}, "Currencies"});
+  Market other = f.store->addMarket({{}, "Other"});
+  Dataset a = f.store->addDataset({{}, "providera"});
+  EdgeKey eurusd{eur.id, usd.id, currencies.id, a.id}, audusd{aud.id, usd.id, currencies.id, a.id}, gbpusd{gbp.id, usd.id, other.id, a.id};
+  const std::vector<Candle> bars = {{0, 1, 1, 1, 1.0, 1}, {1000, 1, 1, 1, 1.1, 1}};
+  f.store->appendCandles(eurusd, Resolution::Day, bars);
+  f.app->execute("show-currencies");
+  Table & t = f.browser->table();
+  CHECK(t.model()->rowCount() == 1);
+
+  f.store->appendCandles(gbpusd, Resolution::Day, bars);  // another market: nothing to show
+  f.store->appendCandles(eurusd, Resolution::Day, {{2000, 1, 1, 1, 1.2, 1}});  // a new bar for a row listed: no new row
+  f.app->widgets().postToRoot(StoreChanged{});
+  CHECK(t.model()->rowCount() == 1);
+
+  f.store->appendCandles(audusd, Resolution::Day, bars);
+  f.app->widgets().postToRoot(StoreChanged{});
+  CHECK(t.model()->rowCount() == 2);
+  CHECK(t.model()->text(t.rowAt(0), Quotes::BASE) == "EUR" && t.model()->text(t.rowAt(1), Quotes::BASE) == "AUD");
+}
+
 TEST(a_row_shows_what_the_dataset_calls_the_listing_so_the_rows_of_one_base_are_told_apart) {
   Fixture f(false);
   InstrumentId eur = f.store->addInstrument("EUR", "Euro", InstrumentKind::Currency);

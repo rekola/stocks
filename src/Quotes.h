@@ -53,14 +53,24 @@ class Quotes : public cellui::TableModel {
   // the sort and the scroll position are the table's, which is told with modelChanged().
   void setPeriod(Period);
   Period period() const { return period_; }
+  // Which edges a table shows: every market's, or one market's (not found yet: none, and what came meanwhile is read once it is).
+  struct Scope {
+    bool all = false;
+    std::optional<MarketId> market;
+    bool resolved() const { return all || market.has_value(); }
+    bool has(const EdgeKey & key) const { return all || (market && key.market == *market); }
+  };
+  // Whether the store has rows this model has not looked at: one comparison, so a refresh that brings only new bars for the rows
+  // listed does nothing else.
+  bool hasNewRows(const Snapshot & snapshot) const { return snapshot.quoteRowCount() != rows_seen_; }
+  // Shows a newer snapshot and puts the rows that appeared since, in the scope, after the ones listed (the store says which they
+  // are, so nothing is listed again or compared; the rows listed keep their places, and a sort is the user's to ask for).
+  // Returns whether there were any. The caches go either way.
+  bool addRows(std::shared_ptr<const Snapshot> snapshot, const Scope & scope);
   // Shows other edges, or the same from a newer snapshot: the caches go.
   void reset(std::shared_ptr<const Snapshot> snapshot, std::vector<EdgeKey> keys);
   // The same edges from a newer snapshot: the caches go, the rows and their order stay.
   void setSnapshot(std::shared_ptr<const Snapshot> snapshot);
-  // Shows `edges` from a newer snapshot with the rows already shown where they are: one that has gone is dropped and one that
-  // has appeared goes last, so new data never shifts what is on the screen (the order `edges` is in is only the first order;
-  // a sort is the user's to ask for). Returns whether the rows changed; the caches go either way.
-  bool follow(std::shared_ptr<const Snapshot> snapshot, const std::vector<EdgeKey> & edges);
   const std::vector<EdgeKey> & edges() const { return keys_; }
 
   int rowCount() const override { return static_cast<int>(keys_.size()); }
@@ -86,6 +96,7 @@ class Quotes : public cellui::TableModel {
   std::shared_ptr<IconLoader> icons_;
   std::shared_ptr<const Snapshot> snapshot_;
   std::vector<EdgeKey> keys_;
+  size_t rows_seen_ = 0;  // how many of the store's rows (Snapshot::quoteRowCount()) the rows above are made from
   mutable std::unordered_map<uint64_t, std::string> marketLabels_, datasetNames_;
   mutable std::unordered_map<int, std::vector<float>> traces_;  // the rows drawn lately, for the span trace() gives
   mutable std::vector<double> numbers_[2];                      // the sort keys of price and change
