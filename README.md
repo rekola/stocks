@@ -51,15 +51,17 @@ that is installed), fetched at a pinned commit
 like [immer](https://github.com/arximboldi/immer) and
 [nlohmann/json](https://github.com/nlohmann/json).
 
-Some instruments come from lists on disk, `data/lists/*.csv`, one file
-per market: Finland's shares and the largest of 16 other countries (the US, Canada, the
-UK, Germany, France, Sweden, Switzerland, Spain, Italy and more: about 1,350 shares), the
-currency pairs and a few indices; not complete. A file starts with
-`# market: NAME`, then rows of six fields: `kind`, `base`, `quote` (what one unit of
-`base` costs in `quote`), `name`, the ticker the source uses, and the ISIN, which only a
-currency may lack; `--lists DIR` reads another directory. Such a source is asked for one
+Some instruments come from lists on disk, `data/lists/*.csv`: Finland's shares and the
+largest of 16 other countries (the US, Canada, the UK, Germany, France, Sweden, Switzerland,
+Spain, Italy and more: about 1,350 shares), the currency pairs and a few indices; not complete.
+Rows have seven fields: `kind`, `base`, `quote` (what one unit of `base` costs in `quote`),
+`name`, the ticker the source uses, the ISIN, which only a currency may lack, and the
+market's code (ISO 10383, such as `XLON`), which puts the row on the market the other sources
+made for it. A row with no code is on the market the file names in a `# market: NAME` line.
+`--lists DIR` reads another directory. Such a source is asked for one
 instrument at a time, so loading all of them takes a quarter of an hour and some 40 MB:
-`--market NAME` (repeatable) loads one list, and `--source synthetic` loads none.
+`--market NAME` (repeatable, by the market's name) loads one market, and `--source synthetic`
+loads none.
 The scripts under `tools/lists` rebuild the files: the Finnish list and the currency pairs
 from their candidate lists, the other countries from the largest companies of a stock list
 that has ISINs (each found by its ISIN, so the ticker is certainly the same company).

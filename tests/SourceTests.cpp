@@ -80,6 +80,22 @@ TEST(a_yahoo_chart_becomes_candles_on_the_edge_of_its_market) {
   CHECK(s->symbol(k) == "NOKIA.HE");
 }
 
+TEST(a_row_with_a_market_code_goes_to_the_market_another_provider_made_by_that_code) {
+  auto store = makeMemoryStore();
+  // Another provider made Helsinki by its code and called it what it calls it.
+  MarketId helsinki = store->resolveMarket({{predicate::mic, "XHEL"}, {predicate::name, "Helsinki (other name)"}});
+  ListEntry e = entry("NOKIA.HE");
+  e.market = "Nasdaq Helsinki";
+  e.mic = "XHEL";
+  std::string error;
+  CHECK(YahooSource::parse(fixture("nokia.json"), e, *store, error));
+  auto s = store->snapshot();
+  CHECK(*s->findMarket("Nasdaq Helsinki") == helsinki);  // the same market, no second Helsinki (the last name said stands)
+  CHECK(*s->findMarketByAttribute(predicate::mic, "XHEL") == helsinki);
+  auto edges = s->edges(helsinki);
+  CHECK(edges.size() == 1);
+}
+
 TEST(yahoo_dividends_become_corporate_actions_in_the_quote_currency) {
   auto store = makeMemoryStore();
     std::string error;

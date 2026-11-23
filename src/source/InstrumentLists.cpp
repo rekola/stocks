@@ -1,5 +1,7 @@
 #include "source/InstrumentLists.h"
 
+#include "source/KnownMarkets.h"
+
 #include <algorithm>
 #include <fstream>
 
@@ -71,13 +73,9 @@ bool loadFile(const std::filesystem::path & path, InstrumentList & out, std::str
       continue;
     }
     std::vector<std::string> f = fields(line);
-    if (f.size() == 6 && f[0] == "kind" && f[1] == "base") continue;  // the header
-    if (market.empty()) {
-      error = where + "a row before the '# market:' line";
-      return false;
-    }
-    if (f.size() != 6) {
-      error = where + "expected 6 fields (kind,base,quote,name,yahoo,isin), found " + std::to_string(f.size());
+    if ((f.size() == 6 || f.size() == 7) && f[0] == "kind" && f[1] == "base") continue;  // the header
+    if (f.size() != 6 && f.size() != 7) {
+      error = where + "expected 6 or 7 fields (kind,base,quote,name,yahoo,isin[,mic]), found " + std::to_string(f.size());
       return false;
     }
     ListEntry e;
@@ -90,7 +88,20 @@ bool loadFile(const std::filesystem::path & path, InstrumentList & out, std::str
       error = where + "base, quote and yahoo cannot be empty";
       return false;
     }
-    e.market = market;
+    if (f.size() == 7) e.mic = f[6];
+    if (!e.mic.empty()) {
+      const char * name = marketNameOfMic(e.mic);
+      if (!name) {
+        error = where + "unknown market code '" + e.mic + "'";
+        return false;
+      }
+      e.market = name;
+    } else if (market.empty()) {
+      error = where + "a row with no market code before the '# market:' line";
+      return false;
+    } else {
+      e.market = market;
+    }
     e.base = f[1];
     e.quote = f[2];
     e.name = f[3];
@@ -101,10 +112,6 @@ bool loadFile(const std::filesystem::path & path, InstrumentList & out, std::str
       return false;
     }
     out.push_back(std::move(e));
-  }
-  if (market.empty()) {
-    error = path.string() + ": no '# market:' line";
-    return false;
   }
   return true;
 }

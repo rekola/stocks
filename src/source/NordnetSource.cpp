@@ -4,6 +4,7 @@
 #include "model/Isin.h"
 #include "source/InstrumentLists.h"
 #include "source/InstrumentTypes.h"
+#include "source/KnownMarkets.h"
 
 #include <nlohmann/json.hpp>
 
@@ -168,62 +169,13 @@ std::vector<NordnetSource::List> NordnetSource::defaultLists() {
           {"commodities", indicators + "COMMODITIES", 0, std::chrono::milliseconds(0), Shape::Indicators, "Commodities"}};
 }
 
-namespace {
-
-// The markets by Nordnet's id: the name, and the ISO 10383 code where it is exact (what the provider's own pages say; a market
-// that is a segment of another has its segment's code, so that no two share one). Markets met so far on the stock and ETF lists.
-struct KnownMarket {
-  int id;
-  const char * name;
-  const char * mic;  // null where not known exactly
-};
-constexpr KnownMarket kKnownMarkets[] = {
-    {4, "Xetra", "XETR"},
-    {11, "Nasdaq Stockholm", "XSTO"},
-    {13, "Nordic Growth Market", "XNGM"},
-    {14, "Nasdaq Copenhagen", "XCSE"},
-    {15, "Oslo Børs", "XOSL"},
-    {17, "New York Stock Exchange", "XNYS"},
-    {18, "NYSE American", "XASE"},
-    {19, "Nasdaq", "XNAS"},
-    {21, "OTC Markets", "XOTC"},
-    {24, "Nasdaq Helsinki", "XHEL"},
-    {25, "Toronto Stock Exchange", "XTSE"},
-    {26, "TSX Venture Exchange", "XTSX"},
-    {49, "Euronext Growth Oslo", "MERK"},
-    {52, "Spotlight Stock Market", "XSAT"},
-    {53, "First North Sweden", nullptr},
-    {54, "First North Finland", nullptr},
-    {55, "First North Denmark", nullptr},
-    {67, "Spotlight Stock Market DK", "SPDK"},
-    {68, "Spotlight Stock Market NO", "SPNO"},
-    {70, "London Stock Exchange", "XLON"},
-    {72, "Euronext Paris", "XPAR"},
-    {73, "Euronext Lisbon", "XLIS"},
-    {74, "Euronext Amsterdam", "XAMS"},
-    {75, "Euronext Brussels", "XBRU"},
-    {76, "Euronext Dublin", "XDUB"},
-    {77, "Euronext Milan", "XMIL"},
-    {81, "Vienna Stock Exchange", "XWBO"},
-    {82, "Madrid Stock Exchange", "XMAD"},
-    {83, "SIX Swiss Exchange", "XSWX"},
-};
-
-const KnownMarket * knownMarket(int id) {
-  for (const KnownMarket & m : kKnownMarkets)
-    if (m.id == id) return &m;
-  return nullptr;
-}
-
-}  // namespace
-
 const char * NordnetSource::knownMarketName(int id) {
-  const KnownMarket * m = knownMarket(id);
+  const KnownMarket * m = knownMarketByNordnetId(id);
   return m ? m->name : nullptr;
 }
 
 const char * NordnetSource::knownMarketMic(int id) {
-  const KnownMarket * m = knownMarket(id);
+  const KnownMarket * m = knownMarketByNordnetId(id);
   return m ? m->mic : nullptr;
 }
 

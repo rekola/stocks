@@ -96,13 +96,20 @@ def fresh(meta, days=14):
     return t is None or time.time() - t < days * 86400
 
 
-def write(path, market, rows):
+def write(path, market, rows, mic=None):
+    """A file of `market` (its name, for rows with no code), or, with `mic` (a code for every row, or None), of rows that
+    each say their market by its ISO 10383 code."""
     with open(path, "w", newline="", encoding="utf-8") as f:
-        f.write("# market: %s\n" % market)
-        f.write("# kind,base,quote,name,yahoo,isin: what one unit of `base` costs in `quote`; `yahoo` is Yahoo's ticker\n")
+        if mic is None:
+            f.write("# market: %s\n" % market)
+            f.write("# kind,base,quote,name,yahoo,isin: what one unit of `base` costs in `quote`; `yahoo` is Yahoo's ticker\n")
+        else:
+            f.write("# %s\n" % market)
+            f.write("# kind,base,quote,name,yahoo,isin,mic: what one unit of `base` costs in `quote`; `yahoo` is Yahoo's ticker; "
+                    "`mic` is the ISO 10383 code of the market it is listed on\n")
         w = csv.writer(f, lineterminator="\n")
-        w.writerow(["kind", "base", "quote", "name", "yahoo", "isin"])
-        w.writerows(rows)
+        w.writerow(["kind", "base", "quote", "name", "yahoo", "isin"] + ([] if mic is None else ["mic"]))
+        w.writerows(rows if mic is None else [r + [mic] for r in rows])
 
 
 def main():
@@ -132,7 +139,7 @@ def main():
             continue
         rows.append(["company", NORDNET_SYMBOL.get(t, t), meta.get("currency", "EUR"), name, ticker, isin])
     rows.sort(key=lambda r: r[1])
-    write(os.path.join(out, "nasdaq-helsinki.csv"), "Nasdaq Helsinki", rows)
+    write(os.path.join(out, "nasdaq-helsinki.csv"), "The Nasdaq Helsinki shares: tools/lists/build_lists.py", rows, mic="XHEL")
     print("Nasdaq Helsinki: %d of %d" % (len(rows), len(seen)), flush=True)
 
     rows = []

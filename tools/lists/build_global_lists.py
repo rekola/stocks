@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Builds the stock lists of the countries other than Finland (data/lists/<country>.csv): the largest listed companies of each, for
+"""Builds the stock list of the countries other than Finland (data/lists/shares.csv, a code for the market of every row): the largest listed companies of each, for
 the Yahoo adapter, which has no discovery and needs its instruments listed.
 
 usage: build_global_lists.py [OUTPUT_DIR] [COUNTRY ...]      (default: data/lists, every country below)
@@ -88,13 +88,42 @@ def search(isin):
     return [(q["symbol"], q.get("exchDisp") or q.get("exchange") or "") for q in doc.get("quotes", []) if q.get("quoteType") == "EQUITY"]
 
 
+# The market of a Yahoo ticker, by its ISO 10383 code: by the exchange's suffix, and for the US, where there is none, by the
+# exchange Yahoo names.
+SUFFIX_MIC = {".TO": "XTSE", ".L": "XLON", ".DE": "XETR", ".PA": "XPAR", ".ST": "XSTO", ".CO": "XCSE", ".OL": "XOSL", ".AS": "XAMS",
+              ".BR": "XBRU", ".MC": "XMAD", ".MI": "XMIL", ".SW": "XSWX", ".VI": "XWBO", ".LS": "XLIS", ".IR": "XDUB"}
+US_MIC = {"NASDAQ": "XNAS", "NASDAQ GS": "XNAS", "NasdaqGS": "XNAS", "NasdaqGM": "XNAS", "NasdaqCM": "XNAS", "NYSE": "XNYS",
+          "NYSE American": "XASE", "NYSE MKT": "XASE", "NYSEArca": "ARCX"}
+
+
+def mics_of(suffix):
+    """The codes a country's rows can have."""
+    return set(US_MIC.values()) if not suffix else {SUFFIX_MIC[suffix]}
+
+
 def ticker_of(listings, suffix, exchanges):
+    """The ticker on the country's own exchange and its market's code, or None."""
     for symbol, exchange in listings:
         if suffix and symbol.endswith(suffix):
-            return symbol
-        if not suffix and "." not in symbol and exchange in exchanges:
-            return symbol
+            return symbol, SUFFIX_MIC[suffix]
+        if not suffix and "." not in symbol and exchange in exchanges and exchange in US_MIC:
+            return symbol, US_MIC[exchange]
     return None
+
+
+def write_shares(path, mics, rows):
+    """The country's rows replace those of its markets in the file; the other countries' stay."""
+    kept = []
+    if os.path.exists(path):
+        with open(path, encoding="utf-8") as f:
+            kept = [r for r in csv.reader(l for l in f if not l.startswith("#")) if r and r[0] != "kind" and r[6] not in mics]
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        f.write("# The largest companies of 16 countries (the countries' own exchanges), by market value: tools/lists/build_global_lists.py\n")
+        f.write("# kind,base,quote,name,yahoo,isin,mic: what one unit of `base` costs in `quote`; `yahoo` is Yahoo's ticker; "
+                "`mic` is the ISO 10383 code of the market it is listed on\n")
+        w = csv.writer(f, lineterminator="\n")
+        w.writerow(["kind", "base", "quote", "name", "yahoo", "isin", "mic"])
+        w.writerows(sorted(kept + rows, key=lambda r: (r[6], r[1])))
 
 
 def build(country, stocks, out):
@@ -108,18 +137,17 @@ def build(country, stocks, out):
             print("  %s: %d found of %d tried" % (market, len(rows), tried), flush=True)
         listings = search(isin)
         time.sleep(PAUSE)
-        ticker = ticker_of(listings, suffix, exchanges)
-        if not ticker or ticker in seen:
+        found = ticker_of(listings, suffix, exchanges)
+        if not found or found[0] in seen:
             continue
+        ticker, mic = found
         meta = bl.chart(ticker)
         time.sleep(PAUSE)
         if not meta or not bl.fresh(meta):
             continue
         seen.add(ticker)
-        rows.append(["company", ticker, meta.get("currency") or "USD", name, ticker, isin])
-    rows.sort(key=lambda r: r[1])
-    slug = market.lower().replace(" ", "-")
-    bl.write(os.path.join(out, slug + ".csv"), market, rows)
+        rows.append(["company", ticker, meta.get("currency") or "USD", name, ticker, isin, mic])
+    write_shares(os.path.join(out, "shares.csv"), mics_of(suffix), rows)
     print("%s: %d of %d tried (wanted %d)" % (market, len(rows), tried, wanted), flush=True)
 
 
