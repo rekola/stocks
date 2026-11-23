@@ -30,5 +30,5 @@ class SourceRunner {
   std::atomic<bool> stop_{false};
   std::mutex mutex_;
   std::condition_variable wake_;
-  std::thread thread_;
+  std::vector<std::thread> threads_;
 };

@@ -1,7 +1,10 @@
 #include "source/FundSource.h"
 
+#include "model/Dates.h"
 #include "model/Isin.h"
 
+#include <chrono>
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -49,6 +52,11 @@ std::optional<std::pair<std::string, std::string>> findIsin(const json & doc, co
       if (auto found = findIsin(doc[i], path + "/" + std::to_string(i))) return found;
   }
   return std::nullopt;
+}
+
+std::string trimmed(const std::string & s) {
+  const size_t from = s.find_first_not_of(" \t\r\n"), to = s.find_last_not_of(" \t\r\n");
+  return from == std::string::npos ? std::string() : s.substr(from, to - from + 1);
 }
 
 std::string trimmedToken(const std::string & token) {
@@ -107,6 +115,20 @@ bool requestOf(const json & o, const char * what, FundSchema::Request & r, std::
       r.fields[key] = std::move(p);
     }
   }
+  if (auto attributes = o.find("attributes"); attributes != o.end()) {
+    if (!attributes->is_object()) {
+      error = std::string(what) + ": attributes is not an object";
+      return false;
+    }
+    for (const auto & [key, v] : attributes->items()) {
+      FundSchema::Pointers p;
+      if (!pointersOf(v, p)) {
+        error = std::string(what) + ": attribute " + key + " is not a JSON pointer or a list of them";
+        return false;
+      }
+      r.attributes[key] = std::move(p);
+    }
+  }
   if (auto scale = o.find("scale"); scale != o.end() && scale->is_object())
     for (const auto & [key, v] : scale->items())
       if (v.is_number()) r.scale[key] = v.get<double>();
@@ -123,8 +145,8 @@ void applyFields(const FundSchema::Request & request, const json & doc, FundRow 
       return n && s != request.scale.end() ? std::optional<double>(*n * s->second) : n;
     };
     if (key == "id") id = textOf(*v);
-    else if (key == "symbol") fund.symbol = textOf(*v);
-    else if (key == "name") fund.name = textOf(*v);
+    else if (key == "symbol") fund.symbol = trimmed(textOf(*v));
+    else if (key == "name") fund.name = trimmed(textOf(*v));
     else if (key == "isin") fund.isin = textOf(*v);
     else if (key == "risk") fund.risk = looseInteger(*v);
     else if (key == "rating") fund.rating = looseInteger(*v);
@@ -132,11 +154,30 @@ void applyFields(const FundSchema::Request & request, const json & doc, FundRow 
     else if (key == "managementFee") fund.managementFee = scaled(looseNumber(*v));
     else if (key == "subscriptionFee") fund.subscriptionFee = scaled(looseNumber(*v));
     else if (key == "redemptionFee") fund.redemptionFee = scaled(looseNumber(*v));
+    else if (key == "price") fund.price = looseNumber(*v);
+    else if (key == "change") fund.change = scaled(looseNumber(*v));
+    else if (key == "date") fund.day = looseDay(*v);
     else if (key == "link") {
       std::string link = textOf(*v);
       if (!link.empty() && link.rfind("http", 0) != 0) link = request.linkPrefix + (link[0] == '/' ? link : "/" + link);
       fund.url = link;
     }
+  }
+  for (const auto & [predicate, pointers] : request.attributes) {
+    const json * v = firstOf(doc, pointers);
+    if (!v) continue;
+    const bool day = predicate.size() > 4 && predicate.compare(predicate.size() - 4, 4, "-day") == 0;
+    auto at = std::find_if(fund.extra.begin(), fund.extra.end(), [&](const Attribute & a) { return a.predicate == predicate; });
+    std::optional<Attribute> said;
+    if (day) {
+      if (auto d = looseDay(*v)) said = Attribute(predicate, *d);
+    } else if (v->is_string()) said = Attribute(predicate, trimmed(v->get<std::string>()));
+    else if (v->is_boolean()) said = Attribute(predicate, v->get<bool>());
+    else if (v->is_number_integer()) said = Attribute(predicate, v->get<int64_t>());
+    else if (v->is_number()) said = Attribute(predicate, v->get<double>());
+    if (!said) continue;
+    if (at != fund.extra.end()) *at = *said;
+    else fund.extra.push_back(*said);
   }
 }
 
@@ -160,6 +201,7 @@ bool FundSchema::parse(const std::string & text, FundSchema & out, std::string &
     }
     *target = d[key].get<std::string>();
   }
+  if (auto age = d.find("maxAgeDays"); age != d.end() && age->is_number_integer()) s.maxAgeDays = age->get<int>();
   if (auto pause = d.find("pauseMs"); pause != d.end() && pause->is_number()) s.pause = std::chrono::milliseconds(pause->get<int64_t>());
   if (auto hours = d.find("refreshHours"); hours != d.end() && hours->is_number())
     s.refresh = std::chrono::milliseconds(static_cast<int64_t>(hours->get<double>() * 3600 * 1000));
@@ -261,7 +303,7 @@ bool FundSource::parseToken(const std::string & page, const std::string & regex,
   return true;
 }
 
-bool FundSource::parseList(const std::string & body, std::vector<Entry> & entries, std::string & error) const {
+bool parseFundList(const FundSchema & schema_, const std::string & body, std::vector<FundEntry> & entries, std::string & error) {
   json doc = json::parse(body, nullptr, /*allow_exceptions=*/false);
   const json * rows = doc.is_discarded() ? nullptr : valueAt(doc, schema_.list.rows);
   if (!rows && !doc.is_discarded() && schema_.list.rows.empty()) rows = &doc;
@@ -272,7 +314,7 @@ bool FundSource::parseList(const std::string & body, std::vector<Entry> & entrie
   const std::regex fromId(schema_.isinFromId.empty() ? "$^" : schema_.isinFromId);
   for (const json & row : *rows) {
     if (!row.is_object()) continue;
-    Entry e;
+    FundEntry e;
     e.row = row;
     applyFields(schema_.list, row, e.fund, e.id);
     if (e.id.empty()) continue;
@@ -300,7 +342,7 @@ bool FundSource::parseList(const std::string & body, std::vector<Entry> & entrie
   return true;
 }
 
-bool FundSource::parseDetail(const std::string & body, Entry & e, std::string & error) const {
+bool parseFundDetail(const FundSchema & schema_, const std::string & body, FundEntry & e, std::string & error) {
   json doc = json::parse(body, nullptr, /*allow_exceptions=*/false);
   if (doc.is_discarded() || !doc.is_object() || !schema_.detail) {
     error = "not a fund description";
@@ -320,6 +362,11 @@ bool FundSource::parseDetail(const std::string & body, Entry & e, std::string & 
   return true;
 }
 
+FundSource::FundSource(FundSchema schema)
+    : schema_(std::move(schema)), history_(std::make_shared<FundHistory>(schema_)), today_([] {
+        return dayNumberOfInstant(std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count());
+      }) {}
+
 void FundSource::load(Store & store, Http & http, SourceListener & listener) {
   const std::string who = schema_.name + ": ";
   const auto pause = [&] {
@@ -336,6 +383,7 @@ void FundSource::load(Store & store, Http & http, SourceListener & listener) {
       listener.message(who + error);
       return;
     }
+    history_->setToken(token);
     pause();
   }
   HttpResult list = http.get(expand(schema_.list.url, "", token), schema_.headers);
@@ -348,55 +396,123 @@ void FundSource::load(Store & store, Http & http, SourceListener & listener) {
     listener.message(who + "the fund list: " + error);
     return;
   }
-  size_t tried = 0, loaded = 0, sparse = 0;
+  const int64_t today = today_();
+  size_t shown = 0, stale = 0, unpriced = 0;
+  std::vector<Entry *> pending;  // the funds with no ISIN yet
+  size_t sinceChange = 0;
+  const auto show = [&](Entry & e) {
+    // Shown at once, from the list alone: the latest NAV is the bar, and the change tells the NAV before it. The history comes when it is wanted.
+    const Candle bar{*e.fund.day, kUndefined, kUndefined, kUndefined, *e.fund.price, kUndefined};
+    auto edge = writeFund(store, schema_.dataset, schema_.market, e.fund, {bar});
+    if (!edge) return;
+    if (e.fund.change && *e.fund.change > -1) store.setPreviousClose(*edge, *e.fund.day, *e.fund.price / (1 + *e.fund.change));
+    shown++;
+    if (++sinceChange >= 50) {  // the first screenful need not wait for the rest
+      listener.changed();
+      sinceChange = 0;
+    }
+  };
   for (Entry & e : entries) {
     if (listener.cancelled()) return;
     if (!e.wanted) continue;
-    if (!e.note.empty()) listener.message(who + e.note);
-    if (schema_.detail) {
-      // The details are asked for once, and say the fees (and an ISIN, where the list has none).
-      auto have = details_.find(e.id);
-      if (have == details_.end()) {
-        pause();
-        HttpResult r = http.get(expand(schema_.detail->url, e.id, token), schema_.headers);
-        if (r.status == 429 || r.status == 403) {
-          listener.message(who + "refused, stopping");
-          return;
-        }
-        if (!r.ok()) listener.message(who + e.id + " details: " + failure(r));
-        else have = details_.emplace(e.id, r.body).first;
-      }
-      if (have != details_.end()) {
-        Entry before = e;
-        e.note.clear();
-        if (!parseDetail(have->second, e, error)) {
-          listener.message(who + e.id + " details: " + error);
-          details_.erase(have);
-        } else if (!e.note.empty() && before.fund.isin.empty()) {
-          listener.message(who + e.note);
-        }
-      }
-    }
-    if (e.fund.isin.empty()) {
-      listener.message(who + "no ISIN for " + e.id + " (" + e.fund.name + "), left out");
+    if (!e.fund.price || !e.fund.day) {
+      unpriced++;
       continue;
     }
-    tried++;
-    pause();
-    HttpResult r = http.get(expand(schema_.historyUrl, e.id, token), schema_.headers);
-    if (r.status == 429 || r.status == 403) {
-      listener.message(who + "refused, stopping");
-      return;
+    // The list is the latest: a fund whose NAV is old is closed, or priced less often than daily.
+    if (today - *e.fund.day > schema_.maxAgeDays) {
+      stale++;
+      continue;
     }
-    std::vector<Candle> bars;
-    if (!r.ok()) listener.message(who + e.id + ": " + failure(r));
-    else if (!parseNavSeries(r.body, bars, error)) listener.message(who + e.id + ": " + error);
-    else if (tooSparse(bars)) sparse++;
-    else if (writeFund(store, schema_.dataset, schema_.market, e.fund, bars)) {
-      loaded++;
-      listener.changed();
-    }
+    if (!e.note.empty()) listener.message(who + e.note);
+    if (!e.fund.isin.empty()) show(e);
+    else pending.push_back(&e);
   }
-  listener.message(who + std::to_string(loaded) + " of " + std::to_string(tried) + " funds" +
-                   (sparse ? ", " + std::to_string(sparse) + " left out for pricing less often than daily" : std::string()));
+  if (sinceChange) listener.changed();
+  sinceChange = 0;
+
+  // The funds with no ISIN are looked for in their details, one request each, after the others are on the screen. The details say the fees too.
+  size_t unnamed = 0;
+  for (Entry * e : pending) {
+    if (listener.cancelled()) return;
+    if (schema_.detail && !unresolved_.count(e->id)) {
+      pause();
+      HttpResult r = http.get(expand(schema_.detail->url, e->id, token), schema_.headers);
+      if (r.status == 429 || r.status == 403) {
+        listener.message(who + "refused, stopping");
+        break;
+      }
+      if (!r.ok()) listener.message(who + e->id + " details: " + failure(r));
+      else {
+        e->note.clear();
+        if (!parseDetail(r.body, *e, error)) listener.message(who + e->id + " details: " + error);
+        else {
+          history_->markDetailed(e->id);
+          if (!e->note.empty()) listener.message(who + e->note);
+        }
+      }
+    }
+    if (e->fund.isin.empty()) {
+      // Said once: the next load does not ask again, or say it again.
+      if (unresolved_.insert(e->id).second) listener.message(who + "no ISIN for " + e->id + " (" + e->fund.name + "), left out");
+      unnamed++;
+      continue;
+    }
+    show(*e);
+  }
+  if (sinceChange) listener.changed();
+  listener.message(who + std::to_string(shown) + " funds" + (stale ? ", " + std::to_string(stale) + " left out for an old NAV" : std::string()) +
+                   (unnamed ? ", " + std::to_string(unnamed) + " for no ISIN" : std::string()) +
+                   (unpriced ? ", " + std::to_string(unpriced) + " for no price" : std::string()));
+}
+
+bool FundHistory::wants(const Snapshot & snapshot, const EdgeKey & edge) const {
+  auto listing = snapshot.listing(edge);
+  return listing && !listing->identifier.empty();
+}
+
+void FundHistory::setToken(std::string token) {
+  std::lock_guard lock(mutex_);
+  token_ = std::move(token);
+}
+
+void FundHistory::markDetailed(const std::string & id) {
+  std::lock_guard lock(mutex_);
+  detailed_.insert(id);
+}
+
+HistoryProvider::Outcome FundHistory::load(Store & store, Http & http, const EdgeKey & edge) {
+  auto snapshot = store.snapshot();
+  auto listing = snapshot->listing(edge);
+  if (!listing || listing->identifier.empty()) return Outcome::Missing;
+  const std::string id = listing->identifier;
+  std::string token;
+  bool detailed;
+  {
+    std::lock_guard lock(mutex_);
+    token = token_;
+    detailed = detailed_.count(id) > 0;
+  }
+  const auto status = [](const HttpResult & r) -> std::optional<Outcome> {
+    if (r.status == 403 || r.status == 429) return Outcome::Refused;
+    if (r.status == 0 || r.status >= 500) return Outcome::Offline;
+    return std::nullopt;
+  };
+  // The details: the fees, once. A fund without them still has its history.
+  if (schema_.detail && !detailed) {
+    HttpResult r = http.get(FundSource::expand(schema_.detail->url, id, token), schema_.headers);
+    if (auto s = status(r)) return *s;
+    FundEntry entry;
+    std::string error;
+    if (r.ok() && parseFundDetail(schema_, r.body, entry, error)) store.setAttributes(edge.base, attributesOf(entry.fund));
+    std::lock_guard lock(mutex_);
+    detailed_.insert(id);
+  }
+  HttpResult r = http.get(FundSource::expand(schema_.historyUrl, id, token), schema_.headers);
+  if (auto s = status(r)) return *s;
+  std::vector<Candle> bars;
+  std::string error;
+  if (!r.ok() || !parseNavSeries(r.body, bars, error)) return Outcome::Missing;
+  store.appendCandles(edge, Resolution::Day, bars);
+  return Outcome::Ok;
 }

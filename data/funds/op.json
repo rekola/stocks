@@ -34,11 +34,22 @@
    "managementFee": "/management_fee",
    "subscriptionFee": "/subs_fee",
    "redemptionFee": "/redemption_fee",
-   "link": "/link"
+   "link": "/link",
+   "price": "/price",
+   "date": "/datetime_price",
+   "change": "/fund_last"
   },
-  "linkPrefix": "https://www.op.fi"
+  "linkPrefix": "https://www.op.fi",
+  "scale": {
+   "change": 0.01
+  },
+  "attributes": {
+   "kiid-url": "/kiid_link",
+   "fund-region": "/fund_region"
+  }
  },
  "history": {
   "url": "https://marketdata.op.fi/portal2/charts//fundchartdata.php?ID_NOTATION={id}&type=line&{token}"
- }
+ },
+ "maxAgeDays": 14
 }
