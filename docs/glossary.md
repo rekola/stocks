@@ -14,8 +14,8 @@ the facts file under the key of its node.
 **Facts file**
 The SQLite file the facts are kept in between runs, `facts.sqlite` in the user's
 data directory. The store reads it at start-up and writes every change to it.
-A file that cannot be read (damaged, or of a newer schema) is moved aside and a
-new one started.
+A file that cannot be read (damaged) is moved aside and a new one started; one of another schema
+is emptied in place.
 
 **Node key**
 The number that names a node, the same in every run: one 64-bit number whose top

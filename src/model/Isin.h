@@ -13,6 +13,8 @@ bool isValidIsin(const std::string & isin);
 
 // A thing that has no ISIN gets one of our own, in a namespace nobody else issues from: the prefix `ZZ`, which ISO 3166-1
 // leaves for private use (the "user-assigned" code element; no numbering agency issues ISINs under it). It is made from
-// what the thing is, not from who says it: there is one Zinc, whoever lists it. The nine-character national number is its
-// name, upper case, letters and digits only, padded with zeros. Empty if the name does not fit in nine.
+// what the thing is, not from who says it: there is one Zinc, whoever lists it. The nine-character national number is a
+// 64-bit hash (FNV-1a, the same on every platform) of the exact text, reduced to nine base-36 digits: "GC=F" and "GCF", or
+// "abc" and "ABC", are different things, and any length has one. Nine base-36 digits hold about 46 bits, so two texts can
+// share one; that is remote (one in 10^14 for a pair) and not guarded against. Empty only for an empty text.
 std::string privateIsin(const std::string & name);

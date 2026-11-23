@@ -294,43 +294,46 @@ size_t NordnetSource::loadIndicators(const List & list, Store & store, Http & ht
     listener.message("nordnet: " + list.name + ": " + error);
     return 0;
   }
-  const DatasetId dataset = store.addDataset(kNordnetDataset);
-  // Indices, currency pairs and commodity prices of these lists are on no
-  // market.
-  const MarketId market = store.addMarket(kNoMarket);
   size_t written = 0;
-  for (NordnetIndicator & row : rows) {
-    row.list = list.name;
-    InstrumentId base, quote;
-    if (row.type == "CURRENCY") {
-      // A pair is an edge between two currencies: the name is "EUR/USD".
-      const size_t slash = row.name.find('/');
-      if (slash == std::string::npos) continue;
-      base = currencyNode(store, row.name.substr(0, slash));
-      quote = currencyNode(store, row.name.substr(slash + 1));
-    } else {
-      // An index or a commodity is its ISIN; where Nordnet has none it gets one of ours, from what it is (Zinc, Lead, ...).
-      const std::string isin = row.isin.empty() ? privateIsin(row.symbol) : row.isin;
-      if (isin.empty()) continue;
-      std::vector<Attribute> identifying = {{predicate::isin, isin}};
-      const InstrumentKind kind = row.type == "INDEX" ? InstrumentKind::Index
-                                  : row.type == "COMMODITY" ? InstrumentKind::Commodity
-                                                            : InstrumentKind::Other;
-      std::vector<Attribute> rest = {{predicate::name, row.name}, {predicate::type, row.type},
-                                     {predicate::nordnetInstrument, row.instrumentId}};
-      if (kind != InstrumentKind::Other) rest.push_back({predicate::kind, kindName(kind)});
-      base = store.resolveInstrument(identifying, rest);
-      store.setAttribute(base, {predicate::country, row.country});  // of an index
-      // An index is in points. The answer gives a commodity no currency; the owner's table has them all in dollars.
-      quote = row.type == "INDEX" ? quoteNode(store, "pts") : currencyNode(store, "USD");
+  // The whole list is one publication.
+  store.batch([&](Batch & b) {
+    const DatasetId dataset = b.addDataset(kNordnetDataset);
+    // Indices, currency pairs and commodity prices of these lists are on no
+    // market.
+    const MarketId market = b.addMarket(kNoMarket);
+      for (NordnetIndicator & row : rows) {
+      row.list = list.name;
+      InstrumentId base, quote;
+      if (row.type == "CURRENCY") {
+        // A pair is an edge between two currencies: the name is "EUR/USD".
+        const size_t slash = row.name.find('/');
+        if (slash == std::string::npos) continue;
+        base = currencyNode(b, row.name.substr(0, slash));
+        quote = currencyNode(b, row.name.substr(slash + 1));
+      } else {
+        // An index or a commodity is its ISIN; where Nordnet has none it gets one of ours, from what it is (Zinc, Lead, ...).
+        const std::string isin = row.isin.empty() ? privateIsin(row.symbol) : row.isin;
+        if (isin.empty()) continue;
+        std::vector<Attribute> identifying = {{predicate::isin, isin}};
+        const InstrumentKind kind = row.type == "INDEX" ? InstrumentKind::Index
+                                    : row.type == "COMMODITY" ? InstrumentKind::Commodity
+                                                              : InstrumentKind::Other;
+        std::vector<Attribute> rest = {{predicate::name, row.name}, {predicate::type, row.type},
+                                       {predicate::nordnetInstrument, row.instrumentId}};
+        if (kind != InstrumentKind::Other) rest.push_back({predicate::kind, kindName(kind)});
+        base = b.resolveInstrument(identifying, rest);
+        b.setAttribute(base, {predicate::country, row.country});  // of an index
+        // An index is in points. The answer gives a commodity no currency; the owner's table has them all in dollars.
+        quote = row.type == "INDEX" ? quoteNode(b, "pts") : currencyNode(b, "USD");
+      }
+      if (row.hasBar) {
+        const EdgeKey edge{base, quote, market, dataset};
+        b.appendCandles(edge, Resolution::Day, {row.bar});
+        b.setListing({edge, row.symbol, "", row.orderBookId, row.type, row.name});
+      }
+      written++;
     }
-    if (row.hasBar) {
-      const EdgeKey edge{base, quote, market, dataset};
-      store.appendCandles(edge, Resolution::Day, {row.bar});
-      store.setListing({edge, row.symbol, "", row.orderBookId, row.type, row.name});
-    }
-    written++;
-  }
+  });
   indicators_.insert(indicators_.end(), rows.begin(), rows.end());
   if (written) listener.changed();
   return written;
@@ -378,7 +381,6 @@ void NordnetSource::load(Store & store, Http & http, SourceListener & listener) 
       skipped += page.skipped;
 
       // To the store as each page arrives, not all at the end.
-      const DatasetId dataset = store.addDataset(kNordnetDataset);
       std::set<int> ids; // the markets with no MIC; read before the rows go, as
                          // what remove_if leaves at the end is unspecified
       for (const NordnetListing &l : page.listings)
@@ -398,27 +400,36 @@ void NordnetSource::load(Store & store, Http & http, SourceListener & listener) 
             ": rows on markets with no known MIC left out (Nordnet market " +
             text + ")");
       }
-      for (NordnetListing & l : page.listings) {
-        l.list = list.name;
-        // A market is its MIC; a listing on one Nordnet's id of which is not
-        // known is left out, as data with no market is refused.
-        const char *mic = knownMarketMic(l.marketId);
-        const char *marketName = knownMarketName(l.marketId);
-        const MarketId market =
-            store.addMarket(mic, marketName ? marketName : "");
-        store.setAttribute(market, {predicate::country, l.country});
-        const InstrumentId base = store.addInstrument("", l.name, kindOfNordnetType(l.type), l.isin, l.type);
-        const InstrumentId quote = currencyNode(store, l.currency);
-        // What Nordnet says of the instrument itself: thin edges, of the types it has.
-        store.setAttributes(base, l.attributes);
-        // Today's bar makes the edge; a listing with none stays a node nothing selects.
-        if (l.hasBar) {
-          const EdgeKey edge{base, quote, market, dataset};
-          store.appendCandles(edge, Resolution::Day, {l.bar});
-          // What the market says of it: what it calls it, its own id for it and the order book its history is asked for by.
-          store.setListing({edge, l.symbol, l.identifier, l.bookId, l.type, l.name});
+      // One page is one publication.
+      store.batch([&](Batch & b) {
+        const DatasetId dataset = b.addDataset(kNordnetDataset);
+        for (NordnetListing & l : page.listings) {
+          l.list = list.name;
+          // A market is its MIC; a listing on one Nordnet's id of which is not
+          // known is left out, as data with no market is refused.
+          const char *mic = knownMarketMic(l.marketId);
+          const char *marketName = knownMarketName(l.marketId);
+          const MarketId market =
+              b.addMarket(mic, marketName ? marketName : "");
+          b.setAttribute(market, {predicate::country, l.country});
+          // Nordnet says the name and type of an instrument from its home listing (the market of the ISIN's country); a
+        // listing elsewhere says them only where none are said yet, so two listings do not take turns at it.
+        const std::string country = b.view().said(NodeRef(market), predicate::country);
+        const bool home = !country.empty() && l.isin.compare(0, 2, country) == 0;
+        const InstrumentId base = home ? b.addInstrument("", l.name, kindOfNordnetType(l.type), l.isin, l.type)
+                                       : addInstrumentUnlessSaid(b, "", l.name, kindOfNordnetType(l.type), l.isin, l.type);
+          const InstrumentId quote = currencyNode(b, l.currency);
+          // What Nordnet says of the instrument itself: thin edges, of the types it has.
+          b.setAttributes(base, l.attributes);
+          // Today's bar makes the edge; a listing with none stays a node nothing selects.
+          if (l.hasBar) {
+            const EdgeKey edge{base, quote, market, dataset};
+            b.appendCandles(edge, Resolution::Day, {l.bar});
+            // What the market says of it: what it calls it, its own id for it and the order book its history is asked for by.
+            b.setListing({edge, l.symbol, l.identifier, l.bookId, l.type, l.name});
+          }
         }
-      }
+      });
       found += page.listings.size();
       listings_.insert(listings_.end(), page.listings.begin(), page.listings.end());
       if (!page.listings.empty()) listener.changed();

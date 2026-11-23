@@ -56,6 +56,6 @@ bool tooSparse(const std::vector<Candle> & bars);
 // its fees and ratings, and the edge on the off-exchange market (XOFF) in euro
 // under `dataset`. Nothing, writing nothing, when there are no bars or no valid
 // ISIN.
-std::optional<EdgeKey> writeFund(Store &, const std::string &dataset,
+std::optional<EdgeKey> writeFund(Batch &, const std::string &dataset,
                                  const FundRow &,
                                  const std::vector<Candle> &bars);

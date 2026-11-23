@@ -444,9 +444,7 @@ see data-model.md).
   provider's ids and symbol, FIGI). Nothing else is without one: a currency or a unit is its code (a
   currency pair is an edge between two currencies), and anything else that has no ISIN of its
   own gets one of ours (`privateIsin()`, `ZZ` and nine characters from what it is). Open: how aliases are matched when a
-  new provider is added; and a futures contract or a continuous series, whose name does not fit nine
-  characters ("Gold Dec 26"): a private ISIN from its contract code ("GCZ26") would, if the contract codes are
-  unique.
+  new provider is added.
 
 ## A graph of statements (proposed by the owner)
 
@@ -615,8 +613,8 @@ they decide how history has to be collected):
   from one dataset, a row carrying its own key, small, with the price series beside it
   under the same key, and the fields the market says: the symbol it calls the instrument,
   its own id for it ("XAIX" on one market and "419021" on another for one ETF), the order
-  book its history is asked for by, the provider's own type. An edge takes nothing before it
-  has data. `findEdge(symbol, market)` finds the edge by what a market calls it, whoever
+  book its history is asked for by, the provider's own type. An edge is seen only once it
+  has data; a listing said before the data is kept and shows with it. `findEdge(symbol, market)` finds the edge by what a market calls it, whoever
   said it.
 - A **thin edge is a triple of a node**, (subject, predicate, object): what is known of the
   thing itself, which is not part of any market, so **no dataset says it** (an icon, the
@@ -651,9 +649,9 @@ they decide how history has to be collected):
     with the reverse links ("is the CEO of") listed on the target.
 - **Private ISINs**: a thing that has none gets one of our own, made from what it is and
   not from who says it (there is one zinc): `ZZ` (ISO 3166-1's user-assigned code element;
-  no numbering agency issues ISINs under it), its name, upper case, in nine characters
-  padded with zeros, and the check digit (`privateIsin()`, tested against real ISINs). Zinc
-  is `ZZZINC000006`. Used for indicator rows with no ISIN (some metals and indices).
+  no numbering agency issues ISINs under it), a 64-bit hash of its exact text in nine
+  base-36 characters, and the check digit (`privateIsin()`). Zinc
+  is `ZZSEZBQVPB31`. Used for indicator rows with no ISIN (some metals and indices).
 - **A source with no discovery carries the ISIN in its data files** next to the ticker: it
   makes its instrument from the file, by its ISIN, which is the same node another source
   made, and its own edge has its ticker as the symbol. Nothing waits on the load order. A

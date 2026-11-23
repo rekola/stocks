@@ -14,8 +14,8 @@ using FactLog = std::function<void(const std::string &)>;
 // The facts in a SQLite file: one table keyed by (node key, predicate), in WAL mode, a transaction per batch. The
 // schema's version is in `PRAGMA user_version`.
 //
-// It never fails and never throws. A file that is not a database, is damaged or is of a newer schema is moved aside (next to
-// it, with `.bad-<time>` added) and a new one made; where the file cannot be made at all (no directory, no room, no rights)
+// It never fails and never throws. A file that is not a database or is damaged is moved aside (next to
+// it, with `.bad-<time>` added) and a new one made. A file of another schema (older or newer) is emptied in place and started over, with a line in `log`; where the file cannot be made at all (no directory, no room, no rights)
 // the store keeps nothing and says so through `log`. SQLiteCpp is used here and in no header.
 std::shared_ptr<FactStore> openSqliteFactStore(const std::filesystem::path & file, FactLog log = {});
 

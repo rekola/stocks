@@ -4,6 +4,8 @@
 #include <cctype>
 #include <cmath>
 #include <cstdlib>
+#include <limits>
+#include <vector>
 
 namespace {
 
@@ -92,18 +94,66 @@ std::vector<EdgeKey> allQuoteEdges(const Snapshot & snapshot) {
   return keys;
 }
 
+namespace {
+
+// The digits of a whole number held in a double (every double from 2^53 up is one), without the locale and without a
+// printf: the mantissa doubled once for each power of two, in base 10^9.
+std::string wholeDigits(double v) {
+  int exponent = 0;
+  const double fraction = std::frexp(v, &exponent);  // v = fraction * 2^exponent, fraction in [0.5, 1)
+  uint64_t mantissa = static_cast<uint64_t>(std::ldexp(fraction, 53));
+  exponent -= 53;  // v = mantissa * 2^exponent, and exponent is not negative for a value of 2^53 or more
+  constexpr uint32_t kBase = 1'000'000'000;
+  std::vector<uint32_t> limbs;  // least significant first
+  for (; mantissa > 0; mantissa /= kBase) limbs.push_back(static_cast<uint32_t>(mantissa % kBase));
+  for (int i = 0; i < exponent; i++) {
+    uint32_t carry = 0;
+    for (uint32_t & limb : limbs) {
+      const uint64_t doubled = uint64_t{limb} * 2 + carry;
+      limb = static_cast<uint32_t>(doubled % kBase);
+      carry = static_cast<uint32_t>(doubled / kBase);
+    }
+    if (carry) limbs.push_back(carry);
+  }
+  std::string out = std::to_string(limbs.back());
+  for (size_t i = limbs.size() - 1; i-- > 0;) {
+    const std::string part = std::to_string(limbs[i]);
+    out += std::string(9 - part.size(), '0') + part;
+  }
+  return out;
+}
+
+}  // namespace
+
 std::string fixed(double v, int decimals, bool sign) {
+  // No value, no text.
+  if (!std::isfinite(v)) return "";
   // Whole numbers only: printf's %f writes the locale's decimal point, and a window toolkit sets the locale (a
   // decimal comma then reads back as another number when the table sorts).
+  const double magnitude = std::abs(v);
+  constexpr double kLimit = 9007199254740992.0;  // 2^53: from here a double is a whole number, and below it times a power of ten is exact enough
+  decimals = std::max(decimals, 0);
   long long unit = 1;
-  for (int i = 0; i < decimals; i++) unit *= 10;
-  long long n = std::llround(std::abs(v) * static_cast<double>(unit));
-  std::string out = std::to_string(n / unit);
-  if (decimals > 0) {
-    std::string fraction = std::to_string(n % unit);
-    out += '.' + std::string(static_cast<size_t>(decimals) - fraction.size(), '0') + fraction;
+  int kept = 0;  // the decimals that fit; the rest of what is asked for is zeros (a value this large has no more to say)
+  while (kept < decimals && magnitude * static_cast<double>(unit) * 10 < kLimit) {
+    unit *= 10;
+    kept++;
   }
-  if (v < 0 && n != 0) out.insert(out.begin(), '-');
+  std::string out;
+  bool zero = false;
+  if (magnitude >= kLimit) {
+    out = wholeDigits(magnitude);  // 2^53 or more: a whole number
+  } else {
+    const long long n = std::llround(magnitude * static_cast<double>(unit));
+    zero = n == 0;
+    out = std::to_string(n / unit);
+    if (kept > 0) {
+      const std::string fraction = std::to_string(n % unit);
+      out += '.' + std::string(static_cast<size_t>(kept) - fraction.size(), '0') + fraction;
+    }
+  }
+  if (decimals > kept) out += (kept == 0 ? "." : "") + std::string(static_cast<size_t>(decimals - kept), '0');
+  if (v < 0 && !zero) out.insert(out.begin(), '-');
   else if (sign) out.insert(out.begin(), '+');
   return out;
 }

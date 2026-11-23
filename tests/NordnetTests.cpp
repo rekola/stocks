@@ -7,6 +7,8 @@
 #include "source/InstrumentTypes.h"
 #include "source/NordnetSource.h"
 
+#include <nlohmann/json.hpp>
+
 #include <fstream>
 #include <set>
 #include <sstream>
@@ -169,6 +171,77 @@ TEST(loading_pages_through_every_list_and_stores_instruments_markets_and_edges) 
   for (const EdgeKey & k : s->edges(xetra)) a = a || k == onXetra;
   for (const EdgeKey & k : s->edges(stockholm)) b = b || k == onStockholm;
   CHECK(a && b);  // one instrument, two edges, each in its own currency
+}
+
+TEST(a_page_of_a_list_is_one_publication) {
+  auto store = makeMemoryStore();
+  FakeHttp http;
+  http.answer = pages;
+  Listener listener;
+  auto lists = NordnetSource::defaultLists();
+  lists.erase(lists.begin(), lists.begin() + 1);
+  lists.resize(1);  // the certificates: one page
+  NordnetSource source(lists, std::chrono::milliseconds(0));
+  const auto before = store->snapshot();
+  source.load(*store, http, listener);
+  const auto after = store->snapshot();
+  CHECK(http.urls.size() == 1 && listener.changes == 1);
+  CHECK(after->version() == before->version() + 1 && after->quoteRowCount() > 0 && before->quoteRowCount() == 0);
+}
+
+namespace {
+
+// A page of the ETF list holding the first fixture row once per (market id, country, name), all of one ISIN.
+std::string pageOfListings(const std::string & isin, const std::vector<std::tuple<int, std::string, std::string>> & rows) {
+  using nlohmann::json;
+  const json first = json::parse(fixture("etflist-1.json"))["results"][0];
+  json page = {{"rows", rows.size()}, {"total_hits", rows.size()}, {"results", json::array()}};
+  for (const auto & [market, country, name] : rows) {
+    json row = first;
+    row["instrument_info"]["isin"] = isin;
+    row["instrument_info"]["long_name"] = name;
+    row["market_info"]["market_id"] = market;
+    row["exchange_info"] = {{"exchange_country", country}};
+    page["results"].push_back(row);
+  }
+  return page.dump();
+}
+
+}  // namespace
+
+TEST(listings_of_one_isin_with_different_names_leave_one_name_and_no_change_on_the_next_pass) {
+  // Xetra (DE), Stockholm (SE) and Copenhagen (DK): the home listing of a DE ISIN is the first, of an IE one there is none.
+  for (const std::string isin : {"DE0007164600", "IE00BHZRR030"}) {
+    auto store = makeMemoryStore();
+    FakeHttp http;
+    const bool hasHome = isin.substr(0, 2) == "DE";
+    http.answer = [&](const std::string &) {
+      return ok(pageOfListings(isin, {{11, "SE", "Abroad"}, {4, "DE", "Home"}, {14, "DK", "Elsewhere"}}));
+    };
+    Listener listener;
+    auto lists = NordnetSource::defaultLists();
+    lists.resize(1);
+    NordnetSource source(lists, std::chrono::milliseconds(0));
+    source.load(*store, http, listener);
+    const auto id = store->snapshot()->findInstrumentByIsin(isin);
+    CHECK(id.has_value());
+    // With a home listing its name stands; without one, the first said does (the Xetra row is the second here).
+    const std::string name = store->snapshot()->name(NodeRef(*id));
+    CHECK(name == (hasHome ? "Home" : "Abroad"));
+    const uint64_t version = store->snapshot()->version();
+    source.load(*store, http, listener);
+    CHECK(store->snapshot()->name(NodeRef(*id)) == name && store->snapshot()->version() == version);
+  }
+}
+
+TEST(a_source_that_is_not_the_instruments_own_says_its_name_and_type_only_where_none_is_said) {
+  auto store = makeMemoryStore();
+  store->batch([&](Batch & b) {
+    addInstrumentUnlessSaid(b, "", "First", InstrumentKind::Fund, "IE00BGV5VN51", "FUND");
+    addInstrumentUnlessSaid(b, "", "Second", InstrumentKind::Fund, "IE00BGV5VN51", "OTHER");
+  });
+  const auto id = *store->snapshot()->findInstrumentByIsin("IE00BGV5VN51");
+  CHECK(store->snapshot()->name(NodeRef(id)) == "First" && store->snapshot()->said(NodeRef(id), predicate::type) == "FUND");
 }
 
 TEST(loading_again_replaces_todays_bars_and_a_new_day_adds_one) {
@@ -538,7 +611,7 @@ TEST(the_indicator_lists_make_indices_in_points_currency_pairs_and_commodities_i
 
   // One with no ISIN gets one of ours, in the private namespace, from its symbol.
   const std::string bric = privateIsin("BRIC50D");
-  CHECK(bric == "ZZBRIC50D00" + std::string(1, bric.back()) && isValidIsin(bric));
+  CHECK(bric.rfind("ZZ", 0) == 0 && isValidIsin(bric));
   CHECK(s->findInstrumentByIsin(bric) && s->kind(*s->findInstrumentByIsin(bric)) == InstrumentKind::Index);
   CHECK(s->kind(*s->findInstrumentByIsin(privateIsin("LEAD"))) == InstrumentKind::Commodity);
 
@@ -649,8 +722,13 @@ TEST(a_private_isin_is_made_from_what_the_thing_is_in_a_namespace_nobody_issues_
     CHECK(isValidIsin(isin));
   CHECK(!isValidIsin("DE0008469009") && !isValidIsin("DE000846900") && !isValidIsin(""));
   const std::string zinc = privateIsin("ZINC");
-  CHECK(zinc.substr(0, 11) == "ZZZINC00000" && isValidIsin(zinc));  // there is one zinc: no source in it
-  CHECK(privateIsin("zinc") == zinc && privateIsin("Z-I NC") == zinc);  // case and punctuation do not matter
+  CHECK(zinc.rfind("ZZ", 0) == 0 && isValidIsin(zinc));  // there is one zinc: no source in it
   CHECK(privateIsin("LEAD") != zinc);
-  CHECK(privateIsin("TOOLONGNAME").empty() && privateIsin("").empty());
+  // The exact text is the key: case and punctuation tell things apart.
+  CHECK(privateIsin("zinc") != zinc && privateIsin("Z-I NC") != zinc && privateIsin("GC=F") != privateIsin("GCF"));
+  CHECK(privateIsin("abc") != privateIsin("ABC") && isValidIsin(privateIsin("abc")) && isValidIsin(privateIsin("ABC")));
+  // A long one has one too, and only nothing has none.
+  CHECK(isValidIsin(privateIsin("A TEXT THAT IS MUCH LONGER THAN NINE CHARACTERS")) && privateIsin("").empty());
+  // A fixed hash: the same on every run and platform.
+  CHECK(zinc == "ZZSEZBQVPB31");
 }

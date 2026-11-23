@@ -13,12 +13,12 @@ namespace {
 
 namespace fs = std::filesystem;
 
-constexpr int kSchemaVersion = 3;
+constexpr int kSchemaVersion = 4;  // 4: private ISINs are a hash of the exact text
 // SQLite's result codes for a damaged database and for a file that is none (kCorrupt, kNotADatabase): SQLiteCpp does
 // not show sqlite3.h, and nothing of SQLite itself is called from here.
 constexpr int kCorrupt = 11, kNotADatabase = 26;
 
-// A file that cannot be used as it is: damaged, not a database, or made by a newer program.
+// A file that cannot be used as it is: damaged or not a database.
 struct Unusable {
   std::string why;
 };
@@ -131,20 +131,27 @@ class SqliteFactStore : public FactStore {
   void open() {
     db_ = std::make_unique<SQLite::Database>(file_.string(), SQLite::OPEN_READWRITE | SQLite::OPEN_CREATE);
     db_->setBusyTimeout(2000);
-    // The first thing read from a file that is no database throws; a newer schema is not ours to read or change.
+    // The first thing read from a file that is no database throws.
     const int version = db_->execAndGet("PRAGMA user_version").getInt();
-    if (version > kSchemaVersion) throw Unusable{"its schema (" + std::to_string(version) + ") is newer than this program's"};
     db_->exec("PRAGMA journal_mode = WAL");
     db_->exec("PRAGMA synchronous = NORMAL");
     if (db_->execAndGet("PRAGMA quick_check(1)").getString() != "ok") throw Unusable{"it is damaged"};
-    if (version == 1) {
-      migrateFromVersion1();
-    } else if (version == 2) {
-      migrateFromVersion2();
-    } else {
-      createTable();
-      if (version < kSchemaVersion) db_->exec("PRAGMA user_version = " + std::to_string(kSchemaVersion));
+    if (version != kSchemaVersion) startOver(version);
+    createTable();
+  }
+
+  // A file of another schema, older or newer, is emptied in place: the sources say everything again.
+  void startOver(int version) {
+    SQLite::Transaction transaction(*db_);
+    std::vector<std::string> tables;
+    {
+      SQLite::Statement q(*db_, "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'");
+      while (q.executeStep()) tables.push_back(q.getColumn(0).getString());
     }
+    for (const std::string & table : tables) db_->exec("DROP TABLE \"" + table + "\"");
+    db_->exec("PRAGMA user_version = " + std::to_string(kSchemaVersion));
+    transaction.commit();
+    if (!tables.empty()) say(file_.string() + ": schema " + std::to_string(version) + ", not this program's; starting over");
   }
 
   // `value` has no declared type, so SQLite keeps what it is given (a real that is whole stays real); a truth value is an
@@ -155,69 +162,6 @@ class SqliteFactStore : public FactStore {
         "node_key INTEGER NOT NULL, predicate TEXT NOT NULL, "
         "value, is_bool INTEGER NOT NULL DEFAULT 0, updated INTEGER NOT NULL, "
         "PRIMARY KEY (node_key, predicate)) WITHOUT ROWID");
-  }
-
-  // The second schema gave a market a key of random bits; a market is its MIC
-  // now, so what was kept of the markets is left out: the sources say it again.
-  void migrateFromVersion2() {
-    SQLite::Transaction transaction(*db_);
-    db_->exec("DELETE FROM facts WHERE (node_key >> 60) = 2");
-    db_->exec("PRAGMA user_version = " + std::to_string(kSchemaVersion));
-    transaction.commit();
-  }
-
-  // The first schema kept the key of a node as text under a node type: an ISIN, a currency's code, a market's sixteen hex digits
-  // (random sixty-four bits) and a dataset's name. What can be given a key is, and the rest is left out: it is only what the
-  // sources said, and they say it again.
-  void migrateFromVersion1() {
-    SQLite::Transaction transaction(*db_);
-    db_->exec("ALTER TABLE facts RENAME TO facts_v1");
-    createTable();
-    SQLite::Statement old(*db_, "SELECT node_type, node_key, predicate, value, is_bool, updated FROM facts_v1");
-    SQLite::Statement put(*db_, "INSERT OR REPLACE INTO facts (node_key, predicate, value, is_bool, updated) VALUES (?, ?, ?, ?, ?)");
-    while (old.executeStep()) {
-      const std::string text = old.getColumn(1).getString();
-      std::optional<NodeKey> key;
-      switch (old.getColumn(0).getInt()) {
-        case 0:
-          key = instrumentKey(text);
-          break;
-        case 1:
-          break; // a market was a random number then; it is its MIC now, and
-                 // the sources say it again
-        case 2:
-          key = datasetKey(text);
-          break;
-        case 3:
-          key = currencyKey(text);
-          break;
-        default:
-          break;
-      }
-      if (!key) continue;
-      put.bind(1, static_cast<int64_t>(key->value));
-      put.bind(2, old.getColumn(2).getString());
-      const SQLite::Column value = old.getColumn(3);
-      if (value.isNull())
-        put.bind(3);
-      else if (value.isText())
-        put.bind(3, value.getString());
-      else if (value.isFloat())
-        put.bind(3, value.getDouble());
-      else if (value.isInteger())
-        put.bind(3, value.getInt64());
-      else {
-        put.reset();
-        continue;
-      }
-      put.bind(4, old.getColumn(4).getInt());
-      put.bind(5, old.getColumn(5).getInt64());
-      put.exec();
-      put.reset();
-    }
-    db_->exec("DROP TABLE facts_v1");
-    db_->exec("PRAGMA user_version = " + std::to_string(kSchemaVersion));
-    transaction.commit();
   }
 
   // Puts the file (and what WAL mode keeps beside it) out of the way; false where that cannot be done.

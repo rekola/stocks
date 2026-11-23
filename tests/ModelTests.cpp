@@ -280,9 +280,9 @@ TEST(a_fat_edge_has_a_typed_listing_and_only_once_it_has_data) {
   InstrumentId fund = w.store->addInstrument("", "Xtrackers AI", InstrumentKind::Etf, "IE00BGV5VN51");
   const EdgeKey onHel{fund, w.eur, w.hel, w.a}, onSto{fund, w.eur, w.sto, w.a};
 
-  // An edge exists once it has data: before that it takes nothing.
+  // An edge exists once it has data: before that its listing is kept but nothing finds the edge.
   w.store->setListing({onHel, "XAIX", "XAIX", "book-h", "UETF"});
-  CHECK(!w.snap()->listing(onHel) && !w.snap()->findEdge("XAIX", w.hel));
+  CHECK(w.snap()->listing(onHel) && !w.snap()->findEdge("XAIX", w.hel) && w.snap()->edges(w.hel).empty());
 
   w.store->appendCandles(onHel, Resolution::Day, {bar(1, 10)});
   w.store->appendCandles(onSto, Resolution::Day, {bar(1, 11)});
@@ -424,4 +424,83 @@ TEST(
   CHECK(w.snap()->version() ==
         version); // nothing changed: no edge under a part that is none
   CHECK(w.snap()->edges(w.hel).empty() && w.snap()->events(refused).empty());
+}
+
+TEST(a_batch_makes_one_version_and_one_snapshot_however_many_writes_it_holds) {
+  World w;
+  const auto before = w.snap();
+  EdgeKey edge = w.key(w.hel, w.a);
+  InstrumentId made;
+  w.store->batch([&](Batch & b) {
+    made = b.addInstrument("", "Neste", InstrumentKind::Company, "FI0009013296");
+    for (int i = 0; i < 50; i++) b.appendCandles(edge, Resolution::Day, {bar(i, 1 + i)});
+    b.setListing({edge, "NOKIA", "", "", "", "Nokia"});
+    // What the batch has written is read from inside it, and the store shows none of it yet.
+    CHECK(b.view().findInstrumentByIsin("FI0009013296") == made);
+    CHECK(!w.snap()->findInstrumentByIsin("FI0009013296") && w.snap() == before);
+  });
+  const auto after = w.snap();
+  CHECK(after != before && after->version() == before->version() + 1);
+  // A reader holding the snapshot from before sees none of it.
+  CHECK(!before->findInstrumentByIsin("FI0009013296") && before->candles(edge, Resolution::Day).candles.empty() && !before->listing(edge));
+  CHECK(after->candles(edge, Resolution::Day).candles.size() == 50 && after->listing(edge) && after->name(made) == "Neste");
+  CHECK(*after->findInstrumentByIsin("FI0009013296") == made);
+}
+
+TEST(a_batch_that_changes_nothing_publishes_nothing_and_one_that_throws_applies_nothing) {
+  World w;
+  const auto before = w.snap();
+  w.store->batch([&](Batch & b) { b.addMarket("XHEL", "Nasdaq Helsinki"); });
+  CHECK(w.snap() == before);
+  bool thrown = false;
+  try {
+    w.store->batch([&](Batch & b) {
+      b.addInstrument("", "Neste", InstrumentKind::Company, "FI0009013296");
+      b.appendCandles(EdgeKey{}, Resolution::Day, {bar(1, 1)});
+    });
+  } catch (const std::invalid_argument &) {
+    thrown = true;
+  }
+  CHECK(thrown && w.snap() == before && !w.snap()->findInstrumentByIsin("FI0009013296"));
+}
+
+TEST(a_listing_said_before_the_data_gives_the_same_reads_as_after_it) {
+  World first, second;
+  const EdgeKey edge = first.key(first.hel, first.a);
+  const Listing listing{edge, "NOKIA", "id", "book", "STOCK", "Nokia"};
+  first.store->setListing(listing);
+  CHECK(first.snap()->edges(first.hel).empty() && first.snap()->quoteRowCount() == 0 && !first.snap()->findEdge("NOKIA", first.hel));
+  first.store->appendCandles(edge, Resolution::Day, {bar(1, 5)});
+  second.store->appendCandles(edge, Resolution::Day, {bar(1, 5)});
+  second.store->setListing(listing);
+  for (World * w : {&first, &second}) {
+    const auto s = w->snap();
+    CHECK(s->listing(edge) == listing && s->edges(w->hel).size() == 1 && s->quoteRowCount() == 1);
+    CHECK(s->findEdge("NOKIA", w->hel) == edge && s->symbol(edge) == "NOKIA");
+  }
+}
+
+TEST(the_same_bars_again_make_no_new_version_and_a_changed_close_does) {
+  World w;
+  const EdgeKey edge = w.key(w.hel, w.a);
+  const Candle gap{1, kUndefined, kUndefined, kUndefined, 5, kUndefined};  // undefined numbers are NaN
+  w.store->appendCandles(edge, Resolution::Day, {gap, bar(2, 6)});
+  const auto first = w.snap();
+  w.store->appendCandles(edge, Resolution::Day, {gap, bar(2, 6)});
+  CHECK(w.snap() == first && w.snap()->version() == first->version());
+  w.store->appendCandles(edge, Resolution::Day, {bar(2, 7)});
+  CHECK(w.snap()->version() == first->version() + 1);
+  CHECK(w.snap()->lastCandles(edge, Resolution::Day, 1).candles[0].close == 7);
+  // The other series are the same: a repeat changes nothing.
+  const Announcement news{10, "c", "headline", "body", "url"};
+  const CorporateAction action{10, ActionKind::Split, 2, {}, ""};
+  const BookSnapshot book{1.5, {{10, 1}}, {{11, 1}}};
+  const EventKey event{w.nokia, w.a};
+  for (int i = 0; i < 2; i++) {
+    const uint64_t before = w.snap()->version();
+    w.store->appendAnnouncements(event, {news});
+    w.store->appendActions(event, {action});
+    w.store->appendBooks(edge, {book});
+    CHECK(w.snap()->version() == before + (i == 0 ? 3 : 0));
+  }
 }

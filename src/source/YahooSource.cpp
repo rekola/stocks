@@ -26,9 +26,9 @@ std::optional<double> number(const json & column, size_t i) {
 }
 
 // The instrument an entry is about: its ISIN is in the data (Yahoo gives none); a currency is its code.
-InstrumentId baseOf(Store & store, const ListEntry & e) {
+InstrumentId baseOf(Batch & store, const ListEntry & e) {
   if (e.kind == InstrumentKind::Currency) return currencyNode(store, e.base);
-  return store.addInstrument("", e.name, e.kind, e.isin);
+  return addInstrumentUnlessSaid(store, "", e.name, e.kind, e.isin);
 }
 
 // The ticker as a path segment: an index's caret is escaped.
@@ -95,49 +95,52 @@ bool YahooSource::parse(const std::string & body, const ListEntry & e, Store & s
     return false;
   }
 
-  const DatasetId dataset = store.addDataset(kYahooDataset);
-  const MarketId market = store.addMarket(e.mic, e.market);
-  const InstrumentId base = baseOf(store, e);
-  const InstrumentId quote = quoteNode(store, e.quote);
-  const EdgeKey edge{base, quote, market, dataset};
-  store.appendCandles(edge, Resolution::Day, bars);
-  // What Yahoo calls it, its own type (below) and the name a row shows: a pair is named by its two currencies, not by the
-  // base's name, which every pair of that base would share.
-  Listing listing{edge, e.yahoo, "", "", "", e.kind == InstrumentKind::Currency ? e.base + "/" + e.quote : e.name};
-  std::vector<Attribute> said;
-  if (auto meta = result.find("meta"); meta != result.end() && meta->is_object()) {
-    auto t = meta->find("instrumentType");
-    if (t != meta->end() && t->is_string()) listing.type = t->get<std::string>();
-    // Where the history begins, and the market's time zone (which a market has, not an instrument).
-    auto first = meta->find("firstTradeDate");
-    if (first != meta->end() && first->is_number_integer() && first->get<int64_t>() > 0)
-      said.push_back({predicate::firstTradeDay, int64_t(dayNumberOfInstant(first->get<int64_t>(), utcOffset))});
-    auto zone = meta->find("exchangeTimezoneName");
-    if (zone != meta->end() && zone->is_string()) store.setAttribute(market, {predicate::timezone, zone->get<std::string>()});
-  }
-  store.setListing(listing);
-  store.setAttributes(base, said);
+  // One entry is one publication: the bars, the listing and what is said of the instrument together.
+  store.batch([&](Batch & b) {
+    const DatasetId dataset = b.addDataset(kYahooDataset);
+    const MarketId market = b.addMarket(e.mic, e.market);
+    const InstrumentId base = baseOf(b, e);
+    const InstrumentId quote = quoteNode(b, e.quote);
+    const EdgeKey edge{base, quote, market, dataset};
+    b.appendCandles(edge, Resolution::Day, bars);
+    // What Yahoo calls it, its own type (below) and the name a row shows: a pair is named by its two currencies, not by the
+    // base's name, which every pair of that base would share.
+    Listing listing{edge, e.yahoo, "", "", "", e.kind == InstrumentKind::Currency ? e.base + "/" + e.quote : e.name};
+    std::vector<Attribute> said;
+    if (auto meta = result.find("meta"); meta != result.end() && meta->is_object()) {
+      auto t = meta->find("instrumentType");
+      if (t != meta->end() && t->is_string()) listing.type = t->get<std::string>();
+      // Where the history begins, and the market's time zone (which a market has, not an instrument).
+      auto first = meta->find("firstTradeDate");
+      if (first != meta->end() && first->is_number_integer() && first->get<int64_t>() > 0)
+        said.push_back({predicate::firstTradeDay, int64_t(dayNumberOfInstant(first->get<int64_t>(), utcOffset))});
+      auto zone = meta->find("exchangeTimezoneName");
+      if (zone != meta->end() && zone->is_string()) b.setAttribute(market, {predicate::timezone, zone->get<std::string>()});
+    }
+    b.setListing(listing);
+    b.setAttributes(base, said);
 
-  if (const json * events = member(result, "events"); events && events->is_object()) {
-    std::vector<CorporateAction> actions;
-    if (const json * dividends = member(*events, "dividends"); dividends && dividends->is_object())
-      for (const auto & [key, d] : dividends->items()) {
-        const json *date = member(d, "date"), *amount = member(d, "amount");
-        if (date && amount && date->is_number_integer() && amount->is_number())
-          actions.push_back({tradingDateOfDailyStamp(date->get<int64_t>(), utcOffset), ActionKind::Dividend, amount->get<double>(), quote, ""});
-      }
-    if (const json * splits = member(*events, "splits"); splits && splits->is_object())
-      for (const auto & [key, sp] : splits->items()) {
-        const json *date = member(sp, "date"), *numerator = member(sp, "numerator"), *denominator = member(sp, "denominator"),
-                   *ratio = member(sp, "splitRatio");
-        const double num = numerator && numerator->is_number() ? numerator->get<double>() : 0.0;
-        const double den = denominator && denominator->is_number() ? denominator->get<double>() : 0.0;
-        if (date && date->is_number_integer() && num > 0 && den > 0)
-          actions.push_back({tradingDateOfDailyStamp(date->get<int64_t>(), utcOffset), ActionKind::Split, num / den, {},
-                             ratio && ratio->is_string() ? ratio->get<std::string>() : std::string()});
-      }
-    store.appendActions({base, dataset}, actions);
-  }
+    if (const json * events = member(result, "events"); events && events->is_object()) {
+      std::vector<CorporateAction> actions;
+      if (const json * dividends = member(*events, "dividends"); dividends && dividends->is_object())
+        for (const auto & [key, d] : dividends->items()) {
+          const json *date = member(d, "date"), *amount = member(d, "amount");
+          if (date && amount && date->is_number_integer() && amount->is_number())
+            actions.push_back({tradingDateOfDailyStamp(date->get<int64_t>(), utcOffset), ActionKind::Dividend, amount->get<double>(), quote, ""});
+        }
+      if (const json * splits = member(*events, "splits"); splits && splits->is_object())
+        for (const auto & [key, sp] : splits->items()) {
+          const json *date = member(sp, "date"), *numerator = member(sp, "numerator"), *denominator = member(sp, "denominator"),
+                     *ratio = member(sp, "splitRatio");
+          const double num = numerator && numerator->is_number() ? numerator->get<double>() : 0.0;
+          const double den = denominator && denominator->is_number() ? denominator->get<double>() : 0.0;
+          if (date && date->is_number_integer() && num > 0 && den > 0)
+            actions.push_back({tradingDateOfDailyStamp(date->get<int64_t>(), utcOffset), ActionKind::Split, num / den, {},
+                               ratio && ratio->is_string() ? ratio->get<std::string>() : std::string()});
+        }
+      b.appendActions({base, dataset}, actions);
+    }
+  });
   return true;
 }
 
@@ -159,8 +162,8 @@ void YahooSource::load(Store & store, Http & http, SourceListener & listener) {
     for (const char * host : kHosts) {  // the second host answers when the first does not
       HttpResult r = http.get(std::string("https://") + host + "/v8/finance/chart/" + encoded(e.yahoo) + "?range=" + range_ +
                               "&interval=1d&events=div%7Csplit");
-      if (r.status == 429) {
-        listener.message("yahoo: rate limited, stopping");
+      if (r.status == 429 || r.status == 403) {
+        listener.message(r.status == 429 ? "yahoo: rate limited, stopping" : "yahoo: refused, stopping");
         return;
       }
       if (!r.ok()) {

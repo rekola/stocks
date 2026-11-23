@@ -182,14 +182,37 @@ const char * currencyName(const std::string & symbol) {
   return "";
 }
 
-InstrumentId currencyNode(Store & store, const std::string & symbol) {
-  if (auto known = store.snapshot()->findInstrument(symbol)) return *known;
+InstrumentId currencyNode(Batch & store, const std::string & symbol) {
+  if (auto known = store.view().findInstrument(symbol)) return *known;
   const char * label = currencyName(symbol);
   return store.addInstrument(symbol, *label ? label : symbol, InstrumentKind::Currency);
 }
 
-InstrumentId quoteNode(Store & store, const std::string & code) {
+InstrumentId addInstrumentUnlessSaid(Batch & store, const std::string & symbol, const std::string & name, InstrumentKind kind,
+                                     const std::string & isin, const std::string & type) {
+  std::string sayName = name, sayType = type;
+  if (!isin.empty())
+    if (auto known = store.view().findInstrumentByIsin(isin)) {
+      if (!store.view().said(NodeRef(*known), predicate::name).empty()) sayName.clear();
+      if (!store.view().said(NodeRef(*known), predicate::type).empty()) sayType.clear();
+    }
+  return store.addInstrument(symbol, sayName, kind, isin, sayType);
+}
+
+InstrumentId quoteNode(Batch & store, const std::string & code) {
   if (code != "pts") return currencyNode(store, code);
-  if (auto known = store.snapshot()->findInstrument(code)) return *known;
+  if (auto known = store.view().findInstrument(code)) return *known;
   return store.addInstrument(code, "Index points", InstrumentKind::Unit);
+}
+
+InstrumentId currencyNode(Store & store, const std::string & symbol) {
+  InstrumentId id;
+  store.batch([&](Batch & b) { id = currencyNode(b, symbol); });
+  return id;
+}
+
+InstrumentId quoteNode(Store & store, const std::string & code) {
+  InstrumentId id;
+  store.batch([&](Batch & b) { id = quoteNode(b, code); });
+  return id;
 }
