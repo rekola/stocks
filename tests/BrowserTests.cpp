@@ -234,6 +234,21 @@ TEST(numbers_are_written_with_a_point_and_rounded) {
   CHECK(fixed(0.5, 2, true) == "+0.50");
   CHECK(fixed(-0.5, 2, true) == "-0.50");
   CHECK(fixed(7, 0) == "7");
+  CHECK(fixed(-0.004, 2) == "0.00");  // no "-0.00"
+  CHECK(fixed(-0.004, 2, true) != "-0.00");
+}
+
+TEST(a_value_with_no_number_or_too_large_a_one_is_written_without_breaking) {
+  const double inf = std::numeric_limits<double>::infinity();
+  CHECK(fixed(std::nan(""), 2) == "" && fixed(inf, 2) == "" && fixed(-inf, 2, true) == "");
+  CHECK(fixed(1e20, 2) == "100000000000000000000.00");
+  CHECK(fixed(-1e20, 0) == "-100000000000000000000");
+  CHECK(fixed(1e300, 2).size() == 301 + 3 && fixed(1e300, 2).substr(0, 4) == "1000");
+  CHECK(fixed(std::numeric_limits<double>::max(), 2).size() == 309 + 3);
+  // Where only some of the decimals fit the integer, the rest are zeros.
+  CHECK(fixed(1e17, 2) == "100000000000000000.00");
+  CHECK(fixed(123456789012345.5, 4) == "123456789012345.5000");
+  CHECK(fixed(9007199254740993.0, 1) == "9007199254740992.0");
 }
 
 TEST(q_and_ctrl_x_ctrl_c_quit) {
