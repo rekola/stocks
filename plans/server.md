@@ -44,6 +44,29 @@ their visualizations, which read long histories of many instruments at once.
         -> API (HTTP)         the only way in or out for everything else
             -> desktop app (a `server` adapter fills its Store), tools, research jobs
 
+## Keys
+
+Every node has a **key**, one 64-bit number that means the same in every run, in the app, in the catalog and on the wire
+(`src/model/NodeKey.h`, and "Nodes without records" in `data-model.md`). The server adopts it as it is, so that nothing
+anywhere translates between ids, and no table holds an "internal id" of its own:
+
+- an **instrument** is its ISIN, packed (56 bits, the check digit left out); a **currency or a unit** its code (up to ten letters or
+  digits); a **dataset** its code, which its adapter defines and never changes; a **market** sixty random bits, minted once;
+- the kind of node is in the top bits, and a key is below 2^62, so it is a positive `BIGINT` in MariaDB and a `UInt64` in ClickHouse;
+- in text, an instrument is its ISIN, a currency or dataset its code and a market its fifteen hex digits (`describe()`), which is
+  what a URL carries;
+- more kinds of node (an issuer, a person, an index) take the kind values 4 to 7 in bit 62, and keys stay below 2^63, so none of
+  the keys above changes.
+
+**Who mints a market's key.** The key of an instrument, a currency or a dataset is made from what it is, so any machine makes the
+same one. A market has no such identity (some have no MIC), so its key is minted where the market is first said, and two
+machines would mint two. With a server the **catalog mints them**: its `markets` table holds the key with unique constraints on
+the MIC and on each provider's id, and a market is found by those or by its name, as the app does. A client that has kept facts of
+markets in its own file reconciles on first contact: its markets are matched to the catalog's by MIC, id at a source or name, the
+catalog's key stands, and the file is written again under it (a market the catalog does not know yet is sent, and gets a key).
+Open: what happens to two markets the catalog finds to be one (a merge, which has to rewrite every edge), and the API for a
+client to ask for keys.
+
 ## Immutability and a server that never stops loading
 
 The desktop app's `Snapshot` is immutable, and the server takes data all the time:
@@ -108,15 +131,19 @@ exists), and intraday for every instrument for a few years.
 Sketch, to be argued with (ClickHouse):
 
     bars(
-      edge_id   UInt64,            -- (base, quote, market, dataset), as in the app
+      base UInt64, quote UInt64, market UInt64, dataset UInt64,  -- the edge's four keys (see Keys), as in the app
       resolution UInt8,            -- a code: min1 ... day, week, month, quarter (see Calendars and resolutions)
       t         Int64,             -- the start of the bar: UTC seconds, or a day number for a date resolution
       o, h, l, c Float64,
       volume    Float64,
       version   UInt64             -- the ingest batch that wrote this row
     ) ENGINE = ReplacingMergeTree(version)
-      ORDER BY (edge_id, resolution, t)
+      ORDER BY (market, base, quote, dataset, resolution, t)
 
+- **The edge is four keys, not an `edge_id`.** A hash of the four keys would need a table to look it up in and a collision to
+  reason about; the keys are stable and compact, and the four columns repeat down a sorted run, which the column store compresses
+  to almost nothing. The order is the app's (`EdgeKey`'s): a market first, so that a preset (every edge of a market) is one range.
+  Open: measure it with the slice of step 1, and whether `dataset` first suits the research reads better.
 - One row per bar: the column store makes that cheap (delta-coded timestamps,
   float codecs, compression), unlike a row store. Prices are doubles, as in the
   app.
@@ -366,7 +393,7 @@ are no answers yet to where they come from or how much to keep.
 
 Snapshots of bids and asks at a moment, as in the app's model. Proposed: one row
 per snapshot with the levels as arrays (prices and sizes), ordered by
-`(edge_id, ts)`, versioned like bars.
+`(market, base, quote, dataset, ts)` (the edge's keys, as for bars), versioned like bars.
 
 Open: where books come from (a provider may offer market depth; crypto exchanges
 publish theirs openly), how often, retention and downsampling, and the
@@ -379,7 +406,9 @@ see data-model.md).
   instrument on a market in a currency, as a dataset reports it), aliases per
   provider (its ids for the instrument and the listing), adapter state (what was
   loaded, when, how far). A version sequence for ingest batches. New tables in a
-  schema of their own, next to the legacy ones.
+  schema of their own, next to the legacy ones. **Every node table is keyed by the node's key**
+  (see Keys): there is no auto-increment id anywhere, so the app's facts, the bars and the catalog
+  join on the same number. A dataset's row has its code, its name and what its days and prices mean.
 - **Nodes and edges: a node is seen only through an edge.** All the possible nodes
   of the universe exist in the catalog, and an edge exists only when it has data. A
   node with no edge is invisible, because every preset selects edges, so there is
@@ -391,7 +420,7 @@ see data-model.md).
   `PTC`, `EQUITY`, `FUTURE`, `CURRENCY`, ...) are combined into one
   vocabulary, which names certificates: company, ETF, certificate, currency, commodity,
   index, other (`InstrumentKind`). Each adapter maps its provider's types onto it and
-  keeps the provider's own type beside it (`Instrument::type`), which is what the
+  keeps the provider's own type beside it (the `type` fact), which is what the
   mapping came from; the mapping table is in `src/source/InstrumentTypes.cpp` and in
   the server's catalog it becomes a table. New provider types start as "other" until
   mapped.
@@ -404,11 +433,14 @@ see data-model.md).
   today. Open: what a preset's selection looks like (market, kind, ...).
 - **Events**: announcements and corporate actions, per instrument and dataset, as
   in the model; stored like bars (rows, versioned).
-- **Identity across providers**: an internal instrument id, plus the **ISIN** where
-  there is one (an ETF listed on two markets is one instrument with two edges: 16
-  such pairs among a few thousand ETFs), plus aliases (each provider's ids and symbol,
-  FIGI). Open: how aliases are matched when a new provider is added, and what
-  identifies instruments with no ISIN (currency pairs, futures).
+- **Identity across providers**: the instrument's key is its **ISIN** (an ETF listed on two
+  markets is one instrument with two edges: 16 such pairs among a few thousand ETFs), plus aliases (each
+  provider's ids and symbol, FIGI). Nothing else is without one: a currency or a unit is its code (a
+  currency pair is an edge between two currencies), and anything else that has no ISIN of its
+  own gets one of ours (`privateIsin()`, `ZZ` and nine characters from what it is). Open: how aliases are matched when a
+  new provider is added; and a futures contract or a continuous series, whose name does not fit nine
+  characters ("Gold Dec 26"): a private ISIN from its contract code ("GCZ26") would, if the contract codes are
+  unique.
 
 ## A graph of statements (proposed by the owner)
 
@@ -429,11 +461,11 @@ according to one provider" and "its ticker is NOKIA.HE, according to another".
   (base, quote, market, dataset) is the special case whose payload is a series of bars
   per resolution. Others come with the same machinery: issued by, tracks (an ETF
   tracks an index), underlying of (a certificate's asset), listed on, same as.
-- **What it replaces.** Today an instrument keeps the first writer's name, type and
-  ISIN, so the first provider to mention it wins (`Instrument` is a record of
-  first-writer values). With statements these become resolved values: a rule picks what
-  to show (a preferred dataset per predicate, as Wikidata's ranks do), and the others
-  remain. `Instrument` stays as that resolved view for the app and the API.
+- **What it replaces.** Today a node keeps one value per predicate, the last said (the facts of
+  `data-model.md`), so with two providers saying different things whichever wrote last wins. With statements
+  these become resolved values: a rule picks what to show (a preferred dataset per predicate, as Wikidata's
+  ranks do), and the others remain. The app and the API read the resolved value, as `Snapshot::name()` and
+  `attribute()` do now.
 - **Types become classes with a hierarchy** (bull certificate, certificate, ETF, fund,
   ...), so a vocabulary that has to grow does so by adding a subclass, selecting by a
   class includes its subclasses, and the mapping from a provider's type to ours is
@@ -453,9 +485,9 @@ according to one provider" and "its ticker is NOKIA.HE, according to another".
   query-language engine, only these tables and the few queries the presets need.
 - **Open**: which predicates first (provider type, provider ids, labels, descriptions,
   ISIN are the candidates, since they are what the adapters already collect and
-  discard); the resolution rules; how nodes that are not instruments (issuers, indexes,
-  markets) get ids; whether the API exposes statements or only the resolved view; and
-  how the app's `Store` holds them.
+  discard); the resolution rules; whether the API exposes statements or only the resolved view; and
+  how the app's `Store` holds them. Nodes that are not instruments get keys of their own kind (see Keys): a
+  market's is minted, an issuer's or a person's would be too, and an index is an instrument with an ISIN.
 
 ## Ingest
 
@@ -504,8 +536,8 @@ thousand). More lists are one entry each.
 - **Markets** may have only a numeric id in the answer. They are named from the id where it
   is known (inferred from the data) and by a placeholder otherwise. The exchange code in a
   listing's slug is not used: it can be the home exchange while the listing trades elsewhere.
-  A market is found by code, provider id or name, else made, with a surrogate id (a crypto
-  venue has no MIC); one with no name is named later and keeps its edges. The segment named
+  A market is found by code, provider id or name, else made, with a minted key (a crypto
+  venue has no MIC; see Keys); one with no name is named later and keeps its edges. The segment named
   in a row's own venue list ("First North", "Spotlight") is a market of its own.
 - **What a row holds**: instrument info (id, name, symbol, ISIN, type, currency, issuer,
   clearing place), market info, a price block with a timestamp, returns, fund info and
@@ -569,10 +601,10 @@ they decide how history has to be collected):
   markets and datasets alike; the first use of the statements below, without the dataset
   yet): one value per predicate, `setAttribute(node, predicate, value)`, and a value can
   change: the last said stands (with two providers saying different things it is whichever
-  wrote last, until statements say who says them), and an empty value says nothing.
-  `Instrument`, `Market` and `Dataset` are the resolved views the app reads, made from the
-  attributes. A node is found by an attribute: a market by the provider's id or its name,
-  tried in that order, and an instrument by its ISIN.
+  wrote last, until statements say who says them), and an empty value says nothing. There is no
+  `Instrument`, `Market` or `Dataset` record: a node is its key, and the app reads what is said of it (`name()`, `symbol()`,
+  `kind()`, `attribute()`). A market is found by an attribute, the provider's id or its name, tried in that order, and an
+  instrument is its ISIN.
 - **Edges are rows of a fixed shape** (the owner's decision), plain C++ and kept apart from
   the nodes. A **fat edge is a Listing**: an instrument on a market in a quote currency
   from one dataset, a row carrying its own key, small, with the price series beside it
@@ -742,9 +774,10 @@ Sketch:
     GET /v1/edges?market=...&summary=1
         one answer for every edge of a market: latest bar, change and a short
         trace, precomputed at ingest, so a table fills with one request
-    GET /v1/series/{edge}?interval=1d&from=...&to=...&asof=VERSION
-        a columnar chunk
-    GET /v1/books/{edge}?from=...&to=...
+    GET /v1/series/{base}/{quote}/{market}/{dataset}?interval=1d&from=...&to=...&asof=VERSION
+        a columnar chunk; an edge is its four keys in text: an ISIN or a code, a code,
+        the market's fifteen hex digits, a dataset's code
+    GET /v1/books/{base}/{quote}/{market}/{dataset}?from=...&to=...
     GET /v1/events/{instrument}
     GET /v1/changes?since=VERSION
         what changed (long poll or a stream), so the app follows the server
@@ -754,7 +787,9 @@ row in one request, history only for the rows on screen.
 
 In the app: a `Store` backed by the server (`RemoteStore`), which builds the
 `Snapshot` from chunks; a series chunk is the unit its persistent vectors are made
-of, and a version from the server is the snapshot's version.
+of, and a version from the server is the snapshot's version. Nodes need no translation: the keys are
+the server's, so a chunk's edge is the app's `EdgeKey` as it is; only a market the client minted before
+it met the server is re-keyed (see Keys).
 
 Open: the chunk format (Arrow IPC, or something plain and packed), authentication,
 limits per client, and whether research jobs read the database directly or only
@@ -786,6 +821,8 @@ when it outgrows the disk.
 ## Open questions
 
 - A graph of statements for the catalog: adopt it, and which predicates first.
+- Market keys: the catalog mints them; how a client's own are reconciled, and the merge of two markets that turn out to be one.
+- Whether the four-key bars order serves the research reads, measured with step 1.
 - Calendars: where they come from, and how weeks and months are cut for 24-hour markets.
 - Absolute week numbers (from the day numbers), month and quarter numbering, and the
   owner's resolution codes.

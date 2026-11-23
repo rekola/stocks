@@ -227,9 +227,9 @@ of the node sequences); **no market or dataset record at all**: a market is its 
   a sort and a frame cost is the same within the noise. The bars are nearly all of the memory.
 - A node that a source looks up before it says it (a currency by its symbol) is not said again after a restart, so its `updated`
   stays at the run that last said it. That is true: `updated` is when a source last said it. Not changed.
-- **The server** (`server.md`): its `edge_id` becomes a hash of the four keys, or a catalog sequence, and "an internal
-  instrument id plus the ISIN" becomes the packed ISIN. A currency pair's quote and base are currency codes, which settles
-  what identifies instruments with no ISIN there. The market key authority above is its open question.
+- **The server** (`server.md`, "Keys"): written for the keys: the bars carry the four keys of the edge, the catalog is keyed by
+  the node key, an instrument is its packed ISIN and a currency pair's ends are currency codes. The market key authority (the
+  catalog mints, a client is reconciled on first contact) and more kinds of node are open there.
 
 ## Steps
 
@@ -309,7 +309,7 @@ Not done:
   commodity, index, ETF, certificate, other) is the combined vocabulary: each adapter
   maps its provider's types onto it (`src/source/InstrumentTypes.cpp`: UETF
   and KETF are ETFs and PTC are certificates; EQUITY, ETF, INDEX, FUTURE and
-  CURRENCY), and keeps the provider's own type beside it (`Instrument::type`) as what
+  CURRENCY), and keeps the provider's own type beside it (the `type` fact) as what
   the mapping came from. A certificate is a certificate whoever lists it. Selecting
   edges by type is not used yet (see server.md for what is hard about it).
 
