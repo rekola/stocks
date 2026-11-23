@@ -177,12 +177,10 @@ everything else on them are not kept, and there is no server in this step.
   that says ten thousand known things again costs one transaction. The destructor flushes. `SqliteFactStore` (SQLiteCpp,
   behind `openSqliteFactStore()`, in no header) is the SQLite one.
 - **The file**: one table `facts(node_key INTEGER, predicate, value, is_bool, updated)` keyed by `(node_key, predicate)`, WAL
-  mode, a transaction per batch, the schema version in `PRAGMA user_version` (2). The first schema kept the key as text under a
-  node type; such a file is converted when it is opened (an ISIN or a code is packed, a market's sixteen hex digits give its
-  low sixty bits, a dataset's name is its code; a row that cannot be given a key is left out, since the sources say it again).
+  mode, a transaction per batch, the schema version in `PRAGMA user_version` (one schema, `kSchemaVersion`). A file of any other version, older or newer, has its tables dropped and is started over in place, in one transaction, and says so once; nothing is migrated.
   `value` has no declared type, so SQLite's own null, integer, real and text are kept as given (a real that is whole stays a
   real) and a truth value is an integer with `is_bool` set. An undefined number is not said, so it is not kept. A file that
-  is not a database, is damaged or has a newer `user_version` is moved aside (`.bad-<time>`, with its WAL files) and
+  is not a database or is damaged is moved aside (`.bad-<time>`, with its WAL files) and
   an empty one started; where no file can be made the store keeps nothing and says so. Nothing throws out of `SqliteFactStore`.
 - **Where**: `--facts FILE`, else `facts.sqlite` in the user's data directory (`XDG_DATA_HOME` or `~/.local/share/stocks`;
   `%LOCALAPPDATA%\stocks` on Windows); `--no-facts` runs without. `makeMemoryStore()` with no argument keeps nothing, which

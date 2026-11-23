@@ -212,40 +212,6 @@ TEST(a_dataset_is_its_code_and_its_name_is_a_fact_that_is_the_code_until_said) {
   CHECK(store->snapshot()->name(d) == "Nordnet" && store->snapshot()->findDataset("nordnet") == d);
 }
 
-TEST(a_file_of_the_first_schema_is_converted_to_keys) {
-  TempFile t;
-  {
-    SQLite::Database db(t.file.string(), SQLite::OPEN_READWRITE | SQLite::OPEN_CREATE);
-    db.exec(
-        "CREATE TABLE facts (node_type INTEGER NOT NULL, node_key TEXT NOT NULL, predicate TEXT NOT NULL, value, is_bool INTEGER NOT NULL DEFAULT 0, "
-        "updated INTEGER NOT NULL, checked INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (node_type, node_key, predicate)) WITHOUT ROWID");
-    db.exec("INSERT INTO facts VALUES (0, 'FI0009000681', 'name', 'Nokia', 0, 100, 0)");
-    db.exec("INSERT INTO facts VALUES (0, 'FI0009000681', 'halal', 1, 1, 101, 0)");
-    db.exec("INSERT INTO facts VALUES (0, 'FI0009000680', 'name', 'a wrong ISIN', 0, 102, 0)");
-    db.exec("INSERT INTO facts VALUES (3, 'EUR', 'name', 'Euro', 0, 103, 0)");
-    db.exec("INSERT INTO facts VALUES (2, 'nordnet', 'name', 'Nordnet', 0, 104, 0)");
-    db.exec("INSERT INTO facts VALUES (2, 'not a code', 'name', 'x', 0, 105, 0)");
-    db.exec("INSERT INTO facts VALUES (1, '00000000000abcde', 'country', 'FI', 0, 106, 0)");
-    db.exec("INSERT INTO facts VALUES (1, 'nonsense', 'country', 'SE', 0, 107, 0)");
-    db.exec("INSERT INTO facts VALUES (0, 'symbol:OLD', 'name', 'older still', 0, 108, 0)");
-    db.exec("PRAGMA user_version = 1");
-  }
-  auto loaded = byKey(openSqliteFactStore(t.file)->loadAll());
-  CHECK(loaded.size() == 4); // what has no key is left out, and the markets:
-                             // they are their MIC now
-  const uint64_t nokia = numberOf(instrumentKey("FI0009000681"));
-  CHECK(std::get<std::string>(at(loaded, nokia, "name").value) == "Nokia" && at(loaded, nokia, "name").updated == 100);
-  CHECK(std::get<bool>(at(loaded, nokia, "halal").value) == true);
-  CHECK(std::get<std::string>(at(loaded, numberOf(currencyKey("EUR")), "name").value) == "Euro");
-  CHECK(std::get<std::string>(at(loaded, numberOf(datasetKey("nordnet")), "name").value) == "Nordnet");
-  // It is a file of the new schema now: opened again it is not converted again, and it takes new facts.
-  auto facts = openSqliteFactStore(t.file);
-  FactBatch b;
-  b.changed = {{nokia, "name", std::string("Nokia Oyj"), 200}};
-  facts->apply(b);
-  CHECK(byKey(facts->loadAll()).size() == 4 && t.movedAside() == 0);
-}
-
 TEST(an_unchanged_write_moves_updated_and_makes_no_version) {
   Clock clock;
   auto store = makeMemoryStore(optionsFor(nullptr, clock));
@@ -409,51 +375,58 @@ TEST(a_code_that_is_no_mic_makes_no_market_and_data_for_it_is_refused) {
   CHECK(thrown && store->snapshot()->edgeMarkets().empty());
 }
 
-TEST(
-    a_file_of_the_second_schema_loses_its_markets_which_the_sources_say_again) {
-  TempFile t;
-  Clock clock;
-  const uint64_t nokia = numberOf(instrumentKey("FI0009000681"));
-  const uint64_t randomMarket =
-      (uint64_t{2} << 60) |
-      0x123456789ABCull; // a market as the second schema made one
-  {
-    SQLite::Database db(t.file.string(),
-                        SQLite::OPEN_READWRITE | SQLite::OPEN_CREATE);
-    db.exec("CREATE TABLE facts (node_key INTEGER NOT NULL, predicate TEXT NOT "
-            "NULL, value, is_bool INTEGER NOT NULL DEFAULT 0, "
-            "updated INTEGER NOT NULL, PRIMARY KEY (node_key, predicate)) "
-            "WITHOUT ROWID");
-    db.exec("INSERT INTO facts VALUES (" + std::to_string(nokia) +
-            ", 'name', 'Nokia', 0, 100)");
-    db.exec("INSERT INTO facts VALUES (" + std::to_string(randomMarket) +
-            ", 'name', 'Nasdaq Helsinki', 0, 101)");
-    db.exec("PRAGMA user_version = 2");
-  }
-  auto loaded = byKey(openSqliteFactStore(t.file)->loadAll());
-  CHECK(loaded.size() == 1 &&
-        std::get<std::string>(at(loaded, nokia, "name").value) == "Nokia");
+namespace {
+
+// A file at `version` holding one fact.
+void makeFileAtVersion(const fs::path & file, int version) {
+  SQLite::Database db(file.string(), SQLite::OPEN_READWRITE | SQLite::OPEN_CREATE);
+  db.exec("CREATE TABLE facts (node_key INTEGER NOT NULL, predicate TEXT NOT NULL, value, is_bool INTEGER NOT NULL DEFAULT 0, "
+          "updated INTEGER NOT NULL, PRIMARY KEY (node_key, predicate)) WITHOUT ROWID");
+  db.exec("INSERT INTO facts VALUES (" + std::to_string(numberOf(datasetKey("x"))) + ", 'name', 'x', 0, 1)");
+  db.exec("PRAGMA user_version = " + std::to_string(version));
 }
 
-TEST(a_file_of_a_newer_schema_is_moved_aside_and_replaced) {
+int userVersion(const fs::path & file) {
+  SQLite::Database db(file.string(), SQLite::OPEN_READONLY);
+  return db.execAndGet("PRAGMA user_version").getInt();
+}
+
+// The schema version this program writes: what a brand-new file says.
+int currentVersion() {
   TempFile t;
+  { openSqliteFactStore(t.file); }
+  return userVersion(t.file);
+}
+
+void checkStartsOver(int version) {
+  TempFile t;
+  makeFileAtVersion(t.file, version);
+  std::vector<std::string> said;
   {
-    auto facts = openSqliteFactStore(t.file);
+    auto facts = openSqliteFactStore(t.file, [&](const std::string & s) { said.push_back(s); });
+    CHECK(facts->loadAll().empty());
     FactBatch b;
-    b.changed = {{numberOf(datasetKey("x")), "name", std::string("x"), 1}};
+    b.changed = {{numberOf(datasetKey("y")), "name", std::string("y"), 2}};
     facts->apply(b);
-  }  // closed: the log is folded into the file
-  {
-    // `user_version` is four bytes, big-endian, at offset 60 of the header.
-    std::fstream f(t.file, std::ios::in | std::ios::out | std::ios::binary);
-    f.seekp(60);
-    const char newer[4] = {0, 0, 0, 99};
-    f.write(newer, 4);
+    CHECK(byKey(facts->loadAll()).size() == 1);
   }
+  CHECK(said.size() == 1 && said[0].find("schema " + std::to_string(version)) != std::string::npos);
+  CHECK(userVersion(t.file) == currentVersion());
+  CHECK(t.movedAside() == 0);
+}
+
+}  // namespace
+
+TEST(a_file_of_an_older_schema_starts_over_in_place) { checkStartsOver(currentVersion() - 1); }
+TEST(a_file_of_a_newer_schema_starts_over_in_place) { checkStartsOver(currentVersion() + 96); }
+TEST(a_file_with_no_version_but_a_table_starts_over_in_place) { checkStartsOver(0); }
+
+TEST(a_file_of_the_current_schema_keeps_its_facts) {
+  TempFile t;
+  makeFileAtVersion(t.file, currentVersion());
   std::vector<std::string> said;
   auto facts = openSqliteFactStore(t.file, [&](const std::string & s) { said.push_back(s); });
-  CHECK(said.size() == 1 && said[0].find("newer") != std::string::npos);
-  CHECK(t.movedAside() >= 1 && facts->loadAll().empty());
+  CHECK(facts->loadAll().size() == 1 && said.empty() && t.movedAside() == 0);
 }
 
 TEST(a_file_that_cannot_be_made_keeps_nothing_and_does_not_throw) {
