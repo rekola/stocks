@@ -79,7 +79,7 @@ class Quotes : public cellui::TableModel {
   std::shared_ptr<IconLoader> icons_;
   std::shared_ptr<const Snapshot> snapshot_;
   std::vector<EdgeKey> keys_;
-  mutable std::unordered_map<uint32_t, std::string> marketLabels_, datasetNames_;
+  mutable std::unordered_map<uint64_t, std::string> marketLabels_, datasetNames_;
   mutable std::unordered_map<int, std::vector<float>> traces_;  // the rows drawn lately, for the span trace() gives
   mutable std::vector<double> numbers_[2];                      // the sort keys of price and change
   mutable std::vector<std::string> texts_[HISTORY];             // and of the text columns, in lower case

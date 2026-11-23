@@ -332,7 +332,7 @@ TEST(yahoo_makes_the_instrument_from_the_isin_in_its_list_and_the_same_node_as_a
   CHECK(YahooSource::parse(fixture("nokia.json"), entry("NOKIA.HE"), *store, error));
   auto s = store->snapshot();
   EdgeKey k = edgeOf(*s, kNokia, "EUR", "Nasdaq Helsinki", "yahoo");
-  CHECK(k.base == made.id && s->instruments().size() == 2);  // the one instrument, and the euro
+  CHECK(k.base == made.id && s->nodeCount(NodeType::Instrument) == 2);  // the one instrument, and the euro
   CHECK(s->symbol(k) == "NOKIA.HE");                          // what Yahoo calls it
   // Where Yahoo's history begins is said of the instrument.
   auto first = s->attribute(k.base, predicate::firstTradeDay);

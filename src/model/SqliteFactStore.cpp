@@ -1,5 +1,7 @@
 #include "model/SqliteFactStore.h"
 
+#include "model/NodeKey.h"
+
 #include <SQLiteCpp/SQLiteCpp.h>
 
 #include <chrono>
@@ -11,7 +13,7 @@ namespace {
 
 namespace fs = std::filesystem;
 
-constexpr int kSchemaVersion = 1;
+constexpr int kSchemaVersion = 2;
 // SQLite's result codes for a damaged database and for a file that is none (kCorrupt, kNotADatabase): SQLiteCpp does
 // not show sqlite3.h, and nothing of SQLite itself is called from here.
 constexpr int kCorrupt = 11, kNotADatabase = 26;
@@ -52,15 +54,13 @@ class SqliteFactStore : public FactStore {
     std::vector<StoredFact> out;
     if (!db_) return out;
     try {
-      SQLite::Statement q(*db_, "SELECT node_type, node_key, predicate, value, is_bool, updated FROM facts");
+      SQLite::Statement q(*db_, "SELECT node_key, predicate, value, is_bool, updated FROM facts");
       while (q.executeStep()) {
         StoredFact f;
-        const int type = q.getColumn(0).getInt();
-        if (type < 0 || type > static_cast<int>(StoredType::Currency)) continue;
-        f.type = static_cast<StoredType>(type);
-        f.node = q.getColumn(1).getString();
-        f.predicate = q.getColumn(2).getString();
-        const SQLite::Column value = q.getColumn(3);
+        f.node = static_cast<uint64_t>(q.getColumn(0).getInt64());
+        if (f.node == 0) continue;
+        f.predicate = q.getColumn(1).getString();
+        const SQLite::Column value = q.getColumn(2);
         if (value.isNull())
           f.value = std::monostate{};
         else if (value.isText())
@@ -68,13 +68,13 @@ class SqliteFactStore : public FactStore {
         else if (value.isFloat())
           f.value = value.getDouble();
         else if (value.isInteger()) {
-          if (q.getColumn(4).getInt() != 0)
+          if (q.getColumn(3).getInt() != 0)
             f.value = value.getInt64() != 0;
           else
             f.value = value.getInt64();
         } else
           continue;  // a blob: not ours
-        f.updated = q.getColumn(5).getInt64();
+        f.updated = q.getColumn(4).getInt64();
         out.push_back(std::move(f));
       }
     } catch (const std::exception & e) {
@@ -88,37 +88,29 @@ class SqliteFactStore : public FactStore {
     if (!db_ || batch.empty()) return;
     try {
       SQLite::Transaction transaction(*db_);
-      SQLite::Statement forget(*db_, "DELETE FROM facts WHERE node_type = ? AND node_key = ?");
-      for (const StoredNode & n : batch.forget) {
-        forget.bind(1, static_cast<int32_t>(n.type));
-        forget.bind(2, n.key);
-        forget.exec();
-        forget.reset();
-      }
       SQLite::Statement put(*db_,
-                            "INSERT INTO facts (node_type, node_key, predicate, value, is_bool, updated) "
-                            "VALUES (?, ?, ?, ?, ?, ?) "
-                            "ON CONFLICT (node_type, node_key, predicate) DO UPDATE SET "
+                            "INSERT INTO facts (node_key, predicate, value, is_bool, updated) "
+                            "VALUES (?, ?, ?, ?, ?) "
+                            "ON CONFLICT (node_key, predicate) DO UPDATE SET "
                             "value = excluded.value, is_bool = excluded.is_bool, updated = excluded.updated");
       for (const auto * list : {&batch.changed, &batch.rechecked})
         for (const StoredFact & f : *list) {
-          put.bind(1, static_cast<int32_t>(f.type));
-          put.bind(2, f.node);
-          put.bind(3, f.predicate);
+          put.bind(1, static_cast<int64_t>(f.node));
+          put.bind(2, f.predicate);
           int32_t is_bool = 0;
           if (const auto * t = std::get_if<std::string>(&f.value))
-            put.bind(4, *t);
+            put.bind(3, *t);
           else if (const auto * i = std::get_if<int64_t>(&f.value))
-            put.bind(4, *i);
+            put.bind(3, *i);
           else if (const auto * d = std::get_if<double>(&f.value))
-            put.bind(4, *d);
+            put.bind(3, *d);
           else if (const auto * b = std::get_if<bool>(&f.value)) {
-            put.bind(4, static_cast<int32_t>(*b ? 1 : 0));
+            put.bind(3, static_cast<int32_t>(*b ? 1 : 0));
             is_bool = 1;
           } else
-            put.bind(4);
-          put.bind(5, is_bool);
-          put.bind(6, static_cast<int64_t>(f.updated));
+            put.bind(3);
+          put.bind(4, is_bool);
+          put.bind(5, static_cast<int64_t>(f.updated));
           put.exec();
           put.reset();
         }
@@ -145,14 +137,77 @@ class SqliteFactStore : public FactStore {
     db_->exec("PRAGMA journal_mode = WAL");
     db_->exec("PRAGMA synchronous = NORMAL");
     if (db_->execAndGet("PRAGMA quick_check(1)").getString() != "ok") throw Unusable{"it is damaged"};
-    // `value` has no declared type, so SQLite keeps what it is given (a real that is whole stays real); a truth value is an
-    // integer with `is_bool` set.
+    if (version == 1) {
+      migrateFromVersion1();
+    } else {
+      createTable();
+      if (version < kSchemaVersion) db_->exec("PRAGMA user_version = " + std::to_string(kSchemaVersion));
+    }
+  }
+
+  // `value` has no declared type, so SQLite keeps what it is given (a real that is whole stays real); a truth value is an
+  // integer with `is_bool` set. The key of the node is its number (NodeKey.h), whose top bits say what kind of node it is.
+  void createTable() {
     db_->exec(
         "CREATE TABLE IF NOT EXISTS facts ("
-        "node_type INTEGER NOT NULL, node_key TEXT NOT NULL, predicate TEXT NOT NULL, "
+        "node_key INTEGER NOT NULL, predicate TEXT NOT NULL, "
         "value, is_bool INTEGER NOT NULL DEFAULT 0, updated INTEGER NOT NULL, "
-        "PRIMARY KEY (node_type, node_key, predicate)) WITHOUT ROWID");
-    if (version < kSchemaVersion) db_->exec("PRAGMA user_version = " + std::to_string(kSchemaVersion));
+        "PRIMARY KEY (node_key, predicate)) WITHOUT ROWID");
+  }
+
+  // The first schema kept the key of a node as text under a node type: an ISIN, a currency's code, a market's sixteen hex digits
+  // (random sixty-four bits) and a dataset's name. What can be given a key is, and the rest is left out: it is only what the
+  // sources said, and they say it again.
+  void migrateFromVersion1() {
+    SQLite::Transaction transaction(*db_);
+    db_->exec("ALTER TABLE facts RENAME TO facts_v1");
+    createTable();
+    SQLite::Statement old(*db_, "SELECT node_type, node_key, predicate, value, is_bool, updated FROM facts_v1");
+    SQLite::Statement put(*db_, "INSERT OR REPLACE INTO facts (node_key, predicate, value, is_bool, updated) VALUES (?, ?, ?, ?, ?)");
+    while (old.executeStep()) {
+      const std::string text = old.getColumn(1).getString();
+      std::optional<NodeKey> key;
+      switch (old.getColumn(0).getInt()) {
+        case 0:
+          key = instrumentKey(text);
+          break;
+        case 1:
+          if (text.size() == 16 && text.find_first_not_of("0123456789abcdef") == std::string::npos)
+            key = marketKey(std::stoull(text, nullptr, 16));
+          break;
+        case 2:
+          key = datasetKey(text);
+          break;
+        case 3:
+          key = currencyKey(text);
+          break;
+        default:
+          break;
+      }
+      if (!key) continue;
+      put.bind(1, static_cast<int64_t>(key->value));
+      put.bind(2, old.getColumn(2).getString());
+      const SQLite::Column value = old.getColumn(3);
+      if (value.isNull())
+        put.bind(3);
+      else if (value.isText())
+        put.bind(3, value.getString());
+      else if (value.isFloat())
+        put.bind(3, value.getDouble());
+      else if (value.isInteger())
+        put.bind(3, value.getInt64());
+      else {
+        put.reset();
+        continue;
+      }
+      put.bind(4, old.getColumn(4).getInt());
+      put.bind(5, old.getColumn(5).getInt64());
+      put.exec();
+      put.reset();
+    }
+    db_->exec("DROP TABLE facts_v1");
+    db_->exec("PRAGMA user_version = " + std::to_string(kSchemaVersion));
+    transaction.commit();
   }
 
   // Puts the file (and what WAL mode keeps beside it) out of the way; false where that cannot be done.

@@ -15,7 +15,8 @@
 // with the program are), so that a company is a file and not code. Pointers are JSON pointers (RFC 6901); a field
 // with several tries them in turn.
 //
-//   name, market, dataset     what the data is called in the store ("Some Funds" is a market, "some" a dataset)
+//   name, market, dataset     what the data is called in the store ("Some Funds" is a market, "some" the code of a dataset: one to ten letters
+//                             or digits, and never changed, since what is kept is kept under it)
 //   pauseMs, refreshHours     the wait between requests (2000) and how often to load again (6)
 //   headers                   sent with every request
 //   token                     {page, regex}: a page that hands out a token (the first capture of the regex) that the other URLs have in `{token}`

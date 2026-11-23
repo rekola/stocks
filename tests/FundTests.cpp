@@ -174,7 +174,7 @@ TEST(the_funds_are_shown_at_once_from_the_list_alone) {
   CHECK(edgeOf(*s, "LU0823428346", "Alpha Funds", "alpha").has_value());  // the ISIN in the id
   CHECK(edgeOf(*s, "FI4000297817", "Alpha Funds", "alpha").has_value());  // the ISIN in the details
   CHECK(said(listener, "found in the details at /identifiers/isin"));
-  CHECK(s->instruments().size() == 4);  // two funds, the one found in the details, the euro: not the unwanted, the old or the unpriced
+  CHECK(s->nodeCount(NodeType::Instrument) == 4);  // two funds, the one found in the details, the euro: not the unwanted, the old or the unpriced
   CHECK(said(listener, "1 left out for an old NAV") && said(listener, "1 for no price"));
   CHECK(!asked(http, "rates") && !asked(http, "details/ALPHANORDIC"));  // no history, no details, until a fund is wanted
   CHECK(listener.changes >= 1);
@@ -336,10 +336,10 @@ TEST(a_fund_with_a_wrong_isin_is_not_stored_and_is_reported) {
   Listener listener;
   FundSource funds = source("beta");
   funds.load(*store, http, listener);
-  CHECK(store->snapshot()->instruments().empty());
+  CHECK(store->snapshot()->nodeCount(NodeType::Instrument) == 0);
   CHECK(said(listener, "no ISIN for 1 (Typo)"));
   CHECK(!writeFund(*store, "beta", "Beta Funds", FundRow{.isin = "", .name = "x"}, {{1, 0, 0, 0, 1, 0}}));
-  CHECK(store->snapshot()->instruments().empty());
+  CHECK(store->snapshot()->nodeCount(NodeType::Instrument) == 0);
 }
 TEST(the_dates_a_list_gives_are_day_numbers) {
   using nlohmann::json;
@@ -388,7 +388,7 @@ TEST(a_failed_token_page_says_so_and_writes_nothing) {
   FundSource funds = source("beta");
   funds.load(*store, http, listener);
   CHECK(listener.changes == 0 && listener.messages.size() == 1);
-  CHECK(store->snapshot()->instruments().empty());
+  CHECK(store->snapshot()->nodeCount(NodeType::Instrument) == 0);
 }
 
 TEST(sparse_series_are_judged_by_their_typical_gap) {
@@ -444,8 +444,8 @@ TEST(a_real_discovery_answer_shows_the_funds_with_an_isin_and_a_new_nav_and_says
     // Every edge is a fund with a valid ISIN, one bar with a close and a change to say the NAV before it; nothing is asked for but the list and the details of
     // the funds with no ISIN.
     size_t edges = 0;
-    for (const Market & market : snapshot->markets())
-      for (const EdgeKey & edge : snapshot->edges(market.id)) {
+    for (MarketId market : snapshot->edgeMarkets())
+      for (const EdgeKey & edge : snapshot->edges(market)) {
         edges++;
         auto base = snapshot->instrument(edge.base);
         CHECK(base && base->kind == InstrumentKind::Fund && isValidIsin(base->isin));
@@ -460,8 +460,8 @@ TEST(a_real_discovery_answer_shows_the_funds_with_an_isin_and_a_new_nav_and_says
     // The change the list gives is the NAV before the latest, which the history of the day before says too.
     for (const auto & [id, close] : expected["previousClose"].items()) {
       std::optional<double> previous;
-      for (const Market & market : snapshot->markets())
-        for (const EdgeKey & edge : snapshot->edges(market.id))
+      for (MarketId market : snapshot->edgeMarkets())
+        for (const EdgeKey & edge : snapshot->edges(market))
           if (snapshot->listing(edge)->identifier == id) previous = snapshot->previousClose(edge, snapshot->candles(edge, Resolution::Day).candles.back().time);
       CHECK(previous && std::fabs(*previous - close.get<double>()) < 0.005);
     }
@@ -473,8 +473,8 @@ TEST(a_real_discovery_answer_shows_the_funds_with_an_isin_and_a_new_nav_and_says
       CHECK(instrument.has_value());
       if (!instrument) continue;
       bool found = false;
-      for (const Market & market : snapshot->markets())
-        for (const EdgeKey & edge : snapshot->edges(market.id))
+      for (MarketId market : snapshot->edgeMarkets())
+        for (const EdgeKey & edge : snapshot->edges(market))
           if (edge.base == instrument->id) found = snapshot->listing(edge)->identifier == id;
       CHECK(found);
     }

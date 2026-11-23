@@ -1,5 +1,7 @@
 #pragma once
 
+#include "model/NodeKey.h"
+
 #include <cmath>
 #include <cstdint>
 #include <limits>
@@ -18,10 +20,11 @@
 template <class T>
 using Seq = immer::flex_vector<T>;
 
-// Ids are assigned by the Store; a default-constructed id (0) is "none".
+// A node is named by its key (NodeKey.h): the same number in every run, made from what the node is (an ISIN, a code) or minted
+// for a market. A default-constructed id (0) is "none".
 template <class Tag>
 struct Id {
-  uint32_t value = 0;
+  uint64_t value = 0;
   bool valid() const { return value != 0; }
   friend bool operator==(Id a, Id b) { return a.value == b.value; }
   friend bool operator<(Id a, Id b) { return a.value < b.value; }
@@ -109,7 +112,7 @@ enum class NodeType : uint8_t { Instrument, Market, Dataset };
 // Any node. The typed ids convert to it.
 struct NodeRef {
   NodeType type = NodeType::Instrument;
-  uint32_t id = 0;
+  uint64_t id = 0;  // the node's key
   NodeRef() = default;
   NodeRef(InstrumentId i) : type(NodeType::Instrument), id(i.value) {}
   NodeRef(MarketId i) : type(NodeType::Market), id(i.value) {}
@@ -155,16 +158,19 @@ struct Instrument {
   std::string type;  // the provider's own type ("UETF", "EQUITY"), beside the combined kind
 };
 
-// The resolved view of a market's attributes. The id is a surrogate: a market is found by what is said about it. The
-// name is empty until one is known.
+// The resolved view of a market's attributes. The id is the market's own key, minted when it was first said: a market is found
+// again by what is said about it (its MIC, its id at a source, its name). The name is empty until one is known.
 struct Market {
   MarketId id;
   std::string name;
 };
 
-// Where a fact came from: a provider, a file, a prediction model. Two datasets that disagree both stay.
+// Where a fact came from: a provider, a file, a prediction model. Two datasets that disagree both stay. A dataset is its code,
+// one to ten letters or digits that its adapter defines and never changes; the name is what a person reads, a fact of the
+// dataset that is the code until something says otherwise.
 struct Dataset {
   DatasetId id;
+  std::string code;
   std::string name;
 };
 
@@ -301,7 +307,7 @@ inline size_t hashCombine(size_t seed, size_t v) { return seed ^ (v + 0x9e3779b9
 
 template <class Tag>
 struct std::hash<Id<Tag>> {
-  size_t operator()(Id<Tag> i) const { return std::hash<uint32_t>()(i.value); }
+  size_t operator()(Id<Tag> i) const { return std::hash<uint64_t>()(i.value); }
 };
 template <>
 struct std::hash<NodeRef> {
