@@ -6,6 +6,7 @@
 #include "source/NordnetDetails.h"
 #include "source/SourceRunner.h"
 
+#include <algorithm>
 #include <fstream>
 #include <sstream>
 
@@ -131,6 +132,28 @@ TEST(a_connection_that_fails_is_tried_again_at_the_next_load) {
   source.loadBatch(*store, http, listener, std::chrono::milliseconds(0), 300);
   source.loadBatch(*store, http, listener, std::chrono::milliseconds(0), 300);
   CHECK(http.urls.size() == 4);
+}
+
+TEST(a_refusal_is_said_once_and_nothing_more_is_asked_for_this_session) {
+  auto store = makeMemoryStore();
+  addInstruments(*store);
+  // A third instrument, so that there is one left after the refusal.
+  InstrumentId eur = store->addInstrument("EUR", "Euro", InstrumentKind::Currency);
+  InstrumentId other = store->addInstrument("", "Another", InstrumentKind::Company, "US0378331005");
+  EdgeKey key{other, eur, *store->snapshot()->findMarket("XXXX"), *store->snapshot()->findDataset("nordnet")};
+  store->appendCandles(key, Resolution::Day, {{dayNumber(2026, 1, 2), 1, 1, 1, 4.2, 1}});
+  store->setListing({key, "Another", "id", "other-book", "X", "Another"});
+  FakeHttp http;
+  http.answer = [&](const std::string &) { return http.urls.size() == 2 ? failed(429) : failed(404); };
+  Listener listener;
+  NordnetDetails source;
+  const auto none = std::chrono::milliseconds(0);
+  CHECK(!source.loadBatch(*store, http, listener, none, 300));  // stopped: the runner asks no more
+  CHECK(http.urls.size() == 2);
+  CHECK(std::count(listener.messages.begin(), listener.messages.end(), "nordnet details: refused, stopping") == 1);
+  CHECK(!source.loadBatch(*store, http, listener, none, 300));  // nor at a later call
+  CHECK(http.urls.size() == 2);
+  CHECK(listener.messages.size() == 1);
 }
 
 TEST(a_country_is_known_by_its_finnish_name_in_any_case_and_never_guessed) {

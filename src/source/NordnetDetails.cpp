@@ -181,6 +181,7 @@ bool NordnetDetails::loadBatch(Store & store, Http & http, SourceListener & list
       }
     }
   }
+  if (refused_) return false;  // asked for nothing more this session
   size_t done = 0;
   for (const Target & t : targets) {
     if (listener.cancelled()) return true;
@@ -190,6 +191,13 @@ bool NordnetDetails::loadBatch(Store & store, Http & http, SourceListener & list
     HttpResult r = http.get(t.fund ? fundUrl(t.orderBook) : stockUrl(t.orderBook), kHeaders);
     std::vector<Attribute> said;
     std::string error;
+    if (r.status == 403 || r.status == 429) {
+      // A refusal is for every instrument: said once, and nothing more is asked for this session.
+      tried_.erase(t.id.value);
+      refused_ = true;
+      listener.message("nordnet details: refused, stopping");
+      return false;
+    }
     if (!r.ok()) {
       if (r.status != 404) tried_.erase(t.id.value);  // a failure of the connection is tried again at the next load
     } else if (!(t.fund ? parseFund(r.body, said, error) : parseStock(r.body, said, error))) {
