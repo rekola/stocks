@@ -5,6 +5,7 @@
 #include "model/Dates.h"
 #include "source/AutoSource.h"
 #include "source/FundSource.h"
+#include "source/InstrumentLists.h"
 #include "source/NordnetSource.h"
 #include "source/SourceRunner.h"
 #include "source/YahooSource.h"
@@ -412,18 +413,26 @@ TEST(yahoo_keeps_its_own_type_on_the_edge) {
 
 namespace {
 
-// A source that says what it did: it changes the store `changes` times, or none.
+// A source that says what it did: it tells of `changes` changes, and puts a bar of its dataset (its name) in the store if
+// there is any.
 class Scripted : public Source {
  public:
   Scripted(std::string n, int changes, std::chrono::milliseconds every = {}) : name_(std::move(n)), changes_(changes), every_(every) {}
   std::string name() const override { return name_; }
   std::string description() const override { return ""; }
-  void load(Store &, Http &, SourceListener & listener) override {
+  std::vector<std::string> datasetCodes() const override { return {name_}; }
+  void load(Store & store, Http &, SourceListener & listener) override {
     loads++;
+    if (changes_ > 0 && writeBar) store.batch([&](Batch & b) {
+      const InstrumentId base = b.addInstrument("", "Nokia", InstrumentKind::Company, "FI0009000681");
+      const InstrumentId eur = currencyNode(b, "EUR");
+      b.appendCandles({base, eur, b.addMarket("XHEL"), b.addDataset(name_)}, Resolution::Day, {{1, 1, 1, 1, 1, 1}});
+    });
     for (int i = 0; i < changes_; i++) listener.changed();
   }
   std::chrono::milliseconds refreshInterval() const override { return every_; }
   int loads = 0;
+  bool writeBar = true;  // false: it only writes instruments, and still calls changed()
 
  private:
   std::string name_;
@@ -480,6 +489,37 @@ TEST(auto_with_nordnet_that_cannot_be_reached_loads_yahoo) {
   for (const std::string & m : listener.messages) jumped = jumped || m == "nordnet gave nothing: using yahoo";
   for (const std::string & u : http.urls) asked = asked || u.find("finance.yahoo.com") != std::string::npos;
   CHECK(jumped && asked);
+}
+
+TEST(auto_falls_back_when_the_primary_only_wrote_instruments_and_stays_when_it_wrote_a_bar) {
+  for (const bool bar : {false, true}) {
+    auto store = makeMemoryStore();
+    FakeHttp http;
+    auto primary = std::make_unique<Scripted>("nordnet", 2);
+    primary->writeBar = bar;
+    auto fallback = std::make_unique<Scripted>("yahoo", 1);
+    Scripted * f = fallback.get();
+    AutoSource source(std::move(primary), std::move(fallback));
+    Listener listener;
+    store->addInstrument("", "Nokia", InstrumentKind::Company, "FI0009000681");
+    source.load(*store, http, listener);
+    CHECK((f->loads == 1) == !bar);
+  }
+}
+
+TEST(a_source_loading_beside_the_primary_does_not_make_it_have_given_something) {
+  auto store = makeMemoryStore();
+  FakeHttp http;
+  auto primary = std::make_unique<Scripted>("nordnet", 1);
+  primary->writeBar = false;
+  auto other = std::make_unique<Scripted>("funds", 1);  // another dataset, already in the store
+  Listener listener;
+  other->load(*store, http, listener);
+  auto fallback = std::make_unique<Scripted>("yahoo", 1);
+  Scripted * f = fallback.get();
+  AutoSource source(std::move(primary), std::move(fallback));
+  source.load(*store, http, listener);
+  CHECK(f->loads == 1);
 }
 
 TEST(a_stopped_primary_has_not_failed) {

@@ -1,23 +1,20 @@
 #include "source/AutoSource.h"
 
+#include <set>
+
 namespace {
 
-// Passes everything on and counts the changes: a load that changed the store gave something.
-class Counting : public SourceListener {
- public:
-  explicit Counting(SourceListener & inner) : inner_(inner) {}
-  void changed() override {
-    changes++;
-    inner_.changed();
-  }
-  void message(const std::string & m) override { inner_.message(m); }
-  bool cancelled() const override { return inner_.cancelled(); }
-  bool pause(std::chrono::milliseconds d) override { return inner_.pause(d); }
-  int changes = 0;
-
- private:
-  SourceListener & inner_;
-};
+// Whether any edge has data from one of the datasets: what a source gave, read from the store and not from what it said it did.
+bool hasData(const Snapshot & snapshot, const std::vector<std::string> & codes) {
+  std::set<DatasetId> datasets;
+  for (const std::string & code : codes)
+    if (auto dataset = snapshot.findDataset(code)) datasets.insert(*dataset);
+  if (datasets.empty()) return false;
+  for (MarketId market : snapshot.edgeMarkets())
+    for (const EdgeKey & edge : snapshot.edges(market))
+      if (datasets.count(edge.dataset)) return true;
+  return false;
+}
 
 }  // namespace
 
@@ -26,11 +23,11 @@ void AutoSource::load(Store & store, Http & http, SourceListener & listener) {
     chosen()->load(store, http, listener);
     return;
   }
-  Counting counted(listener);
-  primary_->load(store, http, counted);
+  primary_->load(store, http, listener);
   if (listener.cancelled()) return;  // stopped, not failed: decide at the next load
   decided_ = true;
-  if (counted.changes > 0) return;
+  // Only what the primary put in the store counts, not other sources loading beside it.
+  if (hasData(*store.snapshot(), primary_->datasetCodes())) return;
   failed_ = true;
   listener.message(primary_->name() + " gave nothing: using " + fallback_->name());
   fallback_->load(store, http, listener);
