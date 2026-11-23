@@ -210,19 +210,22 @@ cannot be given where an instrument is wanted. Zero is no key.
   schema file) names its code in the schema, and the schema is refused with a code that does not fit. Rules: a code is
   permanent, and a dataset whose meaning changes gets a new code, since bars under the old one keep the old meaning.
   Decided: ten characters, and a string and not a number, so that no list of numbers has to be kept and a schema file or a model
-  can name its dataset without asking anyone. Open: two adapters with the same code are not yet refused at start-up.
+  can name its dataset without asking anyone. Two sources that write the same code are refused at start-up (`datasetCodeClash()`, `Source::datasetCodes()`), and a test holds the shipped fund schemas to distinct codes. Dataset code and not name is what the history loader and the details look a dataset up by, since a name can change.
 
 **Done**: the keys and their packing; ids that are keys; the facts in one map from key to facts, with the index from a fact's text
 to the keys that say it (`findByAttribute`; what resolving and the unique rule use); no stored records, the views `instrument()`,
 `market()` and `dataset()` being made from the facts when asked (`nodeCount()` and `edgeMarkets()` take the place of the node
-sequences); restoring that is loading; schema 2 and the conversion of the first; dataset codes; rows in the order of their symbols.
+sequences); restoring that is loading; schema 2 and the conversion of the first; dataset codes and their uniqueness; rows in the order of their keys (an instrument's ISIN, then the quote and the dataset): that order is stable and costs nothing, and a heading sorts by what a person looks for. Ordering by symbol was tried and costs a lookup of the symbol of every edge on every refresh, about 60 ms of 100 on a market of 50,000 rows.
 
 **Not done**
 - The views `Instrument`, `Market` and `Dataset` are still types the calls return. Whether `Market` and `Dataset` go, a market
   being its key and its name `attribute(key, name)`, is to be decided with the table, which reads a few facts of each row.
-- `EdgeKey`, `EventKey`, `SeriesKey` and `Listing` hold four keys of eight bytes where there were four of four: measure the
-  persistent maps on a full store before anything else depends on the size.
-- Refusing two adapters with the same dataset code at start-up.
+- Nothing of the above needs more. `EdgeKey`, `EventKey`, `SeriesKey` and `Listing` hold four keys of eight bytes where there
+  were four of four, and measured with `stocks_period_bench` on 50,000 edges of 60 daily bars (a Release build, before and after the
+  keys): the store takes 310 MB against 317, the edge list 18 ms against 17 to 25, a refresh 38 ms against 37 to 59, and what a period,
+  a sort and a frame cost is the same within the noise. The bars are nearly all of the memory.
+- A node that a source looks up before it says it (a currency by its symbol) is not said again after a restart, so its `updated`
+  stays at the run that last said it. That is true: `updated` is when a source last said it. Not changed.
 - **The server** (`server.md`): its `edge_id` becomes a hash of the four keys, or a catalog sequence, and "an internal
   instrument id plus the ISIN" becomes the packed ISIN. A currency pair's quote and base are currency codes, which settles
   what identifies instruments with no ISIN there. The market key authority above is its open question.

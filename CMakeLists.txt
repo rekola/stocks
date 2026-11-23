@@ -78,7 +78,7 @@ target_link_libraries(stocks_model PRIVATE SQLiteCpp)
 
 # The browser: the screen, its commands and the rows it shows, as a library so the tests can drive it.
 add_library(stocks_lib STATIC src/Browser.cpp src/AttributeView.cpp src/Quotes.cpp src/Synthetic.cpp src/source/Http.cpp src/source/InstrumentLists.cpp src/source/InstrumentTypes.cpp
-  src/icons/IconLoader.cpp src/history/HistoryLoader.cpp src/source/YahooSource.cpp src/source/NordnetSource.cpp src/source/SourceRunner.cpp src/source/AutoSource.cpp
+  src/icons/IconLoader.cpp src/history/HistoryLoader.cpp src/source/YahooSource.cpp src/source/NordnetSource.cpp src/source/SourceRunner.cpp src/source/DatasetCodes.cpp src/source/AutoSource.cpp
   src/source/FundRows.cpp src/source/FundSource.cpp src/source/NordnetDetails.cpp src/source/Countries.cpp)
 target_include_directories(stocks_lib PUBLIC src)
 target_link_libraries(stocks_lib PUBLIC cellui stocks_model httpclient::httpclient nlohmann_json::nlohmann_json)
