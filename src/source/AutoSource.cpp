@@ -12,6 +12,7 @@ class Counting : public SourceListener {
   }
   void message(const std::string & m) override { inner_.message(m); }
   bool cancelled() const override { return inner_.cancelled(); }
+  bool pause(std::chrono::milliseconds d) override { return inner_.pause(d); }
   int changes = 0;
 
  private:

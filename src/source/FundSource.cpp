@@ -9,7 +9,6 @@
 #include <filesystem>
 #include <fstream>
 #include <sstream>
-#include <thread>
 
 using nlohmann::json;
 
@@ -376,8 +375,8 @@ FundSource::FundSource(FundSchema schema)
 
 void FundSource::load(Store & store, Http & http, SourceListener & listener) {
   const std::string who = schema_.name + ": ";
-  const auto pause = [&] {
-    if (schema_.pause.count() > 0) std::this_thread::sleep_for(schema_.pause);
+  const auto pause = [&] {  // false: cancelled, return now
+    return schema_.pause.count() <= 0 || listener.pause(schema_.pause);
   };
   std::string error, token;
   if (!schema_.tokenPage.empty()) {
@@ -391,7 +390,7 @@ void FundSource::load(Store & store, Http & http, SourceListener & listener) {
       return;
     }
     history_->setToken(token);
-    pause();
+    if (!pause()) return;
   }
   HttpResult list = http.get(expand(schema_.list.url, "", token), schema_.headers);
   if (!list.ok()) {
@@ -443,7 +442,7 @@ void FundSource::load(Store & store, Http & http, SourceListener & listener) {
   for (Entry * e : pending) {
     if (listener.cancelled()) return;
     if (schema_.detail && !unresolved_.count(e->id)) {
-      pause();
+      if (!pause()) return;
       HttpResult r = http.get(expand(schema_.detail->url, e->id, token), schema_.headers);
       if (r.status == 429 || r.status == 403) {
         listener.message(who + "refused, stopping");

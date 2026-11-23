@@ -6,7 +6,6 @@
 #include <nlohmann/json.hpp>
 
 #include <cmath>
-#include <thread>
 
 using nlohmann::json;
 
@@ -148,6 +147,6 @@ void YahooSource::load(Store & store, Http & http, SourceListener & listener) {
     }
     if (done) listener.changed();
     else listener.message(std::string("yahoo: ") + e.yahoo + ": " + error);
-    if (pause_.count() > 0) std::this_thread::sleep_for(pause_);
+    if (pause_.count() > 0 && !listener.pause(pause_)) return;
   }
 }

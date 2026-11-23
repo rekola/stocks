@@ -7,7 +7,6 @@
 #include <nlohmann/json.hpp>
 
 #include <cstdio>
-#include <thread>
 
 using nlohmann::json;
 
@@ -206,7 +205,7 @@ bool NordnetDetails::loadBatch(Store & store, Http & http, SourceListener & list
       store.setAttributes(t.id, said);
       listener.changed();
     }
-    if (pause.count() > 0) std::this_thread::sleep_for(pause);
+    if (pause.count() > 0 && !listener.pause(pause)) return true;
   }
   return false;
 }

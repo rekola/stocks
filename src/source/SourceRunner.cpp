@@ -5,8 +5,9 @@
 
 class SourceRunner::Listener : public SourceListener {
  public:
-  Listener(const std::atomic<bool> & stop, std::function<void()> changed, std::function<void(std::string)> message)
-      : stop_(stop), changed_(std::move(changed)), message_(std::move(message)) {}
+  Listener(const std::atomic<bool> & stop, std::mutex & mutex, std::condition_variable & wake, std::function<void()> changed,
+           std::function<void(std::string)> message)
+      : stop_(stop), mutex_(mutex), wake_(wake), changed_(std::move(changed)), message_(std::move(message)) {}
   void changed() override {
     if (changed_) changed_();
   }
@@ -14,9 +15,17 @@ class SourceRunner::Listener : public SourceListener {
     if (message_) message_(text);
   }
   bool cancelled() const override { return stop_; }
+  // A wait on the runner's condition variable, which the destructor wakes.
+  bool pause(std::chrono::milliseconds d) override {
+    std::unique_lock lock(mutex_);
+    wake_.wait_for(lock, d, [this] { return stop_.load(); });
+    return !stop_;
+  }
 
  private:
   const std::atomic<bool> & stop_;
+  std::mutex & mutex_;
+  std::condition_variable & wake_;
   std::function<void()> changed_;
   std::function<void(std::string)> message_;
 };
@@ -27,7 +36,7 @@ SourceRunner::SourceRunner(std::shared_ptr<Store> store, std::vector<std::unique
   for (std::unique_ptr<Source> & owned : sources) {
     threads_.emplace_back([this, store, source = std::move(owned), onChanged, onMessage]() {
       using Clock = std::chrono::steady_clock;
-      Listener listener(stop_, onChanged, onMessage);
+      Listener listener(stop_, mutex_, wake_, onChanged, onMessage);
       std::unique_ptr<Http> http = makeHttp();
       // When the source is loaded again, and when it is asked for another batch of its details; max: not again.
       Clock::time_point loadDue = Clock::now(), detailsDue = Clock::time_point::max();
