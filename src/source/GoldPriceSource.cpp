@@ -22,7 +22,7 @@ std::string text(const json & row, const char * key) {
 
 // What a symbol is: a metal is a commodity, a coin is of no kind. The API says neither, nor the ISIN. A commodity has an ISIN of its own (XC
 // is the code for commodities), the one every other source and list gives it, so that gold here is the gold Nordnet's list has and not
-// another instrument; a symbol with none (copper, the coins) gets one of ours, made from its symbol, until a real one is known.
+// another instrument; a symbol with none (the coins) gets one of ours, made from its symbol, until a real one is known.
 struct Known {
   const char * symbol;
   InstrumentKind kind;
@@ -31,7 +31,7 @@ struct Known {
 };
 constexpr Known kKnown[] = {{"XAU", InstrumentKind::Commodity, "METAL", "XC0009655157"}, {"XAG", InstrumentKind::Commodity, "METAL", "XC0009653103"},
                             {"XPT", InstrumentKind::Commodity, "METAL", "XC0009665545"}, {"XPD", InstrumentKind::Commodity, "METAL", "XC0009665552"},
-                            {"HG", InstrumentKind::Commodity, "METAL", ""},              {"BTC", InstrumentKind::Other, "CRYPTO", ""},
+                            {"HG", InstrumentKind::Commodity, "METAL", "XC0005705501"}, {"BTC", InstrumentKind::Other, "CRYPTO", ""},
                             {"ETH", InstrumentKind::Other, "CRYPTO", ""}};
 
 const Known * knownSymbol(const std::string & symbol) {
