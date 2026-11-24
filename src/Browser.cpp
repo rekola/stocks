@@ -2,6 +2,7 @@
 
 #include "AttributeView.h"
 #include "Quotes.h"
+#include "RowActions.h"
 #include "source/Source.h"
 
 #include <cellui/Layout.h>
@@ -35,7 +36,12 @@ struct RowAction {
   const char * glyph;
   const char * command;
 };
-constexpr RowAction kRowActions[] = {{kInfoGlyph, "show-info"}};
+// The glyphs of buy and sell are the circled plus and minus (U+2295, U+2296): Mathematical Operators, which the monospace fonts
+// terminals and the window use have, one cell wide, so they draw the same in both (the info glyph is U+1F6C8).
+constexpr const char * kBuyGlyph = "\xE2\x8A\x95";
+constexpr const char * kSellGlyph = "\xE2\x8A\x96";
+constexpr RowAction kRowActions[] = {{kInfoGlyph, "show-info"}, {kBuyGlyph, "buy"}, {kSellGlyph, "sell"}};
+static_assert(kInfoButton == 0 && kBuyButton == 1 && kSellButton == 2 && std::size(kRowActions) == 3, "RowActions.h numbers the buttons as they are here");
 
 Quotes::Scope scopeOf(const Snapshot & snapshot, const Preset & preset) {
   if (!preset.mic)
@@ -159,10 +165,10 @@ void Browser::setColumns() {
                        {.title = "Quote", .width = 6},
                        {.title = "Name", .width = 0},
                        {.title = "Market", .width = 16},
-                       {.title = "Dataset", .width = 10},
-                       {.title = "Price", .width = 10, .align = Align::RIGHT},
-                       {.title = changeTitle(period_), .width = 12, .align = Align::RIGHT},
-                       {.title = info(period_).trace, .width = 22, .sortable = false, .trace = true},
+                       {.title = "Dataset", .width = 9},
+                       {.title = "Price", .width = 9, .align = Align::RIGHT},
+                       {.title = changeTitle(period_), .width = 11, .align = Align::RIGHT},
+                       {.title = info(period_).trace, .width = 16, .sortable = false, .trace = true},
                        {.title = "", .buttons = buttonGlyphs()}});
     return;
   }
@@ -178,7 +184,7 @@ void Browser::setColumns() {
                      {.title = "P&L", .width = 8, .align = Align::RIGHT},
                      {.title = "P&L %", .width = 7, .align = Align::RIGHT},
                      {.title = changeTitle(period_), .width = 10, .align = Align::RIGHT},
-                     {.title = info(period_).trace, .width = 14, .sortable = false, .trace = true},
+                     {.title = info(period_).trace, .width = 12, .sortable = false, .trace = true},
                      {.title = "", .buttons = buttonGlyphs()}});
 }
 
@@ -523,6 +529,13 @@ void Browser::defineCommands() {
   commands.define("focus-tags", "Move the keyboard to the preset tags", [this] { app_.input().setFocus(&tags_); });
   commands.define("focus-table", "Move the keyboard to the table", [this] { app_.input().setFocus(&table_); });
   commands.define("show-info", "Show everything known about the selected row", [this] { showInfo(); });
+  commands.define("buy", "Buy the selected row in a portfolio: quantity, price, date, fee and a note", [this] { trade(portfolio::Side::Buy); });
+  commands.define("sell", "Sell the selected row from a portfolio: quantity, price, date, fee and a note", [this] { trade(portfolio::Side::Sell); });
+  commands.define("new-portfolio", "Make a portfolio: a name and the currency its value is shown in", [this] { makePortfolio("New portfolio"); });
+  commands.define("rename-portfolio", "Rename the portfolio shown", [this] { renamePortfolio(); });
+  commands.define("delete-portfolio", "Delete the portfolio shown, with everything said of it (undo brings it back)", [this] { deletePortfolio(); });
+  commands.define("undo", "Take back the last change to the portfolios", [this] { undo(); });
+  commands.define("redo", "Make the change that was taken back again", [this] { redo(); });
   commands.define("quit", "Leave stocks", [this] { app_.quit(); });
 }
 

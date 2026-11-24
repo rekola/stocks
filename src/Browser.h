@@ -13,6 +13,7 @@
 #include <cellui/TagBar.h>
 
 #include <chrono>
+#include <functional>
 #include <memory>
 #include <optional>
 
@@ -45,6 +46,11 @@ class Browser {
   // The portfolio the Portfolio context shows (none where there is none).
   PortfolioId shownPortfolio() const { return portfolio_; }
   cellui::StatusLine & statusLine() { return status_; }
+  // What today is, as a day number, for the date a trade starts with (the system's clock by default; a test sets its own).
+  void setToday(std::function<int64_t()> today) { today_ = std::move(today); }
+  // How many of the user's changes can be taken back, and made again.
+  size_t undoDepth() const { return undo_.size(); }
+  size_t redoDepth() const { return redo_.size(); }
   // How soon the table follows the store again: a source that writes a page a second, or a store of tens of thousands of
   // rows that changes all the time, is shown at most this often (default a quarter of a second).
   void setMinRefreshInterval(double seconds) { min_refresh_ = seconds; }
@@ -92,6 +98,26 @@ class Browser {
   void defineCommands();
   void bindKeys();
 
+  // The user's changes to her portfolios (src/BrowserPortfolio.cpp). Each is a pair of store writes (the inverse and the write
+  // again), kept for the session in a stack, so undo takes the last change back whatever it was: a row bought, a portfolio renamed
+  // or deleted.
+  struct Change {
+    std::string what;
+    std::function<void(Store &)> undo, redo;
+  };
+  void record(Change);
+  void undo();
+  void redo();
+  void trade(portfolio::Side);
+  // Asks a name and a currency and makes the portfolio, which becomes the one shown; none if it was cancelled.
+  std::optional<PortfolioId> makePortfolio(const std::string & title);
+  void renamePortfolio();
+  void deletePortfolio();
+  // The portfolio the commands act on: the one shown, or the last one shown.
+  PortfolioId currentPortfolio() const;
+  // Shows what a write changed now, bypassing the pause between refreshes: the user asked for it.
+  void wrote();
+
   cellui::Application & app_;
   std::shared_ptr<Store> store_;
   std::shared_ptr<IconLoader> icons_;
@@ -119,6 +145,9 @@ class Browser {
     std::optional<EdgeKey> selected;
   };
   View views_[kContextCount];
+  std::vector<Change> undo_, redo_;
+  std::function<int64_t()> today_;
+  PortfolioId last_traded_;  // the portfolio the last trade went to: where the next is offered
   // What the history loader was last told is wanted: the edges, in the order sent, and the period. The edges themselves and
   // not where the view is, as a sort (a click on a heading, or a store change that sorts again) puts other edges at the
   // same positions.

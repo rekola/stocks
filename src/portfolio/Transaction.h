@@ -27,7 +27,8 @@ struct Transaction {
   friend bool operator==(const Transaction &, const Transaction &) = default;
 };
 
-// A random number below 2^62 and not zero: nothing to coordinate, so two devices that mint do not meet.
+// A number below 2^62 and not zero, made of the time and random bits: nothing to coordinate, two devices that mint do not meet, and ids
+// made one after the other are in the order they were made.
 uint64_t mintId();
 
 // How a transaction is kept in a file: the id and the day are columns of their own, the rest is this text.

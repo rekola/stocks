@@ -2,15 +2,25 @@
 
 #include <nlohmann/json.hpp>
 
+#include <chrono>
+#include <mutex>
 #include <random>
 
 namespace portfolio {
 
+// The milliseconds since the epoch and twenty random bits: 41 + 20 bits, below 2^62. Ids made one after the other are in the order they
+// were made, so that two sells of one day apply in the order they were typed, and two devices do not meet (the same millisecond
+// and the same twenty bits).
 uint64_t mintId() {
   static std::mt19937_64 random{std::random_device{}()};
-  uint64_t id = 0;
-  while (id == 0) id = random() & ((uint64_t{1} << 62) - 1);
-  return id;
+  static std::mutex mutex;
+  static uint64_t last = 0;
+  std::lock_guard lock(mutex);
+  const uint64_t ms = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
+  uint64_t id = (ms << 20) | (random() & ((uint64_t{1} << 20) - 1));
+  if (id <= last) id = last + 1;
+  last = id;
+  return id & ((uint64_t{1} << 62) - 1);
 }
 
 std::string encodeBody(const Transaction & t) {

@@ -209,5 +209,10 @@ TEST(minted_ids_are_not_zero_and_fit_a_key) {
     const uint64_t id = mintId();
     CHECK(id != 0 && id < (uint64_t{1} << 62));
   }
-  CHECK(mintId() != mintId());
+  uint64_t before = mintId();
+  for (int i = 0; i < 1000; i++) {
+    const uint64_t id = mintId();
+    CHECK(id > before);  // in the order they were made, though made in one millisecond
+    before = id;
+  }
 }

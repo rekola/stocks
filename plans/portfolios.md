@@ -1,6 +1,6 @@
 # Portfolios
 
-Status: being built, step by step ("Steps" below, with what is done). Built: 1 (node-valued facts), 2 (`src/portfolio/`), 3 (the model), 4 (the portfolio file), 5 (`Positions` and the contexts).
+Status: being built, step by step ("Steps" below, with what is done). Built: 1 (node-valued facts), 2 (`src/portfolio/`), 3 (the model), 4 (the portfolio file), 5 (`Positions` and the contexts), 6 (the form dialog in cellui; buy, sell, the portfolio commands, undo and redo).
 
 A portfolio is what the user holds: positions in instruments she has bought, valued at the prices the store already has. It is
 modelled as the instruments are: **a portfolio is a node**, and what there is to know of it is facts and edges in the same
@@ -143,6 +143,17 @@ Tab is not bound in stocks, so it can carry this. A **context** is a view of the
   viewer's modal), so a **form dialog is added to cellui first**, general enough to be used again (labelled fields with
   validation, Tab between fields, Enter accepts, Esc cancels), and stocks uses it. It is a separate repository, so that is its
   own change, merged before stocks depends on it.
+- **What is built (step 6).** cellui's `FormModal` (a modal form of text, number and date fields with checks, a live summary, a check of the
+  fields together, OK and Cancel; works the same in the terminal and in the GTK window, tested in both), and `TableModel::buttonShown()`
+  for the per-row buttons. In `Browser` (`src/BrowserPortfolio.cpp`): `buy` and `sell` (glyphs ⊕ U+2295 and ⊖ U+2296, Mathematical Operators
+  that the monospace fonts have, one cell wide), shown on a row by `portfolio::tradable` and guarded by the same function when run
+  from the palette (the status line says the row cannot be bought); the form has the portfolio (by name; the shown one, else the last
+  traded in, else the first), quantity, price (the last), date (today), fee and note, a live total, and for a sell an error as the quantity is
+  typed if it would sell more than is held; the first buy with no portfolio offers to make one; `new-portfolio` (a name, unique, and a currency
+  the store knows), `rename-portfolio`, `delete-portfolio` (confirms; says how many transactions go) and `undo`/`redo` (a stack in memory of
+  pairs of store writes, so a trade, a make, a rename and a delete are each one step; a new change ends the redo stack). Choices where the
+  plan was open: a portfolio is picked in the form by typing its name, not from a list; the form takes a comma as a decimal point; a transaction
+  id is made of the time and random bits (below 2^62), so two sells of one day apply in the order they were typed.
 - **Undo and redo are the standard ones** (`undo`, `redo`: taking back and taking up again the last change the user made to her portfolios): undo is
   `C-x u` and `C-/` in the terminal keymap and `Ctrl+Z` in the desktop keymap; redo is `C-M-_` in the terminal (as Emacs has it)
   and `Ctrl+Y` on the desktop. A deleted or edited transaction, or a deleted portfolio, can be undone too, so undo works on the user's changes, not on
@@ -186,7 +197,7 @@ Not built, and not needed for any step below, but the model leaves room for it (
    schema moved aside and not lost, a damaged file moved aside, nothing of a portfolio in `facts.sqlite`.
 5. (Done.) `Positions` model and the context switch in `Browser` (`next-context`, `previous-context`, keys, the help line),
    with `BrowserTests` for the switch, and for each context keeping its state.
-6. The form dialog in cellui; then the `buy` and `sell` buttons and commands, `new-portfolio`, `rename-portfolio`, `delete-portfolio`, `undo` and
+6. (Done.) The form dialog in cellui; then the `buy` and `sell` buttons and commands, `new-portfolio`, `rename-portfolio`, `delete-portfolio`, `undo` and
    `redo`, and the status line's message for each.
 7. README: the keys and the flags.
 
