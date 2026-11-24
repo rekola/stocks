@@ -53,12 +53,13 @@ Tab is not bound in stocks, so it can carry this. A **context** is a view of the
   viewer's modal), so a **form dialog is added to cellui first**, general enough to be used again (labelled fields with
   validation, Tab between fields, Enter accepts, Esc cancels), and stocks uses it. It is a separate repository, so that is its
   own change, merged before stocks depends on it.
-- **Undo is the standard one** (`undo`, taking back the last transaction change, `redo` if it is cheap): `C-x u` and `C-/` in
-  the terminal keymap, `Ctrl+Z` in the desktop keymap. A deleted or edited transaction can be undone too, so undo works on
-  changes to the ledger, not on the last row added. A transactions view to list and edit them comes later.
+- **Undo and redo are the standard ones** (`undo`, `redo`: taking back and taking up again the last change to the ledger): undo is
+  `C-x u` and `C-/` in the terminal keymap and `Ctrl+Z` in the desktop keymap; redo is `C-M-_` in the terminal (as Emacs has it)
+  and `Ctrl+Y` on the desktop. A deleted or edited transaction can be undone too, so undo works on changes to the ledger, not on
+  the last row added. A transactions view to list and edit them comes later.
 - **Keys are bound per profile** (`KeymapProfile::TERMINAL` and `DESKTOP`, as `Browser::bindKeys` does), never one set for both:
   `next-context` and `previous-context` are Tab and Shift+Tab on both; `buy` and `sell` are `b` and `s` in the terminal and
-  `Ctrl+B` and `Ctrl+S` unless the desktop keymap uses them (to be checked); undo as above. `assert(keymap.allBoundIn(...))` stays true.
+  `Ctrl+B` and `Ctrl+S` unless the desktop keymap uses them (to be checked); undo and redo as above. `assert(keymap.allBoundIn(...))` stays true.
 - **The info line's help** says "Tab: switch context" and not "switch focus".
 
 An alternative that was considered and left: portfolios as tags among the presets, with no context. It keeps one view, but the
