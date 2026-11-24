@@ -329,6 +329,12 @@ struct NewsItem {
   DatasetId dataset;                  // which dataset said it: set by the store, whatever it was
 };
 
+// What an item of news is, in one vocabulary for all datasets (`predicate::kind`, as for an instrument): each adapter maps its own types
+// onto these, and keeps its own under `predicate::type`. A selection of the news by kind is a preset.
+inline constexpr const char * kPressRelease = "press-release";  // what a company or an institution says of itself
+inline constexpr const char * kAnalysis = "analysis";           // an analyst's or a house's view
+inline constexpr const char * kNewsStory = "news";              // a report by a newsroom, and anything else
+
 // The text of an attribute of an item under `predicate`, else empty.
 inline std::string newsText(const NewsItem & item, const char * predicate) {
   for (const Attribute & a : item.attributes)

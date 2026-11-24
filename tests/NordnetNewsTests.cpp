@@ -77,8 +77,14 @@ TEST(news_is_about_the_instruments_the_search_lists_know_and_all_of_it_is_kept) 
   CHECK(a.size() == 1 && a[0].headline == "Stor sulfidfyndighet vid Rockley-projektet" && a[0].time == 1795214447);
   CHECK(newsText(a[0], predicate::type) == "PRESS_RELEASE" && newsText(a[0], "agency") == "GLOBE_NEWSWIRE" && newsText(a[0], "language") == "sv");
   CHECK(a[0].url.find("globenewswire.com") != std::string::npos && !a[0].body.empty() && a[0].id == "14bb98f5-a35f-46a9-9891-cc0cdd8b2d98");
+  CHECK(newsText(a[0], predicate::kind) == kPressRelease);  // Nordnet's PRESS_RELEASE, in the common vocabulary
   q.about = NodeRef(oatly);
   CHECK(s->news(q).size() == 1);
+  // A tag that is a country's code makes the item about that country; the others (WORLD, TECH, ...) are topics, kept as the tags.
+  NewsQuery sweden;
+  sweden.about = nodeOf(*countryKey("SE"));
+  CHECK(s->news(sweden).size() == 1 && newsText(s->news(sweden)[0], "tags").find("SE") != std::string::npos);
+  CHECK(newsText(a[0], "tags").find("OCEANIA") != std::string::npos);
   size_t general = 0;
   for (const NewsItem & n : s->news())
     if (n.about.empty()) general++;

@@ -65,3 +65,10 @@ std::optional<std::string> countryCodeOfFinnishName(const std::string & name) {
   if (it == kCountries.end()) return std::nullopt;
   return std::string(it->second);
 }
+
+bool isCountryCode(const std::string & code) {
+  if (code.size() != 2) return false;
+  for (const auto & [name, iso] : kCountries)
+    if (code == iso) return true;
+  return false;
+}

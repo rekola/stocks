@@ -44,6 +44,9 @@ struct InfoSection {
 // Reads only what the one row needs.
 std::vector<InfoSection> buildInfo(const Snapshot & snapshot, const EdgeKey & edge);
 
+// An item of news: what it says and where it is from, whom it is about (as links), and its text.
+std::vector<InfoSection> buildNewsInfo(const Snapshot & snapshot, const NewsItem & item);
+
 // A modal that shows the sections, scrolling; Escape closes it. It holds the snapshot the sections were read from.
 class AttributeModal : public cellui::ModalDialog {
  public:

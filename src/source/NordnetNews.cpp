@@ -1,5 +1,7 @@
 #include "source/NordnetNews.h"
 
+#include "source/Countries.h"
+
 #include <nlohmann/json.hpp>
 
 using nlohmann::json;
@@ -58,6 +60,11 @@ NewsItem toNews(const NewsEntry & e, const Snapshot & snapshot) {
   n.url = e.url;
   for (const NewsInstrument & i : e.instruments)
     if (auto node = snapshot.findByAttribute(NodeType::Instrument, kInstrumentId, i.uuid)) n.about.push_back(*node);
+  // The news is of the countries its tags name (FI, SE, ...); the others are topics and regions (WORLD, TECH, ...), kept as the tags.
+  for (const std::string & t : e.tags)
+    if (isCountryCode(t))
+      if (const auto key = countryKey(t)) n.about.push_back(nodeOf(*key));
+  n.attributes.push_back({predicate::kind, e.type == "PRESS_RELEASE" ? kPressRelease : e.type == "ANALYSIS" ? kAnalysis : kNewsStory});
   if (!e.type.empty()) n.attributes.push_back({predicate::type, e.type});
   if (!e.agency.empty()) n.attributes.push_back({"agency", e.agency});
   if (!e.language.empty()) n.attributes.push_back({"language", e.language});
