@@ -16,6 +16,10 @@
 #include <vector>
 
 // One table row is one edge: what one unit of `base` costs in `quote`, as one dataset reports it on one market.
+// The symbol that stands for an instrument's icon where there is no picture: the one it says itself (iconSymbol), else one of its
+// kind (an index 📈, a currency 💱: quoted in another, it is a currency pair); empty for none.
+std::string iconSymbolOf(const Snapshot & snapshot, InstrumentId instrument);
+
 struct QuoteRow {
   EdgeKey key;
   std::string base, quote, name, market, dataset;
