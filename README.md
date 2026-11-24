@@ -82,7 +82,7 @@ guesses, not any dealer's**: edit them to the dealer you use. They are in the `P
 Your portfolios are your own data: they are kept in `portfolios.sqlite` beside `facts.sqlite` in the data directory (`--portfolios FILE`
 chooses another, `--no-portfolios` keeps them for the session only). It is never the cache's file, which the sources rebuild: a portfolio
 is not written to it and a source cannot write one. A file of another schema is moved aside (`.old-<time>`) and a damaged one to
-`.bad-<time>`, never emptied in place; the status line says so. Undo and redo are for the session. See
+`.bad-<time>`, never emptied in place; the status line says so. Undo and redo are for the session. If an instrument's ISIN ever changes under transactions you typed in (the gold bar and coin did, when `src/source/KnownIsins.h` replaced the hashed ISINs), `tools/rekey_isin.py` moves them; the program itself migrates nothing. See
 [plans/portfolios.md](plans/portfolios.md).
 
 The period: the Change column and the trace beside it always show the same period, and the headings say which

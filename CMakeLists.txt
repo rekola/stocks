@@ -116,6 +116,13 @@ enable_testing()
 add_test(NAME stocks_rejects_an_unknown_ui COMMAND stocks --ui nonesuch)
 set_tests_properties(stocks_rejects_an_unknown_ui PROPERTIES PASS_REGULAR_EXPRESSION "unknown --ui")
 
+# The one-off script that moves a portfolio file's transactions from one ISIN to another (tools/rekey_isin.py).
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_Interpreter_FOUND)
+  add_test(NAME stocks_rekey_isin COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/tools/rekey_isin.py --selftest)
+  set_tests_properties(stocks_rekey_isin PROPERTIES PASS_REGULAR_EXPRESSION "rekey_isin: ok")
+endif()
+
 # The browser on a test display: keys in, what it shows out. cellui's test display
 # (TestBackend) is built where there is a POSIX event loop, so not on Windows.
 if(NOT WIN32)
