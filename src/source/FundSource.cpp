@@ -501,7 +501,7 @@ void FundHistory::markDetailed(const std::string & id) {
   detailed_.insert(id);
 }
 
-HistoryProvider::Outcome FundHistory::load(Store & store, Http & http, const EdgeKey & edge, int, const Wait &) {
+HistoryProvider::Outcome FundHistory::load(Store & store, Http & http, const EdgeKey & edge, int, const Wait & wait) {
   auto snapshot = store.snapshot();
   auto listing = snapshot->listing(edge);
   if (!listing || listing->identifier.empty()) return Outcome::Missing;
@@ -518,21 +518,30 @@ HistoryProvider::Outcome FundHistory::load(Store & store, Http & http, const Edg
     if (r.status == 0 || r.status >= 500) return Outcome::Offline;
     return std::nullopt;
   };
-  // The details: the fees, once. A fund without them still has its history.
-  if (schema_.detail && !detailed) {
+  // The details: the fees, once. A fund without them still has its history. What they say is written with the bars, in one batch.
+  std::vector<Attribute> said;
+  const bool askDetails = schema_.detail && !detailed;
+  if (askDetails) {
     HttpResult r = http.get(FundSource::expand(schema_.detail->url, id, token), schema_.headers);
     if (auto s = status(r)) return *s;
     FundEntry entry;
     std::string error;
-    if (r.ok() && parseFundDetail(schema_, r.body, entry, error)) store.setAttributes(edge.base, attributesOf(entry.fund));
-    std::lock_guard lock(mutex_);
-    detailed_.insert(id);
+    if (r.ok() && parseFundDetail(schema_, r.body, entry, error)) said = attributesOf(entry.fund);
+    // A pause between the two requests; stopping, the loader is going and the edge is not marked (the details are asked again).
+    if (!wait()) return Outcome::Offline;
   }
   HttpResult r = http.get(FundSource::expand(schema_.historyUrl, id, token), schema_.headers);
   if (auto s = status(r)) return *s;
   std::vector<Candle> bars;
   std::string error;
-  if (!r.ok() || !parseNavSeries(r.body, bars, error)) return Outcome::Missing;
-  store.appendCandles(edge, Resolution::Day, bars);
-  return Outcome::Ok;
+  const bool found = r.ok() && parseNavSeries(r.body, bars, error);
+  store.batch([&](Batch & b) {
+    b.setAttributes(edge.base, said);
+    if (found) b.appendCandles(edge, Resolution::Day, bars);
+  });
+  if (askDetails) {
+    std::lock_guard lock(mutex_);
+    detailed_.insert(id);
+  }
+  return found ? Outcome::Ok : Outcome::Missing;
 }
