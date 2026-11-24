@@ -5,3 +5,4 @@
 inline constexpr const char * kNordnetDataset = "nordnet";  // Nordnet's data: what the history of its edges and the details are asked of
 inline constexpr const char * kYahooDataset = "yahoo";
 inline constexpr const char * kSyntheticDataset = "synthetic";
+inline constexpr const char * kSuomenPankkiDataset = "suomenpank";  // the Bank of Finland's publication of the Euribor rates
