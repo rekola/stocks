@@ -110,6 +110,9 @@ add_executable(stocks_frame_bench tools/FrameBench.cpp)
 target_link_libraries(stocks_frame_bench PRIVATE stocks_lib)
 add_executable(stocks_period_bench tools/PeriodBench.cpp)
 target_link_libraries(stocks_period_bench PRIVATE stocks_lib)
+# What start-up costs on a million facts and thirty thousand edges (run it in a Release build; see the file).
+add_executable(stocks_restore_bench tools/RestoreBench.cpp)
+target_link_libraries(stocks_restore_bench PRIVATE stocks_model)
 
 enable_testing()
 # The program starts, reads its command line through cellui and says what is wrong with it.

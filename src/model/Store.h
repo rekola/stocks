@@ -168,7 +168,8 @@ class Snapshot {
 
   // For a store to make on its own copy, with the changes above. `setTime` is the time of the write in progress: what
   // `updated` becomes. `load` gives it what an earlier run said: the facts of nodes, which makes no version and no node but
-  // what is said. `revision` is the version plus the writes of facts that were only said again, which no version counts: a
+  // what is said, each fact with the `updated` the disk had. Built in bulk (the lookup indexes are made once for the whole of it, not for
+  // each fact), and what a source has said of a node since stands: the disk only adds what was not said. May be called again, with more. `revision` is the version plus the writes of facts that were only said again, which no version counts: a
   // store publishes a copy when it moves. `takeFacts` is what the writes since the last call ask of the disk.
   void setTime(TimestampMs now) { now_ = now; }
   // Whether an instrument with no ISIN is numbered in the private namespace as it is asked for (ZZ999999999 down, the same text the same
@@ -179,7 +180,7 @@ class Snapshot {
   void settleVersion(uint64_t before) {
     if (version_ != before) version_ = before + 1;
   }
-  void load(const std::vector<StoredFact> &);
+  void load(std::vector<StoredFact> facts);  // by value: a caller that is done with them moves them in
   // The transactions an earlier run kept: no version, no write for the disk; one that cannot be read, or that is not tradable, is left out.
   void loadEvents(const std::vector<StoredEvent> &);
   // What an earlier run kept of edges: their listing, quote and close before the session, and the coverage of their queues. It makes the
@@ -190,10 +191,14 @@ class Snapshot {
   void loadQueue(const StoredQueue &);
   // Puts a queue out of memory (what the file has of it is kept as coverage). Not a version: nothing that is shown changes.
   void evictQueue(const EdgeKey &, Resolution);
-  // While the file is being read, what a source says of a queue that is not in memory is not told from what the file has until it is:
-  // `settleRestored` says the file of this dataset has been read, and the queues it had none of are what was said.
-  void setRestoring(bool restoring) { restoring_ = restoring; }
-  void settleRestored(DatasetId);
+  // While the files are being read, what a source says of a queue that is not in memory is not told from what the file has until it is:
+  // `settleRestored` says every file has been read, and the queues they had none of are what was said.
+  void setRestoring(bool restoring) {
+    if (restoring_ == restoring) return;
+    restoring_ = restoring;
+    checks_++;  // published, though nothing that is shown changes
+  }
+  void settleRestored();
   // What the writes since the last call ask of the summary files.
   SummaryBatch takeSummaries();
   uint64_t revision() const { return version_ + checks_; }
@@ -354,6 +359,11 @@ class Store : public StoreWrites {
   // none), nothing of the batch is applied.
   virtual void batch(const std::function<void(Batch &)> & change) = 0;
 
+  // Whether the files are still being read (`StoreOptions::Restore::InBackground`): the store works meanwhile, and what a source says in
+  // that time is newer than the disk and stands. `waitRestored` returns when they have all been read.
+  virtual bool restoring() const { return false; }
+  virtual void waitRestored() {}
+
   // Returns when what has been said of the nodes and the summaries is on its way to where it is kept (the disk, if a FactStore and a
   // SummaryStores were given).
   virtual void flush() {}
@@ -389,8 +399,16 @@ struct StoreOptions {
   // What the queues in memory may hold, in bytes (48 per bar, `sizeof(Candle)`): above it, the ones not wanted for the longest are dropped (their
   // quote stays, and the disk has them). The default holds some 700,000 bars: a screen of rows with a margin is a few thousand.
   size_t queue_budget = kDefaultQueueBudget;
-  // Called on the thread that read queues from the disk, after what it read is published (a program hands it to the UI thread).
+  // Called on the thread that read queues from the disk, or that restores the files, after what it read is published (a program hands it
+  // to the UI thread, which redraws once for each).
   std::function<void()> changed;
+  // How the files are read when the store is made. Now: before the constructor returns (the tests: what was kept is there when they look).
+  // InBackground: the constructor returns at once, with the user's own portfolios, and a thread of the store's reads the rest in chunks, each
+  // published as it is read (`changed` after each): first what the portfolios hold, their facts, their edges' listings and quotes, then the
+  // rest. The facts read are those of the nodes that have an edge (an instrument no edge has is not restored: nothing selects it, and a
+  // source says it again), where summaries are kept; with none, all of them.
+  enum class Restore { Now, InBackground };
+  Restore restore = Restore::Now;
   // The time of a write, for `updated`. The wall clock by default; a test sets its own.
   std::function<TimestampMs()> clock;
   // `updated` says when a source last said a fact to within this interval: a value said again that was last said less than this

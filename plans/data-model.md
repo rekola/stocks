@@ -285,6 +285,40 @@ does not fit 32 bits, or with no close, is not in a queue (it stays in the data)
   quote of an edge always stays, the file has the queue, and what is wanted now (the rows on screen and the margin, which are the rows
   of a portfolio shown too) is not dropped from under the reader. A queue wanted again is read again. A store with no summary files drops nothing.
 
+- **Periods** (`Period.cpp`, on the queues). A period reads the queues of the resolutions that feed it (`readsOf()`); where the rules
+  are the same as before they work on the queue's bars, decoded to `Candle`s, and what changed is here:
+  - *The last price* was the latest daily bar's close where that bar was as new as the series; it is now the quote's last price, which the
+    store keeps at least as new as every bar it was given, and with no quote the last bar's close. The trace ends with it as before. A daily
+    bar is dated by its day, which is no time of it, so the newest word of a day is the source's quote (the list's, with its tick time) or a
+    bar later in the day, not the daily bar.
+  - *The base* is the first bar of the period's window of the queue: the month and the quarter are cut from the same daily queue (30 and
+    90 days back from its last bar; the queue keeps 92), the week from the hourly one, the year from the weekly one. A period is shown only
+    from bars that reach back within a third of it, as before. There is no base bar, so the change moves a little as bars are popped.
+  - *The day* is the last session in the queue of the finest resolution that has one, whose bars are those of that session's UTC date
+    (the queue's window of a day reaches into the one before), with the close before the session (`previousClose`, only for the day it
+    was said for, kept on disk with the quote) as the base, else the last daily bar before the session. A session older than the
+    daily queue's last bar is not shown. With no intraday queue the base is the last daily bar before the day of the price, where it
+    was the previous one only when there were exactly two daily bars.
+  - *A fund's NAV* is a bar of one value; its day and week are the quarter's queue as before.
+  - *What the loader asks* (`periodCovered()`): whether the queues cover the period is read from their coverage (the key of the first and
+    the last bar, which a queue on the disk has), not from the bars, so the first bar of the window is the queue's first.
+- **Start-up.** `StoreOptions::Restore::InBackground` (the program's): the store is made at once, with the user's own portfolios (a small
+  file of their own), and a thread of its own reads the rest in chunks, each published as it is read: first what the portfolios hold (the
+  facts of their instruments, markets and currencies, the listings and quotes of their edges and of the edges from the currencies they are valued
+  through), then every other edge in chunks of 2,000, the facts of the nodes it ends in before the edge itself, so a row never shows before
+  its name. After each chunk the UI is told (`StoreOptions::changed`), and redraws at the rate it always has. `Store::restoring()` and
+  `waitRestored()` say when it ends; with `Restore::Now` (the default: the tests) the same code runs before the constructor returns.
+  - A source that writes meanwhile does not wait for it and is not lost: what it said is newer than what the disk has and stands (a fact
+    said is kept and the disk adds the facts it did not say; a quote with a later time stands; a bar said for a queue that is on the disk
+    is merged into it when it is read). A queue a source writes before the file's own is known is held as pending, and the queues the files
+    turn out to have none of are settled when the last chunk is in.
+  - Restoring makes no node that has no edge: the facts read are those of the nodes that an edge ends in (its instrument, quote, market and
+    dataset) and of what the portfolios hold, found by key (`FactStore::loadNodes`); an instrument with facts and no edge is left on
+    the disk, nothing selects it and a source says it again. Where no summaries are kept there are no edges, and all the facts are read. A
+    fact keeps the `updated` the disk had, and what is read is not written back.
+  - `Snapshot::load` is a bulk build: the attributes of all the nodes of a chunk are put in on a transient, and the lookup index of each
+    text and link is added to once for all the nodes that say it, where one fact at a time made a new path of the map for each.
+
 ## Node keys
 
 A node has no record of its own: it is its **key** (`src/model/NodeKey.h`), the same number in every run, and what is said of it

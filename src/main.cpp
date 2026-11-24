@@ -196,6 +196,8 @@ int main(int argc, char ** argv) {
   store_options.invent_isins = false;
   // What the store refuses (a MIC that two markets would have) is said once, on the status line.
   store_options.changed = [store_changed] { store_changed->say(); };
+  // The screen is up at once: the facts, the edges and their prices are read on a thread of the store's own, the portfolios' first.
+  store_options.restore = StoreOptions::Restore::InBackground;
   store_options.notice = [fact_messages](const std::string & text) { fact_messages->say("facts: " + text); };
   if (keep_facts) {
     const std::filesystem::path file = facts_file.empty() ? defaultFactsFile() : std::filesystem::path(facts_file);

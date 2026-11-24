@@ -6,6 +6,9 @@
 #include "model/SummaryRecords.h"
 #include "portfolio/Portfolio.h"
 
+#include <immer/map_transient.hpp>
+#include <immer/set_transient.hpp>
+
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -20,6 +23,7 @@
 #include <stdexcept>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace {
 
@@ -355,25 +359,50 @@ namespace {
 StoredFact stored(uint64_t node, const Attribute & a) { return StoredFact{node, a.predicate, a.value, a.updated}; }
 }  // namespace
 
-void Snapshot::load(const std::vector<StoredFact> & facts) {
+void Snapshot::load(std::vector<StoredFact> facts) {
   std::unordered_map<NodeRef, std::vector<Attribute>> grouped;
-  for (const StoredFact & f : facts) {
+  grouped.reserve(facts.size() / 8 + 1);
+  for (StoredFact & f : facts) {
     const NodeKey key{f.node};
     if (!key.valid() || !says(f.value) || f.predicate.empty()) continue;
-    Attribute a(f.predicate, f.value);
+    Attribute a(std::move(f.predicate), std::move(f.value));
     a.updated = f.updated;
     grouped[refOf(key)].push_back(std::move(a));
   }
-  for (auto & [n, attrs] : grouped) {
-    for (const Attribute & a : attrs)
-      if (const auto value = indexedValue(a.value)) {
-        const std::string said = indexKey(n.type, a.predicate, *value);
-        const auto * ids = byAttribute_.find(said);
-        byAttribute_ = byAttribute_.set(said, (ids ? *ids : immer::set<uint64_t>{}).insert(n.id));
-      }
-    attributes_ = attributes_.set(n, std::move(attrs));
-    if (n.type == NodeType::Portfolio) settle(PortfolioId{n.id});
+  // Built in bulk, on transients: the node's attributes go in whole, and the index of each text and link is added to once for all the
+  // nodes that say it, not once for each fact.
+  auto attrs = attributes_.transient();
+  std::unordered_map<std::string, std::vector<uint64_t>> added;  // index key -> the nodes that say it
+  std::vector<PortfolioId> portfolios;
+  for (auto & [n, list] : grouped) {
+    const std::vector<Attribute> * old = attrs.find(n);
+    if (old) {
+      // A source has said something of the node since: that stands, and the disk adds what was not said.
+      std::vector<Attribute> merged = *old;
+      for (Attribute & a : list)
+        if (std::none_of(merged.begin(), merged.end(), [&](const Attribute & x) { return x.predicate == a.predicate; })) {
+          if (const auto value = indexedValue(a.value)) added[indexKey(n.type, a.predicate, *value)].push_back(n.id);
+          merged.push_back(std::move(a));
+        }
+      attrs.set(n, std::move(merged));
+    } else {
+      for (const Attribute & a : list)
+        if (const auto value = indexedValue(a.value)) added[indexKey(n.type, a.predicate, *value)].push_back(n.id);
+      attrs.set(n, std::move(list));
+    }
+    if (n.type == NodeType::Portfolio) portfolios.push_back(PortfolioId{n.id});
   }
+  attributes_ = attrs.persistent();
+  auto index = byAttribute_.transient();
+  for (auto & [key, ids] : added) {
+    const auto * existing = index.find(key);
+    auto nodes = (existing ? *existing : immer::set<uint64_t>{}).transient();
+    for (uint64_t id : ids) nodes.insert(id);
+    index.set(key, nodes.persistent());
+  }
+  byAttribute_ = index.persistent();
+  for (PortfolioId id : portfolios) settle(id);
+  if (!grouped.empty()) checks_++;  // published, but no version: restoring makes none
 }
 
 void Snapshot::setAttributes(NodeRef n, const std::vector<Attribute> & in) {
@@ -826,10 +855,10 @@ void Snapshot::loadEdges(const std::vector<StoredEdge> & edges) {
   if (any) version_++;
 }
 
-void Snapshot::settleRestored(DatasetId dataset) {
+void Snapshot::settleRestored() {
   std::vector<SeriesKey> unknown;
   for (const auto & [key, state] : queues_)
-    if (state.unknown && key.edge.dataset == dataset) unknown.push_back(key);
+    if (state.unknown) unknown.push_back(key);
   for (const SeriesKey & key : unknown) {
     QueueState state = *queues_.find(key);
     state.unknown = false;
@@ -1231,44 +1260,51 @@ class MemoryStore : public Store {
     portfolios_ = std::move(options.portfolios);
     budget_ = options.queue_budget;
     changed_ = std::move(options.changed);
+    background_ = options.restore == StoreOptions::Restore::InBackground;
+    facts_ = options.facts;
     if (options.summaries) summary_ = std::make_unique<SummaryWriter>(std::move(options.summaries), options.summary_writer);
-    if (!options.invent_isins && !options.facts && !portfolios_ && !summary_) {
-      Snapshot first;
-      first.setInventIsins(false);
-      current_.store(std::make_shared<const Snapshot>(std::move(first)));
+    // The user's own file is small and what the program shows first: read here, before the constructor returns. A portfolio is in its own
+    // file and never in the cache: one that is found there anyway is not read. What was kept of the nodes and the edges (the cache and the
+    // summaries) is read before any source writes, or, in the background, newer than the sources' words are not allowed to stand over.
+    Snapshot first;
+    first.setInventIsins(options.invent_isins);
+    if (portfolios_) {
+      std::vector<StoredFact> mine;
+      for (StoredFact & f : portfolios_->loadAll())
+        if (NodeKey{f.node}.kind() == NodeKind::Portfolio) mine.push_back(std::move(f));
+      first.load(std::move(mine));
+      first.loadEvents(portfolios_->loadEvents());
     }
-    if (options.facts || portfolios_ || summary_) {
-      // What was kept is the facts of its nodes (and the user's transactions), which makes no version and no edge; and the summaries of the
-      // edges, which make the edges and their prices with no bar. Read before any source can write. A portfolio is in its own file and never in
-      // the cache: one that is found there anyway is not read.
-      Snapshot first;
-      first.setInventIsins(options.invent_isins);
-      std::vector<StoredFact> kept = options.facts ? options.facts->loadAll() : std::vector<StoredFact>{};
-      std::erase_if(kept, [](const StoredFact & f) { return NodeKey{f.node}.kind() == NodeKind::Portfolio; });
-      if (portfolios_) {
-        for (StoredFact & f : portfolios_->loadAll())
-          if (NodeKey{f.node}.kind() == NodeKind::Portfolio) kept.push_back(std::move(f));
-        first.loadEvents(portfolios_->loadEvents());
-      }
-      first.load(kept);
-      if (summary_)
-        for (const std::string & code : summary_->datasets())
-          if (const auto dataset = datasetKey(code))
-            if (auto store = summary_->store(DatasetId{dataset->value})) first.loadEdges(store->loadEdges());
-      tell(first.takeNotices());
-      current_.store(std::make_shared<const Snapshot>(std::move(first)));
-      if (options.facts) writer_ = std::make_unique<FactWriter>(std::move(options.facts), options.writer);
-    }
+    const bool restore = facts_ || summary_;
+    first.setRestoring(restore && background_);
+    tell(first.takeNotices());
+    current_.store(std::make_shared<const Snapshot>(std::move(first)));
+    if (options.facts) writer_ = std::make_unique<FactWriter>(std::move(options.facts), options.writer);
     if (summary_) reader_ = std::thread([this] { readLoop(); });
+    if (!restore) return;
+    if (background_) {
+      restore_running_ = true;
+      restorer_ = std::thread([this] { restoreFiles(); });
+    } else {
+      restoreFiles();
+    }
   }
 
   ~MemoryStore() override {
+    stopping_ = true;
+    if (restorer_.joinable()) restorer_.join();
     {
       std::lock_guard lock(want_mutex_);
       stop_ = true;
     }
     read_wake_.notify_all();
     if (reader_.joinable()) reader_.join();
+  }
+
+  bool restoring() const override { return restore_running_; }
+  void waitRestored() override {
+    std::unique_lock lock(restore_mutex_);
+    restored_.wait(lock, [&] { return !restore_running_; });
   }
 
   void flush() override {
@@ -1327,6 +1363,7 @@ class MemoryStore : public Store {
       std::lock_guard lock(want_mutex_);
       pinned_.clear();
       to_read_.clear();
+      last_want_ = keys;
       for (const SeriesKey & key : keys) {
         pinned_.insert(key);
         if (snapshot->queueResident(key.edge, key.resolution)) {
@@ -1438,6 +1475,117 @@ class MemoryStore : public Store {
     }
   }
 
+  // What the portfolios hold, by key: restored first.
+  struct Held {
+    std::unordered_set<uint64_t> instruments, currencies, nodes;
+  };
+  static Held heldBy(const Snapshot & snapshot) {
+    Held held;
+    for (PortfolioId id : snapshot.portfolios()) {
+      if (const auto currency = portfolio::currencyOf(snapshot, id)) {
+        held.currencies.insert(currency->value);
+        held.nodes.insert(currency->value);
+      }
+      for (const portfolio::Position & p : portfolio::holdings(snapshot, id).positions) {
+        held.instruments.insert(p.instrument.value);
+        held.currencies.insert(p.quote.value);
+        held.nodes.insert({p.instrument.value, p.quote.value, p.market.value});
+      }
+    }
+    return held;
+  }
+
+  // Reads what an earlier run kept, in chunks, each published as it is read: the facts of the nodes and the edges (with their quotes and
+  // the coverage of their queues). What the portfolios hold comes first (their instruments' facts, listings and quotes, and the currencies
+  // they are valued through), then the rest, each chunk's facts before its edges so that a row is never seen before what it is called.
+  // The facts read are those of the nodes that have an edge; where no summaries are kept there are no edges, so all of them are read.
+  // Runs on a thread of its own, or in the constructor.
+  void restoreFiles() {
+    try {
+      constexpr size_t kChunk = 2000;
+      if (summary_) {
+        const Held held = heldBy(*current_.load());
+        std::vector<StoredEdge> edges;
+        for (const std::string & code : summary_->datasets())
+          if (const auto dataset = datasetKey(code))
+            if (auto store = summary_->store(DatasetId{dataset->value}))
+              for (StoredEdge & e : store->loadEdges()) edges.push_back(std::move(e));
+        const auto isHeld = [&](const StoredEdge & e) { return held.instruments.count(e.listing.key.base.value) || held.currencies.count(e.listing.key.base.value); };
+        const size_t heldEnd = static_cast<size_t>(std::stable_partition(edges.begin(), edges.end(), isHeld) - edges.begin());
+        std::unordered_set<uint64_t> loaded;  // the nodes whose facts are read
+        for (size_t from = 0; from < edges.size() || (from == 0 && !held.nodes.empty());) {
+          if (stopping_) return;
+          const size_t to = from < heldEnd ? heldEnd : std::min(edges.size(), from + kChunk);
+          std::vector<uint64_t> nodes;
+          const auto want = [&](uint64_t node) {
+            if (node && loaded.insert(node).second) nodes.push_back(node);
+          };
+          if (from == 0)
+            for (uint64_t node : held.nodes) want(node);
+          for (size_t i = from; i < to; i++) {
+            const EdgeKey & k = edges[i].listing.key;
+            want(k.base.value);
+            want(k.quote.value);
+            want(k.market.value);
+            want(k.dataset.value);
+          }
+          std::vector<StoredFact> facts = facts_ ? facts_->loadNodes(nodes) : std::vector<StoredFact>{};
+          std::erase_if(facts, [](const StoredFact & f) { return NodeKey{f.node}.kind() == NodeKind::Portfolio; });
+          std::vector<StoredEdge> chunk(std::make_move_iterator(edges.begin() + static_cast<std::ptrdiff_t>(from)),
+                                        std::make_move_iterator(edges.begin() + static_cast<std::ptrdiff_t>(to)));
+          publish([&](Snapshot & s) {
+            s.load(std::move(facts));
+            s.loadEdges(chunk);
+          });
+          if (to == from) break;
+          from = to;
+        }
+      } else if (facts_) {
+        std::vector<StoredFact> all = facts_->loadAll();
+        std::erase_if(all, [](const StoredFact & f) { return NodeKey{f.node}.kind() == NodeKind::Portfolio; });
+        constexpr size_t kFacts = 100'000;
+        for (size_t from = 0; from < all.size();) {
+          if (stopping_) return;
+          const size_t to = std::min(all.size(), from + kFacts);
+          std::vector<StoredFact> chunk(std::make_move_iterator(all.begin() + static_cast<std::ptrdiff_t>(from)),
+                                        std::make_move_iterator(all.begin() + static_cast<std::ptrdiff_t>(to)));
+          publish([&](Snapshot & s) { s.load(std::move(chunk)); });
+          from = to;
+        }
+      }
+    } catch (...) {
+      // Whatever went wrong with a file, the store runs with what it has: the stores say what they could not do themselves.
+    }
+    write([&](Snapshot & s) {
+      s.settleRestored();
+      s.setRestoring(false);
+    });
+    {
+      std::lock_guard lock(restore_mutex_);
+      restore_running_ = false;
+    }
+    restored_.notify_all();
+    if (background_ && changed_) changed_();
+    rewant();
+  }
+
+  // One chunk of the restore, published; the UI is told, and what it wants is looked at again (the edges are there now).
+  template <class F>
+  void publish(F change) {
+    write(change);
+    if (background_ && changed_) changed_();
+    rewant();
+  }
+
+  void rewant() {
+    std::vector<SeriesKey> keys;
+    {
+      std::lock_guard lock(want_mutex_);
+      keys = last_want_;
+    }
+    if (!keys.empty()) want(keys);
+  }
+
   void tell(const std::vector<std::string> & notices) {
     for (const std::string & text : notices)
       if (notice_ && told_.insert(text).second) notice_(text);
@@ -1498,6 +1646,12 @@ class MemoryStore : public Store {
   std::shared_ptr<FactStore> portfolios_;  // the user's file, if there is one
   std::unique_ptr<FactWriter> writer_;  // its thread ends first, with everything written
   std::unique_ptr<SummaryWriter> summary_;
+  std::shared_ptr<FactStore> facts_;  // read by the restore
+  bool background_ = false;
+  std::atomic<bool> stopping_{false}, restore_running_{false};
+  std::mutex restore_mutex_;
+  std::condition_variable restored_;
+  std::vector<SeriesKey> last_want_;  // under want_mutex_
   size_t budget_ = kDefaultQueueBudget;
   std::function<void()> changed_;
   // What is wanted and what is read (under `want_mutex_`, which is taken inside the writer lock and never the other way round).
@@ -1510,7 +1664,8 @@ class MemoryStore : public Store {
   std::map<uint64_t, SeriesKey> by_stamp_;
   uint64_t clock_stamp_ = 0;
   bool stop_ = false;
-  std::thread reader_;  // last: it ends first
+  std::thread reader_;
+  std::thread restorer_;  // last: it ends first
 };
 
 }  // namespace

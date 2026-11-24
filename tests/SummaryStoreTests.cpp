@@ -624,3 +624,235 @@ TEST(the_loader_asks_the_summary_before_the_network_and_only_a_missing_or_expire
   session(fetched + 60'000, [&](HistoryLoader & loader, Store &) { loader.want({b}, Period::Quarter); });  // never fetched: missing
   CHECK(http.urls.size() == 1 && http.urls[0].find("MONTH_3") != std::string::npos);
 }
+
+// ---- The restore, off the thread that draws
+
+namespace {
+
+// A facts file that is slow to read: the first `allowed` calls to read some nodes go through and the next waits, so that a test looks at the
+// store while the restore is in the middle of it.
+class SlowFacts : public FactStore {
+ public:
+  explicit SlowFacts(std::shared_ptr<FactStore> inner) : inner_(std::move(inner)) {}
+  std::vector<StoredFact> loadAll() override { return inner_->loadAll(); }
+  std::vector<StoredFact> loadNodes(const std::vector<uint64_t> & nodes) override {
+    std::unique_lock lock(mutex_);
+    calls_.push_back(nodes);
+    changed_.notify_all();
+    changed_.wait(lock, [&] { return static_cast<int>(calls_.size()) <= allowed_; });
+    lock.unlock();
+    return inner_->loadNodes(nodes);
+  }
+  std::vector<StoredEvent> loadEvents() override { return inner_->loadEvents(); }
+  void apply(const FactBatch & b) override { inner_->apply(b); }
+  void allow(int n) {
+    {
+      std::lock_guard lock(mutex_);
+      allowed_ = n;
+    }
+    changed_.notify_all();
+  }
+  // Waits until the restore is waiting in its `n`th read.
+  bool waitForCall(size_t n) {
+    std::unique_lock lock(mutex_);
+    return changed_.wait_for(lock, std::chrono::seconds(5), [&] { return calls_.size() >= n; });
+  }
+  std::vector<std::vector<uint64_t>> calls() {
+    std::lock_guard lock(mutex_);
+    return calls_;
+  }
+
+ private:
+  std::shared_ptr<FactStore> inner_;
+  std::mutex mutex_;
+  std::condition_variable changed_;
+  std::vector<std::vector<uint64_t>> calls_;
+  int allowed_ = 0;
+};
+
+constexpr size_t kMany = 2500;  // more edges than a chunk of the restore
+
+struct Big {
+  EdgeKey held;                      // Nokia, which the portfolio holds
+  std::vector<EdgeKey> others;       // the rest
+  InstrumentId orphan;               // facts and no edge
+  PortfolioId mine{portfolioKey(0x1234567890abcdull)->value};
+};
+
+// A disk with a portfolio holding Nokia, `kMany` other edges with a price and a daily queue, and an instrument that has no edge.
+Big populate(Disk & d) {
+  Big big;
+  auto store = makeMemoryStore(d.options());
+  Things t(*store);
+  big.held = t.edge(t.nokia);
+  store->batch([&](Batch & b) {
+    b.appendCandles(big.held, Resolution::Day, days(92));
+    b.setQuote(big.held, {5.5, 5.4, 5.6, midnight(kLast) + 50000});
+    b.setListing({big.held, "NOKIA", "id-n", "book-n", "STOCK", "Nokia Oyj"});
+    for (size_t i = 0; i < kMany; i++) {
+      const InstrumentId base = b.addInstrument("S" + std::to_string(i), "Company " + std::to_string(i), InstrumentKind::Company, testIsin(1000 + static_cast<int>(i)), "STOCK");
+      const EdgeKey k{base, t.eur, t.hel, t.ds};
+      big.others.push_back(k);
+      b.appendCandles(k, Resolution::Day, days(30));
+      b.setQuote(k, {10.0 + static_cast<double>(i), 9.5, 10.5, midnight(kLast) + 40000});
+      b.setListing({k, "S" + std::to_string(i), "", "book", "STOCK", "Company " + std::to_string(i)});
+    }
+    big.orphan = b.addInstrument("", "Orphan", InstrumentKind::Company, testIsin(7777), "STOCK");
+  });
+  const portfolio::Transaction buy{1, kLast - 3, portfolio::Side::Buy, t.nokia, t.hel, t.eur, 10, 4, 1, "x"};
+  store->setAttributes(NodeRef(big.mine), {{predicate::name, "Mine"}, {predicate::currency, NodeKey{t.eur.value}}});
+  store->appendTransactions({big.mine, store->addDataset(kUserDataset)}, {buy});
+  store->flush();
+  return big;
+}
+
+}  // namespace
+
+TEST(the_ui_works_while_the_files_are_read_and_what_the_portfolios_hold_comes_first) {
+  Disk d;
+  const Big big = populate(d);
+  d.now += 3'600'000;  // an hour later
+  StoreOptions o = d.options();
+  auto slow = std::make_shared<SlowFacts>(o.facts);
+  o.facts = slow;
+  o.restore = StoreOptions::Restore::InBackground;
+  std::atomic<int> changes{0};
+  o.changed = [&] { changes++; };
+  const auto start = std::chrono::steady_clock::now();
+  auto store = makeMemoryStore(std::move(o));
+  // The store is made at once, whatever the file takes, and works: the portfolios (the user's own small file) are there, the rest is coming.
+  CHECK(std::chrono::steady_clock::now() - start < std::chrono::milliseconds(1000));
+  CHECK(store->restoring());
+  CHECK(slow->waitForCall(1));
+  CHECK(store->snapshot()->portfolios() == std::vector<PortfolioId>{big.mine} && store->snapshot()->quoteRowCount() == 0);
+  // A source writes while the restore waits: it does not wait for it.
+  const auto written = std::chrono::steady_clock::now();
+  const InstrumentId fresh = store->addInstrument("NEW", "New", InstrumentKind::Company, testIsin(31337), "STOCK");
+  const InstrumentId eur = store->addInstrument("EUR", "Euro", InstrumentKind::Currency);
+  const EdgeKey freshEdge{fresh, eur, store->addMarket("XHEL", "Nasdaq Helsinki"), store->addDataset("nordnet", "Nordnet")};
+  store->appendCandles(freshEdge, Resolution::Day, days(3));
+  CHECK(std::chrono::steady_clock::now() - written < std::chrono::milliseconds(500));
+  CHECK(store->restoring());
+  // The first read is what the portfolio holds: its instrument's facts, its listing and its quote, and then the restore waits at the next.
+  slow->allow(1);
+  CHECK(waitFor([&] { return store->snapshot()->listing(big.held).has_value(); }));
+  CHECK(slow->waitForCall(2));
+  {
+    const auto s = store->snapshot();
+    CHECK(store->restoring());
+    CHECK(s->name(NodeRef(big.held.base)) == "Nokia Oyj" && s->kind(big.held.base) == InstrumentKind::Company);
+    CHECK(s->quote(big.held) && s->quote(big.held)->last == 5.5 && s->quote(big.held)->bid == 5.4);
+    CHECK(s->listing(big.held)->symbol == "NOKIA");
+    CHECK(s->coverage(big.held, Resolution::Day)->count == 92);
+    // And not yet the rest: not their facts, not their rows.
+    CHECK(!s->known(NodeRef(big.others[10].base)) && !s->quote(big.others[10]));
+    CHECK(s->listed(big.held) && s->listed(freshEdge) && s->quoteRowCount() == 2);  // the held one, and the new one a source wrote
+    CHECK(changes >= 1);
+    // The held read was the first, and it asked for Nokia and what it is priced and listed in; the next asks for others.
+    const auto calls = slow->calls();
+    CHECK(calls.size() == 2);
+    const auto has = [&](const std::vector<uint64_t> & nodes, uint64_t n) { return std::find(nodes.begin(), nodes.end(), n) != nodes.end(); };
+    CHECK(has(calls[0], big.held.base.value) && has(calls[0], big.held.quote.value) && has(calls[0], big.held.market.value));
+    CHECK(!has(calls[0], big.others[10].base.value) && has(calls[1], big.others[10].base.value));
+  }
+  slow->allow(100);
+  store->waitRestored();
+  CHECK(!store->restoring());
+  const auto s = store->snapshot();
+  CHECK(s->quoteRowCount() == kMany + 2);
+  CHECK(s->name(NodeRef(big.others[kMany - 1].base)) == "Company " + std::to_string(kMany - 1));
+  CHECK(s->quote(big.others[kMany - 1])->last == 10.0 + static_cast<double>(kMany - 1));
+  // The tables find an edge by what its market calls it, as before.
+  CHECK(s->findEdge("S7", *s->findMarket("XHEL")) == big.others[7]);
+  // A portfolio is valued with no network and no queue read: from the quote.
+  const auto held = portfolio::holdings(*s, big.mine);
+  const portfolio::Valuation v = portfolio::value(held.positions, *s, *s->findInstrument("EUR"));
+  CHECK(!v.incomplete && v.rows[0].price && v.rows[0].price->close == 5.5);
+}
+
+TEST(a_source_that_writes_while_the_files_are_read_wins_over_what_the_disk_has) {
+  Disk d;
+  const Big big = populate(d);
+  d.now += 3'600'000;
+  StoreOptions o = d.options();
+  auto slow = std::make_shared<SlowFacts>(o.facts);
+  o.facts = slow;
+  o.restore = StoreOptions::Restore::InBackground;
+  auto store = makeMemoryStore(std::move(o));
+  CHECK(slow->waitForCall(1));
+  slow->allow(1);
+  CHECK(slow->waitForCall(2));  // the held chunk is in; the restore waits before the rest
+  // A source says things of edges and instruments that the disk has an older word on, before the restore has read them.
+  const EdgeKey a = big.others[100], b = big.others[200], c = big.others[300];
+  store->setAttribute(NodeRef(a.base), {predicate::name, "Said while restoring"});
+  const Timestamp newer = midnight(kLast) + 80000;  // the disk's is 40000 into the day
+  store->setQuote(b, {999, 998, 1000, newer});
+  store->appendCandles(c, Resolution::Day, {Candle{kLast + 1, 1, 2, 0.5, 777, 3}});
+  slow->allow(100);
+  store->waitRestored();
+  const auto s = store->snapshot();
+  // What the source said stands; the rest of what the disk had of the same node is added.
+  CHECK(s->name(NodeRef(a.base)) == "Said while restoring");
+  CHECK(s->said(NodeRef(a.base), predicate::type) == "STOCK" && s->kind(a.base) == InstrumentKind::Company);
+  CHECK(s->findByAttribute(NodeType::Instrument, predicate::name, "Said while restoring") == NodeRef(a.base));
+  CHECK(!s->findByAttribute(NodeType::Instrument, predicate::name, "Company 100"));  // the old word is not found
+  // A quote newer than the disk's stands, the listing that was not said is the disk's, and the rest of the disk's is added.
+  CHECK(s->quote(b)->last == 999 && s->quote(b)->bid == 998 && s->quote(b)->time == newer);
+  CHECK(s->listing(b)->symbol == "S200");
+  // A bar said for a queue the disk has too: both are in it once it is read.
+  CHECK(s->coverage(c, Resolution::Day)->last_key == kLast + 1);
+  store->want({SeriesKey{c, Resolution::Day}});
+  CHECK(waitFor([&] { return store->snapshot()->queueResident(c, Resolution::Day); }));
+  const auto q = store->snapshot()->queue(c, Resolution::Day);
+  CHECK(q.size() == 31 && q.back().time == kLast + 1 && q.back().close == 777 && q[q.size() - 2].time == kLast);
+  // And what the disk is told is what stands: a restart sees it.
+  store->flush();
+  auto again = makeMemoryStore(d.options());
+  CHECK(again->snapshot()->quote(b)->last == 999);
+  CHECK(again->snapshot()->name(NodeRef(a.base)) == "Said while restoring");
+}
+
+TEST(restoring_makes_no_node_that_has_no_edge_and_keeps_the_time_a_fact_had_on_the_disk) {
+  Disk d;
+  const Big big = populate(d);
+  d.now += 3'600'000;
+  StoreOptions o = d.options();
+  o.restore = StoreOptions::Restore::InBackground;
+  auto store = makeMemoryStore(std::move(o));
+  store->waitRestored();
+  const auto s = store->snapshot();
+  // The instrument with facts and no edge is not made; those with an edge, and the instrument the portfolio holds, are.
+  CHECK(!s->findInstrumentByIsin(testIsin(7777)) && !s->known(NodeRef(big.orphan)));
+  CHECK(s->nodeCount(NodeType::Instrument) == kMany + 2);  // the edges' instruments and the euro
+  CHECK(s->known(NodeRef(big.held.base)) && s->known(NodeRef(big.others[0].base)));
+  // A fact is as old as the disk had it, not as new as this restart; and nothing was a new version of the facts.
+  const auto name = s->fact(NodeRef(big.held.base), predicate::name);
+  CHECK(name && name->updated == 1'800'000'000'000 && name->updated != d.now);
+  // No facts are written back either: what was read is on the disk already.
+  store->flush();
+  CHECK(d.counts.queues_put >= kMany);  // (session one's)
+  d.counts.reset();
+  store->flush();
+  CHECK(d.counts.applies == 0);
+}
+
+TEST(a_restore_in_the_background_ends_as_one_made_before_the_constructor_returns) {
+  Disk d;
+  const Big big = populate(d);
+  StoreOptions now = d.options();
+  auto sync = makeMemoryStore(std::move(now));
+  StoreOptions later = d.options();
+  later.restore = StoreOptions::Restore::InBackground;
+  auto background = makeMemoryStore(std::move(later));
+  background->waitRestored();
+  const auto a = sync->snapshot(), b = background->snapshot();
+  CHECK(!sync->restoring());
+  CHECK(a->quoteRowCount() == b->quoteRowCount() && a->quoteRowCount() == kMany + 1);
+  CHECK(a->nodeCount(NodeType::Instrument) == b->nodeCount(NodeType::Instrument));
+  for (const EdgeKey & k : {big.held, big.others[5], big.others[kMany - 1]}) {
+    CHECK(a->quote(k) == b->quote(k) && a->listing(k) == b->listing(k));
+    CHECK(a->coverage(k, Resolution::Day)->count == b->coverage(k, Resolution::Day)->count);
+  }
+  // Queues are on the disk only in both.
+  CHECK(!a->queueResident(big.held, Resolution::Day) && !b->queueResident(big.held, Resolution::Day));
+}
