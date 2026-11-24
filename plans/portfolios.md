@@ -1,6 +1,6 @@
 # Portfolios
 
-Status: being built, step by step ("Steps" below, with what is done). Built: 1 (node-valued facts), 2 (`src/portfolio/`), 3 (the model), 4 (the portfolio file), 5 (`Positions` and the contexts), 6 (the form dialog in cellui; buy, sell, the portfolio commands, undo and redo), 7 (the keys).
+Status: built, all eight steps ("Steps" below, with what is done and what is left). Built: 1 (node-valued facts), 2 (`src/portfolio/`), 3 (the model), 4 (the portfolio file), 5 (`Positions` and the contexts), 6 (the form dialog in cellui; buy, sell, the portfolio commands, undo and redo), 7 (the keys), 8 (the README). What is left is "Later" and "Open" below; the cellui changes (`FormModal`, `TableModel::buttonShown`, `Table::scrollToPosition`) are on cellui's branch and stocks fetches cellui's `main`, so stocks builds against a checkout (`-DFETCHCONTENT_SOURCE_DIR_CELLUI`) until they are merged.
 
 A portfolio is what the user holds: positions in instruments she has bought, valued at the prices the store already has. It is
 modelled as the instruments are: **a portfolio is a node**, and what there is to know of it is facts and edges in the same
@@ -208,10 +208,18 @@ every portfolio added up in one currency, allocation by kind and country, a benc
 
 ## Open
 
-- Whether the undo stack should survive a restart (not at first).
-- Which price edge values a position when two datasets have the instrument on the market (the latest bar, at first).
-- Whether a position in an edge that no source loads any more is shown from its last stored price or marked stale.
-- Whether `next-preset` and `previous-preset` (unbound today) get keys of their own now that Tab is spoken for.
-- Whether the table can show a button on some rows only. If cellui's `Table` takes the buttons of a column as the same for every row, it needs
-  a per-row hook (the model says which buttons a row has), added in cellui with the form dialog.
-- The glyphs of the buy and sell buttons, which must draw in the terminal and the window alike.
+What was open when it was built, and what was picked (the simplest option):
+
+- Whether the undo stack should survive a restart: **no**, it is for the session (the stack is of closures over store writes).
+- Which price edge values a position when two datasets have the instrument on the market: **the latest bar**, ties to the lowest key, in
+  the currency the position was bought in (`portfolio::latestPrice`).
+- Whether a position in an edge that no source loads any more is shown from its last stored price or marked stale: **not decided, and
+  not handled**: the store does not keep bars between runs, so until a source has loaded the edge a position has no price, its
+  value is empty and the total is marked incomplete; after that its last bar stands, however old. Marking it stale is later work.
+- Whether `next-preset` and `previous-preset` get keys now that Tab is spoken for: **no**, they stay unbound (they step through the tags of
+  whichever context is shown).
+- Whether the table can show a button on some rows only: **it could not**, so `TableModel::buttonShown()` was added to cellui.
+- The glyphs of the buy and sell buttons: **⊕ and ⊖** (U+2295, U+2296), one cell wide in the monospace fonts of terminals and the window.
+  Not checked in a real terminal or on a real desktop font here (see the report in the commit messages): the info glyph was chosen the same way.
+- Where the average cost leaves the plan open: fees of buys are in it; the ledger of a portfolio is the user's own dataset unless a
+  `ledger` fact says another; a portfolio is picked in the form by typing its name.

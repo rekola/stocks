@@ -27,11 +27,42 @@ session if the first gives nothing (no network, a refusal).
     build/stocks --source ecb   # the euro short-term rate (€STR) and its compounded index from the European Central Bank, no key
     build/stocks --source nordnet,funds:NAME   # several sources, at once; funds:NAME is a fund company by its schema, data/funds/NAME.json (shown under All)
 
-Keys: arrows, PgUp/PgDn, Home/End move; Tab moves between the tags and the table; `M-x` (`Ctrl+Shift+P` on
+Keys: arrows, PgUp/PgDn, Home/End move; `Tab` and `Shift+Tab` switch the context (below); `M-x` (`Ctrl+Shift+P` on
 the desktop keymap) opens the command palette, where every command is listed with
 its description and key; `q` (`C-x C-c`, `Ctrl+Q`) quits. `i` (`C-x =`) or the 🛈 button at the end of a row shows everything known about the row (Esc closes it). Clicking a
 heading sorts; clicking a tag or row chooses it; the wheel scrolls. The table
 fills the screen and follows it when it is resized.
+
+**Portfolios.** A portfolio is what you hold: positions in instruments you bought, valued at the prices the store has. There are two
+contexts, **Markets** (the presets above) and **Portfolio**; `Tab` goes to the next (`next-context`) and `Shift+Tab` to the previous
+(`previous-context`), in both keymap profiles. The Portfolio context has the portfolios as its tags (by name; one is shown at a time, there is
+no "All") over a table of its positions: symbol, name, quantity, average cost, price, value (in the portfolio's currency, with a star in the
+heading where a position has no price or rate to it, which is then shown in its own currency and left out of the total), weight,
+P&L, P&L % and the change and trace of the period (the period tags apply to both contexts). Each context keeps its own tag, sort and
+scroll position while the program runs.
+
+At the end of each row are the info button 🛈 and, on a row that can be bought, **buy ⊕ and sell ⊖**: a click with the mouse, or move the
+cursor onto one with Left and Right (`Enter` presses it). Only a row on a real market or a fund priced by its company has them: an index, a spot
+price, a currency pair and an interest rate (Euribor, the €STR) have the info button alone, and `buy` and `sell` run from the palette
+on such a row say it cannot be bought. A row of the Portfolio context always has them. They open a form: portfolio, quantity, price
+(the last one is offered), date (today), fee, note, and a live total; `Tab` moves between the fields, `Enter` accepts, `Esc` cancels, and
+a sell of more than is held is refused as you type. `buy` and `sell` have no key; both are in the palette. The first buy with no
+portfolio offers to make one.
+
+| command | what it does | terminal keymap | desktop keymap |
+|---|---|---|---|
+| `next-context`, `previous-context` | Markets, Portfolio | `Tab`, `Shift+Tab` | `Tab`, `Shift+Tab` |
+| `new-portfolio` | a name and a currency | | |
+| `rename-portfolio`, `delete-portfolio` | the portfolio shown; delete confirms | | |
+| `buy`, `sell` | the row's form (the buttons) | | |
+| `undo` | takes back your last change: a trade, a new, renamed or deleted portfolio | `C-x u`, `C-/` | `Ctrl+Z` |
+| `redo` | makes it again | `C-M-_` | `Ctrl+Y` |
+
+Your portfolios are your own data: they are kept in `portfolios.sqlite` beside `facts.sqlite` in the data directory (`--portfolios FILE`
+chooses another, `--no-portfolios` keeps them for the session only). It is never the cache's file, which the sources rebuild: a portfolio
+is not written to it and a source cannot write one. A file of another schema is moved aside (`.old-<time>`) and a damaged one to
+`.bad-<time>`, never emptied in place; the status line says so. Undo and redo are for the session. See
+[plans/portfolios.md](plans/portfolios.md).
 
 The period: the Change column and the trace beside it always show the same period, and the headings say which
 (`Change 3m`, `3 months`). The tags `1d 1w 1m 3m 1y` at the right end of the top row (where there is room) show it and a click
@@ -74,7 +105,8 @@ that has ISINs (each found by its ISIN, so the ticker is certainly the same comp
 Asia-Pacific and Latin America are not covered: there is no source of their ISINs yet.
 
 What the sources say of instruments, markets and datasets (names, icons, a market's country) is kept between runs in a
-SQLite file, `facts.sqlite` in the user's data directory (`--facts FILE` chooses another, `--no-facts` runs without it); see
+SQLite file, `facts.sqlite` in the user's data directory (`--facts FILE` chooses another, `--no-facts` runs without it); your portfolios are in
+`portfolios.sqlite` beside it (`--portfolios FILE`, `--no-portfolios`); see
 [plans/data-model.md](plans/data-model.md).
 
 The data model is planned in [plans/data-model.md](plans/data-model.md), the server, its API and the bars in [plans/server.md](plans/server.md), and the market calendars in [plans/calendars.md](plans/calendars.md).
