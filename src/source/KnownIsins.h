@@ -21,17 +21,17 @@ inline constexpr const char * kCopper = "XC0005705501";     // copper
 inline constexpr const char * kZinc = "XC0005705584";       // zinc
 inline constexpr const char * kLead = "XC0005705527";       // lead
 inline constexpr const char * kBricIndia = "US26075E1047";  // Dow Jones BRIC 50 India Subindex (BRIC50D)
+inline constexpr const char * kBitcoin = "XTV15WLZJMF0";    // Bitcoin
+inline constexpr const char * kEthereum = "XTD5RG2FHH04";   // Ethereum
 
-inline constexpr const char * kReal[] = {kGold, kSilver, kPlatinum, kPalladium, kCopper, kZinc, kLead, kBricIndia};
+inline constexpr const char * kReal[] = {kGold, kSilver, kPlatinum, kPalladium, kCopper, kZinc, kLead, kBricIndia, kBitcoin, kEthereum};
 
 // ---- Ours: private, ZZ and a number counted on from 1, with no gaps.
-inline constexpr const char * kBitcoin = "ZZ0000000016";       //  1: Bitcoin
-inline constexpr const char * kEthereum = "ZZ0000000024";      //  2: Ethereum
-inline constexpr const char * kGoldBar = "ZZ0000000032";       //  3: a gold bar held by the gram of fine gold (the physical metals, estimated)
-inline constexpr const char * kGoldCoin = "ZZ0000000040";      //  4: a gold coin held by the ounce of fine gold
-inline constexpr const char * kPlatinumBar = "ZZ0000000057";   //  5: a platinum bar held by the gram of fine platinum
+inline constexpr const char * kGoldBar = "ZZ0000000016";       //  1: a gold bar held by the gram of fine gold (the physical metals, estimated)
+inline constexpr const char * kGoldCoin = "ZZ0000000024";      //  2: a gold coin held by the ounce of fine gold
+inline constexpr const char * kPlatinumBar = "ZZ0000000032";   //  3: a platinum bar held by the gram of fine platinum
 
-inline constexpr const char * kPrivate[] = {kBitcoin, kEthereum, kGoldBar, kGoldCoin, kPlatinumBar};
+inline constexpr const char * kPrivate[] = {kGoldBar, kGoldCoin, kPlatinumBar};
 
 // ---- What the compiler checks.
 

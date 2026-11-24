@@ -293,16 +293,9 @@ TEST(a_metal_has_the_isin_of_its_commodity_and_is_the_instrument_another_source_
   CHECK(s->name(NodeRef(nordnetGold)) == "Kulta" && s->said(NodeRef(nordnetGold), predicate::type) == "COMMODITY");
   const MarketId none = *s->findMarket(kNoMarket);
   CHECK(s->edges(none).size() == 14 && s->hasCandles({nordnetGold, *s->findInstrument("EUR"), none, *s->findDataset(kGoldPriceDataset)}, Resolution::Day));
-  // The ISINs the metals have are real (valid) ones, and the coins, with none, have one of ours, which starts with ZZ.
-  for (auto [symbol, isin] : {std::pair{"XAU", "XC0009655157"}, {"XAG", "XC0009653103"}, {"XPT", "XC0009665545"}, {"XPD", "XC0009665529"}, {"HG", "XC0005705501"}}) {
-    CHECK(isValidIsin(isin) && s->isin(*s->findInstrument(symbol)) == isin);
+  // Every symbol has a real (valid) ISIN, the ones source/KnownIsins.h names, and none is one of ours: there is no second gold, and the coins are not private.
+  for (auto [symbol, isin] : {std::pair{"XAU", "XC0009655157"}, {"XAG", "XC0009653103"}, {"XPT", "XC0009665545"}, {"XPD", "XC0009665529"}, {"HG", "XC0005705501"},
+                              {"BTC", "XTV15WLZJMF0"}, {"ETH", "XTD5RG2FHH04"}}) {
+    CHECK(isValidIsin(isin) && s->isin(*s->findInstrument(symbol)) == isin && std::string(isin).rfind("ZZ", 0) != 0);
   }
-  for (const char * symbol : {"BTC", "ETH"}) {
-    const std::string isin = s->isin(*s->findInstrument(symbol));
-    CHECK(isValidIsin(isin) && isin.rfind("ZZ", 0) == 0);
-  }
-  // Nothing but the metals with an ISIN has a ZZ one among the metals: no second gold.
-  size_t privateOnes = 0;
-  for (const char * symbol : {"XAU", "XAG", "XPT", "XPD", "HG", "BTC", "ETH"}) privateOnes += s->isin(*s->findInstrument(symbol)).rfind("ZZ", 0) == 0;
-  CHECK(privateOnes == 2);
 }
