@@ -18,15 +18,15 @@ inline constexpr const char * kSilver = "XC0009653103";     // silver
 inline constexpr const char * kPlatinum = "XC0009665545";   // platinum
 inline constexpr const char * kPalladium = "XC0009665529";  // palladium
 inline constexpr const char * kCopper = "XC0005705501";     // copper
-inline constexpr const char * kZinc = "XC0005705584";       // zinc: Nordnet's list gives it none
-inline constexpr const char * kLead = "XC0005705527";       // lead: Nordnet's list gives it none
-inline constexpr const char * kBricIndia = "US26075E1047";  // Dow Jones BRIC 50 India Subindex (BRIC50D): Nordnet's list gives it none
+inline constexpr const char * kZinc = "XC0005705584";       // zinc
+inline constexpr const char * kLead = "XC0005705527";       // lead
+inline constexpr const char * kBricIndia = "US26075E1047";  // Dow Jones BRIC 50 India Subindex (BRIC50D)
 
 inline constexpr const char * kReal[] = {kGold, kSilver, kPlatinum, kPalladium, kCopper, kZinc, kLead, kBricIndia};
 
 // ---- Ours: private, ZZ and a number counted on from 1, with no gaps.
-inline constexpr const char * kBitcoin = "ZZ0000000016";       //  1: a coin priced by goldprice.dev
-inline constexpr const char * kEthereum = "ZZ0000000024";      //  2: a coin priced by goldprice.dev
+inline constexpr const char * kBitcoin = "ZZ0000000016";       //  1: Bitcoin
+inline constexpr const char * kEthereum = "ZZ0000000024";      //  2: Ethereum
 inline constexpr const char * kGoldBar = "ZZ0000000032";       //  3: a gold bar held by the gram of fine gold (the physical metals, estimated)
 inline constexpr const char * kGoldCoin = "ZZ0000000040";      //  4: a gold coin held by the ounce of fine gold
 inline constexpr const char * kPlatinumBar = "ZZ0000000057";   //  5: a platinum bar held by the gram of fine platinum
