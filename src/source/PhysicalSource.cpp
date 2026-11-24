@@ -1,4 +1,4 @@
-#include "source/GoldSource.h"
+#include "source/PhysicalSource.h"
 
 #include "model/Dates.h"
 #include "source/DataDirectory.h"
@@ -33,7 +33,7 @@ std::optional<double> number(const std::string & text) {
 
 }  // namespace
 
-bool parseGoldTable(const std::string & text, GoldTable & table, std::string & error) {
+bool parsePhysicalTable(const std::string & text, PhysicalTable & table, std::string & error) {
   table = {};
   std::istringstream in(text);
   std::string line;
@@ -60,7 +60,7 @@ bool parseGoldTable(const std::string & text, GoldTable & table, std::string & e
         error = where + "an item needs a metal, a symbol, a name and numbers above zero";
         return false;
       }
-      const bool known = std::any_of(table.spots.begin(), table.spots.end(), [&](const GoldTable::Spot & x) { return x.metal == f[1]; });
+      const bool known = std::any_of(table.spots.begin(), table.spots.end(), [&](const PhysicalTable::Spot & x) { return x.metal == f[1]; });
       if (!known) {
         error = where + "no spot row for the metal " + f[1] + " before it";
         return false;
@@ -78,10 +78,10 @@ bool parseGoldTable(const std::string & text, GoldTable & table, std::string & e
   return true;
 }
 
-bool loadGoldTable(GoldTable & table, std::string & error) {
-  const std::filesystem::path dir = findDataDirectory("gold");
+bool loadPhysicalTable(PhysicalTable & table, std::string & error) {
+  const std::filesystem::path dir = findDataDirectory("physical");
   if (dir.empty()) {
-    error = "no data/gold directory found";
+    error = "no data/physical directory found";
     return false;
   }
   std::ifstream in(dir / "items.csv");
@@ -91,10 +91,10 @@ bool loadGoldTable(GoldTable & table, std::string & error) {
   }
   std::stringstream text;
   text << in.rdbuf();
-  return parseGoldTable(text.str(), table, error);
+  return parsePhysicalTable(text.str(), table, error);
 }
 
-void GoldSource::load(Store & store, Http &, SourceListener & listener) {
+void PhysicalSource::load(Store & store, Http &, SourceListener & listener) {
   const auto snapshot = store.snapshot();
   // The spot prices there are, for each metal one for each currency they are in: of the symbols the file names for the metal, the first
   // it names that has a price in that currency (the file puts the one with prices in both euros and dollars first).
@@ -119,14 +119,14 @@ void GoldSource::load(Store & store, Http &, SourceListener & listener) {
     }
   if (spots.empty()) {
     // Another source writes the spot, perhaps still loading: try again soon, and say so once if it stays away.
-    if (++misses_ == 3) listener.message("gold: no spot price in the store yet, so no estimate for physical gold");
+    if (++misses_ == 3) listener.message("physical: no spot price in the store yet, so no estimate for physical gold");
     return;
   }
   misses_ = 0;
   store.batch([&](Batch & b) {
-    const DatasetId dataset = b.addDataset(kGoldDataset, "Estimate");
+    const DatasetId dataset = b.addDataset(kPhysicalDataset, "Estimate");
     const MarketId market = b.addMarket(kOffExchange, marketNameOfMic(kOffExchange));
-    for (const GoldItem & item : table_.items) {
+    for (const PhysicalItem & item : table_.items) {
       const auto metal = spots.find(item.metal);
       if (metal == spots.end()) continue;  // no price for this metal yet: nothing of it is made
       const InstrumentId instrument = b.resolveInstrument({}, {{predicate::name, item.name},

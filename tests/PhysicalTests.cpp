@@ -3,7 +3,7 @@
 #include "FakeHttp.h"
 #include "model/Dates.h"
 #include "portfolio/Portfolio.h"
-#include "source/GoldSource.h"
+#include "source/PhysicalSource.h"
 #include "source/DatasetCodes.h"
 
 namespace {
@@ -18,10 +18,10 @@ struct GoldListener : SourceListener {
   void message(const std::string & m) override { messages.push_back(m); }
 };
 
-GoldTable table() {
-  GoldTable t;
+PhysicalTable table() {
+  PhysicalTable t;
   std::string error;
-  const bool ok = parseGoldTable(
+  const bool ok = parsePhysicalTable(
       "# a comment\n\nspot,gold,GOLD\nitem,gold,GOLDBAR,Gold bar (1 g fine)," + std::to_string(1 / kOunce) + ",0.97,1.04\nitem,gold,GOLDCOIN,Gold coin (1 oz fine),1,0.98,1.08,🪙\n", t, error);
   CHECK(ok);
   return t;
@@ -51,29 +51,29 @@ struct World {
 }  // namespace
 
 TEST(the_gold_table_is_read_with_its_comments_and_a_wrong_row_says_which) {
-  GoldTable t = table();
+  PhysicalTable t = table();
   CHECK(t.spots.size() == 1 && t.spots[0].metal == "gold" && t.spots[0].symbol == "GOLD" && t.items.size() == 2 && t.items[0].metal == "gold");
   CHECK(t.items[0].symbol == "GOLDBAR" && std::abs(t.items[0].ounces - 1 / kOunce) < 1e-6 && t.items[0].bid == 0.97 && t.items[0].ask == 1.04);
   CHECK(t.items[0].symbol_icon.empty() && t.items[1].symbol_icon == "🪙");  // the optional symbol
   CHECK(t.items[1].ounces == 1 && t.items[1].name == "Gold coin (1 oz fine)");
   std::string error;
-  GoldTable bad;
-  CHECK(!parseGoldTable("spot,gold,GOLD\nitem,gold,A,Name,1,x,1\n", bad, error) && error.find("line 2") == 0);
-  CHECK(!parseGoldTable("spot,gold,GOLD\nitem,gold,A,Name,0,1,1\n", bad, error) && error.find("line 2") == 0);  // no weight
-  CHECK(!parseGoldTable("spot,gold,GOLD\nitem,gold,A,Name,1,1\n", bad, error));
-  CHECK(!parseGoldTable("item,gold,A,Name,1,1,1\n", bad, error));  // no spot
-  CHECK(!parseGoldTable("spot,gold,GOLD\n", bad, error));          // no item
-  CHECK(!parseGoldTable("spot,gold,GOLD\nitem,platinum,A,Name,1,1,1\n", bad, error) && error.find("line 2") == 0);  // a metal with no spot row
-  CHECK(!parseGoldTable("spot,gold,GOLD\nthing,1\n", bad, error) && error.find("line 2") == 0);
-  GoldTable shipped;
-  CHECK(loadGoldTable(shipped, error) || !error.empty());  // the file the program ships with reads, where the data is found
+  PhysicalTable bad;
+  CHECK(!parsePhysicalTable("spot,gold,GOLD\nitem,gold,A,Name,1,x,1\n", bad, error) && error.find("line 2") == 0);
+  CHECK(!parsePhysicalTable("spot,gold,GOLD\nitem,gold,A,Name,0,1,1\n", bad, error) && error.find("line 2") == 0);  // no weight
+  CHECK(!parsePhysicalTable("spot,gold,GOLD\nitem,gold,A,Name,1,1\n", bad, error));
+  CHECK(!parsePhysicalTable("item,gold,A,Name,1,1,1\n", bad, error));  // no spot
+  CHECK(!parsePhysicalTable("spot,gold,GOLD\n", bad, error));          // no item
+  CHECK(!parsePhysicalTable("spot,gold,GOLD\nitem,platinum,A,Name,1,1,1\n", bad, error) && error.find("line 2") == 0);  // a metal with no spot row
+  CHECK(!parsePhysicalTable("spot,gold,GOLD\nthing,1\n", bad, error) && error.find("line 2") == 0);
+  PhysicalTable shipped;
+  CHECK(loadPhysicalTable(shipped, error) || !error.empty());  // the file the program ships with reads, where the data is found
   if (error.empty()) CHECK(shipped.items.size() == 3 && shipped.items[0].symbol == "GOLDBAR" && shipped.items[1].symbol == "GOLDCOIN" && shipped.items[2].symbol == "PLATBAR" && shipped.items[2].metal == "platinum");
 }
 
 TEST(the_two_golds_are_priced_from_the_spot_off_exchange_in_their_own_dataset) {
   World w;
   w.setSpot(3000);
-  GoldSource source(table());
+  PhysicalSource source(table());
   FakeHttp http;
   GoldListener listener;
   source.load(*w.store, http, listener);
@@ -83,7 +83,7 @@ TEST(the_two_golds_are_priced_from_the_spot_off_exchange_in_their_own_dataset) {
   if (!bar || !coin) return;
   const auto s = w.store->snapshot();
   CHECK(bar->quote == w.usd && coin->quote == w.usd && bar->dataset == coin->dataset && s->name(bar->dataset) == "Estimate");
-  CHECK(s->findDataset(kGoldDataset) && bar->market == *s->findMarket(kOffExchange));
+  CHECK(s->findDataset(kPhysicalDataset) && bar->market == *s->findMarket(kOffExchange));
   // A gram of fine gold at the dealer's bid, and an ounce coin at its.
   const Candle b = s->lastCandles(*bar, Resolution::Day, 1).candles.back(), c = s->lastCandles(*coin, Resolution::Day, 1).candles.back();
   CHECK(b.time == kDay && std::abs(b.close - 3000 / kOunce * 0.97) < 1e-2);
@@ -99,7 +99,7 @@ TEST(the_two_golds_are_priced_from_the_spot_off_exchange_in_their_own_dataset) {
 TEST(the_estimate_follows_the_spot_and_a_new_day_is_a_new_bar) {
   World w;
   w.setSpot(3000);
-  GoldSource source(table());
+  PhysicalSource source(table());
   FakeHttp http;
   GoldListener listener;
   source.load(*w.store, http, listener);
@@ -120,7 +120,7 @@ TEST(the_estimate_follows_the_spot_and_a_new_day_is_a_new_bar) {
 
 TEST(with_no_spot_nothing_is_written_and_it_says_so_once_after_a_few_tries) {
   World w;  // no spot price yet: the other source is still loading
-  GoldSource source(table());
+  PhysicalSource source(table());
   FakeHttp http;
   GoldListener listener;
   const uint64_t version = w.store->snapshot()->version();
@@ -139,7 +139,7 @@ TEST(with_no_spot_nothing_is_written_and_it_says_so_once_after_a_few_tries) {
   World other;
   other.store->appendCandles({other.gold, other.usd, other.none, other.data}, Resolution::Day, {{kDay, 1, 1, 1, 3000, 1}});
   other.store->setListing({{other.gold, other.usd, other.none, other.data}, "XAU", "", "", "COMMODITY", "Gold"});
-  GoldSource third(table());
+  PhysicalSource third(table());
   GoldListener quiet;
   third.load(*other.store, http, quiet);
   CHECK(!other.edgeOf("GOLDBAR") && quiet.changes == 0);
@@ -149,7 +149,7 @@ TEST(a_portfolio_holds_the_two_golds_and_values_them_in_euros_at_the_bid) {
   World w;
   w.setSpot(3000);
   w.setPair();  // a euro costs 1.25 dollars
-  GoldSource source(table());
+  PhysicalSource source(table());
   FakeHttp http;
   GoldListener listener;
   source.load(*w.store, http, listener);
@@ -183,16 +183,16 @@ TEST(a_portfolio_holds_the_two_golds_and_values_them_in_euros_at_the_bid) {
 
 TEST(the_gold_source_names_a_dataset_no_other_source_writes) {
   std::vector<std::unique_ptr<Source>> sources;
-  sources.push_back(std::make_unique<GoldSource>(table()));
+  sources.push_back(std::make_unique<PhysicalSource>(table()));
   CHECK(datasetCodeClash(sources).empty());
-  CHECK(sources[0]->datasetCodes() == std::vector<std::string>{kGoldDataset});
-  sources.push_back(std::make_unique<GoldSource>(table()));
+  CHECK(sources[0]->datasetCodes() == std::vector<std::string>{kPhysicalDataset});
+  sources.push_back(std::make_unique<PhysicalSource>(table()));
   CHECK(!datasetCodeClash(sources).empty());
 }
 
 TEST(without_a_spot_it_tries_again_in_seconds_and_with_one_at_its_own_interval) {
   World w;
-  GoldSource source(table());  // its interval is half a minute
+  PhysicalSource source(table());  // its interval is half a minute
   FakeHttp http;
   GoldListener listener;
   CHECK(source.refreshInterval() == std::chrono::seconds(30));
@@ -202,7 +202,7 @@ TEST(without_a_spot_it_tries_again_in_seconds_and_with_one_at_its_own_interval) 
   source.load(*w.store, http, listener);
   CHECK(source.refreshInterval() == std::chrono::seconds(30));
   // A short interval is not made longer by the retry.
-  GoldSource quick(table(), std::chrono::seconds(1));
+  PhysicalSource quick(table(), std::chrono::seconds(1));
   quick.load(*w.store, http, listener);
   World none;
   quick.load(*none.store, http, listener);

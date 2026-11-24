@@ -1,4 +1,4 @@
-# The physical metals the program estimates a price for (src/source/GoldSource.cpp), held off exchange (XOFF).
+# The physical metals the program estimates a price for (src/source/PhysicalSource.cpp), held off exchange (XOFF).
 #
 # spot,METAL,SYMBOL
 #   METAL is a name the items below use (gold, platinum). SYMBOL is the listing symbol of that metal's spot price on the market of what is priced and not traded (XXXX): per troy ounce, in its quote

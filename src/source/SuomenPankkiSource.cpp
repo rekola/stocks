@@ -135,17 +135,17 @@ void SuomenPankkiSource::load(Store & store, Http & http, SourceListener & liste
   if (listener.cancelled()) return;
   HttpResult r = http.get(kUrl);
   if (r.status == 429 || r.status == 403) {
-    listener.message(r.status == 429 ? "suomenpankki: rate limited, stopping" : "suomenpankki: refused, stopping");
+    listener.message(r.status == 429 ? "spfb: rate limited, stopping" : "spfb: refused, stopping");
     return;
   }
   if (!r.ok()) {
-    listener.message("suomenpankki: " + (r.status == 0 ? (r.error.empty() ? std::string("no answer") : r.error) : "HTTP " + std::to_string(r.status)));
+    listener.message("spfb: " + (r.status == 0 ? (r.error.empty() ? std::string("no answer") : r.error) : "HTTP " + std::to_string(r.status)));
     return;
   }
   std::string error;
   std::vector<std::string> notes;
   const bool done = parse(r.body, store, error, notes);
-  for (const std::string & note : notes) listener.message("suomenpankki: " + note);
+  for (const std::string & note : notes) listener.message("spfb: " + note);
   if (done) listener.changed();
-  else listener.message("suomenpankki: " + error);
+  else listener.message("spfb: " + error);
 }
