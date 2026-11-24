@@ -1,25 +1,8 @@
 {
  "rows": 57,
- "shown": 37,
+ "shown": 53,
  "stale": 4,
- "noIsin": [
-  "AKTPASEMEB",
-  "AKTIAGLOBB",
-  "AKTMIKROMARKKAJB",
-  "AKTVARAMALTIB",
-  "AKTPASEURB",
-  "AKTGOVBONB",
-  "AKTVAIHTB",
-  "AKTVARH75B",
-  "AKTIASECB",
-  "AKTPASUSAB",
-  "AKTEMESELEB",
-  "AKTIMPAKTIB",
-  "AKTVARATUOTTOB",
-  "AKTPASJAPB",
-  "AKTVARATASAB",
-  "AKTIAMERIB"
- ],
+ "noIsin": [],
  "isins": {
   "SE0014261871EUR": "SE0014261871",
   "IE0004UG0UZ9EUR": "IE0004UG0UZ9",
