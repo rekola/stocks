@@ -793,8 +793,8 @@ With this the two-phase loading from the app makes sense: the summary of every
 row in one request, history only for the rows on screen.
 
 **User data is not market data.** The user's own preset (above) can be kept per user, but portfolios are private and cannot be rebuilt
-from any source, so the server would hold a copy per authenticated user, as a log of operations merged between devices, and never
-as the only one. [portfolios.md](portfolios.md), "The server", has the design; no endpoint is sketched until there are users.
+from any source, so the server would hold a copy per authenticated user, as nodes, facts and events in the same change feed scoped to that user
+(merged between devices as a union), and never as the only one. [portfolios.md](portfolios.md), "The server", has the design; no endpoint is sketched until there are users.
 
 In the app: a `Store` backed by the server (`RemoteStore`), which builds the
 `Snapshot` from chunks; a series chunk is the unit its persistent vectors are made

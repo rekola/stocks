@@ -250,6 +250,12 @@ its users). Countries that no longer exist (`SU`, `YU`) are kept: markets and IS
 - **Open**: whether the `country` fact of a market becomes a node-valued link when there are such links, and the names of a
   country in several languages.
 
+### Portfolios (planned)
+
+A portfolio is a node of its own kind, with a minted key (sixty random bits, as it has no natural identity). It exists when something is
+said of it: a `name` and a `currency` fact, position edges `portfolio -> instrument`, and the transactions as events on
+`(portfolio, dataset)`. It is the user's own data, so it is kept in a file of its own. See [portfolios.md](portfolios.md).
+
 ### Not done
 
 - Any loader that writes new facts (they will be ordinary attributes through the same writes).
