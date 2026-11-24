@@ -252,48 +252,89 @@ struct TimedHttp : Http {
 
 }  // namespace
 
-TEST(a_funds_details_and_its_history_are_a_pause_apart_and_a_stop_in_the_pause_ends_the_load) {
-  FakeHttp listHttp;
-  listHttp.answer = [](const std::string &) { return ok(fixture("funds/alpha-list.json")); };
-  auto store = makeMemoryStore();
-  Listener listener;
-  FundSource funds = source("alpha");
-  funds.load(*store, listHttp, listener);
-  auto edge = edgeOf(*store->snapshot(), "FI0008810569", "XOFF", "alpha");
-  CHECK(edge.has_value());
-  if (!edge) return;
-  auto provider = funds.historyProvider();
-  const auto pause = std::chrono::milliseconds(60);
-  auto base = *store->snapshot()->findInstrumentByIsin("FI0008810569");
+namespace {
 
-  // Stopped in the wait: the history is not asked for, nothing is written, and the details are asked again at the next try.
+// The alpha fund on a store of its own, with its history provider.
+struct AlphaFund {
+  std::shared_ptr<Store> store = makeMemoryStore();
+  FundSource funds = source("alpha");
+  std::optional<EdgeKey> edge;
+  std::shared_ptr<HistoryProvider> provider;
+  InstrumentId base;
+  AlphaFund() {
+    FakeHttp listHttp;
+    listHttp.answer = [](const std::string &) { return ok(fixture("funds/alpha-list.json")); };
+    Listener listener;
+    funds.load(*store, listHttp, listener);
+    edge = edgeOf(*store->snapshot(), "FI0008810569", "XOFF", "alpha");
+    provider = funds.historyProvider();
+    if (auto id = store->snapshot()->findInstrumentByIsin("FI0008810569")) base = *id;
+  }
+  bool hasFees() const { return store->snapshot()->attribute(base, "redemption-fee").has_value(); }
+  size_t bars() const { return store->snapshot()->candles(*edge, Resolution::Day).candles.size(); }
+};
+
+}  // namespace
+
+TEST(a_funds_details_and_its_history_are_a_pause_apart_and_a_stop_in_the_pause_ends_the_load) {
+  const auto pause = std::chrono::milliseconds(60);
+
+  // Stopped in the wait: the history is not asked for, the details that were answered are kept, and the next load asks for the history
+  // alone.
   {
+    AlphaFund f;
+    CHECK(f.edge.has_value());
+    if (!f.edge) return;
     TimedHttp http;
     int waits = 0;
-    const auto outcome = provider->load(*store, http, *edge, 0, [&] { waits++; return false; });
+    const auto outcome = f.provider->load(*f.store, http, *f.edge, 0, [&] { waits++; return false; });
     CHECK(outcome == HistoryProvider::Outcome::Offline && waits == 1);
     CHECK(http.asked.size() == 1 && http.asked[0].first.find("details/ALPHANORDIC") != std::string::npos);
-    CHECK(store->snapshot()->candles(*edge, Resolution::Day).candles.size() == 1 && !store->snapshot()->attribute(base, "redemption-fee"));
+    CHECK(f.bars() == 1 && f.hasFees());
+    TimedHttp again;
+    CHECK(f.provider->load(*f.store, again, *f.edge, 0, [] { return true; }) == HistoryProvider::Outcome::Ok);
+    CHECK(again.asked.size() == 1 && again.asked[0].first.find("rates/ALPHANORDIC") != std::string::npos && f.bars() == 5);
   }
   // Not stopped: the two requests are the wait apart, and the fees and the bars are written together.
   {
+    AlphaFund f;
+    if (!f.edge) return;
     TimedHttp http;
-    const uint64_t before = store->snapshot()->version();
-    const auto outcome = provider->load(*store, http, *edge, 0, [&] {
+    const uint64_t before = f.store->snapshot()->version();
+    const auto outcome = f.provider->load(*f.store, http, *f.edge, 0, [&] {
       std::this_thread::sleep_for(pause);
       return true;
     });
     CHECK(outcome == HistoryProvider::Outcome::Ok && http.asked.size() == 2);
     CHECK(http.asked[0].first.find("details/") != std::string::npos && http.asked[1].first.find("rates/") != std::string::npos);
     CHECK(http.asked[1].second - http.asked[0].second >= pause);
-    auto s = store->snapshot();
-    CHECK(s->version() == before + 1);  // one publication
-    CHECK(s->candles(*edge, Resolution::Day).candles.size() == 5 && s->attribute(base, "redemption-fee").has_value());
+    CHECK(f.store->snapshot()->version() == before + 1);  // one publication
+    CHECK(f.bars() == 5 && f.hasFees());
     // The details are done: a later load asks for the history alone, and does not wait.
     TimedHttp again;
     int waits = 0;
-    provider->load(*store, again, *edge, 0, [&] { waits++; return true; });
+    f.provider->load(*f.store, again, *f.edge, 0, [&] { waits++; return true; });
     CHECK(again.asked.size() == 1 && waits == 0);
+  }
+}
+
+TEST(details_answered_before_a_history_with_no_answer_or_a_refusal_are_kept_and_not_asked_again) {
+  for (int status : {503, 0, 429}) {
+    AlphaFund f;
+    CHECK(f.edge.has_value());
+    if (!f.edge) return;
+    FakeHttp http;
+    http.answer = [&](const std::string & url) {
+      if (url.find("details/ALPHANORDIC") != std::string::npos) return ok(fixture("funds/alpha-details.json"));
+      return failed(status);
+    };
+    const auto outcome = f.provider->load(*f.store, http, *f.edge, 0, [] { return true; });
+    CHECK(outcome == (status == 429 ? HistoryProvider::Outcome::Refused : HistoryProvider::Outcome::Offline));
+    CHECK(f.hasFees() && f.bars() == 1);
+    // Asked again (after the pause, or in another session for a refusal): the history alone.
+    TimedHttp again;
+    CHECK(f.provider->load(*f.store, again, *f.edge, 0, [] { return true; }) == HistoryProvider::Outcome::Ok);
+    CHECK(again.asked.size() == 1 && again.asked[0].first.find("rates/ALPHANORDIC") != std::string::npos && f.bars() == 5);
   }
 }
 

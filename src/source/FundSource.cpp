@@ -518,30 +518,42 @@ HistoryProvider::Outcome FundHistory::load(Store & store, Http & http, const Edg
     if (r.status == 0 || r.status >= 500) return Outcome::Offline;
     return std::nullopt;
   };
-  // The details: the fees, once. A fund without them still has its history. What they say is written with the bars, in one batch.
+  // The details: the fees, once. A fund without them still has its history. What they say is written with the bars, in one batch; where
+  // no bars follow (the history had no answer or was refused, or the loader is stopping), alone. Answered, they are not asked again.
   std::vector<Attribute> said;
-  const bool askDetails = schema_.detail && !detailed;
-  if (askDetails) {
+  bool answered = false;  // the details were asked for and answered, and are not kept yet
+  const auto keep = [&](const std::vector<Candle> * bars) {
+    if (!said.empty() || bars)
+      store.batch([&](Batch & b) {
+        b.setAttributes(edge.base, said);
+        if (bars) b.appendCandles(edge, Resolution::Day, *bars);
+      });
+    if (answered) {
+      std::lock_guard lock(mutex_);
+      detailed_.insert(id);
+    }
+  };
+  if (schema_.detail && !detailed) {
     HttpResult r = http.get(FundSource::expand(schema_.detail->url, id, token), schema_.headers);
     if (auto s = status(r)) return *s;
+    answered = true;
     FundEntry entry;
     std::string error;
     if (r.ok() && parseFundDetail(schema_, r.body, entry, error)) said = attributesOf(entry.fund);
-    // A pause between the two requests; stopping, the loader is going and the edge is not marked (the details are asked again).
-    if (!wait()) return Outcome::Offline;
+    // A pause between the two requests; stopping, the loader is going: the details are kept, and the history is asked for next time.
+    if (!wait()) {
+      keep(nullptr);
+      return Outcome::Offline;
+    }
   }
   HttpResult r = http.get(FundSource::expand(schema_.historyUrl, id, token), schema_.headers);
-  if (auto s = status(r)) return *s;
+  if (auto s = status(r)) {
+    keep(nullptr);
+    return *s;
+  }
   std::vector<Candle> bars;
   std::string error;
   const bool found = r.ok() && parseNavSeries(r.body, bars, error);
-  store.batch([&](Batch & b) {
-    b.setAttributes(edge.base, said);
-    if (found) b.appendCandles(edge, Resolution::Day, bars);
-  });
-  if (askDetails) {
-    std::lock_guard lock(mutex_);
-    detailed_.insert(id);
-  }
+  keep(found ? &bars : nullptr);
   return found ? Outcome::Ok : Outcome::Missing;
 }
