@@ -2,6 +2,8 @@
 
 #include "model/FactWriter.h"
 #include "model/Facts.h"
+#include "model/Summary.h"
+#include "model/SummaryWriter.h"
 #include "model/Types.h"
 #include "portfolio/Transaction.h"
 
@@ -310,6 +312,10 @@ struct StoreOptions {
   // change and every fact said again is written through on a thread of its own. None: nothing is kept.
   std::shared_ptr<FactStore> facts;
   FactWriter::Options writer;
+  // Where the summaries of the edges are kept between runs (Summary.h): one store for each dataset. None: they are kept for the session
+  // only. The summary is not the data: the bars a source writes are never kept, only the quote and the queues derived from them.
+  std::shared_ptr<SummaryStores> summaries;
+  SummaryWriter::Options summary_writer;
   // The time of a write, for `updated`. The wall clock by default; a test sets its own.
   std::function<TimestampMs()> clock;
   // `updated` says when a source last said a fact to within this interval: a value said again that was last said less than this

@@ -206,6 +206,57 @@ everything else on them are not kept, and there is no server in this step.
   listing (the market whose `country` is the ISIN's first two letters) and from another listing only where none are said yet;
   Yahoo and the fund sources say them only where none are said yet. `kind` and `isin` are the same wherever they come from.
 
+## The summary
+
+**The summary is not the data.** The data is the series of bars a source writes (`Candle`, `appendCandles`, `Snapshot::candles()`): it
+stays in memory only, exactly as written, and nothing persists or changes it; it is what charting and the prediction models will read,
+with a store of their own. The summary is a separate record that the store keeps of each edge, for the tables, the sparklines and the
+portfolios, and it is the only thing kept on disk about prices. No reader of the data reads a summary, or the opposite.
+
+An edge's summary is its **quote** and, for each resolution, a **queue**:
+
+- The **quote** is the last price, the bid and the ask, and the one time (seconds, UTC) they are for. A provider that gives only a last
+  price, or none, leaves the rest undefined.
+- A **queue** is the bars that the periods using a resolution show: time-ordered, a bar at a time already there replaces it, a new time is
+  pushed, and bars older than the window are popped from the old end. There is no downsampling and no base bar. The window is measured back
+  from the *last bar* of that resolution, not from the clock, so the day's sparkline on a Sunday is Friday's session. How long it is is the
+  provider's knowledge (`HistoryProvider::keep(Resolution)`).
+
+Two packed forms are kept, little-endian, chosen by the kind of the edge's instrument (`queueKindOf()`):
+
+| record | for | bytes | fields |
+|---|---|---|---|
+| candle | everything but a fund and an index | 28 | `uint32 slot`, `double open`, `float high, low, close` (each the difference from the open), `uint32 volume` |
+| value | a fund's NAV, an index's value | 12 | `uint32 slot`, `double value` |
+
+`slot` is the bar's key as the model has it (a slot number for an intraday resolution, a day number for a date resolution). A volume of 0
+is no volume, a larger one saturates at 4294967295 and a fraction is rounded; a bar with no open takes its close as its base, with its high
+and low undefined; an undefined delta is NaN. A value record is read back as a bar whose open, high, low and close are the value and whose
+volume is undefined. A bar is read back as a `Candle` with the sum in a double, and `summary::normalized()` is what any bar reads back as, so
+"the same bar again" is decided on the stored form: a refresh that brings the same bars makes no version and no disk write. A bar whose key
+does not fit 32 bits, or with no close, is not in a queue (it stays in the data).
+
+- **Layers** (`src/model/`): `Summary.h` has the plain records (`Quote`, `StoredEdge`, `StoredQueue`, `SummaryBatch`) and the interfaces,
+  `SummaryStore` (one dataset: `loadEdges()` is every edge with its listing, quote, close before the session and the coverage of each queue
+  — when it was fetched, the keys of its first and last bar, the count — in one query and no bars; `readQueue(edge, resolution)`; `apply(batch)`
+  as one transaction) and `SummaryStores` (the store for a dataset's code, and which exist), which a server-backed store can implement
+  instead. None throws: one that cannot read or write says so through its log and carries on. `SummaryRecords.h` has the two records and
+  the rules for a queue's bars (`put`, `trim`, `fold`). `SummaryWriter` takes batches from the store and gives them to the stores on a thread
+  of its own, so a write never waits for the disk: what is waiting is one row per edge and one blob per (edge, resolution), the last said, and
+  it goes after `delay`; the destructor and `flush()` write everything waiting. `SqliteSummaryStore` (SQLiteCpp, behind
+  `openSqliteSummaryStore()`, in no header) is the SQLite one.
+- **A queue put or merged.** A queue the store holds in memory is *put*, replacing the one in the file. One it does not hold (it is on the
+  disk only, not read yet) cannot be replaced without reading it, so a source's bars for it are *merged*: the writer folds them into what is
+  waiting for the same queue, and the SQLite store merges them into the blob on its own thread (the bars put in, the window cut from the last
+  bar). The store therefore never reads the disk to say a bar.
+- **The files**: one per dataset, `summaries/<dataset code>.sqlite` in the user data directory beside `facts.sqlite` (`--summaries DIR`
+  chooses another directory, `--no-summaries` runs without). Tables `edges` (one row per edge: its base, quote and market as node keys; symbol,
+  identifier, order book, type and name of the listing; last, bid, ask and quote time, NULL where not said; the close before the session and the
+  day it was said for) and `queues` (one row per edge and resolution: kind, when it was fetched, count, keys of the first and last bar, and
+  the blob: a version byte, a kind byte and the records). WAL mode, the schema in `PRAGMA user_version`; a file of another schema is emptied
+  and started over, a damaged one moved aside (`.bad-<time>`), with the same messages as the facts store. Writes use one connection and reads
+  another, so a read never waits for a batch to be written.
+
 ## Node keys
 
 A node has no record of its own: it is its **key** (`src/model/NodeKey.h`), the same number in every run, and what is said of it
