@@ -19,7 +19,8 @@ struct QuoteRow {
   std::string base, quote, name, market, dataset;
   std::string icon_url;  // of the base instrument; empty for none
   double price = 0;
-  double change = kUndefined;  // in percent, over the period; undefined where the bars do not give one
+  bool rate = false;           // the row is a rate (quoted in per cent): its change is in basis points
+  double change = kUndefined;  // over the period, in percent (basis points for a rate); undefined where the bars do not give one
   std::vector<float> history;  // the period's closes, oldest first
 };
 
@@ -90,12 +91,14 @@ class Quotes : public cellui::TableModel {
   std::span<const float> trace(int r, int) const override;
   std::optional<cellui::Color> color(int r, int c) const override;
   // Prices and changes sort by their values, not their rounded text; the others by their text, letters of either case alike.
+  // The change is the number as shown: basis points for a rate, per cent for a price. In a preset that mixes rates and prices
+  // (All) they compare as raw numbers; there is no other ordering.
   std::optional<double> number(int r, int c) const override;
   int compare(int a, int b, int column) const override;
 
  private:
   double price(int r) const;
-  double change(int r) const;  // over the period, in percent; undefined for no number
+  double change(int r) const;  // over the period, in percent (basis points for a rate); undefined for no number
   const std::string & marketLabel(MarketId) const;
   const std::string & datasetName(DatasetId) const;
 

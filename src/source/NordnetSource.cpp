@@ -317,7 +317,7 @@ size_t NordnetSource::loadIndicators(const List & list, Store & store, Http & ht
         if (kind != InstrumentKind::Other) rest.push_back({predicate::kind, kindName(kind)});
         base = b.resolveInstrument(identifying, rest);
         // An index is in points. The answer gives a commodity no currency; the owner's table has them all in dollars.
-        quote = row.type == "INDEX" ? quoteNode(b, "pts") : currencyNode(b, "USD");
+        quote = row.type == "INDEX" ? quoteNode(b, kPointsUnit) : currencyNode(b, "USD");
       }
       // An ISIN with a wrong check digit, or a code that does not fit, names nothing: the row is left out, not the list.
       if (!base.valid() || !quote.valid() || !market.valid()) {

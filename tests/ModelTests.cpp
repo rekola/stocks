@@ -2,6 +2,7 @@
 
 #include "model/Dates.h"
 #include "model/Isin.h"
+#include "model/Period.h"
 #include "model/Store.h"
 
 #include <atomic>
@@ -517,4 +518,18 @@ TEST(an_instrument_with_no_isin_is_the_one_of_its_symbol_and_else_of_its_name_an
   CHECK(byName.valid() && byName != bySymbol && store->snapshot()->findInstrumentByIsin(privateIsin("Zinc")) == std::optional<InstrumentId>(byName));
   CHECK(store->resolveInstrument({}, {{predicate::name, "Zinc"}}) == byName);
   CHECK(store->resolveInstrument({}, {{predicate::name, "ZINC"}}) != byName);  // not the same text: another one
+}
+
+TEST(a_row_is_a_rate_by_its_quotes_unit_alone) {
+  World w;
+  InstrumentId pct = w.store->addInstrument(kPercentUnit, "Per cent", InstrumentKind::Unit);
+  InstrumentId pts = w.store->addInstrument(kPointsUnit, "Index points", InstrumentKind::Unit);
+  CHECK(isRate(*w.snap(), {w.nokia, pct, w.hel, w.a}));
+  CHECK(!isRate(*w.snap(), {w.nokia, pts, w.hel, w.a}) && !isRate(*w.snap(), {w.nokia, w.eur, w.hel, w.a}));
+  // A change is basis points for a rate, per cent for a price, and a rate's base may be 0.
+  PeriodView rate{.rate = true, .base = 0, .last = 0.25}, price{.base = 3.00, .last = 3.10};
+  CHECK(rate.hasChange() && std::abs(rate.change() - 25) < 1e-9);
+  CHECK(std::abs(price.change() - 10.0 / 3) < 1e-9);
+  PeriodView zeroBase{.base = 0, .last = 1};
+  CHECK(!zeroBase.hasChange());
 }

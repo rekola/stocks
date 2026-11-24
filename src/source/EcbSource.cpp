@@ -23,11 +23,11 @@ struct Wanted {
   const char * kind;
   const char * symbol;
   const char * name;
-  const char * quote;  // "pct": the rate; "pts": an index
+  const char * quote;  // kPercentUnit: the rate; kPointsUnit: an index
 };
 constexpr Wanted kWanted[] = {
-    {"EU000A2X2A25", "WT", "ESTR", "Euro short-term rate (€STR)", "pct"},
-    {"EU000A2QQF08", "CI", "ESTRINDEX", "Compounded €STR index", "pts"},
+    {"EU000A2X2A25", "WT", "ESTR", "Euro short-term rate (€STR)", kPercentUnit},
+    {"EU000A2QQF08", "CI", "ESTRINDEX", "Compounded €STR index", kPointsUnit},
 };
 
 }  // namespace
