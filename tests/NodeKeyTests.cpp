@@ -1,4 +1,5 @@
 #include "TestFramework.h"
+#include "TestRegistry.h"
 
 #include "model/Isin.h"
 #include "model/NodeKey.h"
@@ -66,12 +67,12 @@ TEST(an_isin_that_is_not_valid_has_no_key) {
   CHECK(!instrumentKey("1I0009000681"));  // a digit for a letter of the country
 }
 
-TEST(the_isins_we_make_ourselves_have_keys) {
-  for (const char * name : {"Zinc", "Lead", "Gold", "OMXH25", "Brent"}) {
-    const std::string isin = privateIsin(name);
-    CHECK(!isin.empty() && isin.rfind("ZZ", 0) == 0);
-    const auto key = instrumentKey(isin);
-    CHECK(key && text(*key) == isin);
+TEST(the_isins_of_the_registry_have_keys) {
+  const auto registry = shippedRegistry();
+  CHECK(!registry->entries().empty());
+  for (const IsinRegistry::Entry & e : registry->entries()) {
+    const auto key = instrumentKey(e.isin);
+    CHECK(key && text(*key) == e.isin);
   }
 }
 

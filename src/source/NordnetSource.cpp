@@ -313,10 +313,10 @@ size_t NordnetSource::loadIndicators(const List & list, Store & store, Http & ht
         base = currencyNode(b, row.name.substr(0, slash));
         quote = currencyNode(b, row.name.substr(slash + 1));
       } else {
-        // An index or a commodity is its ISIN; where Nordnet has none it gets one of ours, from what it is (Zinc, Lead, ...).
-        const std::string isin = row.isin.empty() ? privateIsin(row.symbol) : row.isin;
-        if (isin.empty()) continue;
-        std::vector<Attribute> identifying = {{predicate::isin, isin}};
+        // An index or a commodity is its ISIN; where Nordnet has none the store finds it in the registry by its symbol (Zinc, Lead, ...).
+        std::vector<Attribute> identifying;
+        if (!row.isin.empty()) identifying.push_back({predicate::isin, row.isin});
+        else identifying.push_back({predicate::symbol, row.symbol});
         const InstrumentKind kind = row.type == "INDEX" ? InstrumentKind::Index
                                     : row.type == "COMMODITY" ? InstrumentKind::Commodity
                                                               : InstrumentKind::Other;

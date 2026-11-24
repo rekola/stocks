@@ -205,16 +205,18 @@ TEST(an_instrument_is_its_isin_and_a_currency_or_unit_its_code) {
   CHECK((nodes == std::set<uint64_t>{eur.value, pts.value, nokia.value}));
 }
 
-TEST(an_instrument_with_no_isin_that_is_no_currency_is_given_one_of_ours) {
+TEST(an_instrument_with_no_isin_that_is_no_currency_is_numbered_where_there_is_no_registry) {
   Clock clock;
   auto store = makeMemoryStore(optionsFor(nullptr, clock));
   InstrumentId acme = store->addInstrument("ACME", "Acme Corporation", InstrumentKind::Company);
-  CHECK(acme.valid() && store->snapshot()->isin(acme) == privateIsin("ACME") && store->snapshot()->symbol(acme) == "ACME");
-  CHECK(acme.value == numberOf(instrumentKey(privateIsin("ACME"))));
+  const std::string isin = store->snapshot()->isin(acme);
+  CHECK(acme.valid() && isin.rfind("ZZ", 0) == 0 && isValidIsin(isin) && store->snapshot()->symbol(acme) == "ACME");
+  CHECK(acme.value == numberOf(instrumentKey(isin)));
   CHECK(store->addInstrument("ACME", "Acme again", InstrumentKind::Company) == acme);  // the same one: said by its symbol again
-  // One with no symbol is made from its name, if that fits.
+  // One with no symbol is made from its name, if that fits, and another text is another number.
   InstrumentId named = store->addInstrument("", "Zinc", InstrumentKind::Commodity);
-  CHECK(store->snapshot()->isin(named) == privateIsin("Zinc") && named.valid());
+  CHECK(named.valid() && named != acme && store->snapshot()->isin(named).rfind("ZZ", 0) == 0);
+  CHECK(store->addInstrument("", "Zinc", InstrumentKind::Commodity) == named);
 }
 
 TEST(what_cannot_be_given_a_key_is_refused_and_told_of) {

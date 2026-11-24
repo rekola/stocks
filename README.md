@@ -125,6 +125,10 @@ from their candidate lists, the other countries from the largest companies of a 
 that has ISINs (each found by its ISIN, so the ticker is certainly the same company).
 Asia-Pacific and Latin America are not covered: there is no source of their ISINs yet.
 
+An instrument whose source gives it no ISIN (zinc and lead in Nordnet's lists, the coins, the physical metals) is kept only if it is in
+`data/isins/registry.csv`, which has the real ISIN where there is one and one of ours (`ZZ…`, numbered) where not; the file's head says how to
+add one, and a test refuses a duplicate or an invalid ISIN. One that is not in it is not kept, and the status line says so.
+
 What the sources say of instruments, markets and datasets (names, icons, a market's country) is kept between runs in a
 SQLite file, `facts.sqlite` in the user's data directory (`--facts FILE` chooses another, `--no-facts` runs without it); your portfolios are in
 `portfolios.sqlite` beside it (`--portfolios FILE`, `--no-portfolios`); see

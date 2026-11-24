@@ -35,6 +35,7 @@
 #include "source/EcbSource.h"
 #include "source/GoldPriceSource.h"
 #include "source/GoldSource.h"
+#include "source/IsinFile.h"
 #include "source/SuomenPankkiSource.h"
 #include "source/YahooSource.h"
 #include "source/DataDirectory.h"
@@ -174,6 +175,11 @@ int main(int argc, char ** argv) {
   };
   auto fact_messages = std::make_shared<FactMessages>();
   StoreOptions store_options;
+  // The ISINs of what has none from its source are written down in a file: an instrument with none that is not in it is not kept, and says so.
+  IsinRegistry registry;
+  std::string registry_error;
+  if (!loadIsinRegistry(registry, registry_error)) return fail(2, "stocks: " + registry_error);
+  store_options.isins = std::make_shared<const IsinRegistry>(std::move(registry));
   // What the store refuses (a MIC that two markets would have) is said once, on the status line.
   store_options.notice = [fact_messages](const std::string & text) { fact_messages->say("facts: " + text); };
   if (keep_facts) {

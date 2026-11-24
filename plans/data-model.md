@@ -227,8 +227,12 @@ low sixty (country 4 and attribute 6 are planned, 5 is the portfolio, and 7 is a
 | 5 | portfolio | sixty random bits, minted when the user makes one; in text a `P` and fifteen hex digits (`mintPortfolioKey()`, `portfolioKey()`) |
 
 - **An instrument is an ISIN**, or a currency or a unit. An index, a fund or a commodity is an instrument like a share, with an
-  ISIN: no kind of its own. One given no ISIN that is not a currency or a unit is given one of ours (`ZZ` and nine characters, made
-  from its symbol or else its name, `privateIsin()`); one that cannot be keyed, or whose ISIN is not valid, is refused and told of
+  ISIN: no kind of its own. One given no ISIN that is not a currency or a unit has the one the **registry** has for its symbol or else its name
+  (`data/isins/registry.csv`, `IsinRegistry`): the real ISIN where there is one that no source gives (zinc `XC0005705584`, lead `XC0005705527`), else
+  one of ours, `ZZ` (the user-assigned code element of ISO 3166, in which no numbering agency issues ISINs), nine digits numbered on from the
+  last in the file, and the check digit. Nothing is made up from a text: one not in the registry is not kept, and the status line says so. The
+  loader and a test refuse an ISIN that is not valid and a duplicate ISIN, symbol or name, so whoever adds a row sees what is there; the file's
+  head says how. A store with no registry (the tests) numbers them as they come, from `ZZ999999999` down. One that cannot be keyed, or whose ISIN is not valid, is refused and told of
   (`StoreOptions::notice`), and what is said of an edge with a part that was refused is said of nothing.
 - **A market is its MIC**, which never changes, so nothing is minted and nothing is looked up by a name or a provider's id: a source
   that has only an id for a market maps it to a MIC (Nordnet: `KnownMarkets`) and leaves out what it cannot map, saying so. A code
