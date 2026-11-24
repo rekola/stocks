@@ -34,11 +34,18 @@ bool hasHeader(const HttpHeaders & headers, const std::string & name, const std:
   return false;
 }
 
+// The default lists with these names, in this order: a test does not depend on where a list stands among the others.
+std::vector<NordnetSource::List> listsNamed(std::initializer_list<const char *> names) {
+  std::vector<NordnetSource::List> out;
+  for (const char * name : names)
+    for (const NordnetSource::List & list : NordnetSource::defaultLists())
+      if (list.name == name) out.push_back(list);
+  return out;
+}
+
 // The ETFs and the certificates, which the fixtures above answer.
 std::vector<NordnetSource::List> etfAndCertificateLists() {
-  auto lists = NordnetSource::defaultLists();
-  lists.resize(2);
-  return lists;  // loaded at every load, as the lists have no interval
+  return listsNamed({"etflist", "certificatelist"});  // loaded at every load, as the lists have no interval
 }
 
 NordnetSource quick() { return NordnetSource(etfAndCertificateLists(), std::chrono::milliseconds(0)); }
@@ -178,9 +185,7 @@ TEST(a_page_of_a_list_is_one_publication) {
   FakeHttp http;
   http.answer = pages;
   Listener listener;
-  auto lists = NordnetSource::defaultLists();
-  lists.erase(lists.begin(), lists.begin() + 1);
-  lists.resize(1);  // the certificates: one page
+  auto lists = listsNamed({"certificatelist"});  // one page
   NordnetSource source(lists, std::chrono::milliseconds(0));
   const auto before = store->snapshot();
   source.load(*store, http, listener);
@@ -267,8 +272,7 @@ TEST(a_row_of_an_indicator_list_with_a_bad_isin_is_left_out_and_the_next_list_is
     if (url.find("CURRENCY_GLOBAL") != std::string::npos) return ok(fixture("indicators-currencies.json"));
     return ok(fixture("indicators-commodities.json"));
   };
-  auto lists = NordnetSource::defaultLists();
-  lists.erase(lists.begin(), lists.begin() + 4);  // only the three indicator lists
+  auto lists = listsNamed({"indices", "currencies", "commodities"});  // only the three indicator lists
   Listener listener;
   NordnetSource source(lists, std::chrono::milliseconds(0));
   source.load(*store, http, listener);  // does not throw
@@ -290,8 +294,7 @@ TEST(listings_of_one_isin_with_different_names_leave_one_name_and_no_change_on_t
       return ok(pageOfListings(isin, {{11, "SE", "Abroad"}, {4, "DE", "Home"}, {14, "DK", "Elsewhere"}}));
     };
     Listener listener;
-    auto lists = NordnetSource::defaultLists();
-    lists.resize(1);
+    auto lists = listsNamed({"etflist"});
     NordnetSource source(lists, std::chrono::milliseconds(0));
     source.load(*store, http, listener);
     const auto id = store->snapshot()->findInstrumentByIsin(isin);
@@ -543,10 +546,14 @@ TEST(a_stock_bar_carries_the_volume_when_the_answer_has_it) {
 TEST(the_default_lists_are_the_etfs_the_certificates_the_funds_and_the_stocks) {
   auto lists = NordnetSource::defaultLists();
   CHECK(lists.size() == 7);
-  CHECK(lists[2].name == "fundlist" && lists[3].name == "stocklist");
-  CHECK(lists[4].name == "indices" && lists[5].name == "currencies" && lists[6].name == "commodities");
-  CHECK(lists[4].shape == NordnetSource::List::Shape::Indicators && lists[4].market == "Indices");
-  CHECK(lists[3].url.find("/stocklist?") != std::string::npos && lists[3].pageSize == 1000);
+  // The three small indicator lists go first, the commodities (the gold spot that physical gold is estimated from) before the pairs
+  // (that value it in euros): none of them waits for the minutes the big lists take.
+  CHECK(lists[0].name == "commodities" && lists[1].name == "currencies" && lists[2].name == "indices");
+  for (size_t i = 0; i < 3; i++) CHECK(lists[i].shape == NordnetSource::List::Shape::Indicators);
+  CHECK(lists[2].market == "Indices");
+  CHECK(lists[3].name == "etflist" && lists[4].name == "certificatelist" && lists[5].name == "fundlist" && lists[6].name == "stocklist");
+  CHECK(lists[6].url.find("/stocklist?") != std::string::npos && lists[6].pageSize == 1000);
+  for (size_t i = 3; i < 7; i++) CHECK(lists[i].shape != NordnetSource::List::Shape::Indicators);
 }
 
 TEST(
@@ -660,8 +667,7 @@ TEST(the_indicator_lists_make_indices_in_points_currency_pairs_and_commodities_i
     if (url.find("CURRENCY_GLOBAL") != std::string::npos) return ok(fixture("indicators-currencies.json"));
     return ok(fixture("indicators-commodities.json"));
   };
-  auto lists = NordnetSource::defaultLists();
-  lists.erase(lists.begin(), lists.begin() + 4);  // only the three indicator lists
+  auto lists = listsNamed({"indices", "currencies", "commodities"});  // only the three indicator lists
   Listener listener;
   NordnetSource(lists, std::chrono::milliseconds(0)).load(*store, http, listener);
   CHECK(http.urls.size() == 3 && http.urls[0].find("/instrument-screening/v1/indicator/web/list/WORLDMAP") != std::string::npos);

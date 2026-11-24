@@ -5,7 +5,9 @@
 //   --ui window  in a window stocks --source NAME   the data source (several,
 //   comma-separated, run at once): auto (the default: nordnet, and yahoo if
 //   nordnet gives nothing),
-//                          nordnet, yahoo, suomenpankki (the Euribor rates), ecb (the €STR), funds:SCHEMA (a fund company: a
+//                          nordnet, yahoo, suomenpankki (the Euribor rates), ecb (the €STR), gold (physical gold, a bar by the
+//                          gram and a coin by the ounce, estimated from the gold spot price another source gives; it runs
+//                          beside the default), funds:SCHEMA (a fund company: a
 //                          schema in data/funds, or a schema file) or synthetic
 //   stocks --lists DIR     the instrument lists of the yahoo and synthetic
 //   sources (default: data/lists) stocks --facts FILE    where what the sources
@@ -30,6 +32,7 @@
 #include "source/NordnetSource.h"
 #include "source/FundSource.h"
 #include "source/EcbSource.h"
+#include "source/GoldSource.h"
 #include "source/SuomenPankkiSource.h"
 #include "source/YahooSource.h"
 #include "source/DataDirectory.h"
@@ -60,15 +63,23 @@ std::unique_ptr<Source> makeSource(const std::string & name, const ListSpec & li
   if (name == "yahoo") return std::make_unique<YahooSource>(lists);
   if (name == "nordnet") return std::make_unique<NordnetSource>();
   if (name == "ecb") return std::make_unique<EcbSource>();
+  if (name == "gold") {
+    GoldTable table;
+    if (!loadGoldTable(table, error)) {
+      error = "gold: " + error;
+      return nullptr;
+    }
+    return std::make_unique<GoldSource>(std::move(table));
+  }
   if (name == "suomenpankki") return std::make_unique<SuomenPankkiSource>();
   if (name == "synthetic") return std::make_unique<SyntheticSource>(lists);
   return nullptr;
 }
 
 // What runs when no --source is given: the market data ("auto") and the small loaders that have no options of their own (the rates, the
-// €STR and every fund company schema of data/funds), so they are there without being asked for.
+// €STR, the gold estimate and every fund company schema of data/funds), so they are there without being asked for.
 std::string defaultSources() {
-  std::string names = "auto,suomenpankki,ecb";
+  std::string names = "auto,suomenpankki,ecb,gold";  // gold estimates physical gold from the gold spot price the first gives
   std::vector<std::string> funds;
   std::error_code ec;
   const std::filesystem::path dir = findDataDirectory("funds");
@@ -80,7 +91,7 @@ std::string defaultSources() {
   return names;
 }
 
-constexpr const char * kSourceNames = "auto, nordnet, yahoo, suomenpankki, ecb, funds:SCHEMA, synthetic";
+constexpr const char * kSourceNames = "auto, nordnet, yahoo, suomenpankki, ecb, gold, funds:SCHEMA, synthetic";
 
 }  // namespace
 

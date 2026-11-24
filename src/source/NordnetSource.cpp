@@ -150,15 +150,17 @@ std::vector<NordnetSource::List> NordnetSource::defaultLists() {
   const std::string indicators = "https://api.prod.nntech.io/instrument-screening/v1/indicator/web/list/";
   const std::string base = "https://www.nordnet.fi/api/2/instrument_search/query/";
   const std::string sorted = "sort_order=asc&sort_attribute=symbol";  // a key that does not move between pages
-  return {{"etflist", base + "etflist?" + sorted, 500},
+  // The indicator lists first: each is one small answer, and what they hold (the gold spot price that the physical gold is estimated from, the
+  // currency pairs that value it in euros) should not wait for the minutes the big lists take. Commodities before the pairs, the pairs
+  // before the indices.
+  return {{"commodities", indicators + "COMMODITIES", 0, std::chrono::milliseconds(0), Shape::Indicators, "Commodities"},
+          {"currencies", indicators + "CURRENCY_GLOBAL", 0, std::chrono::milliseconds(0), Shape::Indicators, "Currencies"},
+          {"indices", indicators + "WORLDMAP", 0, std::chrono::milliseconds(0), Shape::Indicators, "Indices"},
+          {"etflist", base + "etflist?" + sorted, 500},
           {"certificatelist", base + "certificatelist?apply_filters=instrument_type%3DPTC&" + sorted, 1000},
           // Priced once a day (a NAV), at a time that differs by provider and is not known: so, hourly.
           {"fundlist", base + "fundlist?" + sorted, 1000, std::chrono::hours(1)},
-          {"stocklist", base + "stocklist?" + sorted, 1000},  // about 12,000 rows: a dozen pages
-          // One answer each, no sparkline (it is only the day's development in per cent).
-          {"indices", indicators + "WORLDMAP", 0, std::chrono::milliseconds(0), Shape::Indicators, "Indices"},
-          {"currencies", indicators + "CURRENCY_GLOBAL", 0, std::chrono::milliseconds(0), Shape::Indicators, "Currencies"},
-          {"commodities", indicators + "COMMODITIES", 0, std::chrono::milliseconds(0), Shape::Indicators, "Commodities"}};
+          {"stocklist", base + "stocklist?" + sorted, 1000}};  // about 12,000 rows: a dozen pages
 }
 
 const char * NordnetSource::knownMarketName(int id) {

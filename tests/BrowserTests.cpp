@@ -74,7 +74,7 @@ struct Fixture {
   std::shared_ptr<Store> store = makeMemoryStore();
   std::unique_ptr<Browser> browser;
   // Over the made-up data, or over a store the test has filled.
-  explicit Fixture(bool synthetic = true, int cols = 100, KeymapProfile profile = KeymapProfile::TERMINAL) {
+  explicit Fixture(bool synthetic = true, int cols = 110, KeymapProfile profile = KeymapProfile::TERMINAL) {
     if (synthetic) fillSyntheticData(*store, instrumentList());
     DisplayInfo display;
     display.keymap_profile = profile;
@@ -1048,7 +1048,7 @@ TEST(a_narrow_screen_keeps_the_presets_and_the_headings_still_name_the_period) {
   f.app->execute("show-period-week");
   CHECK(f.browser->period() == Period::Week);
   CHECK(f.text().find("1 week") != std::string::npos || f.text().find("Change 1w") != std::string::npos);
-  Fixture wide(true, 100);
+  Fixture wide(true, 120);
   CHECK(cellOf(wide.text(), "1w").first == 0);  // room: the tags are at the right end of the top row
 }
 
@@ -1939,4 +1939,27 @@ TEST(tab_and_shift_tab_switch_the_context_in_both_profiles_and_buy_and_sell_have
     f.type("buy");
     CHECK(f.app->commandPaletteOpen() && f.text().find("buy") != std::string::npos && f.text().find("sell") == std::string::npos);
   }
+}
+
+TEST(the_physical_preset_has_what_is_held_in_hand_and_not_the_funds_or_the_spot) {
+  Fixture f(false, 120);
+  Holdings h = addHoldings(*f.store);
+  Untradables u = addUntradables(*f.store, h);  // the fund is on XOFF too, and the index and the rate on XXXX
+  InstrumentId gold = f.store->addInstrument("GOLDCOIN", "Gold coin (1 oz fine)", InstrumentKind::Commodity);
+  InstrumentId spot = f.store->addInstrument("GOLD", "Gold", InstrumentKind::Commodity, "XC0009655157");
+  MarketId off = *f.store->snapshot()->findMarket(kOffExchange), none = *f.store->snapshot()->findMarket(kNoMarket);
+  DatasetId data = f.store->addDataset(kGoldDataset, "Estimate");
+  for (const EdgeKey & k : {EdgeKey{gold, h.usd, off, data}, EdgeKey{spot, h.usd, none, h.user}})
+    f.store->appendCandles(k, Resolution::Day, {{kNow, 1, 1, 1, 2900, 1}});
+  f.store->setListing({EdgeKey{gold, h.usd, off, data}, "GOLDCOIN", "", "", "PHYSICAL", "Gold coin (1 oz fine)"});
+  f.app->execute("show-physical");
+  CHECK(f.browser->context() == Context::Markets && f.browser->tags().tags()[static_cast<size_t>(f.browser->tags().selected())] == "Physical");
+  const auto * quotes = dynamic_cast<const Quotes *>(f.browser->table().model().get());
+  CHECK(quotes != nullptr && quotes->rowCount() == 1 && quotes->text(0, Quotes::BASE) == "GOLDCOIN");  // not the fund, nor the spot gold
+  CHECK(f.text().find("Estimate") != std::string::npos && f.text().find("Physical") != std::string::npos);
+  // From the Portfolio context the command goes to Markets first, as the other presets do.
+  f.press(Key::Tab);
+  f.app->execute("show-physical");
+  CHECK(f.browser->context() == Context::Markets && quotes != nullptr);
+  CHECK(!f.app->commands().description("show-physical").empty());
 }
