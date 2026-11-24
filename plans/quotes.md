@@ -49,23 +49,40 @@ overstates what a holder has, most for what is sold at a premium. Where there is
 
 ## Physical gold
 
-What is owned is a quantity of fine gold. Its price is a dealer's, which differs from the spot price by a premium that in Finland is
-large for coins. Neither an exchange nor a fund is involved, so `tradable` (never XXXX) refuses it today.
+What is owned is a quantity of fine gold, bought from a dealer off any exchange. Its price is the dealer's, which differs from the spot
+price by a premium that in Finland is large for coins.
 
-- **A market for what is held and not traded.** A fourth convention beside XXXX (priced, not bought) and XOFF (a fund priced by its
-  company): a code for what is held in hand (the code is open; four characters of `A-Z0-9` like a MIC). `tradable` accepts it, so
-  the buttons, the commands and the model's write allow a holding there; an index, a currency pair or a rate stay refused.
-- **Generic holdings by weight.** The instrument is the gold the store already has a spot price for, the quantity is fine troy ounces
-  (grams may be typed and converted by the form: open), and a coin or a bar is only a preset in the buy form that fills in the fine
-  weight (a 1 oz 22k coin is 1 oz of fine gold; a 5 g 999.9 bar is about 0.1607 oz). The presets are data in a file like the lists, not code.
-  They are valued at the dealer's bid where a dealer dataset has one, else at spot, and the cost is what was paid, premium included, so
-  the P&L shows what the premium cost.
-- **Specific products as instruments, where a price source exists.** A dealer's price list (scraped; a source of its own with its own
-  dataset, one adapter) gives each product a bid (what the dealer pays) and an ask (what it charges): an edge `product -> EUR` on
-  the held market in that dataset, with a quote series and no candles. A holder may buy the generic gold or a product, and both are
-  in one portfolio. Where no dealer prices a product it is not an instrument.
-- **Limits.** Melt value for the generic kind; numismatic value is not modelled. A holding on the held market has no exchange to price
-  it, so when no dealer and no spot has a price it shows as without one, and the total is marked incomplete as for a missing rate.
+**Decided: it is held on XOFF**, the market of what is traded off exchange (`kOffExchange`, today the funds). `tradable` already accepts
+it, so the buttons, the commands and the model's write need no change, and an index, a currency pair or a rate stay refused. No new market code.
+
+**The first items are two generic instruments**, each an instrument like any other (a private ISIN, `resolveInstrument`), priced in
+the unit it is held in, so the quantity typed is the quantity held:
+
+- **Gold bar, in grams** (fine gold: a 5 g or a 100 g bar of 999.9 is 5 or 100 of them);
+- **Gold coin, in troy ounces** (fine gold: a 1 oz coin of any alloy is 1 of them).
+
+Specific products (an American Eagle, a Krugerrand, a named bar) come later, and only where a dealer dataset prices them; a product is
+then one more instrument with its own edge, held beside the generic ones in one portfolio. Neither is valued at more than melt value
+plus what a dealer pays: collector value is not modelled.
+
+**Where their rates come from.** Nothing publishes a rate for "a gold bar in grams", so there are two layers, and the second wins where there is one:
+
+1. **An estimate from the spot price**, as a dataset of its own (an estimating adapter, code e.g. `GOLDEST`, never mistaken for a
+   dealer's): for each item, the gold spot edge the store has (per troy ounce, in its quote currency; the portfolio's own conversion
+   does the currency) divided by 31.1035 for the bar (grams), times a bid and an ask factor read from a data file, `data/gold.csv`
+   (item, unit, bid factor, ask factor: for example a coin sells for a few per cent under spot plus and buys for a few above, the real figures to be
+   found from dealers). It writes a daily bar (the close at the ask side) and the quote (bid and ask) each time the spot moves, on XOFF. The
+   estimate is labelled as one in the table's dataset column and in the info dialog, and its factors are the one place the guess lives.
+2. **A dealer's price list**, scraped (a source of its own, its own dataset, one adapter, nothing else names it): the same two items, or a
+   product, with the dealer's real bid and ask. Where an item has an edge from a dealer dataset it is the price (`latestPrice`: a
+   dataset that gives quotes beats an estimating one; among dealers the best bid for a holding, the best ask for a purchase: open).
+
+The spot price itself has to come from a source. Nordnet's indicator lists carry some metals (a private ISIN is made for what has none,
+and zinc is one), so gold may already be among them; **not checked**, and if no source has it, a spot source for gold is the first step
+of this part.
+
+**Valuation** marks a holding at the bid (above), so a gold holding at the estimate shows what the dealer's discount costs, and the
+cost is what was paid, premium included.
 
 ## Steps
 
@@ -74,13 +91,14 @@ large for coins. Neither an exchange nor a fund is involved, so `tradable` (neve
    `appendQuotes`, `appendQuoteBars`, a facts-file question none (not kept between runs, like bars).
 3. Nordnet records its top of book on each reload.
 4. Valuation at the bid, and `latestPrice` for it.
-5. The held market and the relaxed `tradable`; the buy form's presets.
-6. The dealer source.
+5. Gold: a spot source if no source has one, the two generic instruments and the estimating adapter with `data/gold.csv`.
+6. The dealer source, and the products it prices.
 
 ## Open
 
-- The code of the held market.
+- The bid and ask factors of the estimate, and where they are found from (a dealer's list, once one is scraped).
+- Whether the estimate writes a daily bar as well as a quote, or a quote only (a row of the table needs a daily bar today).
+- Whether a holding is marked at the best bid among dealers or at one chosen dealer's.
 - Whether `bid_high` and `ask_low` are kept, and whether the sizes are.
 - Raw quotes kept for how long, and whether bars are made by the store or by the recorder.
-- Ounces or grams as the stored quantity, and whether the form takes both.
-- Whether the generic gold is one instrument (spot, by weight) or one for each purity.
+- Purity: 999.9 is taken as fine gold; whether a lower purity (22k) is a separate item or typed as the fine weight.
