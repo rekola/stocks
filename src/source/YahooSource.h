@@ -28,10 +28,14 @@ class YahooSource : public Source {
   std::string description() const override { return "Yahoo Finance: daily candles, dividends and splits (no key)"; }
   void load(Store &, Http &, SourceListener &) override;
 
-  // One chart response into the store as `entry`. False, with `error` set, when it holds no data.
+  // One chart response into the store as `entry`. False, with `error` set, when it holds no data, or when the entry names no
+  // instrument or quote (an ISIN with a wrong check digit): it is left out, and nothing of it is written.
   static bool parse(const std::string & json, const ListEntry & entry, Store &, std::string & error);
 
  private:
+  enum class Parsed { Ok, Failed, LeftOut };  // LeftOut: the entry's instrument, quote or market cannot be named
+  static Parsed parseEntry(const std::string & json, const ListEntry & entry, Store &, std::string & error);
+
   InstrumentList list_;
   ListSpec spec_;
   bool fromFiles_ = false;

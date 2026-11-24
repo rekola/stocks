@@ -3,6 +3,7 @@
 #include "model/Dates.h"
 #include "model/Isin.h"
 #include "source/DataDirectory.h"
+#include "source/LeftOut.h"
 #include "model/NodeKey.h"
 
 #include <chrono>
@@ -406,6 +407,7 @@ void FundSource::load(Store & store, Http & http, SourceListener & listener) {
   }
   const int64_t today = today_();
   size_t shown = 0, stale = 0, unpriced = 0;
+  LeftOut leftOut;  // the funds whose ISIN or other part of the key cannot be named
   std::vector<Entry *> pending;  // the funds with no ISIN yet
   size_t sinceChange = 0;
   const auto show = [&](Entry & e) {
@@ -418,7 +420,10 @@ void FundSource::load(Store & store, Http & http, SourceListener & listener) {
       if (e.fund.change && *e.fund.change > -1) b.setPreviousClose(*edge, *e.fund.day, *e.fund.price / (1 + *e.fund.change));
       written = true;
     });
-    if (!written) return;
+    if (!written) {  // the one reason there is: it could not be named
+      leftOut.add(e.fund.isin.empty() ? e.id : e.fund.isin);
+      return;
+    }
     shown++;
     if (++sinceChange >= 50) {  // the first screenful need not wait for the rest
       listener.changed();
@@ -474,6 +479,7 @@ void FundSource::load(Store & store, Http & http, SourceListener & listener) {
     show(*e);
   }
   if (sinceChange) listener.changed();
+  leftOut.say(listener, who, "fund", "funds");
   listener.message(who + std::to_string(shown) + " funds" + (stale ? ", " + std::to_string(stale) + " left out for an old NAV" : std::string()) +
                    (unnamed ? ", " + std::to_string(unnamed) + " for no ISIN" : std::string()) +
                    (unpriced ? ", " + std::to_string(unpriced) + " for no price" : std::string()));

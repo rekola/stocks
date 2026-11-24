@@ -54,8 +54,8 @@ bool tooSparse(const std::vector<Candle> & bars);
 
 // The fund and its bars into the store: the instrument by its ISIN (kind fund),
 // its fees and ratings, and the edge on the off-exchange market (XOFF) in euro
-// under `dataset`. Nothing, writing nothing, when there are no bars or no valid
-// ISIN.
+// under `dataset`. Nothing, writing nothing, when there are no bars, no valid
+// ISIN, or a part of the edge that the store would not name.
 std::optional<EdgeKey> writeFund(Batch &, const std::string &dataset,
                                  const FundRow &,
                                  const std::vector<Candle> &bars);

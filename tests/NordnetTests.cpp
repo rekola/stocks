@@ -208,6 +208,77 @@ std::string pageOfListings(const std::string & isin, const std::vector<std::tupl
 
 }  // namespace
 
+namespace {
+
+// A page of the ETF list with one row for each ISIN, all of the first fixture row otherwise.
+std::string pageOfIsins(const std::vector<std::string> & isins) {
+  using nlohmann::json;
+  const json first = json::parse(fixture("etflist-1.json"))["results"][0];
+  json page = {{"rows", isins.size()}, {"total_hits", isins.size()}, {"results", json::array()}};
+  for (const std::string & isin : isins) {
+    json row = first;
+    row["instrument_info"]["isin"] = isin;
+    page["results"].push_back(row);
+  }
+  return page.dump();
+}
+
+bool saidLeftOut(const Listener & listener, const std::string & what) {
+  for (const std::string & m : listener.messages)
+    if (m.find("left out") != std::string::npos && m.find(what) != std::string::npos) return true;
+  return false;
+}
+
+}  // namespace
+
+TEST(a_row_whose_isin_cannot_be_named_is_left_out_and_the_page_and_the_next_list_are_kept) {
+  // IE00BHZRR031 has the wrong check digit: the store names no instrument for it.
+  CHECK(isValidIsin("IE00BHZRR030") && !isValidIsin("IE00BHZRR031"));
+  auto store = makeMemoryStore();
+  FakeHttp http;
+  http.answer = [](const std::string & url) {
+    if (url.find("certificatelist") != std::string::npos) return ok(fixture("certificatelist-1.json"));
+    return ok(pageOfIsins({"IE00BHZRR030", "IE00BHZRR031"}));
+  };
+  Listener listener;
+  NordnetSource source = quick();
+  source.load(*store, http, listener);  // does not throw
+  const auto s = store->snapshot();
+  CHECK(s->findInstrumentByIsin("IE00BHZRR030").has_value() && !s->findInstrumentByIsin("IE00BHZRR031").has_value());
+  CHECK(s->quoteRowCount() > 1);  // the good row's edge and the certificates' too
+  CHECK(source.listings().size() > 1 && saidLeftOut(listener, "1 row left out") && saidLeftOut(listener, "IE00BHZRR031"));
+  bool certificates = false;
+  for (const std::string & url : http.urls) certificates = certificates || url.find("certificatelist") != std::string::npos;
+  CHECK(certificates);
+  for (const NordnetListing & l : source.listings()) CHECK(l.isin != "IE00BHZRR031");
+}
+
+TEST(a_row_of_an_indicator_list_with_a_bad_isin_is_left_out_and_the_next_list_is_kept) {
+  using nlohmann::json;
+  json indices = json::parse(fixture("indicators-indices.json"));
+  const std::string bad = "FI0008900007";  // OMX Helsinki PI (FI0008900006) with a wrong check digit
+  CHECK(indices[1].contains("isin") && !isValidIsin(bad));
+  indices[1]["isin"] = bad;
+  auto store = makeMemoryStore();
+  FakeHttp http;
+  http.answer = [&](const std::string & url) {
+    if (url.find("WORLDMAP") != std::string::npos) return ok(indices.dump());
+    if (url.find("CURRENCY_GLOBAL") != std::string::npos) return ok(fixture("indicators-currencies.json"));
+    return ok(fixture("indicators-commodities.json"));
+  };
+  auto lists = NordnetSource::defaultLists();
+  lists.erase(lists.begin(), lists.begin() + 4);  // only the three indicator lists
+  Listener listener;
+  NordnetSource source(lists, std::chrono::milliseconds(0));
+  source.load(*store, http, listener);  // does not throw
+  const auto s = store->snapshot();
+  CHECK(http.urls.size() == 3);  // the lists after the bad row are still asked for
+  CHECK(!s->findInstrumentByIsin(bad).has_value() && s->findInstrumentByIsin("XC0009655157").has_value());
+  CHECK(saidLeftOut(listener, "1 row left out") && saidLeftOut(listener, bad));
+  CHECK(listener.messages.back().find("indices 3, currencies 2, commodities 3") != std::string::npos);
+  for (const NordnetIndicator & i : source.indicators()) CHECK(i.isin != bad);
+}
+
 TEST(listings_of_one_isin_with_different_names_leave_one_name_and_no_change_on_the_next_pass) {
   // Xetra (DE), Stockholm (SE) and Copenhagen (DK): the home listing of a DE ISIN is the first, of an IE one there is none.
   for (const std::string isin : {"DE0007164600", "IE00BHZRR030"}) {

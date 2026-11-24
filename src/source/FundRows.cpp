@@ -148,6 +148,8 @@ std::optional<EdgeKey> writeFund(Batch &store, const std::string &datasetName,
   const MarketId market = store.addMarket(kOffExchange);
   const InstrumentId base = addInstrumentUnlessSaid(store, "", f.name, InstrumentKind::Fund, f.isin, "FUND");
   const InstrumentId quote = currencyNode(store, "EUR");
+  // A part that cannot be named (the ISIN's check digit was right, but the store refused something else): nothing is written.
+  if (!market.valid() || !base.valid() || !quote.valid() || !dataset.valid()) return std::nullopt;
   store.setAttributes(base, attributesOf(f));
   const EdgeKey edge{base, quote, market, dataset};
   store.appendCandles(edge, Resolution::Day, bars);
