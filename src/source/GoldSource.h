@@ -21,6 +21,7 @@ struct GoldItem {
   std::string symbol, name;
   double ounces = 0;  // fine troy ounces in one unit
   double bid = 1, ask = 1;  // against the melt value; the ask is not used until the store keeps quotes
+  std::string symbol_icon;  // a Unicode symbol shown where there is no picture; empty for none
 };
 
 struct GoldTable {

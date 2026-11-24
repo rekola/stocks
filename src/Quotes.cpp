@@ -175,6 +175,12 @@ std::shared_ptr<const cellui::TableIcon> Quotes::icon(int r, int c) const {
   return url.empty() ? nullptr : icons_->get(url);
 }
 
+std::string Quotes::iconFallback(int r, int c) const {
+  if (c != ICON) return {};
+  auto symbol = snapshot_->attribute(edge(r).base, predicate::iconSymbol);
+  return symbol ? asText(*symbol).value_or("") : std::string();
+}
+
 void Quotes::reset(std::shared_ptr<const Snapshot> snapshot, std::vector<EdgeKey> keys) {
   keys_ = std::move(keys);
   // `keys` are made from this snapshot; with none, the store's rows are read again when one comes (a market not found yet has none)

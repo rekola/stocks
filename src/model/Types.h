@@ -109,6 +109,7 @@ inline constexpr const char * type = "type";  // the provider's own type
 inline constexpr const char * country = "country";  // a market's country (ISO 3166 alpha-2)
 inline constexpr const char * timezone = "timezone";  // a market's time zone (IANA name)
 inline constexpr const char * iconUrl = "icon-url";
+inline constexpr const char * iconSymbol = "icon-symbol";  // a Unicode symbol shown where there is no icon (a terminal with no pictures, an instrument with no icon)
 inline constexpr const char * webUrl = "web-url";  // the instrument's page on its provider's website
 inline constexpr const char * firstTradeDay = "first-trade-day";  // a day number: where an instrument's history begins
 inline constexpr const char *mic =
