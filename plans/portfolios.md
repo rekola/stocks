@@ -42,6 +42,10 @@ in a file of her own (see "Persistence"), not in `facts.sqlite`.
   dataset, as the edge of a price carries the dataset it came from. Importing the same file again replaces by transaction id inside its
   own dataset, so it does not double either. For the first version there is only the user's own dataset, and the rest is the room the
   model gives for free.
+- **Only what is traded can be held.** A position and a transaction need a market that is a real venue or XOFF (funds, priced by
+  their company): **never XXXX** (`kNoMarket`), the market of what is priced but not bought: indices, spot prices, currency pairs and the
+  rate sources (Euribor from `SPFB`, the €STR from `ECB`). One function, `tradable(snapshot, edge)` in `src/portfolio/`, says so, and
+  the buttons, the commands and the model's write all use it, so no path puts a holding on an index or a rate.
 - **A position does not name a price edge.** It names the instrument and the market, and the price is whichever edge of that
   instrument on that market the store has (see "Valuation"), so a holding survives a change of provider.
 - **Cost basis is the average cost** at first. FIFO and lots are later work, and are only a different derivation from the same transactions.
@@ -106,7 +110,10 @@ Tab is not bound in stocks, so it can carry this. A **context** is a view of the
 - **Entering a transaction** is done with **buttons at the end of the row, beside the info button** (`kRowActions` in
   `Browser.cpp`: one more entry for each, with a glyph chosen as the info glyph is), in both contexts: a click with the mouse, and from
   the keyboard the table's horizontal cursor (cellui#61) moves onto a button and Enter presses it. They run the commands `buy` and
-  `sell` on the row the button is on (`action_row_`), so both are in the command palette too. They have **no key of their own**. Each
+  `sell` on the row the button is on (`action_row_`), so both are in the command palette too. They have **no key of their own**.
+  **A button shows only on a row that can be bought** (`tradable`: its market is a real venue or XOFF, not XXXX), so an index, a
+  spot price, a currency pair or an interest rate has the info button alone. A row in the Portfolio context is always tradable. The
+  commands refuse such a row with a message when run from the palette, since the palette does not look at the row. Each
   opens a **modal dialog** with the fields quantity, price (the last price offered), date (today offered), fee and note, a live line that shows the
   total, and OK and Cancel. A prompt line is not enough for this much data. cellui has no such dialog (only the attribute
   viewer's modal), so a **form dialog is added to cellui first**, general enough to be used again (labelled fields with
@@ -147,7 +154,8 @@ Not built, and not needed for any step below, but the model leaves room for it (
 2. `src/portfolio/`: `Transaction`, `derivePositions`, `value`, with tests (`tests/PortfolioTests.cpp`): buys and sells, average
    cost, a sell of more than is held (refused), a position closed and opened again, a missing rate.
 3. The model: the portfolio node kind (5) and its minted keys, the position edge and the transaction events in `Store`/`MemoryStore`
-   (writes, reads, a snapshot of them), with tests in `tests/ModelTests.cpp` and `NodeKeyTests.cpp`: a portfolio that shows only when
+   (writes, reads, a snapshot of them), with tests in `tests/ModelTests.cpp` and `NodeKeyTests.cpp`: a transaction on XXXX is refused (an
+   index, a rate), one on XOFF and on a real market is kept, a portfolio that shows only when
    something is said of it, a name alone, positions and no name, a delete that makes it vanish, several portfolios, the same
    transactions under two datasets (holdings from the chosen one only).
 4. The portfolio file: a second `FactStore` routed by node kind, with tests on a file in a temporary directory: round trip, another
@@ -169,4 +177,6 @@ every portfolio added up in one currency, allocation by kind and country, a benc
 - Which price edge values a position when two datasets have the instrument on the market (the latest bar, at first).
 - Whether a position in an edge that no source loads any more is shown from its last stored price or marked stale.
 - Whether `next-preset` and `previous-preset` (unbound today) get keys of their own now that Tab is spoken for.
+- Whether the table can show a button on some rows only. If cellui's `Table` takes the buttons of a column as the same for every row, it needs
+  a per-row hook (the model says which buttons a row has), added in cellui with the form dialog.
 - The glyphs of the buy and sell buttons, which must draw in the terminal and the window alike.
