@@ -1,10 +1,28 @@
 #include "history/HistoryLoader.h"
 
 #include <algorithm>
+#include <atomic>
+
+// The loader's Http as a provider sees it: every request goes through to it, and is counted, so that the loader knows whether a load
+// made one (and pauses after it) without a provider having to say so. Cancelling is the loader's own, on the Http behind.
+class CountedHttp : public Http {
+ public:
+  explicit CountedHttp(Http & inner) : inner_(inner) {}
+  HttpResult get(const std::string & url, const HttpHeaders & headers) override {
+    requests_++;
+    if (inner_.cancelled()) cancel();
+    return inner_.get(url, headers);
+  }
+  int requests() const { return requests_; }
+
+ private:
+  Http & inner_;
+  std::atomic<int> requests_{0};
+};
 
 HistoryLoader::HistoryLoader(std::shared_ptr<Store> store, std::unique_ptr<Http> http, Options options, std::function<void()> changed,
                              std::function<void(std::string)> message)
-    : store_(std::move(store)), http_(std::move(http)), options_(options), changed_(std::move(changed)), message_(std::move(message)) {
+    : store_(std::move(store)), http_(std::move(http)), counted_(http_ ? std::make_unique<CountedHttp>(*http_) : nullptr), options_(options), changed_(std::move(changed)), message_(std::move(message)) {
   thread_ = std::thread([this] { run(); });
 }
 
@@ -14,6 +32,7 @@ HistoryLoader::~HistoryLoader() {
     stop_ = true;
   }
   if (http_) http_->cancel();  // a request in progress ends too
+  if (counted_) counted_->cancel();
   wake_.notify_all();
   if (thread_.joinable()) thread_.join();
 }
@@ -137,8 +156,7 @@ bool HistoryLoader::load(const Ask & wanted, bool & network) {
     if (!dataset.empty()) provider = providerOf(dataset);
   }
   if (!provider) return false;
-  network = true;
-  extra_pause_ = provider->pause();
+  const int before = counted_->requests();
   // Between two requests of one load: the loader's pause, cut short when it stops.
   const HistoryProvider::Wait wait = [this] {
     std::unique_lock lock(mutex_);
@@ -147,7 +165,7 @@ bool HistoryLoader::load(const Ask & wanted, bool & network) {
   };
   HistoryProvider::Outcome outcome;
   try {
-    outcome = provider->load(*store_, *http_, wanted.edge, wanted.request, wait);
+    outcome = provider->load(*store_, *counted_, wanted.edge, wanted.request, wait);
   } catch (const std::exception & e) {  // as missing: the edge is not asked for again
     if (message_) message_("history: " + snapshot->name(wanted.edge.dataset) + ": " + e.what());
     outcome = HistoryProvider::Outcome::Missing;
@@ -155,6 +173,9 @@ bool HistoryLoader::load(const Ask & wanted, bool & network) {
     if (message_) message_("history: " + snapshot->name(wanted.edge.dataset) + ": failed");
     outcome = HistoryProvider::Outcome::Missing;
   }
+  // Pause after a load that made a request, and only then: one that returned at once (nothing to ask) is followed by the next.
+  network = counted_->requests() > before;
+  if (network) extra_pause_ = provider->pause();
   switch (outcome) {
     case HistoryProvider::Outcome::Refused: {
       {

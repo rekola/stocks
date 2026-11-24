@@ -18,6 +18,8 @@
 #include <unordered_set>
 #include <vector>
 
+class CountedHttp;
+
 // One request of one edge: the edge and which of its provider's requests (an id the provider defines).
 struct HistoryAsk {
   EdgeKey edge;
@@ -72,7 +74,8 @@ class HistoryLoader {
 
  private:
   void run();
-  // Loads one request of one edge; returns whether bars were written. `network` is set if a request was made.
+  // Loads one request of one edge; returns whether bars were written. `network` is set if a request was made (by the count of
+  // the requests that went through `counted_`, not by what the provider says).
   bool load(const Ask & ask, bool & network);
   // Whether a request loaded at `loaded` is too old to stand (under the lock).
   bool expired(const Ask &, std::chrono::steady_clock::time_point loaded) const;
@@ -80,6 +83,7 @@ class HistoryLoader {
 
   std::shared_ptr<Store> store_;
   std::unique_ptr<Http> http_;
+  std::unique_ptr<CountedHttp> counted_;  // what the providers get: http_, counting the requests
   Options options_;
   std::function<void()> changed_;
   std::function<void(std::string)> message_;
