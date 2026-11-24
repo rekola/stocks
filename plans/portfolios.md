@@ -81,19 +81,15 @@ sync (see "The server"), and share no table and no schema version.
 Nothing special is needed: there are as many portfolios as there are nodes with something said of them.
 
 - **A position belongs to one portfolio** (the base of its edge), and so does a transaction.
-- **"All" is a view, not a node**: the selection "every portfolio". It adds up quantities where one instrument is held in two
-  portfolios, and takes the quantity-weighted cost. It cannot be bought or sold in; `buy` and `sell` there ask which portfolio.
-- **Currency.** Each portfolio has its own (its `currency` fact), and a total needs one currency to add up in, so "All" over a
-  euro portfolio and a dollar one must pick. The currency a table shows its values in is the **display currency**: a choice of the
-  session like the period (one for every row, kept while the program runs, `show-currency`), which starts as the selected portfolio's
-  own currency and, for "All", as the currency all portfolios share, or EUR when they differ. A total is marked incomplete, as always,
-  when a rate is missing.
+- **One portfolio is shown at a time**, the selected tag. Portfolios are not added up: there is no "All" and no total across them, and
+  so no choice of a currency to add them in (each shows in its own `currency` fact). A view over every portfolio, if it is wanted, is
+  a selection of portfolio nodes and a currency to add in, and changes nothing here: it is later work.
 - **Commands**: `new-portfolio` (asks a name in the form dialog, mints the key, says the name), `rename-portfolio` (says the name
   again; the last said stands, as for any fact), and `delete-portfolio` (asks to confirm, then removes everything said of it, after
   which it is not shown; undoable). The first start has none: the Portfolio context says so and offers `new-portfolio`, and the
   first `buy` offers to make one.
-- **The buy and sell dialog has a Portfolio field**, defaulting to the selected tag, or to the one last used where "All" is selected.
-- The tags of the Portfolio context are the portfolios in the order of their keys... which means nothing, so by name, then "All".
+- **The buy and sell dialog has a Portfolio field**, defaulting to the selected tag (a row's own portfolio, in the Portfolio context).
+- The tags of the Portfolio context are the portfolios by name (the order of their keys means nothing).
 
 ## The screen: Tab switches the context
 
@@ -101,7 +97,7 @@ Tab is not bound in stocks, so it can carry this. A **context** is a view of the
 `Markets` (today's) and `Portfolio`. Tab goes to the next context and Shift+Tab to the previous (commands `next-context`,
 `previous-context`; the palette lists them), so a third context later (a watchlist, a chart) is one more entry and no new key.
 
-- **The table and the tags stay**: a context swaps the tags (presets, or the portfolios there are and an "All") and the model
+- **The table and the tags stay**: a context swaps the tags (presets, or the portfolios there are) and the model
   (`Quotes`, or a new `Positions`) and the columns; the period tags stay and apply to both. Each context keeps its own selected tag,
   sort and scroll position while the program runs.
 - **`Positions`** is a table model like `Quotes`, with the columns: icon, symbol, name, quantity, average cost, price, value,
@@ -153,21 +149,20 @@ Not built, and not needed for any step below, but the model leaves room for it (
    transactions under two datasets (holdings from the chosen one only).
 4. The portfolio file: a second `FactStore` routed by node kind, with tests on a file in a temporary directory: round trip, another
    schema moved aside and not lost, a damaged file moved aside, nothing of a portfolio in `facts.sqlite`.
-5. `Positions` model and the context switch in `Browser` (`next-context`, `previous-context`, keys, the help line, `show-currency`),
-   with `BrowserTests` for the switch, for each context keeping its state and for the "All" view.
+5. `Positions` model and the context switch in `Browser` (`next-context`, `previous-context`, keys, the help line),
+   with `BrowserTests` for the switch, and for each context keeping its state.
 6. The form dialog in cellui; then `buy` and `sell` on a row, `new-portfolio`, `rename-portfolio`, `delete-portfolio`, `undo` and
    `redo`, and the status line's message for each.
 7. README: the keys and the flags.
 
 ## Later, not planned in detail
 
-Realized P&L and dividends (from the corporate actions the store already holds), FIFO lots, CSV import of a broker's export, allocation
-by kind and country, a benchmark to compare the portfolio with, a transactions view.
+Realized P&L and dividends (from the corporate actions the store already holds), FIFO lots, CSV import of a broker's export, a view over
+every portfolio added up in one currency, allocation by kind and country, a benchmark to compare the portfolio with, a transactions view.
 
 ## Open
 
 - Whether the undo stack should survive a restart (not at first).
-- Whether the display currency should be kept between runs (not at first).
 - Which price edge values a position when two datasets have the instrument on the market (the latest bar, at first).
 - Whether a position in an edge that no source loads any more is shown from its last stored price or marked stale.
 - The keys for `buy` and `sell` on the desktop, and whether `next-preset` and `previous-preset` (unbound today) get keys of their own now
