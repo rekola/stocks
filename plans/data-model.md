@@ -227,8 +227,13 @@ low sixty (country 4 and attribute 6 are planned, 5 is the portfolio, and 7 is a
 | 5 | portfolio | sixty random bits, minted when the user makes one; in text a `P` and fifteen hex digits (`mintPortfolioKey()`, `portfolioKey()`) |
 
 - **An instrument is an ISIN**, or a currency or a unit. An index, a fund or a commodity is an instrument like a share, with an
-  ISIN: no kind of its own. One given no ISIN that is not a currency or a unit is given one of ours (`ZZ` and nine characters, made
-  from its symbol or else its name, `privateIsin()`); one that cannot be keyed, or whose ISIN is not valid, is refused and told of
+  ISIN: no kind of its own. One given no ISIN that is not a currency or a unit gets it from its adapter: the ISINs an
+  adapter supplies (what its source gives none for, and the physical items) are named constants in `src/source/KnownIsins.h`, the real ones where
+  there is one (zinc `XC0005705584`, lead `XC0005705527`, the BRIC 50 India index `US26075E1047`) and else ours, `ZZ` (the user-assigned code element
+  of ISO 3166, in which no numbering agency issues ISINs), nine digits numbered on from 1 and the check digit. An adapter names the constant, so a
+  missing one does not compile; `static_assert`s make an invalid ISIN, a repeated ISIN and a gap in the numbering fail to compile too, and the head of
+  the file says how to add one. Nothing is made up from a text: the program's store refuses an instrument that comes with none
+  (`StoreOptions::invent_isins` off) and the status line says so; a store left to invent (the tests) numbers them as they come, from `ZZ999999999` down. One that cannot be keyed, or whose ISIN is not valid, is refused and told of
   (`StoreOptions::notice`), and what is said of an edge with a part that was refused is said of nothing.
 - **A market is its MIC**, which never changes, so nothing is minted and nothing is looked up by a name or a provider's id: a source
   that has only an id for a market maps it to a MIC (Nordnet: `KnownMarkets`) and leaves out what it cannot map, saying so. A code

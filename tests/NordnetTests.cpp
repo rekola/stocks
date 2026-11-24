@@ -689,14 +689,14 @@ TEST(the_indicator_lists_make_indices_in_points_currency_pairs_and_commodities_i
   CHECK(!s->listing(onDax)->orderBook.empty() && s->listing(onDax)->type == "INDEX");  // what its history is asked for by
   CHECK(asText(*s->attribute(dax, "country")) == "DE");
 
-  // One with no ISIN gets one of ours, in the private namespace, from its symbol.
-  const std::string bric = privateIsin("BRIC50D");
-  CHECK(bric.rfind("ZZ", 0) == 0 && isValidIsin(bric));
+  // One with no ISIN has the one source/KnownIsins.h has for its symbol: the real one of the index and of
+  // the commodity (XC) for lead.
+  const std::string bric = "US26075E1047", leadIsin = "XC0005705527";
   CHECK(s->findInstrumentByIsin(bric) && s->kind(*s->findInstrumentByIsin(bric)) == InstrumentKind::Index);
-  CHECK(s->kind(*s->findInstrumentByIsin(privateIsin("LEAD"))) == InstrumentKind::Commodity);
+  CHECK(s->kind(*s->findInstrumentByIsin(leadIsin)) == InstrumentKind::Commodity);
 
   // A metal the London exchange prices has only a last price: a bar with the high and the low undefined.
-  const InstrumentId lead = *s->findInstrumentByIsin(privateIsin("LEAD"));
+  const InstrumentId lead = *s->findInstrumentByIsin(leadIsin);
   CandleSeries leadBar = s->lastCandles(
       {lead, *s->findInstrument("USD"), *s->findMarket("XXXX"), nordnet},
       Resolution::Day, 1);
@@ -796,21 +796,10 @@ TEST(what_a_row_says_reaches_the_instrument_and_a_reload_changes_nothing) {
   CHECK(store->snapshot()->attributes(xaix).size() == said);
 }
 
-TEST(a_private_isin_is_made_from_what_the_thing_is_in_a_namespace_nobody_issues_from) {
-  // The algorithm, on ISINs that exist.
-  for (const char * isin : {"DE0008469008", "US78378X1072", "RU000A0JP7K5", "XC0009655157", "FI0009000681", "US12573F1084"})
+TEST(isins_are_checked_by_their_check_digit) {
+  for (const char * isin : {"DE0008469008", "US78378X1072", "RU000A0JP7K5", "XC0009655157", "FI0009000681", "US12573F1084", "XC0005705584", "XC0005705527"})
     CHECK(isValidIsin(isin));
   CHECK(!isValidIsin("DE0008469009") && !isValidIsin("DE000846900") && !isValidIsin(""));
-  const std::string zinc = privateIsin("ZINC");
-  CHECK(zinc.rfind("ZZ", 0) == 0 && isValidIsin(zinc));  // there is one zinc: no source in it
-  CHECK(privateIsin("LEAD") != zinc);
-  // The exact text is the key: case and punctuation tell things apart.
-  CHECK(privateIsin("zinc") != zinc && privateIsin("Z-I NC") != zinc && privateIsin("GC=F") != privateIsin("GCF"));
-  CHECK(privateIsin("abc") != privateIsin("ABC") && isValidIsin(privateIsin("abc")) && isValidIsin(privateIsin("ABC")));
-  // A long one has one too, and only nothing has none.
-  CHECK(isValidIsin(privateIsin("A TEXT THAT IS MUCH LONGER THAN NINE CHARACTERS")) && privateIsin("").empty());
-  // A fixed hash: the same on every run and platform.
-  CHECK(zinc == "ZZSEZBQVPB31");
 }
 
 TEST(nordnet_types_are_mapped_onto_the_one_vocabulary_and_certificates_are_named) {

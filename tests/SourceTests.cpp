@@ -891,7 +891,7 @@ TEST(a_source_is_named_by_the_dataset_it_writes) {
   sources.push_back(std::make_unique<GoldPriceSource>());
   PhysicalTable table;
   std::string error;
-  CHECK(parsePhysicalTable("spot,gold,XAU\nitem,gold,G,Gold,1,1,1\n", table, error));
+  CHECK(parsePhysicalTable("spot,gold,XAU\nitem,gold,GOLDBAR,Gold bar,1,1,1\n", table, error));
   sources.push_back(std::make_unique<PhysicalSource>(table));
   auto lower = [](std::string text) {
     for (char & c : text) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));

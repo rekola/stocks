@@ -2,6 +2,7 @@
 
 #include "FakeHttp.h"
 #include "model/Dates.h"
+#include "model/Isin.h"
 #include "portfolio/Portfolio.h"
 #include "source/GoldPriceSource.h"
 #include "source/PhysicalSource.h"
@@ -275,4 +276,26 @@ TEST(a_sample_of_physical_platinum_is_priced_from_the_platinum_spot_in_both_curr
   // The gold bar is the gold's, not the platinum's.
   const InstrumentId goldBar = *s->findInstrument("GOLDBAR");
   CHECK(std::abs(s->lastCandles({goldBar, usd, off, data}, Resolution::Day, 1).candles.back().close - 3600 * gram * 0.97) < 1e-6);
+}
+
+TEST(a_metal_has_the_isin_of_its_commodity_and_is_the_instrument_another_source_made_by_it) {
+  auto store = makeMemoryStore();
+  // Nordnet's list was there first: gold by its ISIN, called Kulta.
+  const InstrumentId nordnetGold = store->addInstrument("", "Kulta", InstrumentKind::Commodity, "XC0009655157", "COMMODITY");
+  FakeHttp http;
+  http.answer = answerPrices;
+  Said said;
+  GoldPriceSource source(std::chrono::minutes(2), std::chrono::milliseconds(0));
+  source.load(*store, http, said);
+  const auto s = store->snapshot();
+  // The same instrument: one gold, with its name and type as they were said, and the prices of both sources on it.
+  CHECK(s->findInstrumentByIsin("XC0009655157") == std::optional<InstrumentId>(nordnetGold) && s->findInstrument("XAU") == std::optional<InstrumentId>(nordnetGold));
+  CHECK(s->name(NodeRef(nordnetGold)) == "Kulta" && s->said(NodeRef(nordnetGold), predicate::type) == "COMMODITY");
+  const MarketId none = *s->findMarket(kNoMarket);
+  CHECK(s->edges(none).size() == 14 && s->hasCandles({nordnetGold, *s->findInstrument("EUR"), none, *s->findDataset(kGoldPriceDataset)}, Resolution::Day));
+  // Every symbol has a real (valid) ISIN, the ones source/KnownIsins.h names, and none is one of ours: there is no second gold, and the coins are not private.
+  for (auto [symbol, isin] : {std::pair{"XAU", "XC0009655157"}, {"XAG", "XC0009653103"}, {"XPT", "XC0009665545"}, {"XPD", "XC0009665529"}, {"HG", "XC0005705501"},
+                              {"BTC", "XTV15WLZJMF0"}, {"ETH", "XTD5RG2FHH04"}}) {
+    CHECK(isValidIsin(isin) && s->isin(*s->findInstrument(symbol)) == isin && std::string(isin).rfind("ZZ", 0) != 0);
+  }
 }
