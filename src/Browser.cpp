@@ -162,7 +162,7 @@ Browser::Browser(Application & app, std::shared_ptr<Store> store, std::shared_pt
 
 void Browser::setColumns() {
   if (context_ == Context::Markets) {
-    table_.setColumns({{.title = "", .width = 2, .sortable = false, .icon = true},
+    table_.setColumns({{.title = "", .width = 2, .sortable = false, .icon = true, .icon_fallback = true},
                        {.title = "Base", .width = 8},
                        {.title = "Quote", .width = 6},
                        {.title = "Name", .width = 0},
@@ -175,7 +175,7 @@ void Browser::setColumns() {
     return;
   }
   const auto positions = std::dynamic_pointer_cast<Positions>(table_.model());
-  table_.setColumns({{.title = "", .width = 2, .sortable = false, .icon = true},
+  table_.setColumns({{.title = "", .width = 2, .sortable = false, .icon = true, .icon_fallback = true},
                      {.title = "Symbol", .width = 7},
                      {.title = "Name", .width = 0},
                      {.title = "Quantity", .width = 8, .align = Align::RIGHT},

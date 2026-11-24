@@ -93,6 +93,8 @@ class Quotes : public cellui::TableModel {
   // The icon URL of a row's base instrument, empty for none.
   std::string iconUrl(int r) const;
   std::shared_ptr<const cellui::TableIcon> icon(int r, int c) const override;
+  // The symbol an instrument says stands for its icon, shown where there is no picture.
+  std::string iconFallback(int r, int c) const override;
   std::span<const float> trace(int r, int) const override;
   std::optional<cellui::Color> color(int r, int c) const override;
   // Prices and changes sort by their values, not their rounded text; the others by their text, letters of either case alike.

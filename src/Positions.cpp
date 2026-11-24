@@ -65,6 +65,12 @@ std::shared_ptr<const cellui::TableIcon> Positions::icon(int r, int c) const {
   return url.empty() ? nullptr : icons_->get(url);
 }
 
+std::string Positions::iconFallback(int r, int c) const {
+  if (c != ICON) return {};
+  auto symbol = snapshot_->attribute(row(r).position.instrument, predicate::iconSymbol);
+  return symbol ? asText(*symbol).value_or("") : std::string();
+}
+
 std::string Positions::symbolOf(int r) const {
   if (const auto edge = priceEdge(r)) return snapshot_->symbol(*edge);
   return snapshot_->symbol(row(r).position.instrument);

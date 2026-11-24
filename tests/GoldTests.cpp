@@ -22,7 +22,7 @@ GoldTable table() {
   GoldTable t;
   std::string error;
   const bool ok = parseGoldTable(
-      "# a comment\n\nspot,GOLD\nitem,GOLDBAR,Gold bar (1 g fine)," + std::to_string(1 / kOunce) + ",0.97,1.04\nitem,GOLDCOIN,Gold coin (1 oz fine),1,0.98,1.08\n", t, error);
+      "# a comment\n\nspot,GOLD\nitem,GOLDBAR,Gold bar (1 g fine)," + std::to_string(1 / kOunce) + ",0.97,1.04\nitem,GOLDCOIN,Gold coin (1 oz fine),1,0.98,1.08,🪙\n", t, error);
   CHECK(ok);
   return t;
 }
@@ -54,6 +54,7 @@ TEST(the_gold_table_is_read_with_its_comments_and_a_wrong_row_says_which) {
   GoldTable t = table();
   CHECK(t.spots == std::vector<std::string>{"GOLD"} && t.items.size() == 2);
   CHECK(t.items[0].symbol == "GOLDBAR" && std::abs(t.items[0].ounces - 1 / kOunce) < 1e-6 && t.items[0].bid == 0.97 && t.items[0].ask == 1.04);
+  CHECK(t.items[0].symbol_icon.empty() && t.items[1].symbol_icon == "🪙");  // the optional symbol
   CHECK(t.items[1].ounces == 1 && t.items[1].name == "Gold coin (1 oz fine)");
   std::string error;
   GoldTable bad;

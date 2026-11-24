@@ -49,8 +49,8 @@ bool parseGoldTable(const std::string & text, GoldTable & table, std::string & e
       }
       table.spots.push_back(f[1]);
     } else if (f[0] == "item") {
-      if (f.size() != 6) {
-        error = where + "an item row is item,SYMBOL,NAME,OUNCES,BID,ASK";
+      if (f.size() != 6 && f.size() != 7) {
+        error = where + "an item row is item,SYMBOL,NAME,OUNCES,BID,ASK[,ICON_SYMBOL]";
         return false;
       }
       const auto ounces = number(f[3]), bid = number(f[4]), ask = number(f[5]);
@@ -58,7 +58,7 @@ bool parseGoldTable(const std::string & text, GoldTable & table, std::string & e
         error = where + "an item needs a symbol, a name and numbers above zero";
         return false;
       }
-      table.items.push_back({f[1], f[2], *ounces, *bid, *ask});
+      table.items.push_back({f[1], f[2], *ounces, *bid, *ask, f.size() == 7 ? f[6] : std::string()});
     } else {
       error = where + "a row is spot or item";
       return false;
@@ -110,6 +110,7 @@ void GoldSource::load(Store & store, Http &, SourceListener & listener) {
                                                                {predicate::kind, kindName(InstrumentKind::Commodity)},
                                                                {predicate::type, "PHYSICAL"}});
       if (!instrument.valid()) continue;
+      if (!item.symbol_icon.empty()) b.setAttribute(NodeRef(instrument), {predicate::iconSymbol, item.symbol_icon});
       const EdgeKey edge{instrument, spot->quote, market, dataset};
       const double scale = item.ounces * item.bid;  // an undefined open, high or low stays undefined
       b.appendCandles(edge, Resolution::Day,
