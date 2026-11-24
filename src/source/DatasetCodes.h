@@ -6,3 +6,4 @@ inline constexpr const char * kNordnetDataset = "nordnet";
 inline constexpr const char * kYahooDataset = "yahoo";
 inline constexpr const char * kSyntheticDataset = "synthetic";
 inline constexpr const char * kSuomenPankkiDataset = "SPFB";  // the Bank of Finland's publication of the Euribor rates
+inline constexpr const char * kEcbDataset = "ECB";  // the European Central Bank's data portal

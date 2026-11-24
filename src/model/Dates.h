@@ -3,6 +3,9 @@
 #include "model/Types.h"
 
 #include <cstdint>
+#include <cstdio>
+#include <optional>
+#include <string>
 
 // Dates as day numbers: the absolute number of the day in the proleptic Gregorian calendar, 1 being 1 January of the year
 // 1 (Date::Calc's Date_to_Days, Python's date.toordinal()). 1998-05-01 is 729510. A date is not an instant: trading does
@@ -51,6 +54,16 @@ constexpr int64_t dayNumberOfInstant(Timestamp utcSeconds, int utcOffsetSeconds 
   const int64_t local = utcSeconds + utcOffsetSeconds;
   const int64_t days = local >= 0 ? local / 86400 : -((-local + 86399) / 86400);  // floor
   return days + kUnixEpochDayNumber;
+}
+
+// The day number of a date written "2026-11-20" (exactly that: four digits, two, two), or none.
+inline std::optional<int64_t> dayNumberOfIsoDate(const std::string & text) {
+  int year = 0;
+  unsigned month = 0, day = 0;
+  char tail = 0;
+  if (text.size() != 10 || std::sscanf(text.c_str(), "%4d-%2u-%2u%c", &year, &month, &day, &tail) != 3) return std::nullopt;
+  if (year < 1900 || month < 1 || month > 12 || day < 1 || day > 31) return std::nullopt;
+  return dayNumber(year, month, day);
 }
 
 // The weekday of a day number, Monday 0 to Sunday 6 (1 January of the year 1 was a Monday).

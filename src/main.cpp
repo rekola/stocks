@@ -5,7 +5,7 @@
 //   --ui window  in a window stocks --source NAME   the data source (several,
 //   comma-separated, run at once): auto (the default: nordnet, and yahoo if
 //   nordnet gives nothing),
-//                          nordnet, yahoo, suomenpankki (the Euribor rates), funds:SCHEMA (a fund company: a
+//                          nordnet, yahoo, suomenpankki (the Euribor rates), ecb (the €STR), funds:SCHEMA (a fund company: a
 //                          schema in data/funds, or a schema file) or synthetic
 //   stocks --lists DIR     the instrument lists of the yahoo and synthetic
 //   sources (default: data/lists) stocks --facts FILE    where what the sources
@@ -27,6 +27,7 @@
 #include "source/SourceRunner.h"
 #include "source/NordnetSource.h"
 #include "source/FundSource.h"
+#include "source/EcbSource.h"
 #include "source/SuomenPankkiSource.h"
 #include "source/YahooSource.h"
 
@@ -54,12 +55,13 @@ std::unique_ptr<Source> makeSource(const std::string & name, const ListSpec & li
   if (name == "auto") return std::make_unique<AutoSource>(std::make_unique<NordnetSource>(), std::make_unique<YahooSource>(lists));
   if (name == "yahoo") return std::make_unique<YahooSource>(lists);
   if (name == "nordnet") return std::make_unique<NordnetSource>();
+  if (name == "ecb") return std::make_unique<EcbSource>();
   if (name == "suomenpankki") return std::make_unique<SuomenPankkiSource>();
   if (name == "synthetic") return std::make_unique<SyntheticSource>(lists);
   return nullptr;
 }
 
-constexpr const char * kSourceNames = "auto, nordnet, yahoo, suomenpankki, funds:SCHEMA, synthetic";
+constexpr const char * kSourceNames = "auto, nordnet, yahoo, suomenpankki, ecb, funds:SCHEMA, synthetic";
 
 }  // namespace
 
