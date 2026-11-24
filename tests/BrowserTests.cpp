@@ -25,15 +25,14 @@ using namespace cellui;
 
 TEST(a_trace_is_as_bright_as_its_bars_volume_against_the_periods_usual_and_medium_with_no_volume) {
   Seq<Candle> bars;
-  for (double volume : {100.0, 100.0, 100.0, 0.0, 800.0, kUndefined}) bars.push_back({1, 1, 1, 1, 1, volume});
+  for (double volume : {100.0, 100.0, 100.0, 0.0, 800.0, kUndefined}) bars = std::move(bars).push_back({1, 1, 1, 1, 1, volume});
   const std::vector<float> light = activity(bars);
   CHECK(light.size() == 6);
   CHECK(light[0] == 0.25f);       // the usual volume: bright, not past white
   CHECK(light[3] == 0.0f);        // none: medium
   CHECK(light[4] == 1.0f);        // abnormal: the brightest, lit past white
   CHECK(light[5] == 0.0f);        // not defined counts as none
-  Seq<Candle> silent;
-  silent.push_back({1, 1, 1, 1, 1, kUndefined});
+  const Seq<Candle> silent = Seq<Candle>().push_back({1, 1, 1, 1, 1, kUndefined});
   CHECK(activity(silent).empty());
 }
 
