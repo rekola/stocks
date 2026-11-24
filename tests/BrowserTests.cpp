@@ -74,9 +74,11 @@ struct Fixture {
   std::shared_ptr<Store> store = makeMemoryStore();
   std::unique_ptr<Browser> browser;
   // Over the made-up data, or over a store the test has filled.
-  explicit Fixture(bool synthetic = true, int cols = 100) {
+  explicit Fixture(bool synthetic = true, int cols = 100, KeymapProfile profile = KeymapProfile::TERMINAL) {
     if (synthetic) fillSyntheticData(*store, instrumentList());
-    auto owned = std::make_unique<test::TestBackend>(24, cols);
+    DisplayInfo display;
+    display.keymap_profile = profile;
+    auto owned = std::make_unique<test::TestBackend>(24, cols, display);
     backend = owned.get();
     app = Application::adopt(std::move(owned));
     browser = std::make_unique<Browser>(*app, store);
@@ -1861,4 +1863,74 @@ TEST(every_portfolio_command_has_a_description_and_is_in_the_palette) {
   CHECK(g.text().find("No portfolio to delete") != std::string::npos);
   g.app->execute("buy");
   CHECK(g.text().find("No row selected") != std::string::npos);
+}
+
+// ---- Keys, bound for each keymap profile
+
+namespace {
+
+// One change that can be taken back: the first portfolio renamed.
+void renameFirst(Fixture & f, const std::string & name) {
+  f.inModal([&] { f.app->execute("rename-portfolio"); }, {[&] { f.press('a', kModCtrl); f.press('k', kModCtrl); f.type(name); f.press(Key::Enter); }});
+}
+
+}  // namespace
+
+TEST(terminal_keys_undo_is_c_x_u_and_c_slash_and_redo_is_c_m_underscore) {
+  Fixture f(false, 100, KeymapProfile::TERMINAL);
+  Holdings h = addHoldings(*f.store);
+  f.press(Key::Tab);
+  auto name = [&] { return f.store->snapshot()->name(NodeRef(h.retirement)); };
+  renameFirst(f, "One");
+  CHECK(name() == "One");
+  f.press('x', kModCtrl);
+  f.press('u');
+  CHECK(name() == "Retirement");
+  f.press('_', kModCtrl | kModAlt);  // C-M-_
+  CHECK(name() == "One");
+  f.press('/', kModCtrl);  // C-/ where the terminal reports it
+  CHECK(name() == "Retirement");
+  f.press('_', kModCtrl | kModAlt);
+  CHECK(name() == "One");
+  f.press('_', kModCtrl);  // and C-_, which is what most terminals send for it
+  CHECK(name() == "Retirement");
+  CHECK(f.app->bindingFor("redo") == "C-M-_" && !f.app->bindingFor("undo").empty());
+  // Not the desktop's.
+  f.press('z', kModCtrl);
+  f.press('y', kModCtrl);
+  CHECK(name() == "Retirement" && f.browser->redoDepth() == 1);
+}
+
+TEST(desktop_keys_undo_is_ctrl_z_and_redo_is_ctrl_y) {
+  Fixture f(false, 100, KeymapProfile::DESKTOP);
+  Holdings h = addHoldings(*f.store);
+  f.press(Key::Tab);
+  auto name = [&] { return f.store->snapshot()->name(NodeRef(h.retirement)); };
+  renameFirst(f, "One");
+  f.press('z', kModCtrl);
+  CHECK(name() == "Retirement" && f.app->bindingFor("undo") == "Ctrl+Z");
+  f.press('y', kModCtrl);
+  CHECK(name() == "One" && f.app->bindingFor("redo") == "Ctrl+Y");
+  // Not the terminal's.
+  f.press('x', kModCtrl);
+  f.press('u');
+  CHECK(name() == "One");
+}
+
+TEST(tab_and_shift_tab_switch_the_context_in_both_profiles_and_buy_and_sell_have_no_key) {
+  for (KeymapProfile profile : {KeymapProfile::TERMINAL, KeymapProfile::DESKTOP}) {
+    Fixture f(false, 100, profile);
+    addHoldings(*f.store);
+    f.press(Key::Tab);
+    CHECK(f.browser->context() == Context::Portfolio);
+    f.press(Key::Tab, kModShift);
+    CHECK(f.browser->context() == Context::Markets);
+    CHECK(f.app->bindingFor("next-context") == "TAB" || f.app->bindingFor("next-context") == "Tab");
+    CHECK(!f.app->bindingFor("previous-context").empty());
+    CHECK(f.app->bindingFor("buy").empty() && f.app->bindingFor("sell").empty());
+    // They are in the palette all the same.
+    f.app->execute("command-palette");
+    f.type("buy");
+    CHECK(f.app->commandPaletteOpen() && f.text().find("buy") != std::string::npos && f.text().find("sell") == std::string::npos);
+  }
 }

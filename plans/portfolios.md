@@ -1,6 +1,6 @@
 # Portfolios
 
-Status: being built, step by step ("Steps" below, with what is done). Built: 1 (node-valued facts), 2 (`src/portfolio/`), 3 (the model), 4 (the portfolio file), 5 (`Positions` and the contexts), 6 (the form dialog in cellui; buy, sell, the portfolio commands, undo and redo).
+Status: being built, step by step ("Steps" below, with what is done). Built: 1 (node-valued facts), 2 (`src/portfolio/`), 3 (the model), 4 (the portfolio file), 5 (`Positions` and the contexts), 6 (the form dialog in cellui; buy, sell, the portfolio commands, undo and redo), 7 (the keys).
 
 A portfolio is what the user holds: positions in instruments she has bought, valued at the prices the store already has. It is
 modelled as the instruments are: **a portfolio is a node**, and what there is to know of it is facts and edges in the same
@@ -199,7 +199,7 @@ Not built, and not needed for any step below, but the model leaves room for it (
    with `BrowserTests` for the switch, and for each context keeping its state.
 6. (Done.) The form dialog in cellui; then the `buy` and `sell` buttons and commands, `new-portfolio`, `rename-portfolio`, `delete-portfolio`, `undo` and
    `redo`, and the status line's message for each.
-7. README: the keys and the flags.
+7. (Done.) The keys, bound for each profile in `Browser::bindKeys` (`C-/` is sent by a terminal as `C-_`, so that is bound to undo too). 8. (Done.) README: the keys and the flags.
 
 ## Later, not planned in detail
 

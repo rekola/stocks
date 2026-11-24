@@ -560,5 +560,14 @@ void Browser::bindKeys() {
     keymap.bind(KeymapProfile::DESKTOP, "Alt+" + std::to_string(i + 1), command);
   }
   keymap.bind(KeymapProfile::DESKTOP, "Ctrl+Q", "quit");
+  // Undo and redo of the user's changes, as each keymap has them. In the terminal: C-x u and C-/ (a terminal sends C-/ as C-_, which
+  // Emacs also binds, so that is bound too), and C-M-_ for redo; on the desktop Ctrl+Z and Ctrl+Y. buy and sell have no key: the
+  // buttons at the end of a row and the palette reach them.
+  keymap.bind(KeymapProfile::TERMINAL, "C-x u", "undo");
+  keymap.bind(KeymapProfile::TERMINAL, "C-/", "undo");
+  keymap.bind(KeymapProfile::TERMINAL, "C-_", "undo");
+  keymap.bind(KeymapProfile::TERMINAL, "C-M-_", "redo");
+  keymap.bind(KeymapProfile::DESKTOP, "Ctrl+Z", "undo");
+  keymap.bind(KeymapProfile::DESKTOP, "Ctrl+Y", "redo");
   assert(keymap.allBoundIn(app_.commands()));
 }
