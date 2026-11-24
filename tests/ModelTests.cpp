@@ -1,6 +1,7 @@
 #include "TestFramework.h"
 
 #include "model/Dates.h"
+#include "model/Isin.h"
 #include "model/Store.h"
 
 #include <atomic>
@@ -503,4 +504,17 @@ TEST(the_same_bars_again_make_no_new_version_and_a_changed_close_does) {
     w.store->appendBooks(edge, {book});
     CHECK(w.snap()->version() == before + (i == 0 ? 3 : 0));
   }
+}
+
+TEST(an_instrument_with_no_isin_is_the_one_of_its_symbol_and_else_of_its_name_and_only_the_same_text_is_the_same_one) {
+  auto store = makeMemoryStore();
+  // The symbol is tried before the name: two names for one symbol are one instrument.
+  const InstrumentId bySymbol = store->resolveInstrument({}, {{predicate::symbol, "ZN"}, {predicate::name, "Zinc"}});
+  CHECK(bySymbol.valid() && store->snapshot()->findInstrumentByIsin(privateIsin("ZN")) == std::optional<InstrumentId>(bySymbol));
+  CHECK(store->resolveInstrument({}, {{predicate::symbol, "ZN"}, {predicate::name, "Zink"}}) == bySymbol);
+  // With no symbol the name is the key, and the same text, written exactly, is the same instrument from any source.
+  const InstrumentId byName = store->resolveInstrument({}, {{predicate::name, "Zinc"}});
+  CHECK(byName.valid() && byName != bySymbol && store->snapshot()->findInstrumentByIsin(privateIsin("Zinc")) == std::optional<InstrumentId>(byName));
+  CHECK(store->resolveInstrument({}, {{predicate::name, "Zinc"}}) == byName);
+  CHECK(store->resolveInstrument({}, {{predicate::name, "ZINC"}}) != byName);  // not the same text: another one
 }

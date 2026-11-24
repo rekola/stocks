@@ -3,6 +3,7 @@
 #include "FakeHttp.h"
 #include "Synthetic.h"
 #include "model/Dates.h"
+#include "model/Isin.h"
 #include "source/AutoSource.h"
 #include "source/FundSource.h"
 #include "source/InstrumentLists.h"
@@ -73,6 +74,44 @@ EdgeKey edgeOf(const Snapshot & s, const char * base, const char * quote, const 
 constexpr const char * kNokia = "FI0009000681", * kGold = "XC0009655157";
 
 }  // namespace
+
+TEST(a_yahoo_entry_whose_list_gives_an_invalid_isin_is_left_out_and_the_next_one_is_loaded) {
+  // Nokia's ISIN with a wrong check digit, then Fortum.
+  const std::string bad = "FI0009000680";
+  CHECK(!isValidIsin(bad));
+  const InstrumentList list = {
+      {"Nasdaq Helsinki", "NOKIA", "EUR", "Nokia", "NOKIA.HE", InstrumentKind::Company, bad, "XHEL"},
+      {"Nasdaq Helsinki", "FORTUM", "EUR", "Fortum", "FORTUM.HE", InstrumentKind::Company, "FI0009007132", "XHEL"},
+  };
+  auto store = makeMemoryStore();
+  FakeHttp http;
+  http.answer = [](const std::string &) { return ok(fixture("nokia.json")); };
+  Listener listener;
+  YahooSource(list, "1y", std::chrono::milliseconds(0)).load(*store, http, listener);  // does not throw
+  const auto s = store->snapshot();
+  CHECK(http.urls.size() == 2);
+  CHECK(!s->findInstrumentByIsin(bad).has_value() && s->findInstrumentByIsin("FI0009007132").has_value());
+  CHECK(s->edges(*s->findMarket("XHEL")).size() == 1 && listener.changes == 1);
+  CHECK(listener.messages.size() == 1 && listener.messages[0].find("1 entry left out") != std::string::npos &&
+        listener.messages[0].find(bad) != std::string::npos);
+  std::string error;
+  CHECK(!YahooSource::parse(fixture("nokia.json"), list[0], *store, error) && error.find("left out") != std::string::npos);
+}
+
+TEST(a_synthetic_entry_that_cannot_be_named_is_left_out_and_the_rest_are_filled) {
+  const std::string bad = "FI0009000680";  // a wrong check digit
+  const InstrumentList list = {
+      {"Nasdaq Helsinki", "NOKIA", "EUR", "Nokia", "NOKIA.HE", InstrumentKind::Company, bad, "XHEL"},
+      {"Nasdaq Helsinki", "FORTUM", "EUR", "Fortum", "FORTUM.HE", InstrumentKind::Company, "FI0009007132", "XHEL"},
+  };
+  auto store = makeMemoryStore();
+  FakeHttp http;
+  Listener listener;
+  SyntheticSource(list).load(*store, http, listener);  // does not throw
+  CHECK(store->snapshot()->quoteRowCount() == 1 && store->snapshot()->findInstrumentByIsin("FI0009007132").has_value());
+  CHECK(listener.messages.size() == 1 && listener.messages[0].find("1 entry left out") != std::string::npos &&
+        listener.messages[0].find(bad) != std::string::npos);
+}
 
 TEST(a_yahoo_chart_becomes_candles_on_the_edge_of_its_market) {
   auto store = makeMemoryStore();

@@ -328,6 +328,35 @@ TEST(the_loader_stopping_cancels_the_request_in_progress) {
   CHECK(std::chrono::steady_clock::now() - start < std::chrono::seconds(10));
 }
 
+TEST(the_loader_pauses_only_after_a_load_that_made_a_request) {
+  using Outcome = HistoryProvider::Outcome;
+  const auto pause = std::chrono::milliseconds(400);
+  // Two asks, one after the other: how long from the start of the first to the start of the second.
+  const auto gap = [&](bool request) {
+    World w;
+    EdgeKey a = w.edge(InstrumentKind::Fund, "", false), b = w.edge(InstrumentKind::Fund, "", false);
+    FakeHttp http;
+    http.answer = [](const std::string &) { return ok(""); };
+    HistoryLoader::Options options = quickly();
+    options.pause = pause;
+    HistoryLoader loader(w.store, borrow(http), options, [] {});
+    auto p = provider(loader);
+    std::vector<std::chrono::steady_clock::time_point> times;
+    p->behave = [&](Http & h, const EdgeKey & e, int) {
+      times.push_back(std::chrono::steady_clock::now());
+      if (!request) return Outcome::Missing;  // nothing to ask for this edge
+      askFor(h, e);
+      return Outcome::Ok;
+    };
+    loader.want({a, b});
+    loader.waitIdle();
+    CHECK(times.size() == 2 && http.urls.size() == (request ? 2u : 0u));
+    return times.size() == 2 ? times[1] - times[0] : std::chrono::steady_clock::duration::zero();
+  };
+  CHECK(gap(false) < pause / 2);  // no request: the next ask follows at once
+  CHECK(gap(true) >= pause);      // a request: the next follows after the loader's pause
+}
+
 TEST(a_providers_pause_is_not_kept_for_the_asks_of_another_after_it) {
   World w;
   EdgeKey provided = w.edge(InstrumentKind::Fund, "", false);
@@ -344,6 +373,10 @@ TEST(a_providers_pause_is_not_kept_for_the_asks_of_another_after_it) {
   auto slow = std::make_shared<FakeProvider>();
   slow->code = "slow";
   slow->wait = std::chrono::milliseconds(400);
+  slow->behave = [](Http & h, const EdgeKey & e, int) {  // it asks, so its own pause follows
+    askFor(h, e);
+    return HistoryProvider::Outcome::Ok;
+  };
   loader.addProvider(slow);
   auto p = provider(loader);
   p->behave = [&](Http & h, const EdgeKey & e, int) {

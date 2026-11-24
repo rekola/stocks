@@ -1,6 +1,7 @@
 #include "source/YahooSource.h"
 
 #include "model/Dates.h"
+#include "source/LeftOut.h"
 
 #include <nlohmann/json.hpp>
 
@@ -40,23 +41,29 @@ std::string encoded(const std::string & ticker) {
 }  // namespace
 
 bool YahooSource::parse(const std::string & body, const ListEntry & e, Store & store, std::string & error) {
+  const Parsed parsed = parseEntry(body, e, store, error);
+  if (parsed == Parsed::LeftOut) error = "left out: an instrument or a quote that cannot be named";
+  return parsed == Parsed::Ok;
+}
+
+YahooSource::Parsed YahooSource::parseEntry(const std::string & body, const ListEntry & e, Store & store, std::string & error) {
   // What the answer holds is looked up with find() on what is checked to be an object: a const operator[] on a key that is not
   // there is undefined, and on what is not an object it throws.
   const json doc = json::parse(body, nullptr, /*allow_exceptions=*/false);
   const json * chart = member(doc, "chart");
   if (!chart || !chart->is_object()) {
     error = "not a chart response";
-    return false;
+    return Parsed::Failed;
   }
   if (const json * failure = member(*chart, "error"); failure && failure->is_object()) {
     const json * description = member(*failure, "description");
     error = description && description->is_string() ? description->get<std::string>() : "the provider reported an error";
-    return false;
+    return Parsed::Failed;
   }
   const json * results = member(*chart, "result");
   if (!results || !results->is_array() || results->empty() || !results->front().is_object()) {
     error = "no result";
-    return false;
+    return Parsed::Failed;
   }
   const json & result = results->front();
   const json * timestamps = member(result, "timestamp");
@@ -64,7 +71,7 @@ bool YahooSource::parse(const std::string & body, const ListEntry & e, Store & s
   const json * quotes = indicators ? member(*indicators, "quote") : nullptr;
   if (!timestamps || !timestamps->is_array() || !quotes || !quotes->is_array() || quotes->empty() || !quotes->front().is_object()) {
     error = "no candles";
-    return false;
+    return Parsed::Failed;
   }
   const json & ts = *timestamps;
   const json & q = quotes->front();
@@ -91,15 +98,21 @@ bool YahooSource::parse(const std::string & body, const ListEntry & e, Store & s
   }
   if (bars.empty()) {
     error = "no candles";
-    return false;
+    return Parsed::Failed;
   }
 
   // One entry is one publication: the bars, the listing and what is said of the instrument together.
+  bool leftOut = false;
   store.batch([&](Batch & b) {
     const DatasetId dataset = b.addDataset(kYahooDataset);
     const MarketId market = b.addMarket(e.mic, e.market);
     const InstrumentId base = baseOf(b, e);
     const InstrumentId quote = quoteNode(b, e.quote);
+    // A part that cannot be named leaves the entry out: an edge with it would be refused, and the batch with it.
+    if (!market.valid() || !base.valid() || !quote.valid()) {
+      leftOut = true;
+      return;
+    }
     const EdgeKey edge{base, quote, market, dataset};
     b.appendCandles(edge, Resolution::Day, bars);
     // What Yahoo calls it, its own type (below) and the name a row shows: a pair is named by its two currencies, not by the
@@ -140,7 +153,7 @@ bool YahooSource::parse(const std::string & body, const ListEntry & e, Store & s
       b.appendActions({base, dataset}, actions);
     }
   });
-  return true;
+  return leftOut ? Parsed::LeftOut : Parsed::Ok;
 }
 
 void YahooSource::load(Store & store, Http & http, SourceListener & listener) {
@@ -154,10 +167,12 @@ void YahooSource::load(Store & store, Http & http, SourceListener & listener) {
       return;
     }
   }
+  LeftOut leftOut;  // said once, when the list is done
   for (const ListEntry & e : list) {
     if (listener.cancelled()) return;
     std::string error;
     bool done = false;
+    bool named = true;
     for (const char * host : kHosts) {  // the second host answers when the first does not
       HttpResult r = http.get(std::string("https://") + host + "/v8/finance/chart/" + encoded(e.yahoo) + "?range=" + range_ +
                               "&interval=1d&events=div%7Csplit");
@@ -169,13 +184,19 @@ void YahooSource::load(Store & store, Http & http, SourceListener & listener) {
         error = r.status == 0 ? (r.error.empty() ? "no answer" : r.error) : "HTTP " + std::to_string(r.status);
         continue;
       }
-      done = parse(r.body, e, store, error);
+      const Parsed parsed = parseEntry(r.body, e, store, error);
+      done = parsed == Parsed::Ok;
+      if (parsed == Parsed::LeftOut) {
+        named = false;
+        leftOut.add(!e.isin.empty() ? e.isin : e.yahoo);
+      }
       break;  // the provider answered; asking another host would give the same
     }
     if (done) listener.changed();
-    else listener.message(std::string("yahoo: ") + e.yahoo + ": " + error);
+    else if (named) listener.message(std::string("yahoo: ") + e.yahoo + ": " + error);
     if (pause_.count() > 0 && !listener.pause(pause_)) return;
   }
+  leftOut.say(listener, "yahoo: ", "entry", "entries");
 }
 
 InstrumentKind YahooSource::kindOfType(const std::string & type) {

@@ -3,6 +3,7 @@
 #include "model/Dates.h"
 #include "model/Isin.h"
 #include "source/DataDirectory.h"
+#include "source/LeftOut.h"
 #include "model/NodeKey.h"
 
 #include <chrono>
@@ -406,6 +407,7 @@ void FundSource::load(Store & store, Http & http, SourceListener & listener) {
   }
   const int64_t today = today_();
   size_t shown = 0, stale = 0, unpriced = 0;
+  LeftOut leftOut;  // the funds whose ISIN or other part of the key cannot be named
   std::vector<Entry *> pending;  // the funds with no ISIN yet
   size_t sinceChange = 0;
   const auto show = [&](Entry & e) {
@@ -418,7 +420,10 @@ void FundSource::load(Store & store, Http & http, SourceListener & listener) {
       if (e.fund.change && *e.fund.change > -1) b.setPreviousClose(*edge, *e.fund.day, *e.fund.price / (1 + *e.fund.change));
       written = true;
     });
-    if (!written) return;
+    if (!written) {  // the one reason there is: it could not be named
+      leftOut.add(e.fund.isin.empty() ? e.id : e.fund.isin);
+      return;
+    }
     shown++;
     if (++sinceChange >= 50) {  // the first screenful need not wait for the rest
       listener.changed();
@@ -474,6 +479,7 @@ void FundSource::load(Store & store, Http & http, SourceListener & listener) {
     show(*e);
   }
   if (sinceChange) listener.changed();
+  leftOut.say(listener, who, "fund", "funds");
   listener.message(who + std::to_string(shown) + " funds" + (stale ? ", " + std::to_string(stale) + " left out for an old NAV" : std::string()) +
                    (unnamed ? ", " + std::to_string(unnamed) + " for no ISIN" : std::string()) +
                    (unpriced ? ", " + std::to_string(unpriced) + " for no price" : std::string()));
@@ -495,7 +501,7 @@ void FundHistory::markDetailed(const std::string & id) {
   detailed_.insert(id);
 }
 
-HistoryProvider::Outcome FundHistory::load(Store & store, Http & http, const EdgeKey & edge, int, const Wait &) {
+HistoryProvider::Outcome FundHistory::load(Store & store, Http & http, const EdgeKey & edge, int, const Wait & wait) {
   auto snapshot = store.snapshot();
   auto listing = snapshot->listing(edge);
   if (!listing || listing->identifier.empty()) return Outcome::Missing;
@@ -512,21 +518,30 @@ HistoryProvider::Outcome FundHistory::load(Store & store, Http & http, const Edg
     if (r.status == 0 || r.status >= 500) return Outcome::Offline;
     return std::nullopt;
   };
-  // The details: the fees, once. A fund without them still has its history.
-  if (schema_.detail && !detailed) {
+  // The details: the fees, once. A fund without them still has its history. What they say is written with the bars, in one batch.
+  std::vector<Attribute> said;
+  const bool askDetails = schema_.detail && !detailed;
+  if (askDetails) {
     HttpResult r = http.get(FundSource::expand(schema_.detail->url, id, token), schema_.headers);
     if (auto s = status(r)) return *s;
     FundEntry entry;
     std::string error;
-    if (r.ok() && parseFundDetail(schema_, r.body, entry, error)) store.setAttributes(edge.base, attributesOf(entry.fund));
-    std::lock_guard lock(mutex_);
-    detailed_.insert(id);
+    if (r.ok() && parseFundDetail(schema_, r.body, entry, error)) said = attributesOf(entry.fund);
+    // A pause between the two requests; stopping, the loader is going and the edge is not marked (the details are asked again).
+    if (!wait()) return Outcome::Offline;
   }
   HttpResult r = http.get(FundSource::expand(schema_.historyUrl, id, token), schema_.headers);
   if (auto s = status(r)) return *s;
   std::vector<Candle> bars;
   std::string error;
-  if (!r.ok() || !parseNavSeries(r.body, bars, error)) return Outcome::Missing;
-  store.appendCandles(edge, Resolution::Day, bars);
-  return Outcome::Ok;
+  const bool found = r.ok() && parseNavSeries(r.body, bars, error);
+  store.batch([&](Batch & b) {
+    b.setAttributes(edge.base, said);
+    if (found) b.appendCandles(edge, Resolution::Day, bars);
+  });
+  if (askDetails) {
+    std::lock_guard lock(mutex_);
+    detailed_.insert(id);
+  }
+  return found ? Outcome::Ok : Outcome::Missing;
 }

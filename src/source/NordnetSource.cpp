@@ -4,6 +4,7 @@
 #include "model/Isin.h"
 #include "source/InstrumentLists.h"
 #include "source/KnownMarkets.h"
+#include "source/LeftOut.h"
 #include "source/NordnetHeaders.h"
 
 #include <algorithm>
@@ -285,13 +286,16 @@ size_t NordnetSource::loadIndicators(const List & list, Store & store, Http & ht
     return 0;
   }
   size_t written = 0;
+  LeftOut leftOut;
+  std::vector<size_t> refused;  // the rows left out, which the source does not keep
   // The whole list is one publication.
   store.batch([&](Batch & b) {
     const DatasetId dataset = b.addDataset(kNordnetDataset);
     // Indices, currency pairs and commodity prices of these lists are on no
     // market.
     const MarketId market = b.addMarket(kNoMarket);
-      for (NordnetIndicator & row : rows) {
+    for (size_t i = 0; i < rows.size(); i++) {
+      NordnetIndicator & row = rows[i];
       row.list = list.name;
       InstrumentId base, quote;
       if (row.type == "CURRENCY") {
@@ -312,10 +316,16 @@ size_t NordnetSource::loadIndicators(const List & list, Store & store, Http & ht
                                        {kInstrumentIdPredicate, row.instrumentId}};
         if (kind != InstrumentKind::Other) rest.push_back({predicate::kind, kindName(kind)});
         base = b.resolveInstrument(identifying, rest);
-        b.setAttribute(base, {predicate::country, row.country});  // of an index
         // An index is in points. The answer gives a commodity no currency; the owner's table has them all in dollars.
         quote = row.type == "INDEX" ? quoteNode(b, "pts") : currencyNode(b, "USD");
       }
+      // An ISIN with a wrong check digit, or a code that does not fit, names nothing: the row is left out, not the list.
+      if (!base.valid() || !quote.valid() || !market.valid()) {
+        leftOut.add(!row.isin.empty() ? row.isin : !row.symbol.empty() ? row.symbol : row.name);
+        refused.push_back(i);
+        continue;
+      }
+      if (row.type != "CURRENCY") b.setAttribute(base, {predicate::country, row.country});  // of an index
       if (row.hasBar) {
         const EdgeKey edge{base, quote, market, dataset};
         b.appendCandles(edge, Resolution::Day, {row.bar});
@@ -324,6 +334,8 @@ size_t NordnetSource::loadIndicators(const List & list, Store & store, Http & ht
       written++;
     }
   });
+  for (auto i = refused.rbegin(); i != refused.rend(); ++i) rows.erase(rows.begin() + static_cast<std::ptrdiff_t>(*i));
+  leftOut.say(listener, "nordnet: " + list.name + ": ");
   indicators_.insert(indicators_.end(), rows.begin(), rows.end());
   if (written) listener.changed();
   return written;
@@ -349,6 +361,7 @@ void NordnetSource::load(Store & store, Http & http, SourceListener & listener) 
       continue;
     }
     size_t found = 0, offset = 0;
+    LeftOut leftOut;  // said once, when the list is done
     for (int request = 0; request < 10000; request++) {  // a bound, in case total_hits is wrong
       if (listener.cancelled()) return;
       std::string url = list.url + "&limit=" + std::to_string(list.pageSize);
@@ -391,9 +404,11 @@ void NordnetSource::load(Store & store, Http & http, SourceListener & listener) 
             text + ")");
       }
       // One page is one publication.
+      std::vector<size_t> refused;  // the rows left out, which the source does not keep
       store.batch([&](Batch & b) {
         const DatasetId dataset = b.addDataset(kNordnetDataset);
-        for (NordnetListing & l : page.listings) {
+        for (size_t i = 0; i < page.listings.size(); i++) {
+          NordnetListing & l = page.listings[i];
           l.list = list.name;
           // A market is its MIC; a listing on one Nordnet's id of which is not
           // known is left out, as data with no market is refused.
@@ -401,6 +416,14 @@ void NordnetSource::load(Store & store, Http & http, SourceListener & listener) 
           const char *marketName = knownMarketName(l.marketId);
           const MarketId market =
               b.addMarket(mic, marketName ? marketName : "");
+          // Nothing of an instrument, a quote or a market that cannot be named is written, and the row is left out: an edge with
+          // a part that is none would discard the whole page.
+          const InstrumentId quote = market.valid() ? currencyNode(b, l.currency) : InstrumentId{};
+          if (!quote.valid()) {
+            leftOut.add(!l.isin.empty() ? l.isin : !l.symbol.empty() ? l.symbol : l.name);
+            refused.push_back(i);
+            continue;
+          }
           b.setAttribute(market, {predicate::country, l.country});
           // Nordnet says the name and type of an instrument from its home listing (the market of the ISIN's country); a
         // listing elsewhere says them only where none are said yet, so two listings do not take turns at it.
@@ -408,7 +431,11 @@ void NordnetSource::load(Store & store, Http & http, SourceListener & listener) 
         const bool home = !country.empty() && l.isin.compare(0, 2, country) == 0;
         const InstrumentId base = home ? b.addInstrument("", l.name, kindOfType(l.type), l.isin, l.type)
                                        : addInstrumentUnlessSaid(b, "", l.name, kindOfType(l.type), l.isin, l.type);
-          const InstrumentId quote = currencyNode(b, l.currency);
+          if (!base.valid()) {
+            leftOut.add(!l.isin.empty() ? l.isin : !l.symbol.empty() ? l.symbol : l.name);
+            refused.push_back(i);
+            continue;
+          }
           // What Nordnet says of the instrument itself: thin edges, of the types it has.
           b.setAttributes(base, l.attributes);
           // Today's bar makes the edge; a listing with none stays a node nothing selects.
@@ -420,6 +447,7 @@ void NordnetSource::load(Store & store, Http & http, SourceListener & listener) 
           }
         }
       });
+      for (auto i = refused.rbegin(); i != refused.rend(); ++i) page.listings.erase(page.listings.begin() + static_cast<std::ptrdiff_t>(*i));
       found += page.listings.size();
       listings_.insert(listings_.end(), page.listings.begin(), page.listings.end());
       if (!page.listings.empty()) listener.changed();
@@ -428,6 +456,7 @@ void NordnetSource::load(Store & store, Http & http, SourceListener & listener) 
       if (page.rows == 0 || offset >= static_cast<size_t>(page.total)) break;
       if (pause_.count() > 0 && !listener.pause(pause_)) return;
     }
+    leftOut.say(listener, "nordnet: " + list.name + ": ");
     if (found) counts += (counts.empty() ? "" : ", ") + list.name + " " + std::to_string(found);
     if (!stop && pause_.count() > 0 && !listener.pause(pause_)) return;
   }

@@ -1,13 +1,14 @@
 #pragma once
 
 #include "source/DatasetCodes.h"
+#include "source/LeftOut.h"
 #include "model/Store.h"
 #include "source/Source.h"
 #include "source/InstrumentLists.h"
 
 // Fills the store with made-up daily candles for the instruments of `list`, all from the dataset "synthetic",
-// the same every run.
-void fillSyntheticData(Store & store, const InstrumentList & list);
+// the same every run. An entry whose instrument or quote cannot be named is left out, and counted in what it returns.
+LeftOut fillSyntheticData(Store & store, const InstrumentList & list);
 
 // The same as a source, for runs without a network.
 class SyntheticSource : public Source {
@@ -29,7 +30,7 @@ class SyntheticSource : public Source {
         return;
       }
     }
-    fillSyntheticData(store, list);
+    fillSyntheticData(store, list).say(listener, "synthetic: ", "entry", "entries");
     listener.changed();
   }
 

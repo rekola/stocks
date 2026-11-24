@@ -5,9 +5,10 @@
 
 #include <random>
 
-void fillSyntheticData(Store & store, const InstrumentList & list) {
+LeftOut fillSyntheticData(Store & store, const InstrumentList & list) {
   const int64_t kStart = dayNumber(2026, 1, 1);  // the first trading date: a day number
   const DatasetId synthetic = store.addDataset(kSyntheticDataset);
+  LeftOut leftOut;
   std::string market;
   unsigned preset = 0;
   std::mt19937 rng;
@@ -20,6 +21,10 @@ void fillSyntheticData(Store & store, const InstrumentList & list) {
     const MarketId m = store.addMarket(e.mic, e.market);
     const InstrumentId base = e.kind == InstrumentKind::Currency ? currencyNode(store, e.base) : store.addInstrument("", e.name, e.kind, e.isin);
     const InstrumentId quote = quoteNode(store, e.quote);
+    if (!m.valid() || !base.valid() || !quote.valid() || !synthetic.valid()) {
+      leftOut.add(e.isin.empty() ? e.name : e.isin);
+      continue;
+    }
     std::vector<Candle> bars;
     double p = start(rng);
     for (int d = 0; d < 60; d++) {
@@ -30,4 +35,5 @@ void fillSyntheticData(Store & store, const InstrumentList & list) {
     }
     store.appendCandles({base, quote, m, synthetic}, Resolution::Day, bars);
   }
+  return leftOut;
 }

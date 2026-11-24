@@ -13,6 +13,7 @@
 #include <mutex>
 #include <fstream>
 #include <sstream>
+#include <thread>
 
 namespace {
 
@@ -234,6 +235,66 @@ TEST(the_history_of_a_fund_is_loaded_when_it_is_wanted_and_once) {
   loader.want({*edge});  // not again
   loader.waitIdle();
   CHECK(history.urls.size() == 2);
+}
+
+namespace {
+
+// An Http that answers the alpha fund's details and history, and notes when each request was made.
+struct TimedHttp : Http {
+  std::vector<std::pair<std::string, std::chrono::steady_clock::time_point>> asked;
+  HttpResult get(const std::string & url, const HttpHeaders &) override {
+    asked.emplace_back(url, std::chrono::steady_clock::now());
+    if (url.find("alpha.example/details/ALPHANORDIC") != std::string::npos) return ok(fixture("funds/alpha-details.json"));
+    if (url.find("alpha.example/rates/ALPHANORDIC") != std::string::npos) return ok(fixture("funds/alpha-rates-daily.json"));
+    return failed(404);
+  }
+};
+
+}  // namespace
+
+TEST(a_funds_details_and_its_history_are_a_pause_apart_and_a_stop_in_the_pause_ends_the_load) {
+  FakeHttp listHttp;
+  listHttp.answer = [](const std::string &) { return ok(fixture("funds/alpha-list.json")); };
+  auto store = makeMemoryStore();
+  Listener listener;
+  FundSource funds = source("alpha");
+  funds.load(*store, listHttp, listener);
+  auto edge = edgeOf(*store->snapshot(), "FI0008810569", "XOFF", "alpha");
+  CHECK(edge.has_value());
+  if (!edge) return;
+  auto provider = funds.historyProvider();
+  const auto pause = std::chrono::milliseconds(60);
+  auto base = *store->snapshot()->findInstrumentByIsin("FI0008810569");
+
+  // Stopped in the wait: the history is not asked for, nothing is written, and the details are asked again at the next try.
+  {
+    TimedHttp http;
+    int waits = 0;
+    const auto outcome = provider->load(*store, http, *edge, 0, [&] { waits++; return false; });
+    CHECK(outcome == HistoryProvider::Outcome::Offline && waits == 1);
+    CHECK(http.asked.size() == 1 && http.asked[0].first.find("details/ALPHANORDIC") != std::string::npos);
+    CHECK(store->snapshot()->candles(*edge, Resolution::Day).candles.size() == 1 && !store->snapshot()->attribute(base, "redemption-fee"));
+  }
+  // Not stopped: the two requests are the wait apart, and the fees and the bars are written together.
+  {
+    TimedHttp http;
+    const uint64_t before = store->snapshot()->version();
+    const auto outcome = provider->load(*store, http, *edge, 0, [&] {
+      std::this_thread::sleep_for(pause);
+      return true;
+    });
+    CHECK(outcome == HistoryProvider::Outcome::Ok && http.asked.size() == 2);
+    CHECK(http.asked[0].first.find("details/") != std::string::npos && http.asked[1].first.find("rates/") != std::string::npos);
+    CHECK(http.asked[1].second - http.asked[0].second >= pause);
+    auto s = store->snapshot();
+    CHECK(s->version() == before + 1);  // one publication
+    CHECK(s->candles(*edge, Resolution::Day).candles.size() == 5 && s->attribute(base, "redemption-fee").has_value());
+    // The details are done: a later load asks for the history alone, and does not wait.
+    TimedHttp again;
+    int waits = 0;
+    provider->load(*store, again, *edge, 0, [&] { waits++; return true; });
+    CHECK(again.asked.size() == 1 && waits == 0);
+  }
 }
 
 TEST(a_refusal_stops_the_provider_and_not_the_other_funds_of_the_screen_loader) {

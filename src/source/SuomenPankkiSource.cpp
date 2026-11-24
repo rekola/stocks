@@ -3,6 +3,7 @@
 #include "model/Dates.h"
 #include "source/InstrumentLists.h"
 #include "source/KnownMarkets.h"
+#include "source/LeftOut.h"
 
 #include <pugixml.hpp>
 
@@ -106,6 +107,7 @@ bool SuomenPankkiSource::parse(const std::string & xml, Store & store, std::stri
   for (auto & [symbol, series] : bars) std::sort(series.begin(), series.end(), [](const Candle & a, const Candle & b) { return a.time < b.time; });
 
   // The whole report is one publication.
+  LeftOut leftOut;
   store.batch([&](Batch & b) {
     const DatasetId dataset = b.addDataset(kSuomenPankkiDataset, "Suomen Pankki");
     const MarketId market = b.addMarket(kNoMarket, marketNameOfMic(kNoMarket));
@@ -114,11 +116,16 @@ bool SuomenPankkiSource::parse(const std::string & xml, Store & store, std::stri
       auto it = bars.find(t.symbol);
       if (it == bars.end()) continue;
       const InstrumentId base = addInstrumentUnlessSaid(b, "", t.name, InstrumentKind::Index, t.isin);
+      if (!base.valid() || !quote.valid() || !market.valid() || !dataset.valid()) {  // left out, not the report
+        leftOut.add(t.symbol);
+        continue;
+      }
       const EdgeKey edge{base, quote, market, dataset};
       b.appendCandles(edge, Resolution::Day, it->second);
       b.setListing({edge, t.symbol, "", "", "", t.name});
     }
   });
+  if (leftOut.count()) notes.push_back(leftOut.text("", "rate series", "rate series"));
   return true;
 }
 
