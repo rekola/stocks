@@ -1,6 +1,6 @@
 # Portfolios
 
-Status: plan, nothing built.
+Status: being built, step by step ("Steps" below, with what is done). Built: 1 (node-valued facts), 2 (`src/portfolio/`).
 
 A portfolio is what the user holds: positions in instruments she has bought, valued at the prices the store already has. It is
 modelled as the instruments are: **a portfolio is a node**, and what there is to know of it is facts and edges in the same
@@ -69,6 +69,15 @@ sync (see "The server"), and share no table and no schema version.
   `events(portfolio, dataset, time, id, body)` for the transactions, the schema version in `PRAGMA user_version`.
 
 ## Valuation
+
+What is built (`src/portfolio/Portfolio.h`): the **average cost includes the fees of the buys** (what the buys cost, divided by what
+is held; a sell leaves it as it is and takes its share of the cost away, and a position that is closed and bought again starts
+again). Within one day the buys are applied first, then by id, so a buy and a sell of one day do not depend on their random ids.
+A transaction with no quantity, a negative price or fee, or a part that is none is refused, like a sell of more than is held;
+`derivePositions` says which and why. A **conversion** goes only between currencies (kind currency, never a unit such as points
+or per cent), over one edge in either direction or two through another currency; the store's reverse indexes `edgesOf(base)` and
+`edgesTo(quote)` find them. **The price of a position** is the edge of the instrument on the position's market **in the
+currency it was bought in** with the latest bar; one in another currency is not taken, so there is only one conversion.
 
 - **A position row**: quantity (the last of the series), average cost, last price, value, P&L (absolute and per cent), weight in the
   portfolio, and the change and trace over the shared period.
@@ -149,9 +158,9 @@ Not built, and not needed for any step below, but the model leaves room for it (
 
 ## Steps
 
-1. **Node-valued facts** (`data-model.md`, "Links between nodes"): a value that is a node, so that `currency` can be an edge to a
+1. **Node-valued facts** (done; `data-model.md`, "Links"): a value that is a node, so that `currency` can be an edge to a
    currency node; its own change, before this one. The attribute node kind (kind 6) is separate and does not block this plan.
-2. `src/portfolio/`: `Transaction`, `derivePositions`, `value`, with tests (`tests/PortfolioTests.cpp`): buys and sells, average
+2. (Done.) `src/portfolio/Portfolio.{h,cpp}`: `Transaction`, `derivePositions`, `value`, `tradable`, `rate`, `latestPrice`, with tests (`tests/PortfolioTests.cpp`): buys and sells, average
    cost, a sell of more than is held (refused), a position closed and opened again, a missing rate.
 3. The model: the portfolio node kind (5) and its minted keys, the position edge and the transaction events in `Store`/`MemoryStore`
    (writes, reads, a snapshot of them), with tests in `tests/ModelTests.cpp` and `NodeKeyTests.cpp`: a transaction on XXXX is refused (an

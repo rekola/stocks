@@ -72,6 +72,11 @@ class Snapshot {
   // The same, only those whose base instrument `keep` accepts (by its kind, its type, ...).
   std::vector<EdgeKey> edges(MarketId, const std::function<bool(InstrumentId)> & keep) const;
 
+  // The edges that have any data and have this instrument as their base, or as their quote: what a price and a rate are looked up by.
+  // Sorted by key.
+  std::vector<EdgeKey> edgesOf(InstrumentId base) const;
+  std::vector<EdgeKey> edgesTo(InstrumentId quote) const;
+
   // The edges that have daily bars, in the order they got their first: what the table lists. An edge never leaves, so this only
   // grows, and a reader that has seen the first `n` asks for what came after (`quoteRowsSince(n)`) instead of listing
   // everything again to find what is new: `quoteRowCount()` is the one number that says whether anything is.
@@ -154,6 +159,7 @@ class Snapshot {
   immer::map<EdgeKey, std::pair<int64_t, double>> previousClose_;  // the session's day number and the close before it
   immer::map<EdgeKey, Seq<BookSnapshot>> books_;
   immer::map<MarketId, immer::set<EdgeKey>> edgesByMarket_;
+  immer::map<InstrumentId, immer::set<EdgeKey>> edgesByBase_, edgesByQuote_;
   immer::map<EventKey, Seq<Announcement>> announcements_;
   immer::map<EventKey, Seq<CorporateAction>> actions_;
   immer::map<InstrumentId, immer::set<EventKey>> eventsByInstrument_;

@@ -251,6 +251,8 @@ std::vector<MarketId> Snapshot::edgeMarkets() const {
 }
 
 std::vector<EdgeKey> Snapshot::edges(MarketId m) const { return sorted(edgesByMarket_.find(m)); }
+std::vector<EdgeKey> Snapshot::edgesOf(InstrumentId base) const { return sorted(edgesByBase_.find(base)); }
+std::vector<EdgeKey> Snapshot::edgesTo(InstrumentId quote) const { return sorted(edgesByQuote_.find(quote)); }
 std::vector<EdgeKey> Snapshot::edges(MarketId m, const std::function<bool(InstrumentId)> & keep) const {
   std::vector<EdgeKey> out;
   for (const EdgeKey & k : edges(m))
@@ -514,6 +516,10 @@ void Snapshot::addEdge(const EdgeKey & k) {
   if (hasData(k)) return;
   const auto * set = edgesByMarket_.find(k.market);
   edgesByMarket_ = edgesByMarket_.set(k.market, (set ? *set : immer::set<EdgeKey>{}).insert(k));
+  const auto * of = edgesByBase_.find(k.base);
+  edgesByBase_ = edgesByBase_.set(k.base, (of ? *of : immer::set<EdgeKey>{}).insert(k));
+  const auto * to = edgesByQuote_.find(k.quote);
+  edgesByQuote_ = edgesByQuote_.set(k.quote, (to ? *to : immer::set<EdgeKey>{}).insert(k));
   indexSymbol(k);
 }
 
