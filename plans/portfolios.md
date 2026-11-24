@@ -47,10 +47,18 @@ Tab is not bound in stocks, so it can carry this. A **context** is a view of the
 - **`Positions`** is a table model like `Quotes`, with the columns: icon, symbol, name, quantity, average cost, price, value,
   weight, P&L, P&L %, change and trace. The history loader is told the edges of the positions on screen, as for the rows of a
   preset.
-- **Entering a transaction** is a command on the selected row in either context (`buy`, `sell`; the key is chosen with the others)
-  that asks for quantity, price (the last price offered) and date (today offered). What cellui offers for asking (a prompt in the
-  status line or a modal) decides the form; the first version may be a prompt line. A transaction can be deleted with `undo`
-  for the last one, and listed and edited in a transactions view later.
+- **Entering a transaction** is a command on the selected row in either context (`buy`, `sell`) that opens a **modal dialog**
+  with the fields quantity, price (the last price offered), date (today offered), fee and note, a live line that shows the
+  total, and OK and Cancel. A prompt line is not enough for this much data. cellui has no such dialog (only the attribute
+  viewer's modal), so a **form dialog is added to cellui first**, general enough to be used again (labelled fields with
+  validation, Tab between fields, Enter accepts, Esc cancels), and stocks uses it. It is a separate repository, so that is its
+  own change, merged before stocks depends on it.
+- **Undo is the standard one** (`undo`, taking back the last transaction change, `redo` if it is cheap): `C-x u` and `C-/` in
+  the terminal keymap, `Ctrl+Z` in the desktop keymap. A deleted or edited transaction can be undone too, so undo works on
+  changes to the ledger, not on the last row added. A transactions view to list and edit them comes later.
+- **Keys are bound per profile** (`KeymapProfile::TERMINAL` and `DESKTOP`, as `Browser::bindKeys` does), never one set for both:
+  `next-context` and `previous-context` are Tab and Shift+Tab on both; `buy` and `sell` are `b` and `s` in the terminal and
+  `Ctrl+B` and `Ctrl+S` unless the desktop keymap uses them (to be checked); undo as above. `assert(keymap.allBoundIn(...))` stays true.
 - **The info line's help** says "Tab: switch context" and not "switch focus".
 
 An alternative that was considered and left: portfolios as tags among the presets, with no context. It keeps one view, but the
@@ -64,7 +72,7 @@ user's own data.
 2. `Ledger` and `SqliteLedger`, with tests on a file in a temporary directory: round trip, another schema starts over, a damaged file moved aside.
 3. `Positions` model and the context switch in `Browser` (`next-context`, `previous-context`, keys, the help line), with
    `BrowserTests` for the switch and for each context keeping its state.
-4. `buy` and `sell` on a row, `undo`, and the status line's message for each.
+4. The form dialog in cellui; then `buy` and `sell` on a row, `undo`, and the status line's message for each.
 5. README: the keys and the flags.
 
 ## Later, not planned in detail
@@ -74,7 +82,6 @@ by kind and country, a benchmark to compare the portfolio with, a transactions v
 
 ## Open
 
-- What cellui has for asking for a few values (a prompt, a form).
 - Whether a position in an edge that no source loads any more is shown from its last stored price or marked stale.
-- The keys for `buy`, `sell` and `undo`, and whether `next-preset` and `previous-preset` (unbound today) get keys of their own now
+- The keys for `buy` and `sell` on the desktop, and whether `next-preset` and `previous-preset` (unbound today) get keys of their own now
   that Tab is spoken for.
