@@ -57,6 +57,7 @@ struct PeriodView {
   double base = kUndefined;       // the price the change is measured from
   double last = kUndefined;       // the last price of the period
   std::vector<float> closes;      // the trace: the period's closes, oldest first (only when asked for)
+  std::vector<float> light;       // how bright the trace is at each close, 0 to 1: the volume of its bar against the period's usual (see activity())
   bool hasChange() const { return isDefined(base) && isDefined(last) && (rate || base != 0); }
   // For a rate in basis points, else in percent; undefined where there is no number.
   double change() const {
@@ -66,6 +67,10 @@ struct PeriodView {
 };
 // Whether the edge is a rate: its quote is the per cent unit (a Unit instrument with that symbol). The one rule for it.
 bool isRate(const Snapshot &, const EdgeKey &);
+// The brightness of a trace at each bar: 0 for no volume (a medium brightness), 0.25 for the period's usual volume (its median
+// bar), and 1 at four times that or more, so a bar with abnormal volume is the one lit past white. A volume that is not
+// defined counts as none. Empty where no bar has a volume (the trace is then medium throughout).
+std::vector<float> activity(const Seq<Candle> & bars);
 PeriodView periodView(const Snapshot &, const EdgeKey &, Period, bool withTrace);
 
 // The colour rule, in one place: up (green) or down (red) by the sign of a change, none for no number.
