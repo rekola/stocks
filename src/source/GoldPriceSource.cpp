@@ -20,16 +20,19 @@ std::string text(const json & row, const char * key) {
   return it != row.end() && it->is_string() ? it->get<std::string>() : std::string();
 }
 
-// What a symbol is: a metal is a commodity, a coin is of no kind. The API says neither.
+// What a symbol is: a metal is a commodity, a coin is of no kind. The API says neither, nor the ISIN. A commodity has an ISIN of its own (XC
+// is the code for commodities), the one every other source and list gives it, so that gold here is the gold Nordnet's list has and not
+// another instrument; a symbol with none (copper, the coins) gets one of ours, made from its symbol, until a real one is known.
 struct Known {
   const char * symbol;
   InstrumentKind kind;
   const char * type;
+  const char * isin;  // empty for none
 };
-constexpr Known kKnown[] = {{"XAU", InstrumentKind::Commodity, "METAL"}, {"XAG", InstrumentKind::Commodity, "METAL"},
-                            {"XPT", InstrumentKind::Commodity, "METAL"}, {"XPD", InstrumentKind::Commodity, "METAL"},
-                            {"HG", InstrumentKind::Commodity, "METAL"},  {"BTC", InstrumentKind::Other, "CRYPTO"},
-                            {"ETH", InstrumentKind::Other, "CRYPTO"}};
+constexpr Known kKnown[] = {{"XAU", InstrumentKind::Commodity, "METAL", "XC0009655157"}, {"XAG", InstrumentKind::Commodity, "METAL", "XC0009653103"},
+                            {"XPT", InstrumentKind::Commodity, "METAL", "XC0009665545"}, {"XPD", InstrumentKind::Commodity, "METAL", "XC0009665552"},
+                            {"HG", InstrumentKind::Commodity, "METAL", ""},              {"BTC", InstrumentKind::Other, "CRYPTO", ""},
+                            {"ETH", InstrumentKind::Other, "CRYPTO", ""}};
 
 const Known * knownSymbol(const std::string & symbol) {
   for (const Known & k : kKnown)
@@ -143,10 +146,16 @@ void GoldPriceSource::load(Store & store, Http & http, SourceListener & listener
       const DatasetId dataset = b.addDataset(kGoldPriceDataset, "goldprice");
       const MarketId market = b.addMarket(kNoMarket, marketNameOfMic(kNoMarket));
       const Known * known = knownSymbol(s.symbol);
-      std::vector<Attribute> rest = {{predicate::name, s.name}, {predicate::symbol, s.symbol}, {predicate::type, known ? known->type : "SPOT"}};
       const InstrumentKind kind = known ? known->kind : InstrumentKind::Other;
-      if (kind != InstrumentKind::Other) rest.push_back({predicate::kind, kindName(kind)});
-      const InstrumentId base = b.resolveInstrument({}, rest);
+      InstrumentId base;
+      if (known && *known->isin) {
+        // The instrument another source made by this ISIN: its name and type stand where they are said, and ours are said only where none is.
+        base = addInstrumentUnlessSaid(b, s.symbol, s.name, kind, known->isin, known->type);
+      } else {
+        std::vector<Attribute> rest = {{predicate::name, s.name}, {predicate::symbol, s.symbol}, {predicate::type, known ? known->type : "SPOT"}};
+        if (kind != InstrumentKind::Other) rest.push_back({predicate::kind, kindName(kind)});
+        base = b.resolveInstrument({}, rest);
+      }
       if (!base.valid()) return;
       for (const Price & p : prices) {
         const InstrumentId quote = currencyNode(b, p.currency);

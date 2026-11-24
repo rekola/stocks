@@ -12,7 +12,7 @@
 // for a symbol in a currency (`/price/XAU/EUR`: the price, the currency, the time it was updated). Every symbol is asked for in each
 // of the currencies (EUR and USD), so a price in euros is the API's own and not a conversion of ours.
 //
-// Each symbol is an instrument (a private ISIN from its symbol), priced as it is quoted on XXXX (the market of what is priced and
+// Each symbol is an instrument (by the real ISIN of the commodity where one is known: gold, silver, platinum, palladium; else a private ISIN from its symbol), priced as it is quoted on XXXX (the market of what is priced and
 // not traded), one edge for each currency in the dataset "GOLDPRICE": one daily bar, on the UTC date the API says it was updated,
 // whose close is the last price (no open, high, low or volume: the answer has none), replaced at every load and added on a new day.
 // The metals are commodities, so they are in the Commodities preset; the coins are of no kind. The physical gold estimate (GoldSource)
