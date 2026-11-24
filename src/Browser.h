@@ -2,6 +2,7 @@
 
 #include "history/HistoryLoader.h"
 #include "model/Period.h"
+#include "Positions.h"
 #include "icons/IconLoader.h"
 #include "model/Store.h"
 
@@ -15,13 +16,19 @@
 #include <memory>
 #include <optional>
 
-// The screen: preset tags on the top row, the table filling what is between them
+// The screen: tags on the top row, the table filling what is between them
 // and the info and status lines, laid out again whenever the display changes size.
+// A **context** is a view of the store with its own tags, columns and model: Markets (the presets of edges, `Quotes`) and Portfolio (the
+// portfolios by name, and what the chosen one holds, `Positions`). Tab goes to the next context and Shift+Tab to the previous; the
+// period tags stay and apply to both, and each context keeps its own tag, sort and scroll position while the program runs.
 // The period tags at the right end of that row choose the period the Change and the trace columns show (the headings
 // name it); it is one for every row, and kept while the session runs.
 // Commands (named, run by a key or from the application's command palette) do what
 // the keys and the mouse do: show a preset, choose a period, move the focus, quit. A click on a
 // heading sorts by it. The status line is the echo area.
+enum class Context { Markets, Portfolio };
+inline constexpr size_t kContextCount = 2;
+
 class Browser {
  public:
   // Shows what `store` holds: a preset is a market of that name, a row an edge in it.
@@ -34,6 +41,9 @@ class Browser {
   cellui::TagBar & tags() { return tags_; }
   cellui::TagBar & periodTags() { return periods_; }
   Period period() const { return period_; }
+  Context context() const { return context_; }
+  // The portfolio the Portfolio context shows (none where there is none).
+  PortfolioId shownPortfolio() const { return portfolio_; }
   cellui::StatusLine & statusLine() { return status_; }
   // How soon the table follows the store again: a source that writes a page a second, or a store of tens of thousands of
   // rows that changes all the time, is shown at most this often (default a quarter of a second).
@@ -42,6 +52,25 @@ class Browser {
  private:
   // The rows of preset `i` from the store's current snapshot.
   void showPreset(int i);
+  // The positions of the `i`th portfolio of the tags.
+  void showPortfolio(int i);
+  // What a tag stands for in the context shown.
+  void showTag(int i);
+  void showContext(Context);
+  void nextContext(int delta);
+  // What a context's view was when it was left, and puts it back.
+  void saveView();
+  void restoreView();
+  // Puts the tags and the model of the context shown in place.
+  void enterContext();
+  // The portfolios as tags, by name; true if they were not those shown. `prefer` is the one to keep selected, if it is still there.
+  bool syncPortfolioTags(const Snapshot &, PortfolioId prefer);
+  // The line that says there is nothing to show where there is none, over the table; hidden otherwise.
+  void showEmptyHint();
+  void refreshPortfolio(std::shared_ptr<const Snapshot>);
+  // The key a row is known by across refreshes (an edge in Markets, a position in Portfolio).
+  std::optional<EdgeKey> selectedKey() const;
+  int rowOfKey(const EdgeKey &) const;
   // Tells the icon loader which rows are on screen and near it: those first, then the screens after and before.
   void requestIcons();
   // Shows `period` in the change and the trace columns, their headings and the period tags.
@@ -71,10 +100,25 @@ class Browser {
   Period period_ = kDefaultPeriod;
   cellui::Table table_;
   cellui::Label info_;
+  cellui::Label hint_;  // over the table's first rows where the Portfolio context has nothing to show
   cellui::Label link_;  // the display's link, at the right end of the info line
   cellui::StatusLine status_;
   uint64_t shown_version_ = 0;  // of the snapshot the table shows
   int shown_preset_ = -1;       // the preset the table shows
+  Context context_ = Context::Markets;
+  PortfolioId portfolio_;                    // the portfolio the Portfolio context shows
+  std::vector<PortfolioId> portfolio_ids_;   // the portfolios, as the tags of the Portfolio context list them
+  bool restoring_ = false;                   // the tags are being put back: choosing one is not a user's choice
+  // What each context was left as: its tag, sort and scroll position (and the row), kept while the program runs.
+  struct View {
+    int tag = 0;
+    PortfolioId portfolio;
+    int sort_column = -1;
+    cellui::SortOrder sort_order = cellui::SortOrder::NONE;
+    int first_position = 0;
+    std::optional<EdgeKey> selected;
+  };
+  View views_[kContextCount];
   // What the history loader was last told is wanted: the edges, in the order sent, and the period. The edges themselves and
   // not where the view is, as a sort (a click on a heading, or a store change that sorts again) puts other edges at the
   // same positions.

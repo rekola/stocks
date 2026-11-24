@@ -69,11 +69,12 @@ constexpr int kLinkCols = 52;
 
 Browser::Browser(Application & app, std::shared_ptr<Store> store, std::shared_ptr<IconLoader> icons,
                  std::shared_ptr<HistoryLoader> history)
-    : app_(app), store_(std::move(store)), icons_(std::move(icons)), history_(std::move(history)), tags_(app.root()), periods_(app.root()), table_(app.root(), app.charts()), info_(app.root()), link_(app.root()), status_(app.root()) {
+    : app_(app), store_(std::move(store)), icons_(std::move(icons)), history_(std::move(history)), tags_(app.root()), periods_(app.root()), table_(app.root(), app.charts()), info_(app.root()), hint_(app.root()), link_(app.root()), status_(app.root()) {
   tags_.attach(app.widgets());
   periods_.attach(app.widgets());
   table_.attach(app.widgets());
   info_.attach(app.widgets());
+  hint_.attach(app.widgets());
   link_.attach(app.widgets());
   status_.attach(app.widgets());
   std::vector<std::string> tags;
@@ -83,6 +84,7 @@ Browser::Browser(Application & app, std::shared_ptr<Store> store, std::shared_pt
   for (size_t i = 0; i < kPeriodCount; i++) periods.push_back(info(static_cast<Period>(i)).label);
   periods_.setTags(std::move(periods));
   info_.setColors(&StyleProvider::info_line_fg_color, &StyleProvider::info_line_bg_color);
+  hint_.setVisible(false);
   link_.setColors(&StyleProvider::info_line_fg_color, &StyleProvider::info_line_bg_color);
   link_.setStyle({TextFont::PROPORTIONAL, TextOverflow::ELLIPSIS, kPlainFace, TextAlign::RIGHT});
   setColumns();
@@ -115,10 +117,11 @@ Browser::Browser(Application & app, std::shared_ptr<Store> store, std::shared_pt
   });
   periods_.select(static_cast<int>(period_));
   tag_ = tags_.chosen.connect([this](int i) {
-    if (i < 0) return;
-    showPreset(i);
+    if (i < 0 || restoring_) return;
+    showTag(i);
     table_.select(0);
-    status_.setMessage(std::string("Showing ") + kPresets[i].tag);
+    if (context_ == Context::Markets) status_.setMessage(std::string("Showing ") + kPresets[i].tag);
+    else if (const auto positions = std::dynamic_pointer_cast<Positions>(table_.model())) status_.setMessage(positions->summary());
   });
   changed_ = table_.on<StoreChanged>([this](const StoreChanged &, EventContext &) {
     requestRefresh();
@@ -150,15 +153,32 @@ Browser::Browser(Application & app, std::shared_ptr<Store> store, std::shared_pt
 }
 
 void Browser::setColumns() {
+  if (context_ == Context::Markets) {
+    table_.setColumns({{.title = "", .width = 2, .sortable = false, .icon = true},
+                       {.title = "Base", .width = 8},
+                       {.title = "Quote", .width = 6},
+                       {.title = "Name", .width = 0},
+                       {.title = "Market", .width = 16},
+                       {.title = "Dataset", .width = 10},
+                       {.title = "Price", .width = 10, .align = Align::RIGHT},
+                       {.title = changeTitle(period_), .width = 12, .align = Align::RIGHT},
+                       {.title = info(period_).trace, .width = 22, .sortable = false, .trace = true},
+                       {.title = "", .buttons = buttonGlyphs()}});
+    return;
+  }
+  const auto positions = std::dynamic_pointer_cast<Positions>(table_.model());
   table_.setColumns({{.title = "", .width = 2, .sortable = false, .icon = true},
-                     {.title = "Base", .width = 8},
-                     {.title = "Quote", .width = 6},
+                     {.title = "Symbol", .width = 7},
                      {.title = "Name", .width = 0},
-                     {.title = "Market", .width = 16},
-                     {.title = "Dataset", .width = 10},
-                     {.title = "Price", .width = 10, .align = Align::RIGHT},
-                     {.title = changeTitle(period_), .width = 12, .align = Align::RIGHT},
-                     {.title = info(period_).trace, .width = 22, .sortable = false, .trace = true},
+                     {.title = "Quantity", .width = 8, .align = Align::RIGHT},
+                     {.title = "Avg cost", .width = 8, .align = Align::RIGHT},
+                     {.title = "Price", .width = 8, .align = Align::RIGHT},
+                     {.title = positions ? positions->valueTitle() : "Value", .width = 10, .align = Align::RIGHT},
+                     {.title = "Weight", .width = 6, .align = Align::RIGHT},
+                     {.title = "P&L", .width = 8, .align = Align::RIGHT},
+                     {.title = "P&L %", .width = 7, .align = Align::RIGHT},
+                     {.title = changeTitle(period_), .width = 10, .align = Align::RIGHT},
+                     {.title = info(period_).trace, .width = 14, .sortable = false, .trace = true},
                      {.title = "", .buttons = buttonGlyphs()}});
 }
 
@@ -167,6 +187,7 @@ void Browser::showPeriod(Period period) {
   period_ = period;
   periods_.select(static_cast<int>(period_));  // the tag, where there are tags (its own signal finds the period shown)
   if (auto quotes = std::dynamic_pointer_cast<Quotes>(table_.model())) quotes->setPeriod(period_);
+  if (auto positions = std::dynamic_pointer_cast<Positions>(table_.model())) positions->setPeriod(period_);
   setColumns();  // the headings; the sort and the scroll position stay
   table_.modelChanged();
   status_.setMessage(std::string("Showing ") + info(period_).trace);
@@ -200,13 +221,14 @@ void Browser::requestRefresh() {
 
 void Browser::requestIcons() {
   auto * quotes = dynamic_cast<const Quotes *>(table_.model().get());
-  if (!icons_ || !quotes) return;
-  const int count = quotes->rowCount(), first = table_.firstVisiblePosition(), view = std::max(1, table_.visibleRows());
+  auto * positions = dynamic_cast<const Positions *>(table_.model().get());
+  if (!icons_ || (!quotes && !positions)) return;
+  const int count = table_.model()->rowCount(), first = table_.firstVisiblePosition(), view = std::max(1, table_.visibleRows());
   std::vector<std::string> urls;
   auto add = [&](int position) {
     const int row = table_.rowAt(position);
     if (row < 0) return;
-    std::string url = quotes->iconUrl(row);
+    std::string url = quotes ? quotes->iconUrl(row) : positions->iconUrl(row);
     if (!url.empty()) urls.push_back(std::move(url));
   };
   const int margin = view;
@@ -217,8 +239,9 @@ void Browser::requestIcons() {
 
 void Browser::requestHistory() {
   auto * quotes = dynamic_cast<const Quotes *>(table_.model().get());
-  if (!history_ || !quotes) return;
-  const int count = quotes->rowCount(), first = table_.firstVisiblePosition(), view = std::max(1, table_.visibleRows());
+  auto * positions = dynamic_cast<const Positions *>(table_.model().get());
+  if (!history_ || (!quotes && !positions)) return;
+  const int count = table_.model()->rowCount(), first = table_.firstVisiblePosition(), view = std::max(1, table_.visibleRows());
   const int64_t minute = std::chrono::duration_cast<std::chrono::minutes>(std::chrono::steady_clock::now().time_since_epoch()).count();
   // Listed every frame (three screens of rows, into a buffer that is kept) and compared with what was sent: a sort or a scroll
   // changes them, a frame that only draws does not.
@@ -226,7 +249,9 @@ void Browser::requestHistory() {
   edges.clear();
   auto add = [&](int position) {
     const int row = table_.rowAt(position);
-    if (row >= 0) edges.push_back(quotes->edge(row));
+    if (row < 0) return;
+    if (quotes) edges.push_back(quotes->edge(row));
+    else if (const auto edge = positions->priceEdge(row)) edges.push_back(*edge);  // the edges of the positions on screen
   };
   // Each is a request a second: what is on screen, then the screen after and the one before.
   for (int p = first; p < std::min(count, first + 2 * view); p++) add(p);
@@ -239,8 +264,12 @@ void Browser::requestHistory() {
 }
 
 void Browser::refresh() {
-  const int preset = tags_.selected();
   auto snapshot = store_->snapshot();
+  if (context_ == Context::Portfolio) {
+    if (snapshot->version() != shown_version_) refreshPortfolio(std::move(snapshot));
+    return;
+  }
+  const int preset = tags_.selected();
   if (preset < 0 || snapshot->version() == shown_version_) return;
   std::optional<EdgeKey> selected;
   auto quotes = std::dynamic_pointer_cast<Quotes>(table_.model());
@@ -271,6 +300,30 @@ void Browser::refresh() {
   if (row >= 0) table_.reselect(row);  // the view stays where it is
 }
 
+// The same for the Portfolio context: the portfolios may have changed (one made, renamed or deleted, here or by an undo), and the
+// positions are worked out again from the newer snapshot, which keeps the sort, the scroll position and the selected row.
+void Browser::refreshPortfolio(std::shared_ptr<const Snapshot> snapshot) {
+  const std::optional<EdgeKey> selected = selectedKey();
+  const bool moved = syncPortfolioTags(*snapshot, portfolio_);
+  auto positions = std::dynamic_pointer_cast<Positions>(table_.model());
+  if (moved || !positions || positions->portfolio() != portfolio_) {
+    const int column = table_.sortColumn();
+    const SortOrder order = table_.sortOrder();
+    showPortfolio(tags_.selected());
+    if (column >= 0) table_.sortBy(column, order);
+    positions = std::dynamic_pointer_cast<Positions>(table_.model());
+  } else {
+    positions->setSnapshot(snapshot);
+    shown_version_ = snapshot->version();
+    setColumns();  // the value's heading names the currency, and a star where the total is incomplete
+    table_.modelChanged();
+  }
+  int row = positions && positions->rowCount() > 0 ? 0 : -1;
+  if (selected) row = std::max(row, rowOfKey(*selected));
+  if (row >= 0) table_.reselect(row);
+  showEmptyHint();
+}
+
 // The tags on the top row (one cell in), a gap, the table, the info line and the status line.
 void Browser::layout(int rows, int cols) {
   layoutRows(0, 0, rows, cols, {{.size = 1}, {.size = 1}, {.widget = &table_, .fill = 1}, {.size = 1}, {.widget = &status_}});
@@ -285,24 +338,32 @@ void Browser::layout(int rows, int cols) {
     periods_.setTags(std::move(labels));
     if (room) periods_.select(static_cast<int>(period_));
   }
+  layoutColumns(3, 0, 1, cols, {{.widget = &hint_, .fill = 1}});  // the first row under the heading
   layoutColumns(rows - 2, 0, 1, cols, {{.widget = &info_, .fill = 1}, {.widget = &link_, .size = std::min(kLinkCols, cols / 2)}});
 }
 
 void Browser::showLink() { link_.setText(linkStatusText(app_.backend().linkStatus()) + " "); }
 
 void Browser::showHelp() {
-  info_.setText(" stocks.  " + app_.bindingFor("command-palette") + ": commands, click a heading: sort, Tab: switch focus, " +
+  info_.setText(" stocks.  " + app_.bindingFor("command-palette") + ": commands, click a heading: sort, Tab: switch context, " +
                 app_.bindingFor("quit") + ": quit");
 }
 
 void Browser::showInfo() {
-  auto quotes = std::dynamic_pointer_cast<Quotes>(table_.model());
   const int row = action_row_.value_or(table_.selectedRow());
-  if (!quotes || row < 0) {
+  auto quotes = std::dynamic_pointer_cast<Quotes>(table_.model());
+  auto positions = std::dynamic_pointer_cast<Positions>(table_.model());
+  if ((!quotes && !positions) || row < 0) {
     status_.setMessage("No row selected");
     return;
   }
-  const EdgeKey edge = quotes->edge(row);
+  // A position is shown by its price edge, the listing it is valued by.
+  std::optional<EdgeKey> found = quotes ? std::optional<EdgeKey>(quotes->edge(row)) : positions->priceEdge(row);
+  if (!found) {
+    status_.setMessage("No price for this position, so nothing to show");
+    return;
+  }
+  const EdgeKey edge = *found;
   auto snapshot = store_->snapshot();
   std::string label = snapshot->symbol(edge);
   if (label.empty()) label = snapshot->name(edge.base);
@@ -315,14 +376,143 @@ void Browser::showInfo() {
   app_.requestFrame();
 }
 
+std::optional<EdgeKey> Browser::selectedKey() const {
+  const int row = table_.selectedRow();
+  if (row < 0) return std::nullopt;
+  if (auto * quotes = dynamic_cast<const Quotes *>(table_.model().get())) return quotes->edge(row);
+  if (auto * positions = dynamic_cast<const Positions *>(table_.model().get())) return positions->key(row);
+  return std::nullopt;
+}
+
+int Browser::rowOfKey(const EdgeKey & key) const {
+  if (auto * quotes = dynamic_cast<const Quotes *>(table_.model().get())) {
+    for (int r = 0; r < quotes->rowCount(); r++)
+      if (quotes->edge(r) == key) return r;
+  } else if (auto * positions = dynamic_cast<const Positions *>(table_.model().get())) {
+    for (int r = 0; r < positions->rowCount(); r++)
+      if (positions->key(r) == key) return r;
+  }
+  return -1;
+}
+
+void Browser::showTag(int i) {
+  if (context_ == Context::Markets) showPreset(i);
+  else showPortfolio(i);
+}
+
+void Browser::showPortfolio(int i) {
+  portfolio_ = i >= 0 && i < static_cast<int>(portfolio_ids_.size()) ? portfolio_ids_[static_cast<size_t>(i)] : PortfolioId{};
+  auto snapshot = store_->snapshot();
+  auto positions = std::make_shared<Positions>(snapshot, portfolio_, icons_);
+  positions->setPeriod(period_);
+  table_.setModel(positions);
+  setColumns();  // the value's heading names the portfolio's currency
+  shown_version_ = snapshot->version();
+  last_refresh_ = std::chrono::steady_clock::now();
+  showEmptyHint();
+}
+
+bool Browser::syncPortfolioTags(const Snapshot & snapshot, PortfolioId prefer) {
+  const std::vector<PortfolioId> ids = snapshot.portfolios();
+  std::vector<std::string> labels;
+  for (PortfolioId id : ids) labels.push_back(snapshot.name(NodeRef(id)));
+  const auto at = std::find(ids.begin(), ids.end(), prefer);
+  int index = at != ids.end() ? static_cast<int>(at - ids.begin()) : ids.empty() ? -1 : 0;
+  portfolio_ = index >= 0 ? ids[static_cast<size_t>(index)] : PortfolioId{};
+  const bool changed = ids != portfolio_ids_ || labels != tags_.tags();
+  portfolio_ids_ = ids;
+  const bool was = restoring_;
+  restoring_ = true;  // choosing the tag here is not the user's
+  if (changed) tags_.setTags(labels);
+  tags_.select(index);
+  restoring_ = was;
+  return changed || (index >= 0 && portfolio_ != prefer);
+}
+
+void Browser::showEmptyHint() {
+  std::string text;
+  if (context_ == Context::Portfolio) {
+    if (portfolio_ids_.empty()) text = "No portfolio yet. Make one with new-portfolio (" + app_.bindingFor("command-palette") + " for the commands).";
+    else if (auto positions = std::dynamic_pointer_cast<Positions>(table_.model()); positions && positions->rowCount() == 0)
+      text = "Nothing held in this portfolio yet. Buy from a row in Markets (Tab): the buy button at the end of the row.";
+  }
+  hint_.setText(text);
+  hint_.setVisible(!text.empty());
+}
+
+void Browser::saveView() {
+  View & v = views_[static_cast<size_t>(context_)];
+  v.tag = tags_.selected();
+  v.portfolio = portfolio_;
+  v.sort_column = table_.sortColumn();
+  v.sort_order = table_.sortOrder();
+  v.first_position = table_.firstVisiblePosition();
+  v.selected = selectedKey();
+}
+
+void Browser::restoreView() {
+  const View & v = views_[static_cast<size_t>(context_)];
+  if (v.sort_column >= 0 && v.sort_column < static_cast<int>(table_.columns().size())) table_.sortBy(v.sort_column, v.sort_order);
+  const int count = table_.model() ? table_.model()->rowCount() : 0;
+  int row = v.selected ? rowOfKey(*v.selected) : -1;
+  if (row < 0 && count > 0) row = 0;
+  if (row >= 0) table_.reselect(row);
+  table_.scrollToPosition(v.first_position);
+}
+
+void Browser::enterContext() {
+  auto snapshot = store_->snapshot();
+  const View & v = views_[static_cast<size_t>(context_)];
+  const bool was = restoring_;
+  restoring_ = true;
+  table_.sortBy(-1, SortOrder::NONE);  // the columns are another context's: so was the sort
+  if (context_ == Context::Markets) {
+    std::vector<std::string> tags;
+    for (const Preset & preset : kPresets) tags.push_back(preset.tag);
+    tags_.setTags(std::move(tags));
+    const int tag = std::clamp(v.tag, 0, static_cast<int>(std::size(kPresets)) - 1);
+    tags_.select(tag);
+    setColumns();
+    showPreset(tag);
+  } else {
+    syncPortfolioTags(*snapshot, v.portfolio);
+    showPortfolio(tags_.selected());
+  }
+  restoring_ = was;
+  restoreView();
+  hint_.setVisible(false);
+  showEmptyHint();
+  if (context_ == Context::Markets) status_.setMessage(std::string("Showing Markets: ") + kPresets[static_cast<size_t>(tags_.selected())].tag);
+  else if (auto positions = std::dynamic_pointer_cast<Positions>(table_.model()); positions && portfolio_.valid()) status_.setMessage(positions->summary());
+  else status_.setMessage("Showing Portfolio: none yet");
+  app_.requestFrame();
+}
+
+void Browser::showContext(Context context) {
+  if (context == context_) return;
+  saveView();
+  context_ = context;
+  enterContext();
+}
+
+void Browser::nextContext(int delta) {
+  const int count = static_cast<int>(kContextCount);
+  showContext(static_cast<Context>((static_cast<int>(context_) + delta % count + count) % count));
+}
+
 void Browser::defineCommands() {
   CommandRegistry & commands = app_.commands();
   for (size_t i = 0; i < std::size(kPresets); i++) {
-    commands.define(kPresets[i].command, std::string("Show the ") + kPresets[i].tag + " preset", [this, i] { tags_.select(static_cast<int>(i)); });
+    // A preset is of the Markets context: from another, that is shown first.
+    commands.define(kPresets[i].command, std::string("Show the ") + kPresets[i].tag + " preset", [this, i] {
+      showContext(Context::Markets);
+      tags_.select(static_cast<int>(i));
+    });
   }
-  const int last = static_cast<int>(std::size(kPresets)) - 1;
-  commands.define("next-preset", "Show the next preset", [this, last] { tags_.select(std::min(tags_.selected() + 1, last)); });
-  commands.define("previous-preset", "Show the previous preset", [this] { tags_.select(std::max(tags_.selected() - 1, 0)); });
+  commands.define("next-preset", "Show the next tag (preset, or portfolio)", [this] { tags_.select(std::min(tags_.selected() + 1, static_cast<int>(tags_.tags().size()) - 1)); });
+  commands.define("previous-preset", "Show the previous tag (preset, or portfolio)", [this] { tags_.select(std::max(tags_.selected() - 1, 0)); });
+  commands.define("next-context", "Switch to the next context (Markets, Portfolio)", [this] { nextContext(1); });
+  commands.define("previous-context", "Switch to the previous context (Markets, Portfolio)", [this] { nextContext(-1); });
   for (size_t i = 0; i < kPeriodCount; i++) {
     const PeriodInfo & p = info(static_cast<Period>(i));
     commands.define(std::string("show-period-") + p.id, std::string("Show the change and the trace over ") + p.trace, [this, i] { showPeriod(static_cast<Period>(i)); });
@@ -339,6 +529,10 @@ void Browser::defineCommands() {
 void Browser::bindKeys() {
   Keymap & keymap = app_.keymap();
   keymap.bind("q", "quit");
+  // Tab and Shift+Tab switch the context in both profiles: what nothing takes walks the focus, so these are taken here.
+  keymap.bind("Tab", "next-context");
+  keymap.bind(KeymapProfile::TERMINAL, "S-Tab", "previous-context");
+  keymap.bind(KeymapProfile::DESKTOP, "Shift+Tab", "previous-context");
   keymap.bind("i", "show-info");
   keymap.bind(KeymapProfile::TERMINAL, "C-x =", "show-info");  // where the point is, as in Emacs
   keymap.bind(KeymapProfile::TERMINAL, "C-x C-c", "quit");

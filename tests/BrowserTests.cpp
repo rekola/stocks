@@ -4,6 +4,9 @@
 #include "Browser.h"
 #include "model/Dates.h"
 #include "Quotes.h"
+#include "Positions.h"
+#include "portfolio/Portfolio.h"
+#include "source/DatasetCodes.h"
 #include "Synthetic.h"
 #include "model/Dates.h"
 #include "source/NordnetHistory.h"
@@ -157,7 +160,7 @@ TEST(meta_x_opens_the_palette_and_a_chosen_command_runs) {
   CHECK(!f.app->commandPaletteOpen());
   f.press('x', kModAlt);
   CHECK(f.app->commandPaletteOpen());
-  CHECK(f.text().find("show-currencies") != std::string::npos);  // the list is as tall as the screen allows
+  CHECK(f.text().find("focus-tags") != std::string::npos);  // the list is as tall as the screen allows
   f.type("show-curr");
   CHECK(f.text().find("show-currencies") != std::string::npos && f.text().find("show-commodities") == std::string::npos);
   f.press(Key::Enter);
@@ -280,13 +283,17 @@ TEST(the_status_line_says_what_a_preset_shows) {
   CHECK(f.text().find("Showing Nasdaq Helsinki") != std::string::npos);
 }
 
-TEST(tab_moves_the_keyboard_between_the_table_and_the_tags) {
+TEST(the_keyboard_moves_between_the_table_and_the_tags_by_command_and_tab_is_the_contexts) {
   Fixture f;
   CHECK(f.app->input().focused() == &f.browser->table());
-  f.press(Key::Tab);
+  f.app->execute("focus-tags");
   CHECK(f.app->input().focused() == &f.browser->tags());
   f.press(Key::Right);
   CHECK(f.browser->tags().selected() == 1);
+  f.app->execute("focus-table");
+  CHECK(f.app->input().focused() == &f.browser->table());
+  f.press(Key::Tab);  // not the focus: the next context
+  CHECK(f.app->input().focused() == &f.browser->table() && f.browser->context() == Context::Portfolio);
 }
 
 TEST(a_preset_shows_one_row_per_edge_with_its_dataset) {
@@ -1103,4 +1110,273 @@ TEST(the_days_change_of_a_rate_is_the_difference_from_the_previous_close_in_basi
   w.store->setPreviousClose(k, kToday, 3.10);
   PeriodView v = periodView(*w.store->snapshot(), k, Period::Day, false);
   CHECK(v.rate && v.base == 3.10 && std::abs(v.change() - 0.5) < 1e-9);
+}
+
+// ---- Contexts: Markets and Portfolio
+
+namespace {
+
+constexpr int64_t kNow = dayNumber(2026, 12, 1);
+
+// Two portfolios of a store: "Retirement" holds 10 Nokia (bought at 4) and 2 Apple (bought at 150 dollars), "Trading" 3 Nokia (at 6).
+// The euro costs 1.25 dollars, Nokia 5 euros and Apple 200 dollars.
+struct Holdings {
+  PortfolioId retirement, trading;
+  EdgeKey nokia, apple;
+  InstrumentId eur, usd;
+  MarketId hel, nasdaq;
+  DatasetId user;
+};
+Holdings addHoldings(Store & store) {
+  Holdings h;
+  h.eur = store.addInstrument("EUR", "Euro", InstrumentKind::Currency);
+  h.usd = store.addInstrument("USD", "US dollar", InstrumentKind::Currency);
+  InstrumentId nokia = store.addInstrument("", "Nokia Oyj", InstrumentKind::Company, "FI0009000681");
+  InstrumentId apple = store.addInstrument("", "Apple Inc", InstrumentKind::Company, "US0378331005");
+  h.hel = store.addMarket("XHEL", "Nasdaq Helsinki");
+  h.nasdaq = store.addMarket("XNAS", "Nasdaq");
+  MarketId none = store.addMarket(kNoMarket, "No market");
+  DatasetId data = store.addDataset("nordnet");
+  h.user = store.addDataset(kUserDataset);
+  h.nokia = {nokia, h.eur, h.hel, data};
+  h.apple = {apple, h.usd, h.nasdaq, data};
+  auto bars = [&](const EdgeKey & key, double from, double to) {
+    std::vector<Candle> days;
+    for (int d = 100; d >= 0; d--) days.push_back({kNow - d, 1, 1, 1, from + (to - from) * (100 - d) / 100.0, 1});
+    store.appendCandles(key, Resolution::Day, days);
+  };
+  bars(h.nokia, 4, 5);
+  bars(h.apple, 150, 200);
+  bars({h.eur, h.usd, none, data}, 1.25, 1.25);
+  store.setListing({h.nokia, "NOKIA", "", "", "STOCK", "Nokia"});
+  store.setListing({h.apple, "AAPL", "", "", "STOCK", "Apple"});
+  h.retirement = PortfolioId{portfolioKey(1)->value};
+  h.trading = PortfolioId{portfolioKey(2)->value};
+  store.setAttributes(NodeRef(h.retirement), {{predicate::name, "Retirement"}, {predicate::currency, NodeKey{h.eur.value}}});
+  store.setAttributes(NodeRef(h.trading), {{predicate::name, "Trading"}, {predicate::currency, NodeKey{h.eur.value}}});
+  auto trade = [&](uint64_t id, const EdgeKey & e, double quantity, double price) {
+    portfolio::Transaction t;
+    t.id = id;
+    t.day = kNow - 50;
+    t.instrument = e.base;
+    t.market = e.market;
+    t.quote = e.quote;
+    t.quantity = quantity;
+    t.price = price;
+    return t;
+  };
+  store.appendTransactions({h.retirement, h.user}, {trade(1, h.nokia, 10, 4), trade(2, h.apple, 2, 150)});
+  store.appendTransactions({h.trading, h.user}, {trade(3, h.nokia, 3, 6)});
+  return h;
+}
+
+}  // namespace
+
+TEST(tab_switches_the_context_and_shift_tab_goes_back_and_both_are_commands) {
+  Fixture f(false, 160);  // wide enough for the whole help line
+  addHoldings(*f.store);
+  CHECK(f.browser->context() == Context::Markets);
+  f.press(Key::Tab);
+  CHECK(f.browser->context() == Context::Portfolio);
+  f.press(Key::Tab);  // two contexts: round to the first
+  CHECK(f.browser->context() == Context::Markets);
+  f.press(Key::Tab, kModShift);
+  CHECK(f.browser->context() == Context::Portfolio);
+  f.press(Key::Tab, kModShift);
+  CHECK(f.browser->context() == Context::Markets);
+  f.app->execute("next-context");
+  CHECK(f.browser->context() == Context::Portfolio);
+  f.app->execute("previous-context");
+  CHECK(f.browser->context() == Context::Markets);
+  for (const char * name : {"next-context", "previous-context"}) CHECK(!f.app->commands().description(name).empty());
+  CHECK(f.text().find("Tab: switch context") != std::string::npos && f.text().find("switch focus") == std::string::npos);
+  // Both keymap profiles bind them: the key that a profile reads is the same.
+  CHECK(f.app->bindingFor("next-context") == "TAB" || f.app->bindingFor("next-context") == "Tab");
+}
+
+TEST(the_portfolio_context_shows_the_portfolios_as_tags_and_what_the_chosen_one_holds) {
+  Fixture f(false);
+  addHoldings(*f.store);
+  f.press(Key::Tab);
+  const std::string screen = f.text();
+  CHECK(screen.find("Retirement") != std::string::npos && screen.find("Trading") != std::string::npos);
+  for (const char * heading : {"Symbol", "Name", "Quantity", "Avg cost", "Price", "Value EUR", "Weight", "P&L", "P&L %", "Change 3m"})
+    CHECK(screen.find(heading) != std::string::npos);
+  CHECK(screen.find("Base") == std::string::npos && screen.find("Dataset") == std::string::npos);  // not the Markets columns
+  CHECK(f.browser->tags().selected() == 0 && f.browser->shownPortfolio() == PortfolioId{portfolioKey(1)->value});  // by name: Retirement first
+  auto * positions = dynamic_cast<Positions *>(f.browser->table().model().get());
+  CHECK(positions != nullptr && positions->rowCount() == 2);
+  if (!positions) return;
+  const auto text = [&](const std::string & symbol, int column) {
+    for (int r = 0; r < positions->rowCount(); r++)
+      if (positions->text(r, Positions::SYMBOL) == symbol) return positions->text(r, column);
+    return std::string("-");
+  };
+  CHECK(text("NOKIA", Positions::QUANTITY) == "10" && text("NOKIA", Positions::COST) == "4.00" && text("NOKIA", Positions::PRICE) == "5.00");
+  CHECK(text("NOKIA", Positions::VALUE) == "50.00" && text("NOKIA", Positions::PROFIT) == "+10.00" && text("NOKIA", Positions::PROFIT_PERCENT) == "+25.00%");
+  CHECK(text("AAPL", Positions::QUANTITY) == "2" && text("AAPL", Positions::PRICE) == "200.00");
+  CHECK(text("AAPL", Positions::VALUE) == "320.00");  // 400 dollars at 1.25 dollars to the euro
+  CHECK(text("AAPL", Positions::PROFIT) == "+100.00");  // in its own currency
+  CHECK(text("NOKIA", Positions::WEIGHT) == "13.5%" && text("AAPL", Positions::WEIGHT) == "86.5%");
+  CHECK(text("NOKIA", Positions::NAME) == "Nokia" && !positions->valuation().incomplete);
+  CHECK_NEAR(positions->valuation().total, 370, 1e-9);
+  CHECK(screen.find("Retirement: 370.00 EUR in 2 positions") != std::string::npos);  // the status line
+  // The other portfolio, chosen by its tag.
+  f.browser->tags().select(1);
+  positions = dynamic_cast<Positions *>(f.browser->table().model().get());
+  CHECK(positions && positions->rowCount() == 1 && positions->text(0, Positions::QUANTITY) == "3" && positions->text(0, Positions::COST) == "6.00");
+  CHECK(positions && positions->text(0, Positions::PROFIT) == "-3.00");
+}
+
+TEST(a_position_with_no_rate_shows_its_value_in_its_own_currency_and_the_heading_says_it_is_incomplete) {
+  Fixture f(false);
+  Holdings h = addHoldings(*f.store);
+  // A portfolio in a currency nothing converts to.
+  InstrumentId sek = f.store->addInstrument("SEK", "Swedish krona", InstrumentKind::Currency);
+  const PortfolioId swedish{portfolioKey(3)->value};
+  f.store->setAttributes(NodeRef(swedish), {{predicate::name, "Swedish"}, {predicate::currency, NodeKey{sek.value}}});
+  portfolio::Transaction t;
+  t.id = 9;
+  t.day = kNow - 10;
+  t.instrument = h.nokia.base;
+  t.market = h.hel;
+  t.quote = h.eur;
+  t.quantity = 1;
+  t.price = 4;
+  f.store->appendTransactions({swedish, h.user}, {t});
+  f.press(Key::Tab);
+  f.browser->tags().select(1);  // by name: Retirement, Swedish, Trading
+  auto * positions = dynamic_cast<Positions *>(f.browser->table().model().get());
+  CHECK(positions != nullptr);
+  if (!positions) return;
+  CHECK(f.browser->shownPortfolio() == swedish && positions->valuation().incomplete);
+  CHECK(positions->text(0, Positions::VALUE) == "5.00 EUR");  // its own, with the code
+  CHECK(!positions->number(0, Positions::WEIGHT) && positions->valuation().total == 0);
+  CHECK(f.text().find("Value SEK*") != std::string::npos);
+}
+
+TEST(each_context_keeps_its_own_tag_sort_and_scroll_position_for_the_session) {
+  Fixture f(true);  // the made-up data fills Markets with many rows
+  addHoldings(*f.store);
+  Table & table = f.browser->table();
+  f.app->execute("show-nasdaq-helsinki");
+  table.sortBy(Quotes::PRICE, SortOrder::DESCENDING);
+  table.select(40);
+  const int first = table.firstVisiblePosition(), selected = table.selectedRow();
+  CHECK(first > 0 && selected >= 0);
+  const int markets_tag = f.browser->tags().selected();
+  f.press(Key::Tab);
+  CHECK(table.sortColumn() == -1 && f.browser->tags().selected() == 0);  // a context of its own starts clean
+  f.browser->tags().select(1);
+  table.sortBy(Positions::SYMBOL, SortOrder::ASCENDING);
+  f.press(Key::Tab, kModShift);
+  CHECK(f.browser->context() == Context::Markets);
+  CHECK(f.browser->tags().selected() == markets_tag && table.sortColumn() == Quotes::PRICE && table.sortOrder() == SortOrder::DESCENDING);
+  CHECK(table.firstVisiblePosition() == first && table.selectedRow() == selected);
+  f.press(Key::Tab);
+  CHECK(f.browser->tags().selected() == 1 && f.browser->shownPortfolio() == PortfolioId{portfolioKey(2)->value});
+  CHECK(table.sortColumn() == Positions::SYMBOL && table.sortOrder() == SortOrder::ASCENDING);
+  // A preset command from the Portfolio context is of Markets: it goes there.
+  f.app->execute("show-indices");
+  CHECK(f.browser->context() == Context::Markets && f.browser->tags().selected() == 3);
+}
+
+TEST(the_period_tags_stay_and_apply_to_both_contexts) {
+  Fixture f(false);
+  addHoldings(*f.store);
+  f.app->execute("show-period-week");
+  CHECK(f.text().find("Change 1w") != std::string::npos);
+  f.press(Key::Tab);
+  CHECK(f.browser->period() == Period::Week && f.text().find("Change 1w") != std::string::npos);
+  f.app->execute("show-period-year");
+  CHECK(f.text().find("Change 1y") != std::string::npos);
+  f.press(Key::Tab);
+  CHECK(f.browser->period() == Period::Year && f.text().find("Change 1y") != std::string::npos);
+}
+
+TEST(with_no_portfolio_the_portfolio_context_says_so_and_offers_new_portfolio) {
+  Fixture f(false);
+  f.press(Key::Tab);
+  const std::string screen = f.text();
+  CHECK(screen.find("No portfolio yet") != std::string::npos && screen.find("new-portfolio") != std::string::npos);
+  CHECK(f.browser->table().model()->rowCount() == 0 && f.browser->tags().tags().empty());
+  // A portfolio appears while it is shown: the hint goes and its tag comes.
+  addHoldings(*f.store);
+  f.app->widgets().postToRoot(StoreChanged{});
+  const std::string later = f.text();
+  CHECK(later.find("No portfolio yet") == std::string::npos && later.find("Retirement") != std::string::npos);
+  CHECK(f.browser->table().model()->rowCount() == 2);
+  // A portfolio with nothing held says that.
+  const PortfolioId empty{portfolioKey(7)->value};
+  f.store->setAttribute(NodeRef(empty), {predicate::name, "Aaa empty"});
+  f.app->widgets().postToRoot(StoreChanged{});
+  f.browser->tags().select(0);
+  CHECK(f.text().find("Nothing held in this portfolio yet") != std::string::npos);
+}
+
+TEST(a_change_to_a_portfolio_while_it_is_shown_keeps_the_selected_row_and_a_deleted_one_goes) {
+  Fixture f(false);
+  Holdings h = addHoldings(*f.store);
+  f.press(Key::Tab);
+  f.browser->tags().select(1);  // Trading
+  const PortfolioId trading = f.browser->shownPortfolio();
+  f.store->setAttribute(NodeRef(trading), {predicate::name, "Active"});  // renamed: it sorts first now
+  f.app->widgets().postToRoot(StoreChanged{});
+  f.app->present();
+  CHECK(f.browser->tags().tags().size() == 2 && f.browser->tags().tags()[0] == "Active" && f.browser->shownPortfolio() == trading && f.browser->tags().selected() == 0);
+  f.store->removePortfolio(trading);
+  f.app->widgets().postToRoot(StoreChanged{});
+  f.app->present();
+  CHECK(f.browser->tags().tags().size() == 1 && f.browser->shownPortfolio() == h.retirement);
+}
+
+TEST(the_history_loader_is_told_the_edges_of_the_positions_on_screen) {
+  std::shared_ptr<Store> store = makeMemoryStore();
+  InstrumentId usd = store->addInstrument("USD", "US dollar", InstrumentKind::Currency);
+  MarketId market = store->addMarket("XHEL", "Nasdaq Helsinki");
+  DatasetId nordnet = store->addDataset("nordnet"), user = store->addDataset(kUserDataset);
+  InstrumentId inst = store->addInstrument("", "Held", InstrumentKind::Company, testIsin(100001));
+  InstrumentId other = store->addInstrument("", "Not held", InstrumentKind::Company, testIsin(100002));
+  for (auto [i, book] : {std::pair{inst, "book-held"}, std::pair{other, "book-other"}}) {
+    EdgeKey k{i, usd, market, nordnet};
+    store->appendCandles(k, Resolution::Day, {{dayNumber(2026, 12, 1), kUndefined, 1, 1, 1, kUndefined}});
+    store->setListing({k, "SYM", "", book, "ESH", "Instrument"});
+  }
+  const PortfolioId mine{portfolioKey(1)->value};
+  portfolio::Transaction t;
+  t.id = 1;
+  t.day = dayNumber(2026, 11, 1);
+  t.instrument = inst;
+  t.market = market;
+  t.quote = usd;
+  t.quantity = 1;
+  t.price = 1;
+  store->setAttributes(NodeRef(mine), {{predicate::name, "Mine"}, {predicate::currency, NodeKey{usd.value}}});
+  store->appendTransactions({mine, user}, {t});
+  FakeHttp http;
+  http.answer = [](const std::string &) { return failed(404); };
+  struct Borrowed : Http {
+    FakeHttp * inner = nullptr;
+    HttpResult get(const std::string & url, const HttpHeaders & h) override { return inner->get(url, h); }
+  };
+  auto lend = std::make_unique<Borrowed>();
+  lend->inner = &http;
+  HistoryLoader::Options quick;
+  quick.pause = std::chrono::milliseconds(0);
+  auto history = std::make_shared<HistoryLoader>(store, std::move(lend), quick, [] {});
+  history->addProvider(std::make_shared<NordnetHistory>());
+  auto app = Application::adopt(std::make_unique<test::TestBackend>(24, 100));
+  Browser browser(*app, store, nullptr, history);
+  app->present();
+  history->waitIdle();
+  auto asked = [&](const std::string & book) {
+    for (const std::string & url : http.urls)
+      if (url.find("identifier/" + book + "?") != std::string::npos) return true;
+    return false;
+  };
+  CHECK(!asked("book-held") && !asked("book-other"));  // the first preset has neither
+  app->execute("next-context");
+  app->present();
+  history->waitIdle();
+  CHECK(asked("book-held") && !asked("book-other"));  // the position's edge, and nothing else
 }

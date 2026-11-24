@@ -1,6 +1,6 @@
 # Portfolios
 
-Status: being built, step by step ("Steps" below, with what is done). Built: 1 (node-valued facts), 2 (`src/portfolio/`), 3 (the model), 4 (the portfolio file).
+Status: being built, step by step ("Steps" below, with what is done). Built: 1 (node-valued facts), 2 (`src/portfolio/`), 3 (the model), 4 (the portfolio file), 5 (`Positions` and the contexts).
 
 A portfolio is what the user holds: positions in instruments she has bought, valued at the prices the store already has. It is
 modelled as the instruments are: **a portfolio is a node**, and what there is to know of it is facts and edges in the same
@@ -121,6 +121,13 @@ Tab is not bound in stocks, so it can carry this. A **context** is a view of the
 - **The table and the tags stay**: a context swaps the tags (presets, or the portfolios there are) and the model
   (`Quotes`, or a new `Positions`) and the columns; the period tags stay and apply to both. Each context keeps its own selected tag,
   sort and scroll position while the program runs.
+- **What is built.** `Positions` (`src/Positions.{h,cpp}`) over `portfolio::value`; `Browser` has `Context::Markets` and `Context::Portfolio`,
+  `next-context` and `previous-context` (Tab and Shift+Tab in both profiles; a preset command from Portfolio goes to Markets
+  first), a `View` saved for each context (tag, sort, first row, selected row; put back with `Table::scrollToPosition()`, which cellui
+  gained), the portfolio tags rebuilt by name when the store changes, and a line over the table where there is nothing to show (no
+  portfolio: "new-portfolio"; none held). A portfolio with no `currency` fact is valued in the currency of its first position. The
+  Value heading names the currency and has a star where the total is incomplete; a position with no rate shows its value with
+  its own currency's code. Part of the cellui work of step 6 came early: `TableModel::buttonShown()` and `scrollToPosition()`.
 - **`Positions`** is a table model like `Quotes`, with the columns: icon, symbol, name, quantity, average cost, price, value,
   weight, P&L, P&L %, change and trace. The history loader is told the edges of the positions on screen, as for the rows of a
   preset.
@@ -177,7 +184,7 @@ Not built, and not needed for any step below, but the model leaves room for it (
    transactions under two datasets (holdings from the chosen one only).
 4. (Done.) The portfolio file: a second `FactStore` routed by node kind, with tests on a file in a temporary directory: round trip, another
    schema moved aside and not lost, a damaged file moved aside, nothing of a portfolio in `facts.sqlite`.
-5. `Positions` model and the context switch in `Browser` (`next-context`, `previous-context`, keys, the help line),
+5. (Done.) `Positions` model and the context switch in `Browser` (`next-context`, `previous-context`, keys, the help line),
    with `BrowserTests` for the switch, and for each context keeping its state.
 6. The form dialog in cellui; then the `buy` and `sell` buttons and commands, `new-portfolio`, `rename-portfolio`, `delete-portfolio`, `undo` and
    `redo`, and the status line's message for each.
