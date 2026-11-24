@@ -19,6 +19,7 @@ session if the first gives nothing (no network, a refusal).
     cmake -B build
     cmake --build build -j
     build/stocks                 # on the display cellui picks
+    build/stocks   # Nordnet (or Yahoo) plus the small loaders: Euribor, €STR and every fund company in data/funds; --source replaces that set
     build/stocks --ui terminal   # in the terminal
     build/stocks --ui window     # in a window, when cellui is built with GTK
     build/stocks --source synthetic   # made-up prices, no network

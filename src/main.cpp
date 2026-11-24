@@ -1,7 +1,7 @@
 // The stock browser: cellui's Table, TagBar and trace chart over a store of
 // candles that data sources fill on a thread of their own.
 //   stocks                 on the display cellui picks, with Nordnet's data, or
-//   Yahoo's if Nordnet gives nothing stocks --ui terminal   in the terminal;
+//   Yahoo's if Nordnet gives nothing, and the small loaders (suomenpankki, ecb, every funds:SCHEMA of data/funds); --source replaces that set stocks --ui terminal   in the terminal;
 //   --ui window  in a window stocks --source NAME   the data source (several,
 //   comma-separated, run at once): auto (the default: nordnet, and yahoo if
 //   nordnet gives nothing),
@@ -32,10 +32,12 @@
 #include "source/EcbSource.h"
 #include "source/SuomenPankkiSource.h"
 #include "source/YahooSource.h"
+#include "source/DataDirectory.h"
 
 #include <cellui/Application.h>
 #include <cellui/ThreadPosts.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <filesystem>
 #include <functional>
@@ -63,6 +65,21 @@ std::unique_ptr<Source> makeSource(const std::string & name, const ListSpec & li
   return nullptr;
 }
 
+// What runs when no --source is given: the market data ("auto") and the small loaders that have no options of their own (the rates, the
+// €STR and every fund company schema of data/funds), so they are there without being asked for.
+std::string defaultSources() {
+  std::string names = "auto,suomenpankki,ecb";
+  std::vector<std::string> funds;
+  std::error_code ec;
+  const std::filesystem::path dir = findDataDirectory("funds");
+  if (!dir.empty())
+    for (const auto & entry : std::filesystem::directory_iterator(dir, ec))
+      if (entry.is_regular_file(ec) && entry.path().extension() == ".json") funds.push_back(entry.path().stem().string());
+  std::sort(funds.begin(), funds.end());
+  for (const std::string & name : funds) names += ",funds:" + name;
+  return names;
+}
+
 constexpr const char * kSourceNames = "auto, nordnet, yahoo, suomenpankki, ecb, funds:SCHEMA, synthetic";
 
 }  // namespace
@@ -80,7 +97,7 @@ int main(int argc, char ** argv) {
     std::fprintf(stderr, "%s\n", message.c_str());
     return status;
   };
-  std::string source_name = "auto";
+  std::string source_name;  // empty: defaultSources()
   std::string list_directory;
   std::vector<std::string> market_names;
   std::string facts_file;
@@ -113,6 +130,7 @@ int main(int argc, char ** argv) {
   }
   // One source, for now: the instrument lists are the yahoo source's own (and the synthetic one follows them); each reads
   // them when it loads.
+  if (source_name.empty()) source_name = defaultSources();
   ListSpec lists{list_directory, market_names};
   // --source takes one name or several, separated by commas ("nordnet,funds:NAME"): they run at once, each on a thread of its own.
   std::vector<std::unique_ptr<Source>> sources;
