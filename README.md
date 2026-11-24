@@ -33,13 +33,19 @@ its description and key; `q` (`C-x C-c`, `Ctrl+Q`) quits. `i` (`C-x =`) or the �
 heading sorts; clicking a tag or row chooses it; the wheel scrolls. The table
 fills the screen and follows it when it is resized.
 
-**Portfolios.** A portfolio is what you hold: positions in instruments you bought, valued at the prices the store has. There are two
-contexts, **Markets** (the presets above) and **Portfolio**; `Tab` goes to the next (`next-context`) and `Shift+Tab` to the previous
+**Portfolios.** A portfolio is what you hold: positions in instruments you bought, valued at the prices the store has. There are three
+contexts, **Markets** (the presets above), **Portfolio** and **News**; `Tab` goes to the next (`next-context`) and `Shift+Tab` to the previous
 (`previous-context`), in both keymap profiles. The Portfolio context has the portfolios as its tags (by name; one is shown at a time, there is
 no "All") over a table of its positions: symbol, name, quantity, average cost, price, value (in the portfolio's currency, with a star in the
 heading where a position has no price or rate to it, which is then shown in its own currency and left out of the total), weight,
 P&L, P&L % and the change and trace of the period (the period tags apply to both contexts). Each context keeps its own tag, sort and
 scroll position while the program runs.
+
+**News.** The News context lists the news, newest first, whatever it is about: a time (UTC), a kind, the headline, whom it is about (an
+instrument, a market, a country, or nothing) and the dataset that said it. Its tags are presets: all, press releases, analyses, news
+and general (about nothing in particular), each a selection by what the item says, as the presets of the markets are. `i` shows an
+item with its link and what it is about, and the info of a row of Markets lists the latest news of its instrument, market and country.
+An item is its dataset and the dataset's own id: two datasets with the same story show it twice, and nothing is replaced.
 
 At the end of each row are the info button 🛈 and, on a row that can be bought, **buy ⊕ and sell ⊖**: a click with the mouse, or move the
 cursor onto one with Left and Right (`Enter` presses it). Only a row on a real market or a fund priced by its company has them: an index, a spot
@@ -51,7 +57,7 @@ portfolio offers to make one.
 
 | command | what it does | terminal keymap | desktop keymap |
 |---|---|---|---|
-| `next-context`, `previous-context` | Markets, Portfolio | `Tab`, `Shift+Tab` | `Tab`, `Shift+Tab` |
+| `next-context`, `previous-context` | Markets, Portfolio, News | `Tab`, `Shift+Tab` | `Tab`, `Shift+Tab` |
 | `new-portfolio` | a name and a currency | | |
 | `rename-portfolio`, `delete-portfolio` | the portfolio shown; delete confirms | | |
 | `buy`, `sell` | the row's form (the buttons) | | |

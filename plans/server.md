@@ -438,8 +438,9 @@ see data-model.md).
   in memory, an index in the database); and nodes that are not instruments may not
   have the same types. `Snapshot::edges(market, filter)` selects by kind or type
   today. Open: what a preset's selection looks like (market, kind, ...).
-- **Events**: announcements and corporate actions, per instrument and dataset, as
-  in the model; stored like bars (rows, versioned).
+- **Events**: corporate actions, per instrument and dataset, as in the model; stored like bars (rows,
+  versioned). **News**: items by dataset and the dataset's own id, with the nodes each is about, as in
+  the model.
 - **Identity across providers**: the instrument's key is its **ISIN** (an ETF listed on two
   markets is one instrument with two edges: 16 such pairs among a few thousand ETFs), plus aliases (each
   provider's ids and symbol, FIGI). Nothing else is without one: a currency or a unit is its code (a
