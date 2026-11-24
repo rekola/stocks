@@ -261,9 +261,9 @@ does not fit 32 bits, or with no close, is not in a queue (it stays in the data)
   time already there replaces it, a new time is pushed and bars older than the window are popped, the window being what the provider
   keeps for the resolution (`HistoryProvider::keep()`, handed to the store by `Store::setRetention()` when the loader is given the
   provider; for a source with none, the longest period `Period.cpp` lists for the resolution: a day for the intraday ones, a week for
-  the hourly, a year for the daily and the weekly; Nordnet's: a day of 5-minute bars, a week of hourly, three months of daily, a year
-  of weekly). A resolution no period reads has no queue. The adapters write no summary: a source that has a price says it with
-  `setQuote()` (the Nordnet list's price block: last, bid, ask and the tick time); a source that gives only bars still gives a price, since a bar
+  the hourly, a year for the daily and the weekly; an adapter that knows its requests says its own: the market-data adapter keeps a day of 5-minute
+  bars, a week of hourly, three months of daily and a year of weekly). A resolution no period reads has no queue. The adapters write no summary: a source that has a price says it with
+  `setQuote()` (an adapter whose lists give a price block says its last price, bid and ask and the tick time); a source that gives only bars still gives a price, since a bar
   newer than the quote sets the quote's last price to its close and its time to the bar's, and a bar older does not overwrite it. A
   bar's time is the start of its slot, or midnight UTC of its day; a quote's time is the tick's, so a list's quote of today stands over
   the bars of today. The newest quote says: one said with an earlier time than the quote there is left out.

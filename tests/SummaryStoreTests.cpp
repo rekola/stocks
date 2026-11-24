@@ -1,4 +1,6 @@
+#include "AttributeView.h"
 #include "HistoryWorld.h"
+#include "Quotes.h"
 #include "TestFramework.h"
 #include "TestIsin.h"
 
@@ -392,6 +394,38 @@ TEST(after_a_restart_every_edge_shows_its_price_bid_and_ask_and_a_portfolio_is_v
   // A row with no queue shows the price and no trace.
   const PeriodView view = periodView(*s, nokia, Period::Quarter, true);
   CHECK(view.closes.empty() && !isDefined(view.change()));
+  // The table's rows are the same: every edge, with its price and its name, and no trace until the queue is read.
+  const std::vector<QuoteRow> rows = makeAllRows(*s, Period::Quarter);
+  CHECK(rows.size() == 3);
+  for (const QuoteRow & row : rows)
+    if (row.key == nokia) CHECK(row.price == 5.5 && row.name == "Nokia Oyj" && row.history.empty() && !isDefined(row.change));
+}
+
+TEST(the_info_of_an_edge_shows_its_summary_and_where_each_queue_is) {
+  Disk d;
+  EdgeKey nokia;
+  {
+    auto store = makeMemoryStore(d.options());
+    Things t(*store);
+    nokia = t.edge(t.nokia);
+    store->appendCandles(nokia, Resolution::Day, days(30));
+    store->setQuote(nokia, {5.5, 5.4, 5.6, midnight(kLast) + 50000});
+    store->flush();
+  }
+  auto store = makeMemoryStore(d.options());
+  const auto text = [&] {
+    std::string out;
+    for (const InfoSection & section : buildInfo(*store->snapshot(), nokia))
+      if (section.title == "Summary")
+        for (const InfoRow & r : section.rows) out += r.predicate + "=" + r.value.text + "\n";
+    return out;
+  };
+  const std::string cold = text();
+  CHECK(cold.find("last=5.5") != std::string::npos && cold.find("bid=5.4") != std::string::npos && cold.find("ask=5.6") != std::string::npos);
+  CHECK(cold.find("queue 1d=30 bars") != std::string::npos && cold.find("on the disk") != std::string::npos);
+  store->want({SeriesKey{nokia, Resolution::Day}});
+  CHECK(waitFor([&] { return store->snapshot()->queueResident(nokia, Resolution::Day); }));
+  CHECK(text().find("in memory") != std::string::npos);
 }
 
 TEST(a_queue_is_read_once_when_wanted_and_nothing_read_is_written_back_and_a_snapshot_held_keeps_what_it_had) {
