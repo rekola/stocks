@@ -22,16 +22,20 @@ class LeftOut {
   // "nordnet: etflist: 2 rows left out for an instrument or a quote that cannot be named (IE00BHZRR031, ...)", where `who` is
   // "nordnet: etflist: " and `one` and `many` what the rows are called. Nothing if none was left out.
   void say(SourceListener & listener, const std::string & who, const char * one = "row", const char * many = "rows") const {
-    if (count_ == 0) return;
-    std::string text = who + std::to_string(count_) + " " + (count_ == 1 ? one : many) +
-                       " left out for an instrument or a quote that cannot be named";
+    if (count_ > 0) listener.message(text(who, one, many));
+  }
+  // The same sentence, for a caller that collects its notes (empty if none was left out).
+  std::string text(const std::string & who, const char * one = "row", const char * many = "rows") const {
+    if (count_ == 0) return {};
+    std::string out = who + std::to_string(count_) + " " + (count_ == 1 ? one : many) +
+                      " left out for an instrument or a quote that cannot be named";
     if (!examples_.empty()) {
-      text += " (";
-      for (size_t i = 0; i < examples_.size(); i++) text += (i ? ", " : "") + examples_[i];
-      if (count_ > examples_.size()) text += ", ...";
-      text += ")";
+      out += " (";
+      for (size_t i = 0; i < examples_.size(); i++) out += (i ? ", " : "") + examples_[i];
+      if (count_ > examples_.size()) out += ", ...";
+      out += ")";
     }
-    listener.message(text);
+    return out;
   }
 
  private:
