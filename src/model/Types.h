@@ -33,6 +33,7 @@ struct Id {
 using InstrumentId = Id<struct InstrumentTag>;
 using MarketId = Id<struct MarketTag>;
 using DatasetId = Id<struct DatasetTag>;
+using PortfolioId = Id<struct PortfolioTag>;  // a minted key: the user's own
 
 // An instant: whole seconds since the Unix epoch, UTC. Where whole seconds are not enough (order book snapshots) it is
 // floating-point seconds, never milliseconds. Sessions and time zones belong to the market, not here. A date is not an
@@ -49,9 +50,10 @@ struct TimeRange {
   bool contains(Timestamp t) const { return t >= from && t < to; }
 };
 
-// What a triple says: text, a whole number (a day is a day number), a real number or a truth value. A number that is not
-// given is not said at all: there is no undefined value in a triple.
-using Value = std::variant<std::monostate, std::string, int64_t, double, bool>;
+// What a triple says: text, a whole number (a day is a day number), a real number, a truth value or a node (a link: the key of
+// another node, which the viewer shows as the node it names). A number that is not given is not said at all: there is no
+// undefined value in a triple. A link says nothing if its key is none.
+using Value = std::variant<std::monostate, std::string, int64_t, double, bool, NodeKey>;
 
 inline std::optional<std::string> asText(const Value & v) {
   return std::holds_alternative<std::string>(v) ? std::optional<std::string>(std::get<std::string>(v)) : std::nullopt;
@@ -66,6 +68,9 @@ inline std::optional<double> asReal(const Value & v) {  // a whole number is a r
 }
 inline std::optional<bool> asBoolean(const Value & v) {
   return std::holds_alternative<bool>(v) ? std::optional<bool>(std::get<bool>(v)) : std::nullopt;
+}
+inline std::optional<NodeKey> asNode(const Value & v) {
+  return std::holds_alternative<NodeKey>(v) ? std::optional<NodeKey>(std::get<NodeKey>(v)) : std::nullopt;
 }
 
 // One thing said of a node: a triple (subject, predicate, object), the subject being the node. Instruments, markets and
@@ -88,6 +93,7 @@ struct Attribute {
   Attribute(std::string p, int64_t v) : predicate(std::move(p)), value(v) {}
   Attribute(std::string p, double v) : predicate(std::move(p)), value(v) {}
   Attribute(std::string p, bool v) : predicate(std::move(p)), value(v) {}
+  Attribute(std::string p, NodeKey v) : predicate(std::move(p)), value(v) {}
   Attribute(std::string p, Value v) : predicate(std::move(p)), value(std::move(v)) {}
   friend bool operator==(const Attribute & a, const Attribute & b) { return a.predicate == b.predicate && a.value == b.value; }
 };
@@ -106,6 +112,8 @@ inline constexpr const char * webUrl = "web-url";  // the instrument's page on i
 inline constexpr const char * firstTradeDay = "first-trade-day";  // a day number: where an instrument's history begins
 inline constexpr const char *mic =
     "mic"; // a market's ISO 10383 code: its key, said as a fact too
+inline constexpr const char * currency = "currency";  // a portfolio's: a link to the currency node its value is shown in
+inline constexpr const char * ledger = "ledger";      // a portfolio's: a link to the dataset node its holdings are derived from
 }  // namespace predicate
 
 // The units a quote can be in besides a currency (instruments of kind Unit): index points, and per cent for a rate. What a row is
@@ -113,7 +121,7 @@ inline constexpr const char *mic =
 inline constexpr const char * kPointsUnit = "pts";
 inline constexpr const char * kPercentUnit = "pct";
 
-enum class NodeType : uint8_t { Instrument, Market, Dataset };
+enum class NodeType : uint8_t { Instrument, Market, Dataset, Portfolio };
 
 // Any node. The typed ids convert to it.
 struct NodeRef {
@@ -123,8 +131,22 @@ struct NodeRef {
   NodeRef(InstrumentId i) : type(NodeType::Instrument), id(i.value) {}
   NodeRef(MarketId i) : type(NodeType::Market), id(i.value) {}
   NodeRef(DatasetId i) : type(NodeType::Dataset), id(i.value) {}
+  NodeRef(PortfolioId i) : type(NodeType::Portfolio), id(i.value) {}
   friend bool operator==(const NodeRef &, const NodeRef &) = default;
 };
+
+// The node a key names, as a NodeRef: an instrument or a currency is an instrument.
+inline NodeRef nodeOf(NodeKey key) {
+  NodeRef n;
+  n.id = key.value;
+  switch (key.kind()) {
+    case NodeKind::Market: n.type = NodeType::Market; break;
+    case NodeKind::Dataset: n.type = NodeType::Dataset; break;
+    case NodeKind::Portfolio: n.type = NodeType::Portfolio; break;
+    default: n.type = NodeType::Instrument; break;  // an instrument or a currency
+  }
+  return n;
+}
 
 // A price, volume or other number a provider does not give is undefined (NaN), not zero.
 inline constexpr double kUndefined = std::numeric_limits<double>::quiet_NaN();
@@ -191,6 +213,17 @@ struct EventKey {
   friend bool operator==(const EventKey &, const EventKey &) = default;
   friend bool operator<(const EventKey & a, const EventKey & b) {
     return std::tie(a.instrument, a.dataset) < std::tie(b.instrument, b.dataset);
+  }
+};
+
+// The key of the transactions of a portfolio: what this dataset says about this portfolio (the user's own entries, later a broker's
+// export). The holdings are derived from one dataset, the one the portfolio's `ledger` names.
+struct LedgerKey {
+  PortfolioId portfolio;
+  DatasetId dataset;
+  friend bool operator==(const LedgerKey &, const LedgerKey &) = default;
+  friend bool operator<(const LedgerKey & a, const LedgerKey & b) {
+    return std::tie(a.portfolio, a.dataset) < std::tie(b.portfolio, b.dataset);
   }
 };
 
@@ -324,6 +357,12 @@ template <>
 struct std::hash<SeriesKey> {
   size_t operator()(const SeriesKey & k) const {
     return hashCombine(std::hash<EdgeKey>()(k.edge), std::hash<int>()(static_cast<int>(k.resolution)));
+  }
+};
+template <>
+struct std::hash<LedgerKey> {
+  size_t operator()(const LedgerKey & k) const {
+    return hashCombine(std::hash<PortfolioId>()(k.portfolio), std::hash<DatasetId>()(k.dataset));
   }
 };
 template <>

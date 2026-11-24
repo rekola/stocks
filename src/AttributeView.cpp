@@ -22,12 +22,20 @@ std::string twoDigits(int n) { return (n < 10 ? "0" : "") + std::to_string(n); }
 
 // One overload for each alternative of Value and no template to catch the rest: a new alternative does not compile here.
 struct ValueText {
+  const Snapshot & snapshot;
   const std::string & predicate;
   ShownValue operator()(std::monostate) const { return {}; }
   ShownValue operator()(const std::string & s) const { return {s, std::nullopt}; }
   ShownValue operator()(int64_t n) const { return {isDayPredicate(predicate) ? dateText(n) : std::to_string(n), std::nullopt}; }
   ShownValue operator()(double d) const { return {realText(d), std::nullopt}; }
   ShownValue operator()(bool b) const { return {b ? "yes" : "no", std::nullopt}; }
+  ShownValue operator()(NodeKey key) const {
+    const NodeRef node = nodeOf(key);
+    std::string label = snapshot.name(node);
+    if (label.empty() && node.type == NodeType::Instrument) label = snapshot.symbol(InstrumentId{key.value});
+    if (label.empty()) label = describe(key);
+    return {std::move(label), node};
+  }
 };
 
 // The attributes of a node: `first` in that order, then the rest alphabetically.
@@ -40,7 +48,7 @@ std::vector<InfoRow> attributeRows(const Snapshot & snapshot, NodeRef node, cons
     return a.predicate < b.predicate;
   });
   std::vector<InfoRow> rows;
-  for (const Attribute & a : all) rows.push_back({a.predicate, showValue(a.predicate, a.value)});
+  for (const Attribute & a : all) rows.push_back({a.predicate, showValue(snapshot, a.predicate, a.value)});
   return rows;
 }
 
@@ -71,7 +79,9 @@ std::string dateText(int64_t number) {
 
 bool isDayPredicate(const std::string & predicate) { return predicate.size() > 4 && predicate.compare(predicate.size() - 4, 4, "-day") == 0; }
 
-ShownValue showValue(const std::string & predicate, const Value & value) { return std::visit(ValueText{predicate}, value); }
+ShownValue showValue(const Snapshot & snapshot, const std::string & predicate, const Value & value) {
+  return std::visit(ValueText{snapshot, predicate}, value);
+}
 
 std::vector<InfoSection> buildInfo(const Snapshot & snapshot, const EdgeKey & edge) {
   std::vector<InfoSection> out;

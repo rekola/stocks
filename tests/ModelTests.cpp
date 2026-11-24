@@ -4,6 +4,7 @@
 #include "model/Isin.h"
 #include "model/Period.h"
 #include "model/Store.h"
+#include "portfolio/Portfolio.h"
 
 #include <atomic>
 #include <thread>
@@ -357,6 +358,36 @@ TEST(a_thin_edge_is_a_triple_of_a_node_with_no_dataset_and_a_value_that_changes_
   CHECK(!w.snap()->findByAttribute(NodeType::Instrument, "owners", "1234"));
 }
 
+TEST(a_value_may_be_a_node_and_is_found_by_the_node_it_names) {
+  World w;
+  const NodeKey eur{w.eur.value}, nokia{w.nokia.value};
+  const NodeRef share = w.nokia;
+  CHECK(w.snap()->findLinked(NodeType::Instrument, "quoted-in", eur).empty());
+  w.store->setAttribute(share, {"quoted-in", eur});
+  auto s = w.snap();
+  CHECK(asNode(*s->attribute(share, "quoted-in")) == eur && !asText(*s->attribute(share, "quoted-in")));
+  CHECK(s->findLinked(NodeType::Instrument, "quoted-in", eur).size() == 1 && s->findLinked(NodeType::Instrument, "quoted-in", eur)[0].id == nokia.value);
+  CHECK(s->findLinked(NodeType::Instrument, "other", eur).empty() && s->findLinked(NodeType::Market, "quoted-in", eur).empty());
+  CHECK(!s->findByAttribute(NodeType::Instrument, "quoted-in", std::to_string(eur.value)));  // a link is not a text
+
+  // Said again: no new version. Another node replaces it, and the old one no longer finds it.
+  const uint64_t version = s->version();
+  w.store->setAttribute(share, {"quoted-in", eur});
+  CHECK(w.snap()->version() == version);
+  const NodeKey sek = *currencyKey("SEK");
+  w.store->addInstrument("SEK", "Krona", InstrumentKind::Currency);
+  w.store->setAttribute(share, {"quoted-in", sek});
+  CHECK(w.snap()->version() == version + 2 && w.snap()->findLinked(NodeType::Instrument, "quoted-in", eur).empty());
+  CHECK(w.snap()->findLinked(NodeType::Instrument, "quoted-in", sek).size() == 1);
+
+  // Two nodes can link to one, and a link to no node says nothing.
+  w.store->setAttribute(NodeRef(w.eur), {"quoted-in", sek});
+  CHECK(w.snap()->findLinked(NodeType::Instrument, "quoted-in", sek).size() == 2);
+  const uint64_t after = w.snap()->version();
+  w.store->setAttribute(share, {"quoted-in", NodeKey{}});
+  CHECK(w.snap()->version() == after && asNode(*w.snap()->attribute(share, "quoted-in")) == sek);
+}
+
 TEST(edges_can_be_selected_by_the_type_of_their_base_instrument) {
   World w;
   InstrumentId etf = w.store->addInstrument("FLXK", "A fund", InstrumentKind::Etf, "IE00BHZRR030", "UETF");
@@ -532,4 +563,188 @@ TEST(a_row_is_a_rate_by_its_quotes_unit_alone) {
   CHECK(std::abs(price.change() - 10.0 / 3) < 1e-9);
   PeriodView zeroBase{.base = 0, .last = 1};
   CHECK(!zeroBase.hasChange());
+}
+
+// ---- Portfolios
+
+namespace {
+
+portfolio::Transaction tradeOf(const World & w, uint64_t id, MarketId market, double quantity = 10, double price = 4, int64_t day = 100) {
+  portfolio::Transaction t;
+  t.id = id;
+  t.day = day;
+  t.instrument = w.nokia;
+  t.market = market;
+  t.quote = w.eur;
+  t.quantity = quantity;
+  t.price = price;
+  return t;
+}
+
+LedgerKey ledgerOf(const World & w, PortfolioId p, const char * dataset = "user") { return {p, w.store->addDataset(dataset)}; }
+
+PortfolioId somePortfolio(uint64_t identity = 1) { return PortfolioId{portfolioKey(identity)->value}; }
+
+}  // namespace
+
+TEST(a_transaction_on_a_market_that_prices_and_does_not_sell_is_refused_and_says_so) {
+  World w;
+  const PortfolioId p = somePortfolio();
+  const LedgerKey ledger = ledgerOf(w, p);
+  const MarketId none = w.store->addMarket(kNoMarket, "No market"), off = w.store->addMarket(kOffExchange, "Off exchange");
+  std::string why;
+  const uint64_t start = w.snap()->version();
+  try {
+    w.store->appendTransactions(ledger, {tradeOf(w, 1, none)});
+  } catch (const std::invalid_argument & e) {
+    why = e.what();
+  }
+  CHECK(why.find("XXXX") != std::string::npos && why.find("refused") != std::string::npos);
+  CHECK(w.snap()->transactions(ledger).empty() && w.snap()->portfolios().empty() && w.snap()->version() == start);  // nothing written
+  // One bad one among good ones writes none of them.
+  bool thrown = false;
+  try {
+    w.store->appendTransactions(ledger, {tradeOf(w, 2, w.hel), tradeOf(w, 3, none)});
+  } catch (const std::invalid_argument &) { thrown = true; }
+  CHECK(thrown && w.snap()->transactions(ledger).empty());
+  // A fund off exchange and a real market are kept.
+  w.store->appendTransactions(ledger, {tradeOf(w, 4, off), tradeOf(w, 5, w.hel)});
+  CHECK(w.snap()->transactions(ledger).size() == 2);
+  // A part that is none is refused as well.
+  portfolio::Transaction nowhere = tradeOf(w, 6, w.hel);
+  nowhere.instrument = InstrumentId{};
+  bool refused = false;
+  try { w.store->appendTransactions(ledger, {nowhere}); } catch (const std::invalid_argument &) { refused = true; }
+  CHECK(refused);
+  bool badLedger = false;
+  try { w.store->appendTransactions(LedgerKey{PortfolioId{}, ledger.dataset}, {tradeOf(w, 7, w.hel)}); } catch (const std::invalid_argument &) { badLedger = true; }
+  CHECK(badLedger);
+}
+
+TEST(a_portfolio_exists_when_something_is_said_of_it_and_a_name_alone_shows) {
+  World w;
+  const PortfolioId p = somePortfolio();
+  CHECK(w.snap()->portfolios().empty() && !w.snap()->known(NodeRef(p)));  // a key with nothing said of it is not shown
+  w.store->setAttribute(NodeRef(p), {predicate::name, "Retirement"});
+  CHECK(w.snap()->portfolios() == std::vector<PortfolioId>{p});
+  CHECK(w.snap()->name(NodeRef(p)) == "Retirement" && w.snap()->nodeCount(NodeType::Portfolio) == 1);
+  CHECK(w.snap()->transactions(ledgerOf(w, p)).empty() && w.snap()->ledgers(p).empty());  // shown, empty
+  CHECK(portfolio::holdings(*w.snap(), p).positions.empty());
+}
+
+TEST(positions_and_no_name_show_under_the_key_shortened_until_it_is_named) {
+  World w;
+  const PortfolioId p = somePortfolio(0xabcdef12345ull);
+  w.store->appendTransactions(ledgerOf(w, p), {tradeOf(w, 1, w.hel)});
+  CHECK(w.snap()->portfolios() == std::vector<PortfolioId>{p} && !w.snap()->known(NodeRef(p)));
+  const std::string placeholder = w.snap()->name(NodeRef(p));
+  CHECK(placeholder.size() == 7 && placeholder[0] == 'P' && text(NodeKey{p.value}).rfind(placeholder, 0) == 0);
+  w.store->setAttribute(NodeRef(p), {predicate::name, "Trading"});
+  CHECK(w.snap()->name(NodeRef(p)) == "Trading" && w.snap()->portfolios().size() == 1);
+  CHECK(w.snap()->ledgers(p).size() == 1 && w.snap()->ledgers(p)[0] == ledgerOf(w, p).dataset);
+}
+
+TEST(a_delete_makes_a_portfolio_vanish_whatever_was_said_of_it) {
+  World w;
+  const PortfolioId p = somePortfolio(), other = somePortfolio(2);
+  w.store->setAttributes(NodeRef(p), {{predicate::name, "Gone"}, {predicate::currency, NodeKey{w.eur.value}}});
+  w.store->appendTransactions(ledgerOf(w, p), {tradeOf(w, 1, w.hel)});
+  w.store->appendTransactions(ledgerOf(w, p, "broker"), {tradeOf(w, 2, w.hel)});
+  w.store->setAttribute(NodeRef(other), {predicate::name, "Kept"});
+  CHECK(w.snap()->portfolios().size() == 2 && w.snap()->findLinked(NodeType::Portfolio, predicate::currency, NodeKey{w.eur.value}).size() == 1);
+  w.store->removePortfolio(p);
+  auto s = w.snap();
+  CHECK(s->portfolios() == std::vector<PortfolioId>{other} && !s->known(NodeRef(p)) && s->ledgers(p).empty());
+  CHECK(s->transactions(ledgerOf(w, p)).empty() && s->transactions(ledgerOf(w, p, "broker")).empty());
+  CHECK(s->findLinked(NodeType::Portfolio, predicate::currency, NodeKey{w.eur.value}).empty());
+  const uint64_t version = s->version();
+  w.store->removePortfolio(p);  // again: nothing there, nothing changes
+  CHECK(w.snap()->version() == version);
+  // Taking back the last fact, or the last transaction, makes it vanish too.
+  const PortfolioId third = somePortfolio(3);
+  w.store->setAttribute(NodeRef(third), {predicate::name, "Third"});
+  w.store->removeAttribute(NodeRef(third), predicate::name);
+  CHECK(w.snap()->portfolios() == std::vector<PortfolioId>{other});
+  w.store->appendTransactions(ledgerOf(w, third), {tradeOf(w, 9, w.hel)});
+  CHECK(w.snap()->portfolios().size() == 2);
+  w.store->removeTransactions(ledgerOf(w, third), {9});
+  CHECK(w.snap()->portfolios() == std::vector<PortfolioId>{other});
+  // Only what is a portfolio's can be taken back.
+  bool refused = false;
+  try { w.store->removeAttribute(NodeRef(w.nokia), predicate::name); } catch (const std::invalid_argument &) { refused = true; }
+  CHECK(refused && !w.snap()->name(NodeRef(w.nokia)).empty());
+}
+
+TEST(several_portfolios_are_listed_by_name_and_each_has_its_own_transactions) {
+  World w;
+  const PortfolioId b = somePortfolio(1), a = somePortfolio(2), c = somePortfolio(3);
+  w.store->setAttribute(NodeRef(b), {predicate::name, "Bonds"});
+  w.store->setAttribute(NodeRef(a), {predicate::name, "Active"});
+  w.store->appendTransactions(ledgerOf(w, c), {tradeOf(w, 1, w.hel)});  // unnamed: listed by its shortened key
+  const auto listed = w.snap()->portfolios();
+  CHECK(listed.size() == 3 && listed[0] == a && listed[1] == b && listed[2] == c);
+  w.store->appendTransactions(ledgerOf(w, a), {tradeOf(w, 2, w.hel, 5), tradeOf(w, 3, w.hel, 7, 4, 90)});
+  CHECK(w.snap()->transactions(ledgerOf(w, a)).size() == 2 && w.snap()->transactions(ledgerOf(w, b)).empty() && w.snap()->transactions(ledgerOf(w, c)).size() == 1);
+  CHECK(w.snap()->transactions(ledgerOf(w, a))[0].id == 3);  // by day, then id
+}
+
+TEST(a_transaction_is_replaced_by_its_id_and_taken_back_by_it) {
+  World w;
+  const PortfolioId p = somePortfolio();
+  const LedgerKey ledger = ledgerOf(w, p);
+  w.store->appendTransactions(ledger, {tradeOf(w, 1, w.hel, 10, 4)});
+  const uint64_t version = w.snap()->version();
+  w.store->appendTransactions(ledger, {tradeOf(w, 1, w.hel, 10, 4)});  // the same again
+  CHECK(w.snap()->version() == version && w.snap()->transactions(ledger).size() == 1);
+  w.store->appendTransactions(ledger, {tradeOf(w, 1, w.hel, 12, 4, 50)});  // corrected, and on another day
+  CHECK(w.snap()->version() == version + 1 && w.snap()->transactions(ledger).size() == 1 && w.snap()->transactions(ledger)[0].quantity == 12 && w.snap()->transactions(ledger)[0].day == 50);
+  w.store->appendTransactions(ledger, {tradeOf(w, 2, w.hel, 1, 1, 10)});
+  CHECK(w.snap()->transactions(ledger)[0].id == 2 && w.snap()->transactions(ledger)[1].id == 1);
+  w.store->removeTransactions(ledger, {1, 77});
+  CHECK(w.snap()->transactions(ledger).size() == 1 && w.snap()->transactions(ledger)[0].id == 2);
+  // The old snapshot is what it was.
+  CHECK(w.snap()->transactions(ledger).size() == 1);
+}
+
+TEST(holdings_come_from_the_transactions_of_the_one_dataset_the_portfolio_names) {
+  World w;
+  const PortfolioId p = somePortfolio();
+  const LedgerKey mine = ledgerOf(w, p), broker = ledgerOf(w, p, "broker");
+  w.store->setAttribute(NodeRef(p), {predicate::name, "Both"});
+  // The same two trades, entered by hand and imported: two entries in two datasets, not one replacing the other.
+  for (const LedgerKey & ledger : {mine, broker}) w.store->appendTransactions(ledger, {tradeOf(w, 1, w.hel, 10, 4), tradeOf(w, 2, w.hel, 5, 6, 101)});
+  w.store->appendTransactions(broker, {tradeOf(w, 3, w.hel, 1, 7, 102)});
+  CHECK(w.snap()->ledgers(p).size() == 2);
+  // No ledger said: the user's own, and the quantities are not added up.
+  auto own = portfolio::holdings(*w.snap(), p);
+  CHECK(portfolio::ledgerOf(*w.snap(), p) == mine.dataset && own.positions.size() == 1 && own.positions[0].quantity == 15);
+  w.store->setAttribute(NodeRef(p), {predicate::ledger, NodeKey{broker.dataset.value}});
+  auto imported = portfolio::holdings(*w.snap(), p);
+  CHECK(portfolio::ledgerOf(*w.snap(), p) == broker.dataset && imported.positions.size() == 1 && imported.positions[0].quantity == 16);
+  w.store->setAttribute(NodeRef(p), {predicate::ledger, NodeKey{mine.dataset.value}});
+  CHECK(portfolio::holdings(*w.snap(), p).positions[0].quantity == 15);
+  // The currency is a link to a currency node.
+  CHECK(!portfolio::currencyOf(*w.snap(), p));
+  w.store->setAttribute(NodeRef(p), {predicate::currency, NodeKey{w.eur.value}});
+  CHECK(portfolio::currencyOf(*w.snap(), p) == std::optional<InstrumentId>(w.eur));
+}
+
+TEST(what_is_said_of_a_portfolio_is_one_version_in_a_batch_and_a_refused_transaction_applies_none_of_it) {
+  World w;
+  const PortfolioId p = somePortfolio();
+  const MarketId none = w.store->addMarket(kNoMarket);
+  const uint64_t before = w.snap()->version();
+  bool thrown = false;
+  try {
+    w.store->batch([&](Batch & b) {
+      b.setAttribute(NodeRef(p), {predicate::name, "Half"});
+      b.appendTransactions({p, b.addDataset("user")}, {tradeOf(w, 1, none)});
+    });
+  } catch (const std::invalid_argument &) { thrown = true; }
+  CHECK(thrown && w.snap()->version() == before && w.snap()->portfolios().empty());
+  w.store->batch([&](Batch & b) {
+    b.setAttribute(NodeRef(p), {predicate::name, "Whole"});
+    b.appendTransactions({p, b.addDataset("user")}, {tradeOf(w, 1, w.hel)});
+  });
+  CHECK(w.snap()->version() == before + 1 && w.snap()->portfolios().size() == 1);
 }

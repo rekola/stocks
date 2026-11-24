@@ -1,6 +1,6 @@
 # Portfolios
 
-Status: plan, nothing built.
+Status: built, all eight steps ("Steps" below, with what is done and what is left). Built: 1 (node-valued facts), 2 (`src/portfolio/`), 3 (the model), 4 (the portfolio file), 5 (`Positions` and the contexts), 6 (the form dialog in cellui; buy, sell, the portfolio commands, undo and redo), 7 (the keys), 8 (the README). What is left is "Later" and "Open" below; the cellui changes (`FormModal`, `TableModel::buttonShown`, `Table::scrollToPosition`) are on cellui's branch and stocks fetches cellui's `main`, so stocks builds against a checkout (`-DFETCHCONTENT_SOURCE_DIR_CELLUI`) until they are merged.
 
 A portfolio is what the user holds: positions in instruments she has bought, valued at the prices the store already has. It is
 modelled as the instruments are: **a portfolio is a node**, and what there is to know of it is facts and edges in the same
@@ -62,6 +62,14 @@ sync (see "The server"), and share no table and no schema version.
   It is a second `FactStore` (`Facts.h`): the store gives it the facts of the portfolio nodes and, new, **their edges' series and
   events**, which nothing keeps today ("What is kept between runs": the edges and the bars on them are not kept). Routed by the kind of
   the node, so a source cannot write a portfolio's name into the cache and a portfolio is never in it.
+- **What is built.** `openSqlitePortfolioStore()` (`SqliteFactStore.cpp`, the one place that names SQLite) is the second
+  `FactStore`: `FactBatch` also carries what is taken back (`removed`, `removed_nodes`) and the transactions (`events`,
+  `events_removed`), and `loadEvents()` reads them. `MemoryStore` routes by the kind of node and applies the portfolio part
+  in the thread of the write, so the file is current when the call returns (`synchronous = FULL`). It keeps facts and events: the
+  **position edges' series are derived** from the transactions on load, not kept a second time, where they could disagree with
+  them. A file that is not a database or damaged is moved to `.bad-<time>`, one of another schema to `.old-<time>` (a name
+  already there is never written over, `-2`...); where it cannot be moved nothing is kept and the status line says so. `--portfolios
+  FILE`, `--no-portfolios` (portfolios then live for the session in memory); default `portfolios.sqlite` beside `facts.sqlite`.
 - **Restoring** reads it before the sources run, as the facts are read, and makes no version.
 - **A file of another schema is moved aside** (`.old-<time>`; a damaged one to `.bad-<time>`) and an empty one started, saying so once;
   never dropped in place, since the user typed it. Nothing is migrated.
@@ -69,6 +77,15 @@ sync (see "The server"), and share no table and no schema version.
   `events(portfolio, dataset, time, id, body)` for the transactions, the schema version in `PRAGMA user_version`.
 
 ## Valuation
+
+What is built (`src/portfolio/Portfolio.h`): the **average cost includes the fees of the buys** (what the buys cost, divided by what
+is held; a sell leaves it as it is and takes its share of the cost away, and a position that is closed and bought again starts
+again). Within one day the buys are applied first, then by id, so a buy and a sell of one day do not depend on their random ids.
+A transaction with no quantity, a negative price or fee, or a part that is none is refused, like a sell of more than is held;
+`derivePositions` says which and why. A **conversion** goes only between currencies (kind currency, never a unit such as points
+or per cent), over one edge in either direction or two through another currency; the store's reverse indexes `edgesOf(base)` and
+`edgesTo(quote)` find them. **The price of a position** is the edge of the instrument on the position's market **in the
+currency it was bought in** with the latest bar; one in another currency is not taken, so there is only one conversion.
 
 - **A position row**: quantity (the last of the series), average cost, last price, value, P&L (absolute and per cent), weight in the
   portfolio, and the change and trace over the shared period.
@@ -104,6 +121,13 @@ Tab is not bound in stocks, so it can carry this. A **context** is a view of the
 - **The table and the tags stay**: a context swaps the tags (presets, or the portfolios there are) and the model
   (`Quotes`, or a new `Positions`) and the columns; the period tags stay and apply to both. Each context keeps its own selected tag,
   sort and scroll position while the program runs.
+- **What is built.** `Positions` (`src/Positions.{h,cpp}`) over `portfolio::value`; `Browser` has `Context::Markets` and `Context::Portfolio`,
+  `next-context` and `previous-context` (Tab and Shift+Tab in both profiles; a preset command from Portfolio goes to Markets
+  first), a `View` saved for each context (tag, sort, first row, selected row; put back with `Table::scrollToPosition()`, which cellui
+  gained), the portfolio tags rebuilt by name when the store changes, and a line over the table where there is nothing to show (no
+  portfolio: "new-portfolio"; none held). A portfolio with no `currency` fact is valued in the currency of its first position. The
+  Value heading names the currency and has a star where the total is incomplete; a position with no rate shows its value with
+  its own currency's code. Part of the cellui work of step 6 came early: `TableModel::buttonShown()` and `scrollToPosition()`.
 - **`Positions`** is a table model like `Quotes`, with the columns: icon, symbol, name, quantity, average cost, price, value,
   weight, P&L, P&L %, change and trace. The history loader is told the edges of the positions on screen, as for the rows of a
   preset.
@@ -119,6 +143,17 @@ Tab is not bound in stocks, so it can carry this. A **context** is a view of the
   viewer's modal), so a **form dialog is added to cellui first**, general enough to be used again (labelled fields with
   validation, Tab between fields, Enter accepts, Esc cancels), and stocks uses it. It is a separate repository, so that is its
   own change, merged before stocks depends on it.
+- **What is built (step 6).** cellui's `FormModal` (a modal form of text, number and date fields with checks, a live summary, a check of the
+  fields together, OK and Cancel; works the same in the terminal and in the GTK window, tested in both), and `TableModel::buttonShown()`
+  for the per-row buttons. In `Browser` (`src/BrowserPortfolio.cpp`): `buy` and `sell` (glyphs ⊕ U+2295 and ⊖ U+2296, Mathematical Operators
+  that the monospace fonts have, one cell wide), shown on a row by `portfolio::tradable` and guarded by the same function when run
+  from the palette (the status line says the row cannot be bought); the form has the portfolio (by name; the shown one, else the last
+  traded in, else the first), quantity, price (the last), date (today), fee and note, a live total, and for a sell an error as the quantity is
+  typed if it would sell more than is held; the first buy with no portfolio offers to make one; `new-portfolio` (a name, unique, and a currency
+  the store knows), `rename-portfolio`, `delete-portfolio` (confirms; says how many transactions go) and `undo`/`redo` (a stack in memory of
+  pairs of store writes, so a trade, a make, a rename and a delete are each one step; a new change ends the redo stack). Choices where the
+  plan was open: a portfolio is picked in the form by typing its name, not from a list; the form takes a comma as a decimal point; a transaction
+  id is made of the time and random bits (below 2^62), so two sells of one day apply in the order they were typed.
 - **Undo and redo are the standard ones** (`undo`, `redo`: taking back and taking up again the last change the user made to her portfolios): undo is
   `C-x u` and `C-/` in the terminal keymap and `Ctrl+Z` in the desktop keymap; redo is `C-M-_` in the terminal (as Emacs has it)
   and `Ctrl+Y` on the desktop. A deleted or edited transaction, or a deleted portfolio, can be undone too, so undo works on the user's changes, not on
@@ -149,22 +184,22 @@ Not built, and not needed for any step below, but the model leaves room for it (
 
 ## Steps
 
-1. **Node-valued facts** (`data-model.md`, "Links between nodes"): a value that is a node, so that `currency` can be an edge to a
+1. **Node-valued facts** (done; `data-model.md`, "Links"): a value that is a node, so that `currency` can be an edge to a
    currency node; its own change, before this one. The attribute node kind (kind 6) is separate and does not block this plan.
-2. `src/portfolio/`: `Transaction`, `derivePositions`, `value`, with tests (`tests/PortfolioTests.cpp`): buys and sells, average
+2. (Done.) `src/portfolio/Portfolio.{h,cpp}`: `Transaction`, `derivePositions`, `value`, `tradable`, `rate`, `latestPrice`, with tests (`tests/PortfolioTests.cpp`): buys and sells, average
    cost, a sell of more than is held (refused), a position closed and opened again, a missing rate.
-3. The model: the portfolio node kind (5) and its minted keys, the position edge and the transaction events in `Store`/`MemoryStore`
+3. (Done.) The model: the portfolio node kind (5) and its minted keys, the position edge and the transaction events in `Store`/`MemoryStore`
    (writes, reads, a snapshot of them), with tests in `tests/ModelTests.cpp` and `NodeKeyTests.cpp`: a transaction on XXXX is refused (an
    index, a rate), one on XOFF and on a real market is kept, a portfolio that shows only when
    something is said of it, a name alone, positions and no name, a delete that makes it vanish, several portfolios, the same
    transactions under two datasets (holdings from the chosen one only).
-4. The portfolio file: a second `FactStore` routed by node kind, with tests on a file in a temporary directory: round trip, another
+4. (Done.) The portfolio file: a second `FactStore` routed by node kind, with tests on a file in a temporary directory: round trip, another
    schema moved aside and not lost, a damaged file moved aside, nothing of a portfolio in `facts.sqlite`.
-5. `Positions` model and the context switch in `Browser` (`next-context`, `previous-context`, keys, the help line),
+5. (Done.) `Positions` model and the context switch in `Browser` (`next-context`, `previous-context`, keys, the help line),
    with `BrowserTests` for the switch, and for each context keeping its state.
-6. The form dialog in cellui; then the `buy` and `sell` buttons and commands, `new-portfolio`, `rename-portfolio`, `delete-portfolio`, `undo` and
+6. (Done.) The form dialog in cellui; then the `buy` and `sell` buttons and commands, `new-portfolio`, `rename-portfolio`, `delete-portfolio`, `undo` and
    `redo`, and the status line's message for each.
-7. README: the keys and the flags.
+7. (Done.) The keys, bound for each profile in `Browser::bindKeys` (`C-/` is sent by a terminal as `C-_`, so that is bound to undo too). 8. (Done.) README: the keys and the flags.
 
 ## Later, not planned in detail
 
@@ -173,10 +208,18 @@ every portfolio added up in one currency, allocation by kind and country, a benc
 
 ## Open
 
-- Whether the undo stack should survive a restart (not at first).
-- Which price edge values a position when two datasets have the instrument on the market (the latest bar, at first).
-- Whether a position in an edge that no source loads any more is shown from its last stored price or marked stale.
-- Whether `next-preset` and `previous-preset` (unbound today) get keys of their own now that Tab is spoken for.
-- Whether the table can show a button on some rows only. If cellui's `Table` takes the buttons of a column as the same for every row, it needs
-  a per-row hook (the model says which buttons a row has), added in cellui with the form dialog.
-- The glyphs of the buy and sell buttons, which must draw in the terminal and the window alike.
+What was open when it was built, and what was picked (the simplest option):
+
+- Whether the undo stack should survive a restart: **no**, it is for the session (the stack is of closures over store writes).
+- Which price edge values a position when two datasets have the instrument on the market: **the latest bar**, ties to the lowest key, in
+  the currency the position was bought in (`portfolio::latestPrice`).
+- Whether a position in an edge that no source loads any more is shown from its last stored price or marked stale: **not decided, and
+  not handled**: the store does not keep bars between runs, so until a source has loaded the edge a position has no price, its
+  value is empty and the total is marked incomplete; after that its last bar stands, however old. Marking it stale is later work.
+- Whether `next-preset` and `previous-preset` get keys now that Tab is spoken for: **no**, they stay unbound (they step through the tags of
+  whichever context is shown).
+- Whether the table can show a button on some rows only: **it could not**, so `TableModel::buttonShown()` was added to cellui.
+- The glyphs of the buy and sell buttons: **⊕ and ⊖** (U+2295, U+2296), one cell wide in the monospace fonts of terminals and the window.
+  Not checked in a real terminal or on a real desktop font here (see the report in the commit messages): the info glyph was chosen the same way.
+- Where the average cost leaves the plan open: fees of buys are in it; the ledger of a portfolio is the user's own dataset unless a
+  `ledger` fact says another; a portfolio is picked in the form by typing its name.
