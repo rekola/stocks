@@ -1,4 +1,5 @@
 #include "TestFramework.h"
+#include "source/KnownIsins.h"
 
 #include "model/Isin.h"
 #include "model/NodeKey.h"
@@ -66,12 +67,14 @@ TEST(an_isin_that_is_not_valid_has_no_key) {
   CHECK(!instrumentKey("1I0009000681"));  // a digit for a letter of the country
 }
 
-TEST(the_isins_we_make_ourselves_have_keys) {
-  for (const char * name : {"Zinc", "Lead", "Gold", "OMXH25", "Brent"}) {
-    const std::string isin = privateIsin(name);
-    CHECK(!isin.empty() && isin.rfind("ZZ", 0) == 0);
+TEST(the_isins_the_adapters_supply_have_keys) {
+  for (const char * isin : known_isin::kReal) {
     const auto key = instrumentKey(isin);
     CHECK(key && text(*key) == isin);
+  }
+  for (const char * isin : known_isin::kPrivate) {
+    const auto key = instrumentKey(isin);
+    CHECK(key && text(*key) == isin && std::string(isin).rfind("ZZ", 0) == 0);
   }
 }
 

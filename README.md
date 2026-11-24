@@ -125,6 +125,10 @@ from their candidate lists, the other countries from the largest companies of a 
 that has ISINs (each found by its ISIN, so the ticker is certainly the same company).
 Asia-Pacific and Latin America are not covered: there is no source of their ISINs yet.
 
+An instrument whose source gives it no ISIN (zinc, lead and the BRIC 50 India index in Nordnet's lists, the coins, the physical metals) has one its
+adapter names from `src/source/KnownIsins.h`: the real ISIN where there is one, else one of ours (`ZZ…`, numbered). The file's head says how
+to add one, and it does not compile with an invalid or repeated ISIN. A row with none there is not kept, and the status line says so.
+
 What the sources say of instruments, markets and datasets (names, icons, a market's country) is kept between runs in a
 SQLite file, `facts.sqlite` in the user's data directory (`--facts FILE` chooses another, `--no-facts` runs without it); your portfolios are in
 `portfolios.sqlite` beside it (`--portfolios FILE`, `--no-portfolios`); see

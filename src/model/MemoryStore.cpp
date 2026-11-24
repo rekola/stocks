@@ -443,8 +443,9 @@ bool isCurrencyKind(const std::string & kind) { return kind == kindName(Instrume
 
 }  // namespace
 
-// An instrument is its ISIN; a currency or a unit its code; anything else that has no ISIN is given one of our own, made from its
-// symbol or else its name (isin.h), the way a thing is given a name nobody else uses. What cannot be given a key is refused.
+// An instrument is its ISIN; a currency or a unit its code; anything else that has no ISIN is numbered as it is
+// asked for, or refused where the store is told not to (`StoreOptions::invent_isins`: the program's adapters give their own ISINs, from
+// source/KnownIsins.h). What cannot be given a key is refused.
 InstrumentId Snapshot::resolveInstrument(const std::vector<Attribute> & identifying, const std::vector<Attribute> & rest) {
   std::vector<Attribute> all = identifying;
   all.insert(all.end(), rest.begin(), rest.end());
@@ -457,10 +458,22 @@ InstrumentId Snapshot::resolveInstrument(const std::vector<Attribute> & identify
     key = currencyKey(symbol);
     if (!key) notices_.push_back("instrument: the code " + symbol + " is not one to ten letters or digits, so it is not kept");
   } else {
-    for (const std::string & candidate : {symbol, name})
-      if (!key && !candidate.empty())
-        if (const std::string own = privateIsin(candidate); !own.empty()) key = instrumentKey(own);
-    if (!key) notices_.push_back("instrument: " + (symbol.empty() ? name : symbol) + " has no ISIN and none can be made for it, so it is not kept");
+    const std::string called = symbol.empty() ? name : symbol;
+    std::string own;
+    if (!called.empty() && invent_) {
+      // The same text is the same number, counting down from the top of the private namespace.
+      if (const std::string * made = numbered_.find(called)) own = *made;
+      else {
+        std::string number = std::to_string(999999999 - numbered_.size());
+        const std::string first11 = "ZZ" + std::string(9 - number.size(), '0') + number;
+        own = first11 + isinCheckDigit(first11);
+        numbered_ = numbered_.set(called, own);
+      }
+    } else if (!called.empty()) {
+      notices_.push_back("instrument: " + called + " has no ISIN, so it is not kept");
+    }
+    if (!own.empty()) key = instrumentKey(own);
+    if (!key && called.empty()) notices_.push_back("instrument: one with no ISIN, symbol or name is not kept");
   }
   if (!key) return InstrumentId{};
   const InstrumentId id{key->value};
@@ -869,10 +882,16 @@ class MemoryStore : public Store {
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
       };
     portfolios_ = std::move(options.portfolios);
+    if (!options.invent_isins && !options.facts && !portfolios_) {
+      Snapshot first;
+      first.setInventIsins(false);
+      current_.store(std::make_shared<const Snapshot>(std::move(first)));
+    }
     if (options.facts || portfolios_) {
       // What was kept is the facts of its nodes (and the user's transactions), which makes no version and no edge. Read before any source
       // can write. A portfolio is in its own file and never in the cache: one that is found there anyway is not read.
       Snapshot first;
+      first.setInventIsins(options.invent_isins);
       std::vector<StoredFact> kept = options.facts ? options.facts->loadAll() : std::vector<StoredFact>{};
       std::erase_if(kept, [](const StoredFact & f) { return NodeKey{f.node}.kind() == NodeKind::Portfolio; });
       if (portfolios_) {
