@@ -824,3 +824,14 @@ TEST(the_runner_stopping_cancels_its_sources_http) {
   }
   CHECK(std::chrono::steady_clock::now() - start < std::chrono::seconds(10));
 }
+
+TEST(yahoo_types_are_mapped_onto_the_same_vocabulary) {
+  CHECK(YahooSource::kindOfType("EQUITY") == InstrumentKind::Company && YahooSource::kindOfType("ETF") == InstrumentKind::Etf);
+  CHECK(YahooSource::kindOfType("INDEX") == InstrumentKind::Index && YahooSource::kindOfType("FUTURE") == InstrumentKind::Commodity);
+  CHECK(YahooSource::kindOfType("CURRENCY") == InstrumentKind::Currency);
+  CHECK(YahooSource::kindOfType("") == InstrumentKind::Other && YahooSource::kindOfType("MUTUALFUND") == InstrumentKind::Other);
+}
+
+TEST(an_etf_is_an_etf_from_either_provider) {
+  CHECK(NordnetSource::kindOfType("UETF") == YahooSource::kindOfType("ETF"));
+}

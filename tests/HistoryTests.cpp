@@ -49,7 +49,7 @@ std::shared_ptr<FakeProvider> provider(HistoryLoader & loader) {
 
 TEST(wanting_an_edge_loads_it_once_through_its_datasets_provider_and_not_again) {
   World w;
-  EdgeKey k = w.edge(InstrumentKind::Fund, "", /*nordnetData=*/false);
+  EdgeKey k = w.edge(InstrumentKind::Fund, "", /*mainData=*/false);
   FakeHttp http;
   std::atomic<int> changes{0};
   HistoryLoader loader(w.store, borrow(http), quickly(), [&] { changes++; });
@@ -64,8 +64,8 @@ TEST(wanting_an_edge_loads_it_once_through_its_datasets_provider_and_not_again) 
 
 TEST(an_edge_of_a_dataset_with_no_provider_or_that_its_provider_cannot_load_is_left_out) {
   World w;
-  EdgeKey unknown = w.edge(InstrumentKind::Company, "book-1");  // the nordnet dataset: no provider for it here
-  EdgeKey other = w.edge(InstrumentKind::Fund, "", /*nordnetData=*/false);
+  EdgeKey unknown = w.edge(InstrumentKind::Company, "book-1");  // a dataset with no provider here
+  EdgeKey other = w.edge(InstrumentKind::Fund, "", /*mainData=*/false);
   struct Picky : FakeProvider {
     std::optional<Need> need(const Snapshot &, const EdgeKey &, Period) const override { return std::nullopt; }
   };
@@ -80,7 +80,7 @@ TEST(an_edge_of_a_dataset_with_no_provider_or_that_its_provider_cannot_load_is_l
 
 TEST(an_edge_the_store_has_the_bars_for_is_not_asked_for_unless_it_was_loaded_and_has_expired) {
   World w;
-  EdgeKey k = w.edge(InstrumentKind::Fund, "", /*nordnetData=*/false);
+  EdgeKey k = w.edge(InstrumentKind::Fund, "", /*mainData=*/false);
   FakeHttp http;
   HistoryLoader loader(w.store, borrow(http), quickly(), [] {});
   auto p = provider(loader);

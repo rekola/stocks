@@ -88,7 +88,7 @@ TEST(an_intraday_bar_is_keyed_by_its_slot_number_in_utc) {
 
 TEST(a_bar_that_does_not_start_on_a_slot_boundary_is_found_out) {
   auto at = [](int y, unsigned m, unsigned d, int hour, int minute) { return daysSinceUnixEpoch(y, m, d) * 86400 + hour * 3600 + minute * 60; };
-  CHECK(onSlotBoundary(Resolution::Hour1, at(2026, 11, 20, 8, 0)));    // Helsinki and Nordnet: on the hour
+  CHECK(onSlotBoundary(Resolution::Hour1, at(2026, 11, 20, 8, 0)));    // Helsinki: on the hour
   CHECK(!onSlotBoundary(Resolution::Hour1, at(2026, 11, 20, 14, 30)));  // a US exchange's open, 09:30 in New York
   CHECK(onSlotBoundary(Resolution::Min30, at(2026, 11, 20, 14, 30)));   // but on a 30-minute boundary
   CHECK(onSlotBoundary(Resolution::Min5, at(2026, 11, 20, 14, 30)) && onSlotBoundary(Resolution::Min15, at(2026, 11, 20, 14, 30)));

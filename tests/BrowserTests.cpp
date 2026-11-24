@@ -323,7 +323,7 @@ TEST(a_preset_whose_market_has_no_data_shows_no_rows_and_a_book_alone_is_not_a_r
 
 TEST(the_made_up_data_fills_every_preset_with_what_the_lists_hold) {
   Fixture f;
-  // The commodities come from Nordnet, not the lists. Currencies and indices
+  // The commodities come from discovery, not the lists. Currencies and indices
   // are on no market (XXXX), told apart by their kind.
   const std::pair<const char *, size_t> expected[] = {
       {"show-nasdaq-helsinki", countOf("XHEL")},

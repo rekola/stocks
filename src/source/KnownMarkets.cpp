@@ -2,7 +2,7 @@
 
 namespace {
 
-// The markets met so far on the stock and ETF lists, and those the Yahoo lists add; the codes are what the providers' own pages say.
+// The markets met so far on the stock and ETF lists, and those the instrument lists add; the codes are what the providers' own pages say.
 constexpr KnownMarket kMarkets[] = {
     {4, "Xetra", "XETR"},
     {11, "Nasdaq Stockholm", "XSTO"},

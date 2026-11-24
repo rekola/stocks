@@ -31,7 +31,7 @@ class SourceListener {
 class Source {
  public:
   virtual ~Source() = default;
-  virtual std::string name() const = 0;  // what the user types to pick it, e.g. "yahoo"
+  virtual std::string name() const = 0;  // what the user types to pick it
   virtual std::string description() const = 0;
   // The codes of the datasets this source writes (a code is permanent, and no two sources write the same one: a source that did
   // would be putting its data under another's). Empty for a source that writes none, such as a test's.

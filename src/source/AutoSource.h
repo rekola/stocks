@@ -5,8 +5,8 @@
 #include <atomic>
 #include <memory>
 
-// One data source at a time, chosen by trying: the primary (Nordnet) loads, and if it put no data in the store (no network, a
-// refusal, the endpoints changed) the fallback (Yahoo) loads instead, and from then on the session stays with it. A primary
+// One data source at a time, chosen by trying: the primary loads, and if it put no data in the store (no network, a
+// refusal, the endpoints changed) the fallback loads instead, and from then on the session stays with it. A primary
 // that gave something stays the source, whatever it does later: a refusal in the middle of a run is not a reason to
 // start another provider's data beside the first's.
 class AutoSource : public Source {

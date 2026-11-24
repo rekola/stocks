@@ -99,7 +99,6 @@ inline constexpr const char * symbol = "symbol";
 inline constexpr const char * isin = "isin";
 inline constexpr const char * kind = "kind";
 inline constexpr const char * type = "type";  // the provider's own type
-inline constexpr const char * nordnetInstrument = "nordnet-instrument";  // an instrument's id at Nordnet
 inline constexpr const char * country = "country";  // a market's country (ISO 3166 alpha-2)
 inline constexpr const char * timezone = "timezone";  // a market's time zone (IANA name)
 inline constexpr const char * iconUrl = "icon-url";
@@ -126,8 +125,7 @@ struct NodeRef {
 inline constexpr double kUndefined = std::numeric_limits<double>::quiet_NaN();
 inline bool isDefined(double v) { return v == v; }
 
-// What an instrument is, in one vocabulary for all providers: each adapter maps its own types onto these (Nordnet's UETF
-// and PTC, Yahoo's EQUITY and FUTURE, ...). The provider's own type is kept beside it, under `predicate::type`.
+// What an instrument is, in one vocabulary for all providers: each adapter maps its own types onto these. The provider's own type is kept beside it, under `predicate::type`.
 enum class InstrumentKind { Company, Currency, Commodity, Index, Etf, Certificate, Fund, Unit, Other };  // a unit: what an index is quoted in
 
 inline const char * kindName(InstrumentKind k) {
@@ -198,9 +196,9 @@ struct EventKey {
 struct Listing {
   EdgeKey key;
   std::string symbol;      // what the market calls the instrument
-  std::string identifier;  // the market's own id for it (Nordnet's, on its market)
+  std::string identifier;  // the market's own id for it
   std::string orderBook;   // the id the price history is asked for by
-  std::string type;        // the provider's own type for it ("UETF", "EQUITY")
+  std::string type;        // the provider's own type for it
   std::string name;        // what the dataset calls it there ("EUR/USD", a fund's name on that market): what a row shows
   friend bool operator==(const Listing &, const Listing &) = default;
 };

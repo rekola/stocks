@@ -88,6 +88,9 @@ class NordnetSource : public Source {
     int skipped = 0;                       // the rows left out for lacking an id, symbol, ISIN, currency or market
     int total = 0;                         // how many there are in all
   };
+  // The kind of instrument a listing's `instrument_type` is: UETF and KETF are ETFs, PTC are certificates, the share types are companies. A type that is
+  // not known is Other.
+  static InstrumentKind kindOfType(const std::string & type);
   // False, with `error` set, when `json` is not a page.
   static bool parsePage(const std::string & json, Page & page, std::string & error);
   // The rows of an indicator list; False, with `error` set, when `json` is not one. Rows with no symbol, order book or
