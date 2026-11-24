@@ -38,7 +38,7 @@ inline HistoryLoader::Options quickly() {
   return o;
 }
 
-// An edge as Nordnet's discovery leaves it: today's bar and a listing with the order book id. `nordnetData` false: the edge of
+// An edge as discovery leaves it: today's bar and a listing with the order book id. `mainData` false: the edge of
 // another dataset ("other").
 struct World {
   std::shared_ptr<Store> store = makeMemoryStore();
@@ -46,9 +46,9 @@ struct World {
   MarketId market = store->addMarket("XSTO", "Nasdaq Stockholm");
   DatasetId nordnet = store->addDataset("nordnet");
   int count = 0;
-  EdgeKey edge(InstrumentKind kind, const std::string & book, bool nordnetData = true) {
+  EdgeKey edge(InstrumentKind kind, const std::string & book, bool mainData = true) {
     InstrumentId i = store->addInstrument("", "Instrument", kind, testIsin(100000 + count++));
-    EdgeKey k{i, usd, market, nordnetData ? nordnet : store->addDataset("other")};
+    EdgeKey k{i, usd, market, mainData ? nordnet : store->addDataset("other")};
     store->appendCandles(k, Resolution::Day, {{dayNumber(2026, 12, 1), kUndefined, 1, 1, 1, kUndefined}});
     store->setListing({k, "SYM", "", book, "ESH", "Instrument"});
     return k;

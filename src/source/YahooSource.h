@@ -19,6 +19,10 @@ class YahooSource : public Source {
                        std::chrono::milliseconds pause = std::chrono::milliseconds(100))
       : spec_(std::move(spec)), fromFiles_(true), range_(std::move(range)), pause_(pause) {}
 
+  // The kind of instrument a chart's `instrumentType` is: EQUITY, ETF, INDEX, FUTURE, CURRENCY. A future is taken as a commodity, which is what the lists hold;
+  // an index future would be wrong. A type that is not known is Other.
+  static InstrumentKind kindOfType(const std::string & type);
+
   std::string name() const override { return "yahoo"; }
   std::vector<std::string> datasetCodes() const override { return {kYahooDataset}; }
   std::string description() const override { return "Yahoo Finance: daily candles, dividends and splits (no key)"; }
