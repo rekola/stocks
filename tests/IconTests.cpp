@@ -170,6 +170,7 @@ TEST(the_table_shows_an_icon_once_it_has_loaded_and_keeps_its_place) {
   IconFixture f;
   Table & table = f.browser->table();
   table.select(1);
+  table.setCursor(Quotes::NAME);  // the cursor's own cell is not drawn inverted, and it starts on the icon column
   const int selected = table.selectedRow();
   f.app->present();
   const auto * quotes = static_cast<const Quotes *>(table.model().get());

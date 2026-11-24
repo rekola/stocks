@@ -170,6 +170,12 @@ TEST(meta_x_opens_the_palette_and_a_chosen_command_runs) {
   CHECK(f.browser->tags().selected() == 2);
 }
 
+TEST(ctrl_shift_p_opens_the_palette_on_a_desktop) {
+  Fixture f(true, 100, KeymapProfile::DESKTOP);
+  f.press('p', kModCtrl | kModShift);
+  CHECK(f.app->commandPaletteOpen());
+}
+
 TEST(the_palette_takes_every_key_while_open_and_escape_closes_it_at_once_without_running) {
   Fixture f;
   f.press('x', kModAlt);
