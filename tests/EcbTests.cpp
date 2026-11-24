@@ -4,6 +4,7 @@
 #include "model/Dates.h"
 #include "source/EcbSource.h"
 
+#include <clocale>
 #include <fstream>
 #include <sstream>
 
@@ -116,4 +117,25 @@ TEST(a_refusal_stops_the_load_and_a_failure_is_said) {
     CHECK(listener.changes == 0 && listener.messages.size() == 1);
     CHECK(store->snapshot()->nodeCount(NodeType::Instrument) == 0);
   }
+}
+
+// A window toolkit sets the locale; in one with a decimal comma strtod read "-0.549" as -0 and stopped. (Where no such locale is installed the
+// test has nothing to prove and passes.)
+TEST(the_rates_are_read_whatever_the_locale) {
+  const char * original = std::setlocale(LC_NUMERIC, nullptr);
+  const std::string saved = original ? original : "C";
+  bool set = false;
+  for (const char * name : {"fi_FI.UTF-8", "fi_FI.utf8", "de_DE.UTF-8", "de_DE.utf8"})
+    if (std::setlocale(LC_NUMERIC, name)) {
+      set = true;
+      break;
+    }
+  auto store = makeMemoryStore();
+  std::string error;
+  std::vector<std::string> notes;
+  const bool ok = EcbSource::parse(fixture(), *store, error, notes);
+  std::setlocale(LC_NUMERIC, saved.c_str());
+  CHECK(ok);
+  CHECK(notes.empty());
+  (void)set;
 }

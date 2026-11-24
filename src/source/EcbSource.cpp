@@ -4,11 +4,11 @@
 #include "source/InstrumentLists.h"
 #include "source/KnownMarkets.h"
 
+#include <cellui/NumberParse.h>
 #include <pugixml.hpp>
 
 #include <algorithm>
 #include <cmath>
-#include <cstdlib>
 #include <map>
 
 namespace {
@@ -51,9 +51,11 @@ bool EcbSource::parse(const std::string & xml, Store & store, std::string & erro
     for (const pugi::xpath_node & o : series.select_nodes("*[local-name()='Obs']")) {
       const auto day = dayNumberOfIsoDate(o.node().attribute("TIME_PERIOD").as_string());
       const std::string text = o.node().attribute("OBS_VALUE").as_string();
-      char * end = nullptr;
-      const double value = std::strtod(text.c_str(), &end);
-      if (!day || text.empty() || *end != '\0' || !std::isfinite(value)) {
+      // cellui::parseFloat, not strtod: the window toolkit sets the locale, and strtod would read "99.99" as 99 in one with a decimal comma.
+      double value = 0;
+      const char * last = text.data() + text.size();
+      const auto parsed = cellui::parseFloat(text.data(), last, value);
+      if (!day || text.empty() || parsed.ec != std::errc() || parsed.ptr != last || !std::isfinite(value)) {
         skipped++;
         continue;
       }
