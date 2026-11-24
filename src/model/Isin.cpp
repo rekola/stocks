@@ -45,7 +45,7 @@ bool isValidIsin(const std::string & isin) {
 std::string privateIsin(const std::string & name) {
   if (name.empty()) return {};
   // FNV-1a over the exact bytes: written out here because std::hash differs between platforms and runs of a library, and
-  // the key must be the same wherever the song or the facts file is read.
+  // the key must be the same wherever the facts file is read.
   uint64_t hash = 14695981039346656037ull;
   for (char c : name) {
     hash ^= static_cast<unsigned char>(c);
