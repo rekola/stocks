@@ -357,6 +357,36 @@ TEST(a_thin_edge_is_a_triple_of_a_node_with_no_dataset_and_a_value_that_changes_
   CHECK(!w.snap()->findByAttribute(NodeType::Instrument, "owners", "1234"));
 }
 
+TEST(a_value_may_be_a_node_and_is_found_by_the_node_it_names) {
+  World w;
+  const NodeKey eur{w.eur.value}, nokia{w.nokia.value};
+  const NodeRef share = w.nokia;
+  CHECK(w.snap()->findLinked(NodeType::Instrument, "quoted-in", eur).empty());
+  w.store->setAttribute(share, {"quoted-in", eur});
+  auto s = w.snap();
+  CHECK(asNode(*s->attribute(share, "quoted-in")) == eur && !asText(*s->attribute(share, "quoted-in")));
+  CHECK(s->findLinked(NodeType::Instrument, "quoted-in", eur).size() == 1 && s->findLinked(NodeType::Instrument, "quoted-in", eur)[0].id == nokia.value);
+  CHECK(s->findLinked(NodeType::Instrument, "other", eur).empty() && s->findLinked(NodeType::Market, "quoted-in", eur).empty());
+  CHECK(!s->findByAttribute(NodeType::Instrument, "quoted-in", std::to_string(eur.value)));  // a link is not a text
+
+  // Said again: no new version. Another node replaces it, and the old one no longer finds it.
+  const uint64_t version = s->version();
+  w.store->setAttribute(share, {"quoted-in", eur});
+  CHECK(w.snap()->version() == version);
+  const NodeKey sek = *currencyKey("SEK");
+  w.store->addInstrument("SEK", "Krona", InstrumentKind::Currency);
+  w.store->setAttribute(share, {"quoted-in", sek});
+  CHECK(w.snap()->version() == version + 2 && w.snap()->findLinked(NodeType::Instrument, "quoted-in", eur).empty());
+  CHECK(w.snap()->findLinked(NodeType::Instrument, "quoted-in", sek).size() == 1);
+
+  // Two nodes can link to one, and a link to no node says nothing.
+  w.store->setAttribute(NodeRef(w.eur), {"quoted-in", sek});
+  CHECK(w.snap()->findLinked(NodeType::Instrument, "quoted-in", sek).size() == 2);
+  const uint64_t after = w.snap()->version();
+  w.store->setAttribute(share, {"quoted-in", NodeKey{}});
+  CHECK(w.snap()->version() == after && asNode(*w.snap()->attribute(share, "quoted-in")) == sek);
+}
+
 TEST(edges_can_be_selected_by_the_type_of_their_base_instrument) {
   World w;
   InstrumentId etf = w.store->addInstrument("FLXK", "A fund", InstrumentKind::Etf, "IE00BHZRR030", "UETF");

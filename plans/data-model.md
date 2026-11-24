@@ -176,17 +176,21 @@ everything else on them are not kept, and there is no server in this step.
   after a short delay, facts only said again wait up to ten seconds and go with other batches, one fact per key, so a source
   that says ten thousand known things again costs one transaction. The destructor flushes. `SqliteFactStore` (SQLiteCpp,
   behind `openSqliteFactStore()`, in no header) is the SQLite one.
-- **The file**: one table `facts(node_key INTEGER, predicate, value, is_bool, updated)` keyed by `(node_key, predicate)`, WAL
+- **The file**: one table `facts(node_key INTEGER, predicate, value, tag, updated)` keyed by `(node_key, predicate)`, WAL
   mode, a transaction per batch, the schema version in `PRAGMA user_version` (one schema, `kSchemaVersion`). A file of any other version, older or newer, has its tables dropped and is started over in place, in one transaction, and says so once; nothing is migrated.
   `value` has no declared type, so SQLite's own null, integer, real and text are kept as given (a real that is whole stays a
-  real) and a truth value is an integer with `is_bool` set. An undefined number is not said, so it is not kept. A file that
+  real), a truth value is an integer with `tag` 1 and a link to a node the integer of its key with `tag` 2 (schema 5). An undefined number is not said, so it is not kept. A file that
   is not a database or is damaged is moved aside (`.bad-<time>`, with its WAL files) and
   an empty one started; where no file can be made the store keeps nothing and says so. Nothing throws out of `SqliteFactStore`.
 - **Where**: `--facts FILE`, else `facts.sqlite` in the user's data directory (`XDG_DATA_HOME` or `~/.local/share/stocks`;
   `%LOCALAPPDATA%\stocks` on Windows); `--no-facts` runs without. `makeMemoryStore()` with no argument keeps nothing, which
   is what the tests use.
-- **Not done**: any loader that writes new facts (they will be ordinary attributes through the same writes), node-valued links,
-  and a rule for which source stands when two disagree beyond the one below.
+- **Links.** A value may be a node: `NodeKey` is one more alternative of `Value` (`asNode()`), said and replaced like any
+  value (a link to no key says nothing), and found by the same index as a text (`Snapshot::findLinked(type, predicate,
+  target)`: who has this node as their `ceo`). In the file it is the integer of the key with `tag` 2 (`tag` 1 is a truth
+  value), and the attribute viewer shows it as the name of the node it names, drawn as a link. No validity period, and no reverse
+  index across predicates.
+- **Not done**: any loader that writes new facts (they will be ordinary attributes through the same writes), and a rule for which source stands when two disagree beyond the one below.
 - **Whose name and type stand**: an instrument's `name` and `type` are last said, so two sources or two listings with different
   words would take turns on every pass. The sources decide what they say, not the store: Nordnet says them from the home
   listing (the market whose `country` is the ISIN's first two letters) and from another listing only where none are said yet;
@@ -294,8 +298,8 @@ transactions as events on `(portfolio, dataset)`. It is the user's own data, so 
 ### Not done
 
 - Any loader that writes new facts (they will be ordinary attributes through the same writes).
-- **Links between nodes** (a company's `ceo`, issued by, tracks, underlying of, a market's country): a value that refers to
-  another node, with a validity period, an index on such objects and a link in the attribute viewer. See `server.md`.
+- **Links between nodes**, beyond what is built (a value may be a node: see "Links" above): a validity period on a link, and the
+  reverse links of a node across all predicates ("is the CEO of"), which are not indexed. See `server.md`.
 - A rule for which source stands when two disagree, beyond whose name and type stand (above); otherwise the last said stands.
 
 ## Steps

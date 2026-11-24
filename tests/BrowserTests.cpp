@@ -781,20 +781,34 @@ TEST(the_buttons_follow_a_sort_and_leave_the_scroll_position_alone) {
   open_first_visible();  // and its buttons are on the rows that are there now
 }
 
+TEST(a_node_is_shown_as_the_node_it_names_and_is_a_link) {
+  Fixture f(false);
+  InstrumentId eur = f.store->addInstrument("EUR", "Euro", InstrumentKind::Currency);
+  DatasetId data = f.store->addDataset("nordnet", "Nordnet");
+  const auto snapshot = f.store->snapshot();
+  const ShownValue currency = showValue(*snapshot, "currency", Value(NodeKey{eur.value}));
+  CHECK(currency.text == "Euro" && currency.link && *currency.link == NodeRef(eur));
+  const ShownValue dataset = showValue(*snapshot, "ledger", Value(NodeKey{data.value}));
+  CHECK(dataset.text == "Nordnet" && dataset.link && *dataset.link == NodeRef(data));
+  const ShownValue unknown = showValue(*snapshot, "x", Value(*currencyKey("ABC")));
+  CHECK(unknown.text == "ABC" && unknown.link);  // a node nothing is said of is shown by its key
+}
+
 TEST(values_are_shown_by_what_they_are_without_the_locale) {
-  CHECK(showValue("report-day", int64_t{dayNumber(2026, 3, 5)}).text == "2026-03-05");
-  CHECK(showValue("first-trade-day", int64_t{dayNumber(1999, 12, 31)}).text == "1999-12-31");
-  CHECK(showValue("owners", int64_t{250000}).text == "250000");  // not a day
-  CHECK(showValue("tradable", true).text == "yes");
-  CHECK(showValue("name", std::string("Nokia")).text == "Nokia");
-  CHECK(showValue("x", std::monostate{}).text.empty());
+  const Snapshot none;
+  CHECK(showValue(none, "report-day", int64_t{dayNumber(2026, 3, 5)}).text == "2026-03-05");
+  CHECK(showValue(none, "first-trade-day", int64_t{dayNumber(1999, 12, 31)}).text == "1999-12-31");
+  CHECK(showValue(none, "owners", int64_t{250000}).text == "250000");  // not a day
+  CHECK(showValue(none, "tradable", true).text == "yes");
+  CHECK(showValue(none, "name", std::string("Nokia")).text == "Nokia");
+  CHECK(showValue(none, "x", std::monostate{}).text.empty());
   const std::string before = std::setlocale(LC_NUMERIC, nullptr);
   for (const char * name : {"de_DE.UTF-8", "fi_FI.UTF-8", "de_DE", "fi_FI"})
     if (std::setlocale(LC_NUMERIC, name)) break;  // a decimal comma, where the system has one
   CHECK(realText(0.35) == "0.35");
   CHECK(realText(1234.5) == "1234.5");
   CHECK(realText(42) == "42");
-  CHECK(showValue("dividend-amount", 0.7).text == "0.7");
+  CHECK(showValue(none, "dividend-amount", 0.7).text == "0.7");
   std::setlocale(LC_NUMERIC, before.c_str());
 }
 

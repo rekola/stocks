@@ -12,16 +12,17 @@
 
 // What is known of one table row, as sections of predicate and value, read from one snapshot.
 
-// A value as the viewer shows it. `link` is where a value that refers to another node (a company's ceo is a person
-// node) will say which: the viewer then draws it as a link to that node. No value does yet.
+// A value as the viewer shows it. `link` is the node a value refers to (a portfolio's currency is a currency node): the text is
+// that node's name, and the viewer draws it as a link.
 struct ShownValue {
   std::string text;
   std::optional<NodeRef> link;
 };
 
 // The value as shown: by its alternative (a visitor, so a new alternative of Value does not compile until it is handled
-// here), and a whole number of a day predicate ("report-day", "first-trade-day") as a date.
-ShownValue showValue(const std::string & predicate, const Value & value);
+// here), and a whole number of a day predicate ("report-day", "first-trade-day") as a date. A node is shown as the name
+// the snapshot says of it (else its symbol, else its key as text).
+ShownValue showValue(const Snapshot & snapshot, const std::string & predicate, const Value & value);
 
 // A real number with a point whatever the locale, no trailing zeros ("0.35", "4200000000000").
 std::string realText(double v);

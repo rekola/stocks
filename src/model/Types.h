@@ -49,9 +49,10 @@ struct TimeRange {
   bool contains(Timestamp t) const { return t >= from && t < to; }
 };
 
-// What a triple says: text, a whole number (a day is a day number), a real number or a truth value. A number that is not
-// given is not said at all: there is no undefined value in a triple.
-using Value = std::variant<std::monostate, std::string, int64_t, double, bool>;
+// What a triple says: text, a whole number (a day is a day number), a real number, a truth value or a node (a link: the key of
+// another node, which the viewer shows as the node it names). A number that is not given is not said at all: there is no
+// undefined value in a triple. A link says nothing if its key is none.
+using Value = std::variant<std::monostate, std::string, int64_t, double, bool, NodeKey>;
 
 inline std::optional<std::string> asText(const Value & v) {
   return std::holds_alternative<std::string>(v) ? std::optional<std::string>(std::get<std::string>(v)) : std::nullopt;
@@ -66,6 +67,9 @@ inline std::optional<double> asReal(const Value & v) {  // a whole number is a r
 }
 inline std::optional<bool> asBoolean(const Value & v) {
   return std::holds_alternative<bool>(v) ? std::optional<bool>(std::get<bool>(v)) : std::nullopt;
+}
+inline std::optional<NodeKey> asNode(const Value & v) {
+  return std::holds_alternative<NodeKey>(v) ? std::optional<NodeKey>(std::get<NodeKey>(v)) : std::nullopt;
 }
 
 // One thing said of a node: a triple (subject, predicate, object), the subject being the node. Instruments, markets and
@@ -88,6 +92,7 @@ struct Attribute {
   Attribute(std::string p, int64_t v) : predicate(std::move(p)), value(v) {}
   Attribute(std::string p, double v) : predicate(std::move(p)), value(v) {}
   Attribute(std::string p, bool v) : predicate(std::move(p)), value(v) {}
+  Attribute(std::string p, NodeKey v) : predicate(std::move(p)), value(v) {}
   Attribute(std::string p, Value v) : predicate(std::move(p)), value(std::move(v)) {}
   friend bool operator==(const Attribute & a, const Attribute & b) { return a.predicate == b.predicate && a.value == b.value; }
 };
@@ -125,6 +130,14 @@ struct NodeRef {
   NodeRef(DatasetId i) : type(NodeType::Dataset), id(i.value) {}
   friend bool operator==(const NodeRef &, const NodeRef &) = default;
 };
+
+// The node a key names, as a NodeRef: an instrument or a currency is an instrument.
+inline NodeRef nodeOf(NodeKey key) {
+  NodeRef n;
+  n.id = key.value;
+  n.type = key.kind() == NodeKind::Market ? NodeType::Market : key.kind() == NodeKind::Dataset ? NodeType::Dataset : NodeType::Instrument;
+  return n;
+}
 
 // A price, volume or other number a provider does not give is undefined (NaN), not zero.
 inline constexpr double kUndefined = std::numeric_limits<double>::quiet_NaN();

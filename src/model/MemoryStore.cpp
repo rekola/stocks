@@ -112,13 +112,14 @@ std::string indexKey(NodeType t, const std::string & p, const std::string & v) {
   return std::string(1, static_cast<char>('0' + static_cast<int>(t))) + p + '\0' + v;
 }
 
-// The node of a key: an instrument or a currency is an instrument.
-NodeRef refOf(NodeKey key) {
-  NodeRef n;
-  n.id = key.value;
-  n.type = key.kind() == NodeKind::Market ? NodeType::Market : key.kind() == NodeKind::Dataset ? NodeType::Dataset
-                                                                                               : NodeType::Instrument;
-  return n;
+NodeRef refOf(NodeKey key) { return nodeOf(key); }
+
+// What an index holds a value as: text as it is, a link as a NUL and the number of the key it names (so that "who has this
+// person as `ceo`" is as cheap as "who is called this"). None for the other alternatives, which are not found by their value.
+std::optional<std::string> indexedValue(const Value & v) {
+  if (const auto * t = std::get_if<std::string>(&v)) return *t;
+  if (const auto * k = std::get_if<NodeKey>(&v)) return std::string(1, '\0') + std::to_string(k->value);
+  return std::nullopt;
 }
 
 std::optional<NodeRef> lowest(const immer::set<uint64_t> * ids, NodeType t) {
@@ -215,6 +216,18 @@ std::vector<Attribute> Snapshot::attributes(NodeRef n) const {
 std::optional<NodeRef> Snapshot::findByAttribute(NodeType t, const std::string & p, const std::string & v) const {
   return lowest(byAttribute_.find(indexKey(t, p, v)), t);
 }
+std::vector<NodeRef> Snapshot::findLinked(NodeType t, const std::string & p, NodeKey target) const {
+  std::vector<NodeRef> out;
+  if (const auto * ids = byAttribute_.find(indexKey(t, p, *indexedValue(Value{target}))))
+    for (uint64_t id : *ids) {
+      NodeRef n;
+      n.type = t;
+      n.id = id;
+      out.push_back(n);
+    }
+  std::sort(out.begin(), out.end(), [](NodeRef a, NodeRef b) { return a.id < b.id; });
+  return out;
+}
 std::optional<DatasetId> Snapshot::findDataset(const std::string & code) const {
   const auto key = datasetKey(code);
   if (!key || !attributes_.find(refOf(*key))) return std::nullopt;
@@ -309,11 +322,8 @@ bool says(const Value & v) {
   if (std::holds_alternative<std::monostate>(v)) return false;
   if (const auto * t = std::get_if<std::string>(&v)) return !t->empty();
   if (const auto * d = std::get_if<double>(&v)) return !std::isnan(*d);
+  if (const auto * k = std::get_if<NodeKey>(&v)) return k->valid();
   return true;
-}
-std::string textOf(const Value & v) {
-  const auto * t = std::get_if<std::string>(&v);
-  return t ? *t : std::string();
 }
 }  // namespace
 
@@ -334,8 +344,8 @@ void Snapshot::load(const std::vector<StoredFact> & facts) {
   }
   for (auto & [n, attrs] : grouped) {
     for (const Attribute & a : attrs)
-      if (const auto * text = std::get_if<std::string>(&a.value)) {
-        const std::string said = indexKey(n.type, a.predicate, *text);
+      if (const auto value = indexedValue(a.value)) {
+        const std::string said = indexKey(n.type, a.predicate, *value);
         const auto * ids = byAttribute_.find(said);
         byAttribute_ = byAttribute_.set(said, (ids ? *ids : immer::set<uint64_t>{}).insert(n.id));
       }
@@ -358,16 +368,18 @@ void Snapshot::setAttributes(NodeRef n, const std::vector<Attribute> & in) {
     return std::find_if(attrs.begin(), attrs.end(), [&](const Attribute & x) { return x.predicate == predicate; });
   };
   const auto unindex = [&](const Attribute & a) {
-    if (!std::holds_alternative<std::string>(a.value)) return;
-    const std::string key = indexKey(n.type, a.predicate, textOf(a.value));
+    const auto value = indexedValue(a.value);
+    if (!value) return;
+    const std::string key = indexKey(n.type, a.predicate, *value);
     if (const auto * ids = byAttribute_.find(key)) {
       auto rest = ids->erase(n.id);
       byAttribute_ = rest.size() ? byAttribute_.set(key, rest) : byAttribute_.erase(key);
     }
   };
   const auto index = [&](const Attribute & a) {
-    if (!std::holds_alternative<std::string>(a.value)) return;
-    const std::string key = indexKey(n.type, a.predicate, textOf(a.value));
+    const auto value = indexedValue(a.value);
+    if (!value) return;
+    const std::string key = indexKey(n.type, a.predicate, *value);
     const auto * ids = byAttribute_.find(key);
     byAttribute_ = byAttribute_.set(key, (ids ? *ids : immer::set<uint64_t>{}).insert(n.id));
   };

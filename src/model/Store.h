@@ -56,6 +56,9 @@ class Snapshot {
   // is `value` (the one made first, if several do). Only text is found by its value.
   std::vector<Attribute> attributes(NodeRef) const;
   std::optional<NodeRef> findByAttribute(NodeType, const std::string & predicate, const std::string & value) const;
+  // The nodes of a type that say `predicate` is a link to `target` ("who has this person as `ceo`"), by key. A link is found by the
+  // same index as a text; the links to a node across all predicates ("is the CEO of") are not indexed.
+  std::vector<NodeRef> findLinked(NodeType, const std::string & predicate, NodeKey target) const;
   // The dataset with this code, if anything is said of it.
   std::optional<DatasetId> findDataset(const std::string & code) const;
   // The markets that have an edge, by name and then by key.

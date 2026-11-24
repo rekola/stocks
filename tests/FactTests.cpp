@@ -121,6 +121,37 @@ TEST(every_value_alternative_round_trips_through_the_file) {
   }
 }
 
+TEST(a_value_that_is_a_node_is_kept_and_comes_back_as_one) {
+  TempFile t;
+  const uint64_t node = numberOf(datasetKey("a")), target = numberOf(currencyKey("EUR"));
+  {
+    auto facts = openSqliteFactStore(t.file);
+    FactBatch batch;
+    batch.changed = {{node, "currency", NodeKey{target}, 5}, {node, "flag", true, 5}, {node, "count", static_cast<int64_t>(target), 5}};
+    facts->apply(batch);
+  }
+  auto loaded = byKey(openSqliteFactStore(t.file)->loadAll());
+  CHECK(loaded.size() == 3);
+  CHECK(at(loaded, node, "currency").value == Value(NodeKey{target}));  // not the integer it is stored as
+  CHECK(at(loaded, node, "count").value == Value(int64_t{static_cast<int64_t>(target)}));
+  CHECK(at(loaded, node, "flag").value == Value(true));
+
+  // Through the store: said, kept, restored, found by the node it names.
+  Clock clock;
+  InstrumentId eur;
+  {
+    auto store = makeMemoryStore(optionsFor(openSqliteFactStore(t.file), clock));
+    eur = store->addInstrument("EUR", "Euro", InstrumentKind::Currency);
+    store->setAttribute(NodeRef(store->addDataset("a")), {"currency", NodeKey{eur.value}});
+  }
+  auto store = makeMemoryStore(optionsFor(openSqliteFactStore(t.file), clock));
+  auto s = store->snapshot();
+  CHECK(s->version() == 0);
+  const auto restored = s->attribute(NodeRef(*s->findDataset("a")), "currency");
+  CHECK(restored && asNode(*restored) == NodeKey{eur.value});
+  CHECK(s->findLinked(NodeType::Dataset, "currency", NodeKey{eur.value}).size() == 1);
+}
+
 TEST(a_batch_replaces_by_node_and_predicate) {
   TempFile t;
   auto facts = openSqliteFactStore(t.file);
@@ -380,7 +411,7 @@ namespace {
 // A file at `version` holding one fact.
 void makeFileAtVersion(const fs::path & file, int version) {
   SQLite::Database db(file.string(), SQLite::OPEN_READWRITE | SQLite::OPEN_CREATE);
-  db.exec("CREATE TABLE facts (node_key INTEGER NOT NULL, predicate TEXT NOT NULL, value, is_bool INTEGER NOT NULL DEFAULT 0, "
+  db.exec("CREATE TABLE facts (node_key INTEGER NOT NULL, predicate TEXT NOT NULL, value, tag INTEGER NOT NULL DEFAULT 0, "
           "updated INTEGER NOT NULL, PRIMARY KEY (node_key, predicate)) WITHOUT ROWID");
   db.exec("INSERT INTO facts VALUES (" + std::to_string(numberOf(datasetKey("x"))) + ", 'name', 'x', 0, 1)");
   db.exec("PRAGMA user_version = " + std::to_string(version));

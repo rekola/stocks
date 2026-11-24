@@ -13,7 +13,9 @@ namespace {
 
 namespace fs = std::filesystem;
 
-constexpr int kSchemaVersion = 4;  // 4: private ISINs are a hash of the exact text
+constexpr int kSchemaVersion = 5;  // 5: a value may be a link to a node (`tag` in place of `is_bool`); 4: private ISINs are a hash of the exact text
+// What a fact's value is beyond what SQLite says of it: an integer that is a truth value, or one that is the key of a node.
+constexpr int kPlain = 0, kBoolean = 1, kNode = 2;
 // SQLite's result codes for a damaged database and for a file that is none (kCorrupt, kNotADatabase): SQLiteCpp does
 // not show sqlite3.h, and nothing of SQLite itself is called from here.
 constexpr int kCorrupt = 11, kNotADatabase = 26;
@@ -54,7 +56,7 @@ class SqliteFactStore : public FactStore {
     std::vector<StoredFact> out;
     if (!db_) return out;
     try {
-      SQLite::Statement q(*db_, "SELECT node_key, predicate, value, is_bool, updated FROM facts");
+      SQLite::Statement q(*db_, "SELECT node_key, predicate, value, tag, updated FROM facts");
       while (q.executeStep()) {
         StoredFact f;
         f.node = static_cast<uint64_t>(q.getColumn(0).getInt64());
@@ -68,9 +70,13 @@ class SqliteFactStore : public FactStore {
         else if (value.isFloat())
           f.value = value.getDouble();
         else if (value.isInteger()) {
-          if (q.getColumn(3).getInt() != 0)
+          const int tag = q.getColumn(3).getInt();
+          if (tag == kBoolean)
             f.value = value.getInt64() != 0;
-          else
+          else if (tag == kNode) {
+            if (value.getInt64() <= 0) continue;  // no key
+            f.value = NodeKey{static_cast<uint64_t>(value.getInt64())};
+          } else
             f.value = value.getInt64();
         } else
           continue;  // a blob: not ours
@@ -89,15 +95,15 @@ class SqliteFactStore : public FactStore {
     try {
       SQLite::Transaction transaction(*db_);
       SQLite::Statement put(*db_,
-                            "INSERT INTO facts (node_key, predicate, value, is_bool, updated) "
+                            "INSERT INTO facts (node_key, predicate, value, tag, updated) "
                             "VALUES (?, ?, ?, ?, ?) "
                             "ON CONFLICT (node_key, predicate) DO UPDATE SET "
-                            "value = excluded.value, is_bool = excluded.is_bool, updated = excluded.updated");
+                            "value = excluded.value, tag = excluded.tag, updated = excluded.updated");
       for (const auto * list : {&batch.changed, &batch.rechecked})
         for (const StoredFact & f : *list) {
           put.bind(1, static_cast<int64_t>(f.node));
           put.bind(2, f.predicate);
-          int32_t is_bool = 0;
+          int32_t tag = kPlain;
           if (const auto * t = std::get_if<std::string>(&f.value))
             put.bind(3, *t);
           else if (const auto * i = std::get_if<int64_t>(&f.value))
@@ -106,10 +112,13 @@ class SqliteFactStore : public FactStore {
             put.bind(3, *d);
           else if (const auto * b = std::get_if<bool>(&f.value)) {
             put.bind(3, static_cast<int32_t>(*b ? 1 : 0));
-            is_bool = 1;
+            tag = kBoolean;
+          } else if (const auto * k = std::get_if<NodeKey>(&f.value)) {
+            put.bind(3, static_cast<int64_t>(k->value));
+            tag = kNode;
           } else
             put.bind(3);
-          put.bind(4, is_bool);
+          put.bind(4, tag);
           put.bind(5, static_cast<int64_t>(f.updated));
           put.exec();
           put.reset();
@@ -155,12 +164,12 @@ class SqliteFactStore : public FactStore {
   }
 
   // `value` has no declared type, so SQLite keeps what it is given (a real that is whole stays real); a truth value is an
-  // integer with `is_bool` set. The key of the node is its number (NodeKey.h), whose top bits say what kind of node it is.
+  // integer with `tag` 1, and a link the integer of the key with `tag` 2. The key of the node is its number (NodeKey.h), whose top bits say what kind of node it is.
   void createTable() {
     db_->exec(
         "CREATE TABLE IF NOT EXISTS facts ("
         "node_key INTEGER NOT NULL, predicate TEXT NOT NULL, "
-        "value, is_bool INTEGER NOT NULL DEFAULT 0, updated INTEGER NOT NULL, "
+        "value, tag INTEGER NOT NULL DEFAULT 0, updated INTEGER NOT NULL, "
         "PRIMARY KEY (node_key, predicate)) WITHOUT ROWID");
   }
 
