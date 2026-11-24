@@ -8,7 +8,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
 #include <cstdlib>
 #include <map>
 #include <optional>
@@ -46,16 +45,6 @@ std::string labelOf(const std::string & name) {
   return label;
 }
 
-// "2026-11-20" as a day number, or none.
-std::optional<int64_t> dayOf(const std::string & text) {
-  int year = 0;
-  unsigned month = 0, day = 0;
-  char tail = 0;
-  if (std::sscanf(text.c_str(), "%4d-%2u-%2u%c", &year, &month, &day, &tail) != 3 || text.size() != 10) return std::nullopt;
-  if (year < 1900 || month < 1 || month > 12 || day < 1 || day > 31) return std::nullopt;
-  return dayNumber(year, month, day);
-}
-
 // "-0,545" as -0.545, or none for an empty value (a rate the bank has not for that day) or one that is not a number.
 std::optional<double> rateOf(std::string text) {
   std::replace(text.begin(), text.end(), ',', '.');
@@ -65,12 +54,6 @@ std::optional<double> rateOf(std::string text) {
   const double v = std::strtod(text.c_str(), &end);
   if (*end != '\0' || !std::isfinite(v)) return std::nullopt;
   return v;
-}
-
-// The unit the rates are quoted in, made if it is new.
-InstrumentId perCent(Batch & b) {
-  if (auto known = b.view().findInstrument("pct")) return *known;
-  return b.addInstrument("pct", "Per cent", InstrumentKind::Unit);
 }
 
 }  // namespace
@@ -87,7 +70,7 @@ bool SuomenPankkiSource::parse(const std::string & xml, Store & store, std::stri
   int badDays = 0, badValues = 0;
   for (const pugi::xpath_node & p : doc.select_nodes("//period")) {
     const pugi::xml_node period = p.node();
-    const auto day = dayOf(period.attribute("value").as_string());
+    const auto day = dayNumberOfIsoDate(period.attribute("value").as_string());
     if (!day) {
       badDays++;
       continue;
@@ -126,7 +109,7 @@ bool SuomenPankkiSource::parse(const std::string & xml, Store & store, std::stri
   store.batch([&](Batch & b) {
     const DatasetId dataset = b.addDataset(kSuomenPankkiDataset, "Suomen Pankki");
     const MarketId market = b.addMarket(kNoMarket, marketNameOfMic(kNoMarket));
-    const InstrumentId quote = perCent(b);
+    const InstrumentId quote = quoteNode(b, "pct");
     for (const Tenor & t : kTenors) {
       auto it = bars.find(t.symbol);
       if (it == bars.end()) continue;

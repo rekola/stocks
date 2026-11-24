@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?><message:StructureSpecificData xmlns:message="http://www.sdmx.org/resources/sdmxml/schemas/v2_1/message" xmlns:common="http://www.sdmx.org/resources/sdmxml/schemas/v2_1/common" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:data="http://www.sdmx.org/resources/sdmxml/schemas/v2_1/data/structurespecific" xmlns:ecb_est1="urn:sdmx:org.sdmx.infomodel.datastructure.DataStructure=ECB:ECB_EST1(1.0):ObsLevelDim:TIME_PERIOD" xsi:schemaLocation="http://www.sdmx.org/resources/sdmxml/schemas/v2_1/message https://data-api.ecb.europa.eu:443/vocabulary/sdmx/2_1/SDMXMessage.xsd http://www.sdmx.org/resources/sdmxml/schemas/v2_1/common https://data-api.ecb.europa.eu:443/vocabulary/sdmx/2_1/SDMXCommon.xsd urn:sdmx:org.sdmx.infomodel.datastructure.DataStructure=ECB:ECB_EST1(1.0):ObsLevelDim:TIME_PERIOD https://data-api.ecb.europa.eu:443/service/schema/datastructure/ECB/ECB_EST1/1.0">
+<message:Header>
+<message:ID>2bebd367-e0f5-4394-9e9e-b5d4bfa05644</message:ID>
+<message:Test>false</message:Test>
+<message:Prepared>2026-11-24T00:53:57.231+00:00</message:Prepared>
+<message:Sender id="ECB"/>
+<message:Structure structureID="ECB_EST1" dimensionAtObservation="TIME_PERIOD" namespace="urn:sdmx:org.sdmx.infomodel.datastructure.DataStructure=ECB:ECB_EST1(1.0):ObsLevelDim:TIME_PERIOD">
+<common:Structure>
+<URN>urn:sdmx:org.sdmx.infomodel.datastructure.DataStructure=ECB:ECB_EST1(1.0)</URN>
+</common:Structure>
+</message:Structure>
+</message:Header>
+<message:DataSet data:action="Replace" data:validFromDate="2026-11-24T00:53:57.231+00:00" data:structureRef="ECB_EST1" data:dataScope="DataStructure" xsi:type="ecb_est1:DataSetType">
+<Series FREQ="B" BENCHMARK_ITEM="EU000A2QQF08" DATA_TYPE_EST="CI" UNIT_MEASURE="IX" COVERAGE="ESA 2010 Sectors: S.121, S.122, S.123, S.124, S.125, S.126, S.127, S.128, S.129" TIME_FORMAT="P1D" TITLE_COMPL="Compounded euro short-term rate index (1 Oct 2019 = 100)" TITLE="Compounded euro short-term rate index (1 Oct 2019 = 100)" DECIMALS="8" TIME_PER_COLLECT="V" UNIT_MULT="0">
+<Obs TIME_PERIOD="2019-10-01" OBS_VALUE="100" OBS_STATUS="A" CONF_STATUS="F"/>
+<Obs TIME_PERIOD="2019-10-02" OBS_VALUE="99.998475" OBS_STATUS="A" CONF_STATUS="F"/>
+<Obs TIME_PERIOD="2026-11-19" OBS_VALUE="110.2638656" OBS_STATUS="A" CONF_STATUS="F"/>
+<Obs TIME_PERIOD="2026-11-20" OBS_VALUE="110.2713421" OBS_STATUS="A" CONF_STATUS="F"/>
+<Obs TIME_PERIOD="2026-11-23" OBS_VALUE="110.2938007" OBS_STATUS="A" CONF_STATUS="F"/>
+</Series>
+<Series FREQ="B" BENCHMARK_ITEM="EU000A2X2A25" DATA_TYPE_EST="WT" COVERAGE="ESA 2010 Sectors: S.121, S.122, S.123, S.124, S.125, S.126, S.127, S.128, S.129" TITLE="Euro short-term rate" TITLE_COMPL="Euro short-term rate, Volume-weighted trimmed mean rate - Unsecured - Overnight - Borrowing - Financial corporations" TIME_FORMAT="P1D" TIME_PER_COLLECT="A" UNIT_MEASURE="PC" DECIMALS="3" UNIT_MULT="0">
+<Obs TIME_PERIOD="2019-10-01" OBS_VALUE="-0.549" OBS_STATUS="A" CONF_STATUS="F"/>
+<Obs TIME_PERIOD="2019-10-02" OBS_VALUE="-0.551" OBS_STATUS="A" CONF_STATUS="F"/>
+<Obs TIME_PERIOD="2026-11-19" OBS_VALUE="2.441" OBS_STATUS="A" CONF_STATUS="F"/>
+<Obs TIME_PERIOD="2026-11-20" OBS_VALUE="2.444" OBS_STATUS="A" CONF_STATUS="F"/>
+</Series>
+<Series FREQ="B" BENCHMARK_ITEM="EU000A2QQF16" DATA_TYPE_EST="CR" TIME_PER_COLLECT="V" UNIT_MEASURE="PC" TITLE_COMPL="Compounded euro short-term average rate, 1 week tenor" UNIT_MULT="0" COVERAGE="ESA 2010 Sectors: S.121, S.122, S.123, S.124, S.125, S.126, S.127, S.128, S.129" DECIMALS="5" TIME_FORMAT="P1D" TITLE="Compounded euro short-term average rate, 1 week tenor">
+<Obs TIME_PERIOD="2026-11-19" OBS_VALUE="2.44" OBS_STATUS="A" CONF_STATUS="F"/>
+<Obs TIME_PERIOD="2026-11-20" OBS_VALUE="2.43971" OBS_STATUS="A" CONF_STATUS="F"/>
+<Obs TIME_PERIOD="2026-11-23" OBS_VALUE="2.44271" OBS_STATUS="A" CONF_STATUS="F"/>
+</Series>
+</message:DataSet>
+</message:StructureSpecificData>

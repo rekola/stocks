@@ -93,3 +93,9 @@ TEST(a_bar_that_does_not_start_on_a_slot_boundary_is_found_out) {
   CHECK(onSlotBoundary(Resolution::Min30, at(2026, 11, 20, 14, 30)));   // but on a 30-minute boundary
   CHECK(onSlotBoundary(Resolution::Min5, at(2026, 11, 20, 14, 30)) && onSlotBoundary(Resolution::Min15, at(2026, 11, 20, 14, 30)));
 }
+
+TEST(an_iso_date_is_read_exactly_or_not_at_all) {
+  CHECK(dayNumberOfIsoDate("2026-11-20") == dayNumber(2026, 11, 20));
+  for (const char * bad : {"", "yesterday", "2026-11-2", "2026-1-20", "2026-13-01", "2026-11-00", "2026-11-200", "2026-11-20 ", "1800-01-01"})
+    CHECK(!dayNumberOfIsoDate(bad));
+}
