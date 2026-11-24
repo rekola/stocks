@@ -6,7 +6,9 @@
 
 #include <cellui/NumberParse.h>
 
+#include <algorithm>
 #include <cmath>
+#include <map>
 #include <fstream>
 #include <sstream>
 
@@ -89,18 +91,32 @@ bool loadGoldTable(GoldTable & table, std::string & error) {
 
 void GoldSource::load(Store & store, Http &, SourceListener & listener) {
   const auto snapshot = store.snapshot();
-  std::optional<EdgeKey> spot;
+  // The spot prices there are, one for each currency they are in: of the symbols the file names, the first it names that has a price in that
+  // currency (the file puts the one with prices in both euros and dollars first).
+  struct Spot {
+    size_t rank;
+    EdgeKey edge;
+    Candle bar;
+  };
+  std::map<uint64_t, Spot> spots;  // by the quote currency
   if (const auto market = snapshot->findMarket(kNoMarket))
-    for (const std::string & symbol : table_.spots)
-      if (!spot) spot = snapshot->findEdge(symbol, *market);
-  const CandleSeries last = spot ? snapshot->lastCandles(*spot, Resolution::Day, 1) : CandleSeries{};
-  if (!spot || last.candles.empty() || !isDefined(last.candles.back().close)) {
-    // Another source writes the spot, perhaps still loading: try again at the next refresh, and say so once if it stays away.
+    for (const EdgeKey & key : snapshot->edges(*market)) {
+      const auto listing = snapshot->listing(key);
+      if (!listing) continue;
+      const auto at = std::find(table_.spots.begin(), table_.spots.end(), listing->symbol);
+      if (at == table_.spots.end()) continue;
+      const CandleSeries last = snapshot->lastCandles(key, Resolution::Day, 1);
+      if (last.candles.empty() || !isDefined(last.candles.back().close)) continue;
+      const size_t rank = static_cast<size_t>(at - table_.spots.begin());
+      const auto found = spots.find(key.quote.value);
+      if (found == spots.end() || rank < found->second.rank) spots[key.quote.value] = {rank, key, last.candles.back()};
+    }
+  if (spots.empty()) {
+    // Another source writes the spot, perhaps still loading: try again soon, and say so once if it stays away.
     if (++misses_ == 3) listener.message("gold: no gold spot price in the store yet, so no estimate for gold");
     return;
   }
   misses_ = 0;
-  const Candle spotBar = last.candles.back();
   store.batch([&](Batch & b) {
     const DatasetId dataset = b.addDataset(kGoldDataset, "Estimate");
     const MarketId market = b.addMarket(kOffExchange, marketNameOfMic(kOffExchange));
@@ -111,11 +127,14 @@ void GoldSource::load(Store & store, Http &, SourceListener & listener) {
                                                                {predicate::type, "PHYSICAL"}});
       if (!instrument.valid()) continue;
       if (!item.symbol_icon.empty()) b.setAttribute(NodeRef(instrument), {predicate::iconSymbol, item.symbol_icon});
-      const EdgeKey edge{instrument, spot->quote, market, dataset};
       const double scale = item.ounces * item.bid;  // an undefined open, high or low stays undefined
-      b.appendCandles(edge, Resolution::Day,
-                      {{spotBar.time, spotBar.open * scale, spotBar.high * scale, spotBar.low * scale, spotBar.close * scale, kUndefined}});
-      b.setListing({edge, item.symbol, "", "", "PHYSICAL", item.name});
+      // One edge for each currency the spot is in: a price in euros for an item held in euros, and one in dollars.
+      for (const auto & [quote, spot] : spots) {
+        const EdgeKey edge{instrument, spot.edge.quote, market, dataset};
+        const Candle & bar = spot.bar;
+        b.appendCandles(edge, Resolution::Day, {{bar.time, bar.open * scale, bar.high * scale, bar.low * scale, bar.close * scale, kUndefined}});
+        b.setListing({edge, item.symbol, "", "", "PHYSICAL", item.name});
+      }
     }
   });
   listener.changed();
