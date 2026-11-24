@@ -170,7 +170,7 @@ TEST(the_table_shows_an_icon_once_it_has_loaded_and_keeps_its_place) {
   IconFixture f;
   Table & table = f.browser->table();
   table.select(1);
-  table.setCursor(Quotes::NAME);  // the cursor's own cell is not drawn inverted, and it starts on the icon column
+  table.setCursor(Quotes::ICON);  // the cell the cursor is in is the inverted one, so the selected row's picture is inverted
   const int selected = table.selectedRow();
   f.app->present();
   const auto * quotes = static_cast<const Quotes *>(table.model().get());
@@ -187,7 +187,7 @@ TEST(the_table_shows_an_icon_once_it_has_loaded_and_keeps_its_place) {
   f.app->present();
   CHECK(table.selectedRow() == selected);
   // Pictures where the display has them: the two rows of the brand show the one picture, and the selected row of a table that
-  // has the focus shows it inverted, as a picture of its own.
+  // has the focus and the cursor on the icon column shows it inverted, as a picture of its own.
   int plain = 0, inverted = 0;
   for (const ImagePlacement & p : f.backend->images()) {
     if (!p.shared.valid()) continue;
