@@ -181,10 +181,21 @@ int main(int argc, char ** argv) {
     }
   };
   auto fact_messages = std::make_shared<FactMessages>();
+  // What the store's own thread says when it has read queues into the store (a trace to draw): to the UI thread, once there is one.
+  struct Changed {
+    std::mutex mutex;
+    std::function<void()> post;
+    void say() {
+      std::lock_guard lock(mutex);
+      if (post) post();
+    }
+  };
+  auto store_changed = std::make_shared<Changed>();
   StoreOptions store_options;
   // The adapters give the ISINs of what their source gives none for (source/KnownIsins.h): an instrument that comes with none is not kept, and says so.
   store_options.invent_isins = false;
   // What the store refuses (a MIC that two markets would have) is said once, on the status line.
+  store_options.changed = [store_changed] { store_changed->say(); };
   store_options.notice = [fact_messages](const std::string & text) { fact_messages->say("facts: " + text); };
   if (keep_facts) {
     const std::filesystem::path file = facts_file.empty() ? defaultFactsFile() : std::filesystem::path(facts_file);
@@ -210,14 +221,23 @@ int main(int argc, char ** argv) {
     for (std::string & text : fact_messages->early) fact_messages->post(std::move(text));
     fact_messages->early.clear();
   }
+  {
+    std::lock_guard lock(store_changed->mutex);
+    store_changed->post = [&inbox] { inbox.post(StoreChanged{}); };
+  }
   // Declared after the inbox, so gone before it: nothing says anything to a display that is gone.
   struct StopPosting {
     FactMessages & messages;
+    Changed & changed;
     ~StopPosting() {
-      std::lock_guard lock(messages.mutex);
-      messages.post = nullptr;
+      {
+        std::lock_guard lock(messages.mutex);
+        messages.post = nullptr;
+      }
+      std::lock_guard lock(changed.mutex);
+      changed.post = nullptr;
     }
-  } stop_posting{*fact_messages};
+  } stop_posting{*fact_messages, *store_changed};
   auto icons = std::make_shared<IconLoader>(makeHttp(), IconLoader::Options{.cache_dir = defaultIconCacheDir()}, [&inbox] { inbox.post(IconsLoaded{}); });
   auto history = std::make_shared<HistoryLoader>(
       store, makeHttp(), HistoryLoader::Options{}, [&inbox] { inbox.post(StoreChanged{}); },

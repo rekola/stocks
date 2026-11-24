@@ -27,6 +27,7 @@ class ChosenHistory : public HistoryProvider {
     return in_use() ? in_use()->need(snapshot, edge, period) : std::nullopt;
   }
   std::chrono::milliseconds lifetime(int request) const override { return in_use() ? in_use()->lifetime(request) : std::chrono::milliseconds(0); }
+  std::optional<std::chrono::seconds> keep(Resolution r) const override { return in_use() ? in_use()->keep(r) : defaultKeep(r); }
   Outcome load(Store & store, Http & http, const EdgeKey & edge, int request, const Wait & wait) override {
     auto provider = in_use();
     return provider ? provider->load(store, http, edge, request, wait) : Outcome::Missing;

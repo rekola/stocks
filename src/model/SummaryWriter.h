@@ -32,6 +32,8 @@ class SummaryWriter {
   void post(SummaryBatch);
   // Returns when everything posted before the call has been handed to the stores.
   void flush();
+  // The codes of the datasets that have a store already.
+  std::vector<std::string> datasets() { return stores_ ? stores_->datasets() : std::vector<std::string>{}; }
   // The store of a dataset (null where there is none).
   std::shared_ptr<SummaryStore> store(DatasetId);
   // What has been said of a queue and is not yet in the file: the writes in progress, then those waiting, in the order they will have been

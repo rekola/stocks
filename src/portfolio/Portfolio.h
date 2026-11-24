@@ -61,12 +61,13 @@ bool tradable(const Snapshot &, const EdgeKey &);
 // The same by the market alone.
 bool tradable(MarketId);
 
-// The price of an instrument on a market in a currency: the latest close of the daily series of the edge with the latest bar
+// The price of an instrument on a market in a currency: the last price of the quote of the edge with the newest quote
 // (the first by key if two have the same), and the edge.
 struct Price {
   EdgeKey edge;
   double close = 0;
-  int64_t day = 0;  // of the bar
+  int64_t day = 0;  // of the quote (a day number)
+  Timestamp time = 0;  // of the quote (seconds): the newest says
 };
 std::optional<Price> latestPrice(const Snapshot &, InstrumentId instrument, MarketId, InstrumentId quote);
 

@@ -253,8 +253,8 @@ void Browser::trade(portfolio::Side side) {
     label = snapshot->symbol(edge);
     if (label.empty()) label = snapshot->name(NodeRef(edge.base));
     buyable = portfolio::tradable(*snapshot, edge);
-    const CandleSeries last = snapshot->lastCandles(edge, Resolution::Day, 1);
-    if (!last.candles.empty() && isDefined(last.candles.back().close)) offered = realText(last.candles.back().close);  // the last price
+    const auto quote = snapshot->quote(edge);
+    if (quote && isDefined(quote->last)) offered = realText(quote->last);  // the last price
   } else {
     const portfolio::PositionValue & v = positions->row(row);
     instrument = v.position.instrument;

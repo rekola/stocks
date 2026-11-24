@@ -1,5 +1,6 @@
 #include "portfolio/Portfolio.h"
 
+#include "model/Dates.h"
 #include "source/DatasetCodes.h"
 
 #include <algorithm>
@@ -104,16 +105,16 @@ bool tradable(const Snapshot &, const EdgeKey & edge) { return edge.base.valid()
 
 namespace {
 
-// The latest close of the daily bars of the edges `keep` accepts: the one with the latest bar, the first by key on a tie.
+// The last price of the quotes of the edges `keep` accepts: the one with the newest quote, the first by key on a tie.
 template <class Keep>
 std::optional<Price> latestOf(const Snapshot & snapshot, const std::vector<EdgeKey> & edges, Keep keep) {
   std::optional<Price> best;
   for (const EdgeKey & key : edges) {
     if (!keep(key)) continue;
-    const CandleSeries last = snapshot.lastCandles(key, Resolution::Day, 1);
-    if (last.candles.empty() || !isDefined(last.candles.back().close)) continue;
-    const Candle & bar = last.candles.back();
-    if (!best || bar.time > best->day || (bar.time == best->day && key < best->edge)) best = Price{key, bar.close, bar.time};
+    const auto quote = snapshot.quote(key);
+    if (!quote || !isDefined(quote->last)) continue;
+    const int64_t day = quote->time != 0 ? dayNumberOfInstant(quote->time) : 0;
+    if (!best || quote->time > best->time || (quote->time == best->time && key < best->edge)) best = Price{key, quote->last, day, quote->time};
   }
   return best;
 }

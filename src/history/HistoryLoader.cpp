@@ -48,6 +48,10 @@ void HistoryLoader::waitIdle() {
 
 void HistoryLoader::addProvider(std::shared_ptr<HistoryProvider> provider) {
   if (!provider) return;
+  // What the summary keeps of each queue of its dataset's edges is the provider's to say.
+  if (const auto dataset = datasetKey(provider->dataset()))
+    for (int r = 0; r <= static_cast<int>(Resolution::Quarter); r++)
+      store_->setRetention(DatasetId{dataset->value}, static_cast<Resolution>(r), provider->keep(static_cast<Resolution>(r)));
   std::lock_guard lock(mutex_);
   providers_.push_back(std::move(provider));
 }
@@ -64,7 +68,25 @@ bool HistoryLoader::expired(const Ask & ask, std::chrono::steady_clock::time_poi
   return lifetime.count() > 0 && std::chrono::steady_clock::now() - loaded >= lifetime;
 }
 
+bool HistoryLoader::stale(const Ask & ask, TimestampMs fetched) const {
+  auto provider = providerOf(datasetCode(ask.edge.dataset));
+  const std::chrono::milliseconds lifetime = provider ? provider->lifetime(ask.request) : std::chrono::milliseconds(0);
+  if (lifetime.count() <= 0 || fetched <= 0) return false;
+  const TimestampMs now = options_.clock ? options_.clock()
+                                         : std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+  return now - fetched >= lifetime.count();
+}
+
 void HistoryLoader::want(const std::vector<EdgeKey> & edges, Period period) {
+  // The queues the rows need are read from the disk, if they are not in memory (a thread of the store's own; nothing here waits for it).
+  {
+    std::vector<SeriesKey> series;
+    const std::vector<Resolution> reads = readsOf(period);
+    series.reserve(edges.size() * reads.size());
+    for (const EdgeKey & k : edges)
+      for (Resolution r : reads) series.push_back(SeriesKey{k, r});
+    store_->want(series);
+  }
   auto snapshot = store_->snapshot();
   {
     std::lock_guard lock(mutex_);
@@ -82,7 +104,8 @@ void HistoryLoader::want(const std::vector<EdgeKey> & edges, Period period) {
       // Loaded before: not again until it has expired (then the store's bars are the old ones, so they do not count).
       const auto loaded = done_.find(ask);
       if (loaded != done_.end() && !expired(ask, loaded->second)) continue;
-      if (loaded == done_.end() && need->stored) continue;
+      // What the store has (in memory, or in the summary on the disk) for it, unless it was fetched longer ago than the provider says it stays good.
+      if (loaded == done_.end() && need->stored && !stale(ask, need->fetched)) continue;
       queue_.push_back(ask);
     }
   }

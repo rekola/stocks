@@ -234,6 +234,13 @@ bool NordnetSource::parsePage(const std::string & body, Page & page, std::string
       // NAV of the day is dated by its tick). Its open, high and low are undefined, and so is a volume the answer lacks.
       const bool fund = kindOfType(l.type) == InstrumentKind::Fund;
       if (fund && last) open = high = low = kUndefined;
+      if (last && tick > 0) {
+        l.hasQuote = true;
+        l.quote.last = *last;
+        l.quote.bid = price(p, "bid").value_or(kUndefined);
+        l.quote.ask = price(p, "ask").value_or(kUndefined);
+        l.quote.time = tick;
+      }
       if ((fund || (open && high && low)) && last && tick > 0) {
         auto volume = p.find("turnover_volume");  // written to the bar when the answer has it; volume weights the bars
         l.hasBar = true;
@@ -281,6 +288,8 @@ bool NordnetSource::parseIndicators(const std::string & body, std::vector<Nordne
       const int64_t tick = integer(*p, "timestamp") / 1000;  // milliseconds in the answer
       auto h = number("high"), l = number("low"), c = number("last");
       if (c && tick > 0) {
+        r.hasQuote = true;
+        r.quote = {*c, number("bid").value_or(kUndefined), number("ask").value_or(kUndefined), tick};
         r.hasBar = true;
         // No open and no volume: undefined, and so are the high and the low where the row has none (the London metals
         // give only the last price). Keyed by the date of the last tick in UTC.
@@ -357,6 +366,7 @@ size_t NordnetSource::loadIndicators(const List & list, Store & store, Http & ht
       if (row.hasBar) {
         const EdgeKey edge{base, quote, market, dataset};
         b.appendCandles(edge, Resolution::Day, {row.bar});
+        if (row.hasQuote) b.setQuote(edge, row.quote);
         b.setListing({edge, row.symbol, "", row.orderBookId, row.type, row.name});
       }
       written++;
@@ -513,6 +523,7 @@ void NordnetSource::load(Store & store, Http & http, SourceListener & listener) 
           if (l.hasBar) {
             const EdgeKey edge{base, quote, market, dataset};
             b.appendCandles(edge, Resolution::Day, {l.bar});
+            if (l.hasQuote) b.setQuote(edge, l.quote);
             // What the market says of it: what it calls it, its own id for it and the order book its history is asked for by.
             b.setListing({edge, l.symbol, l.identifier, l.bookId, l.type, l.name});
           }

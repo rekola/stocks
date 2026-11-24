@@ -114,9 +114,9 @@ Open: how a selection names "these markets", by a list of names or by a fact on 
 the preset file short, but then whose fact it is (which dataset says that a market is a commodity market) is the statements
 question in `server.md`.
 
-A row needs the instrument's symbol and name, the dataset, the latest price and
-the change over the last day (from `lastCandles` of the daily series; an edge with
-only intraday bars has no row yet), and the trace of recent closes. So the table gets a Dataset column. The row's identity is the edge key.
+A row needs the instrument's symbol and name, the dataset, the latest price (the edge's quote) and
+the change over the period shown and the trace of recent closes (both from the edge's queue: see "The summary"). An edge is
+a row once it has a last price or a daily queue, and one restored from disk with none of its data in memory is a row. So the table gets a Dataset column. The row's identity is the edge key.
 
 ## Store and snapshots
 
@@ -135,8 +135,9 @@ the in-memory one, and a server-backed store would hand out snapshots too.
   write that changes nothing publishes nothing, and each one that does makes the
   next `version()`.
 - Reads on a snapshot: lookups by id and name, `edges(market)` (keys with
-  candles or a book in a market), `candles(key, resolution, range)`,
-  `lastCandles(key, resolution, n)`, `resolutions(key)` (the resolutions an edge has),
+  a quote, a queue, candles or a book in a market), `candles(key, resolution, range)`,
+  `lastCandles(key, resolution, n)`, `resolutions(key)` (the resolutions an edge has; these read the data),
+  `quote(key)`, `queue(key, resolution)`, `coverage(key, resolution)`, `queues(key)` (these read the summary),
   `books(key, range)`, `bookAt(key, time)`, `news(query)` (a time range, a node, a selection, newest first), `actions`, and
   `events(instrument)` for the datasets that have actions for an instrument.
 - Series come back as `Seq<T>` (an immer `flex_vector`): slices share storage
@@ -256,6 +257,33 @@ does not fit 32 bits, or with no close, is not in a queue (it stays in the data)
   the blob: a version byte, a kind byte and the records). WAL mode, the schema in `PRAGMA user_version`; a file of another schema is emptied
   and started over, a damaged one moved aside (`.bad-<time>`), with the same messages as the facts store. Writes use one connection and reads
   another, so a read never waits for a batch to be written.
+- **Writes derive it.** `appendCandles` writes the bars to the data, as given, and updates the queue of their resolution: a bar at a
+  time already there replaces it, a new time is pushed and bars older than the window are popped, the window being what the provider
+  keeps for the resolution (`HistoryProvider::keep()`, handed to the store by `Store::setRetention()` when the loader is given the
+  provider; for a source with none, the longest period `Period.cpp` lists for the resolution: a day for the intraday ones, a week for
+  the hourly, a year for the daily and the weekly; Nordnet's: a day of 5-minute bars, a week of hourly, three months of daily, a year
+  of weekly). A resolution no period reads has no queue. The adapters write no summary: a source that has a price says it with
+  `setQuote()` (the Nordnet list's price block: last, bid, ask and the tick time); a source that gives only bars still gives a price, since a bar
+  newer than the quote sets the quote's last price to its close and its time to the bar's, and a bar older does not overwrite it. A
+  bar's time is the start of its slot, or midnight UTC of its day; a quote's time is the tick's, so a list's quote of today stands over
+  the bars of today. The newest quote says: one said with an earlier time than the quote there is left out.
+- **What is read.** `Snapshot::quote(edge)` and `queue(edge, resolution)` (the decoded bars, oldest first), and `coverage()`, which
+  says what the file has of a queue that is not in memory (when it was fetched, the keys of its first and last bar, the count). The table's
+  price is the quote's last price; the change over a period is the last price against the first bar of the period's queue (there is no
+  base bar, so it moves a little as bars are popped); the sparkline is the queue's closes and then the last price. What `Period.cpp` keeps
+  of its rules is in "Periods" below. A row whose queue is not in memory shows its price and no trace until it is read.
+- **On demand.** At start only `loadEdges()` is read, and a portfolio is valued from the quotes with no network. `Store::want(series)`
+  (called by `HistoryLoader::want`, so by the path the Browser uses for the rows on screen and a margin) says which queues are wanted;
+  those not in memory are read by a thread of the store's own, in batches, and published into the store as one write: a new version
+  (the table redraws on a version, and a trace appears), nothing written back, and a snapshot already held keeps what it had. Reading
+  a cell never waits for the disk. A bar a source writes for a queue that is only on the disk is kept beside it and *merged* on the
+  disk by the writer, and when the queue is read what was said wins. The loader asks the summary before the network: a queue that is
+  in the file, whose `fetched` is inside the provider's `lifetime` and which covers the period costs no request (`periodCovered()`, which reads
+  coverage); the answer, which is data, feeds the queue as `appendCandles` derives it.
+- **Eviction.** Above `StoreOptions::queue_budget` (32 MiB by default: 48 bytes a bar, some 700,000 bars, where a screen of rows with a
+  margin is a few thousand), the queues in memory that were wanted the longest ago are dropped, down to nine tenths of the budget; the
+  quote of an edge always stays, the file has the queue, and what is wanted now (the rows on screen and the margin, which are the rows
+  of a portfolio shown too) is not dropped from under the reader. A queue wanted again is read again. A store with no summary files drops nothing.
 
 ## Node keys
 

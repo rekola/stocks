@@ -43,6 +43,17 @@ struct QueueCoverage {
   int64_t last_key = 0;
 };
 
+// What a snapshot holds of one queue. A queue is in memory (`resident`: `bars` is the whole of it) or only on the disk, where `disk` says
+// what the file has of it and `bars` are the bars said since it was last read (they are put into it when it is read, and win over it).
+struct QueueState {
+  Seq<Candle> bars;
+  QueueKind kind = QueueKind::Candle;
+  TimestampMs fetched = 0;
+  bool resident = true;
+  bool unknown = false;  // while the file is being read: whether it has this queue is not known yet (`disk` says nothing)
+  QueueCoverage disk;
+};
+
 // One edge as it is kept: what is said of it, and for each resolution the coverage of its queue (`loadEdges()` only).
 struct StoredEdge {
   Listing listing;  // its key is the edge's; the rest is empty where no listing was said

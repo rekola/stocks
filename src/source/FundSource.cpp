@@ -488,7 +488,8 @@ void FundSource::load(Store & store, Http & http, SourceListener & listener) {
 std::optional<HistoryProvider::Need> FundHistory::need(const Snapshot & snapshot, const EdgeKey & edge, Period) const {
   auto listing = snapshot.listing(edge);
   if (!listing || listing->identifier.empty()) return std::nullopt;
-  return Need{0, periodView(snapshot, edge, Period::Quarter, false).primary};
+  const Covered covered = periodCovered(snapshot, edge, Period::Quarter);
+  return Need{0, covered.covered, covered.fetched};
 }
 
 void FundHistory::setToken(std::string token) {

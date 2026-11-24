@@ -103,6 +103,7 @@ std::vector<InfoSection> buildInfo(const Snapshot & snapshot, const EdgeKey & ed
   if (snapshot.known(NodeRef(edge.quote))) add("quote currency", snapshot.symbol(edge.quote));
   out.push_back(std::move(listing));
 
+
   out.push_back({"Instrument", attributeRows(snapshot, NodeRef(edge.base), {predicate::isin, predicate::name, predicate::kind})});
   out.push_back(
       {"Market", attributeRows(snapshot, NodeRef(edge.market),
@@ -119,6 +120,31 @@ std::vector<InfoSection> buildInfo(const Snapshot & snapshot, const EdgeKey & ed
     series.rows.push_back({name(r), {std::to_string(n) + (n == 1 ? " bar, " : " bars, ") + barTime(r, bars.candles.front().time) + " to " + barTime(r, bars.candles.back().time), std::nullopt}});
   }
   out.push_back(std::move(series));
+
+  // The summary of the edge, which is not the data (the series above): what the table shows and what is kept between runs.
+  InfoSection summary{"Summary", {}};
+  if (const auto q = snapshot.quote(edge)) {
+    if (isDefined(q->last)) summary.rows.push_back({"last", {realText(q->last), std::nullopt}});
+    if (isDefined(q->bid)) summary.rows.push_back({"bid", {realText(q->bid), std::nullopt}});
+    if (isDefined(q->ask)) summary.rows.push_back({"ask", {realText(q->ask), std::nullopt}});
+    if (q->time != 0) {
+      const int64_t second = q->time - (dayNumberOfInstant(q->time) - kUnixEpochDayNumber) * 86400;
+      summary.rows.push_back({"quote time", {dateText(dayNumberOfInstant(q->time)) + " " + twoDigits(static_cast<int>(second / 3600)) + ":" + twoDigits(static_cast<int>(second % 3600 / 60)) + " UTC", std::nullopt}});
+    }
+  }
+  for (Resolution r : snapshot.queues(edge)) {
+    const auto c = snapshot.coverage(edge, r);
+    if (!c || c->count == 0) continue;
+    std::string text = std::to_string(c->count) + (c->count == 1 ? " bar, " : " bars, ") + barTime(r, c->first_key) + " to " + barTime(r, c->last_key) +
+                       (snapshot.queueResident(edge, r) ? ", in memory" : ", on the disk");
+    if (c->fetched > 0) {
+      const int64_t seconds = c->fetched / 1000, second = seconds - (dayNumberOfInstant(seconds) - kUnixEpochDayNumber) * 86400;
+      text += ", fetched " + dateText(dayNumberOfInstant(seconds)) + " " + twoDigits(static_cast<int>(second / 3600)) + ":" + twoDigits(static_cast<int>(second % 3600 / 60));
+    }
+    summary.rows.push_back({std::string("queue ") + name(r), {std::move(text), std::nullopt}});
+  }
+  if (!summary.rows.empty()) out.push_back(std::move(summary));
+
 
   // The latest news of the instrument, of its market and of the market's country: a few headlines, newest first.
   {
