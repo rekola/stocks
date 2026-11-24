@@ -2,6 +2,8 @@
 
 #include "model/Dates.h"
 
+#include <algorithm>
+#include <cstddef>
 #include <limits>
 
 namespace {
@@ -23,6 +25,7 @@ constexpr int64_t kEnd = std::numeric_limits<int64_t>::max();
 void trace(const Seq<Candle> & bars, PeriodView & v) {
   v.closes.reserve(bars.size());
   for (const Candle & c : bars) v.closes.push_back(static_cast<float>(c.close));
+  v.light = activity(bars);
 }
 
 // Fills in the last price and the trace of a period from its series `bars`. The series is loaded now and then, the daily bar is
@@ -33,10 +36,29 @@ void finish(const Seq<Candle> & bars, const std::optional<Candle> & daily, int64
   if (daily && daily->time >= since && isDefined(daily->close)) v.last = daily->close;
   if (!withTrace) return;
   trace(bars, v);
-  if (v.last != bars.back().close) v.closes.push_back(static_cast<float>(v.last));
+  if (v.last != bars.back().close) {
+    v.closes.push_back(static_cast<float>(v.last));
+    if (!v.light.empty()) v.light.push_back(v.light.back());  // the latest price is the last bar's, as it goes on
+  }
 }
 
 }  // namespace
+
+std::vector<float> activity(const Seq<Candle> & bars) {
+  std::vector<double> traded;
+  for (const Candle & c : bars)
+    if (isDefined(c.volume) && c.volume > 0) traded.push_back(c.volume);
+  if (traded.empty()) return {};
+  std::nth_element(traded.begin(), traded.begin() + static_cast<std::ptrdiff_t>(traded.size() / 2), traded.end());
+  const double usual = traded[traded.size() / 2];
+  std::vector<float> light;
+  light.reserve(bars.size());
+  for (const Candle & c : bars) {
+    const double v = isDefined(c.volume) && c.volume > 0 ? c.volume : 0.0;
+    light.push_back(static_cast<float>(std::min(1.0, v / usual / 4.0)));
+  }
+  return light;
+}
 
 const PeriodInfo & info(Period p) { return kInfo[static_cast<size_t>(p)]; }
 Period nextPeriod(Period p) { return static_cast<Period>((static_cast<size_t>(p) + 1) % kPeriodCount); }

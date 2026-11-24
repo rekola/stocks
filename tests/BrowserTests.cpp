@@ -23,6 +23,19 @@
 
 using namespace cellui;
 
+TEST(a_trace_is_as_bright_as_its_bars_volume_against_the_periods_usual_and_medium_with_no_volume) {
+  Seq<Candle> bars;
+  for (double volume : {100.0, 100.0, 100.0, 0.0, 800.0, kUndefined}) bars = std::move(bars).push_back({1, 1, 1, 1, 1, volume});
+  const std::vector<float> light = activity(bars);
+  CHECK(light.size() == 6);
+  CHECK(light[0] == 0.25f);       // the usual volume: bright, not past white
+  CHECK(light[3] == 0.0f);        // none: medium
+  CHECK(light[4] == 1.0f);        // abnormal: the brightest, lit past white
+  CHECK(light[5] == 0.0f);        // not defined counts as none
+  const Seq<Candle> silent = Seq<Candle>().push_back({1, 1, 1, 1, 1, kUndefined});
+  CHECK(activity(silent).empty());
+}
+
 namespace {
 
 // A row that rose over the three months and fell today: daily bars from 10 to 21 up to 30 November, today's 1 December
@@ -2029,7 +2042,7 @@ TEST(the_physical_preset_has_what_is_held_in_hand_and_not_the_funds_or_the_spot)
   InstrumentId gold = f.store->addInstrument("GOLDCOIN", "Gold coin (1 oz fine)", InstrumentKind::Commodity);
   InstrumentId spot = f.store->addInstrument("GOLD", "Gold", InstrumentKind::Commodity, "XC0009655157");
   MarketId off = *f.store->snapshot()->findMarket(kOffExchange), none = *f.store->snapshot()->findMarket(kNoMarket);
-  DatasetId data = f.store->addDataset(kGoldDataset, "Estimate");
+  DatasetId data = f.store->addDataset(kPhysicalDataset, "Estimate");
   for (const EdgeKey & k : {EdgeKey{gold, h.usd, off, data}, EdgeKey{spot, h.usd, none, h.user}})
     f.store->appendCandles(k, Resolution::Day, {{kNow, 1, 1, 1, 2900, 1}});
   f.store->setListing({EdgeKey{gold, h.usd, off, data}, "GOLDCOIN", "", "", "PHYSICAL", "Gold coin (1 oz fine)"});

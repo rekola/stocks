@@ -2,7 +2,7 @@
 
 #include "model/Isin.h"
 #include "model/Store.h"
-#include "source/GoldSource.h"
+#include "source/PhysicalSource.h"
 #include "source/KnownIsins.h"
 
 #include <set>
@@ -58,11 +58,11 @@ TEST(a_store_that_may_invent_numbers_what_has_no_isin_from_the_top_of_the_privat
 }
 
 TEST(a_physical_item_with_no_isin_in_the_header_is_refused_with_what_to_do) {
-  GoldTable table;
+  PhysicalTable table;
   std::string error;
-  CHECK(!parseGoldTable("spot,gold,XAU\nitem,gold,NEWBAR,New bar,1,1,1\n", table, error));
+  CHECK(!parsePhysicalTable("spot,gold,XAU\nitem,gold,NEWBAR,New bar,1,1,1\n", table, error));
   CHECK(error.find("line 2: the item NEWBAR has no ISIN: add one to source/KnownIsins.h") == 0);
-  CHECK(parseGoldTable("spot,gold,XAU\nitem,gold,GOLDBAR,Gold bar,1,1,1\nitem,platinum,PLATBAR,Platinum bar,1,1,1\n", table, error) == false);  // no spot for platinum yet
-  CHECK(parseGoldTable("spot,gold,XAU\nspot,platinum,XPT\nitem,gold,GOLDBAR,Gold bar,1,1,1\nitem,platinum,PLATBAR,Platinum bar,1,1,1\n", table, error));
+  CHECK(parsePhysicalTable("spot,gold,XAU\nitem,gold,GOLDBAR,Gold bar,1,1,1\nitem,platinum,PLATBAR,Platinum bar,1,1,1\n", table, error) == false);  // no spot for platinum yet
+  CHECK(parsePhysicalTable("spot,gold,XAU\nspot,platinum,XPT\nitem,gold,GOLDBAR,Gold bar,1,1,1\nitem,platinum,PLATBAR,Platinum bar,1,1,1\n", table, error));
   CHECK(table.items.size() == 2 && table.items[0].isin == known_isin::kGoldBar && table.items[1].isin == known_isin::kPlatinumBar);
 }

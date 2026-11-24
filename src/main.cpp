@@ -1,14 +1,14 @@
 // The stock browser: cellui's Table, TagBar and trace chart over a store of
 // candles that data sources fill on a thread of their own.
 //   stocks                 on the display cellui picks, with Nordnet's data, or
-//   Yahoo's if Nordnet gives nothing, and the small loaders (suomenpankki, ecb, every funds:SCHEMA of data/funds); --source replaces that set stocks --ui terminal   in the terminal;
+//   Yahoo's if Nordnet gives nothing, and the small loaders (spfb, ecb, every funds:SCHEMA of data/funds); --source replaces that set stocks --ui terminal   in the terminal;
 //   --ui window  in a window stocks --source NAME   the data source (several,
 //   comma-separated, run at once): auto (the default: nordnet, and yahoo if
 //   nordnet gives nothing),
-//                          nordnet, yahoo, suomenpankki (the Euribor rates), ecb (the €STR), goldprice (goldprice.dev: spot
-//                          prices of gold and other metals, in euros and dollars), gold (physical gold, a bar by the
-//                          gram and a coin by the ounce, estimated from the gold spot price another source gives; it runs
-//                          beside the default), funds:SCHEMA (a fund company: a
+//                          nordnet, yahoo, spfb (the Bank of Finland: the Euribor rates), ecb (the €STR), goldprice (goldprice.dev: spot
+//                          prices of gold and other metals, in euros and dollars), physical (physical metals held in hand: a gold
+//                          bar by the gram, a gold coin by the ounce, a platinum bar, estimated from the spot prices another
+//                          source gives; it runs beside the default), funds:SCHEMA (a fund company: a
 //                          schema in data/funds, or a schema file) or synthetic
 //   stocks --lists DIR     the instrument lists of the yahoo and synthetic
 //   sources (default: data/lists) stocks --facts FILE    where what the sources
@@ -34,7 +34,7 @@
 #include "source/FundSource.h"
 #include "source/EcbSource.h"
 #include "source/GoldPriceSource.h"
-#include "source/GoldSource.h"
+#include "source/PhysicalSource.h"
 #include "source/SuomenPankkiSource.h"
 #include "source/YahooSource.h"
 #include "source/DataDirectory.h"
@@ -66,23 +66,23 @@ std::unique_ptr<Source> makeSource(const std::string & name, const ListSpec & li
   if (name == "nordnet") return std::make_unique<NordnetSource>();
   if (name == "ecb") return std::make_unique<EcbSource>();
   if (name == "goldprice") return std::make_unique<GoldPriceSource>();
-  if (name == "gold") {
-    GoldTable table;
-    if (!loadGoldTable(table, error)) {
-      error = "gold: " + error;
+  if (name == "physical") {
+    PhysicalTable table;
+    if (!loadPhysicalTable(table, error)) {
+      error = "physical: " + error;
       return nullptr;
     }
-    return std::make_unique<GoldSource>(std::move(table));
+    return std::make_unique<PhysicalSource>(std::move(table));
   }
-  if (name == "suomenpankki") return std::make_unique<SuomenPankkiSource>();
+  if (name == "spfb") return std::make_unique<SuomenPankkiSource>();
   if (name == "synthetic") return std::make_unique<SyntheticSource>(lists);
   return nullptr;
 }
 
 // What runs when no --source is given: the market data ("auto") and the small loaders that have no options of their own (the rates, the
-// €STR, goldprice.dev's spot prices, the gold estimate and every fund company schema of data/funds), so they are there without being asked for.
+// €STR, goldprice.dev's spot prices, the estimate of the physical metals and every fund company schema of data/funds), so they are there without being asked for.
 std::string defaultSources() {
-  std::string names = "auto,suomenpankki,ecb,goldprice,gold";  // gold estimates physical gold from the gold spot price the first gives
+  std::string names = "auto,spfb,ecb,goldprice,physical";  // physical estimates the metals held in hand from the spot prices the others give
   std::vector<std::string> funds;
   std::error_code ec;
   const std::filesystem::path dir = findDataDirectory("funds");
@@ -94,7 +94,7 @@ std::string defaultSources() {
   return names;
 }
 
-constexpr const char * kSourceNames = "auto, nordnet, yahoo, suomenpankki, ecb, goldprice, gold, funds:SCHEMA, synthetic";
+constexpr const char * kSourceNames = "auto, nordnet, yahoo, spfb, ecb, goldprice, physical, funds:SCHEMA, synthetic";
 
 }  // namespace
 

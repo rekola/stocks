@@ -5,6 +5,10 @@
 #include "model/Dates.h"
 #include "model/Isin.h"
 #include "source/AutoSource.h"
+#include "source/EcbSource.h"
+#include "source/GoldPriceSource.h"
+#include "source/PhysicalSource.h"
+#include "source/SuomenPankkiSource.h"
 #include "source/FundSource.h"
 #include "source/InstrumentLists.h"
 #include "source/NordnetSource.h"
@@ -873,4 +877,29 @@ TEST(yahoo_types_are_mapped_onto_the_same_vocabulary) {
 
 TEST(an_etf_is_an_etf_from_either_provider) {
   CHECK(NordnetSource::kindOfType("UETF") == YahooSource::kindOfType("ETF"));
+}
+
+// What the user types after --source is what the dataset is called (a dataset's code is what the table shows, so a name that differs says one
+// thing on the command line and another on the screen).
+TEST(a_source_is_named_by_the_dataset_it_writes) {
+  std::vector<std::unique_ptr<Source>> sources;
+  sources.push_back(std::make_unique<NordnetSource>());
+  sources.push_back(std::make_unique<YahooSource>(testList(), "1y", std::chrono::milliseconds(0)));
+  sources.push_back(std::make_unique<SyntheticSource>(testList()));
+  sources.push_back(std::make_unique<SuomenPankkiSource>());
+  sources.push_back(std::make_unique<EcbSource>());
+  sources.push_back(std::make_unique<GoldPriceSource>());
+  PhysicalTable table;
+  std::string error;
+  CHECK(parsePhysicalTable("spot,gold,XAU\nitem,gold,GOLDBAR,Gold bar,1,1,1\n", table, error));
+  sources.push_back(std::make_unique<PhysicalSource>(table));
+  auto lower = [](std::string text) {
+    for (char & c : text) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return text;
+  };
+  for (const auto & source : sources) {
+    const std::vector<std::string> codes = source->datasetCodes();
+    CHECK(codes.size() == 1 && lower(codes[0]) == source->name());
+    if (codes.size() != 1 || lower(codes[0]) != source->name()) std::fprintf(stderr, "  source %s writes %s\n", source->name().c_str(), codes.empty() ? "none" : codes[0].c_str());
+  }
 }

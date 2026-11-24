@@ -100,6 +100,7 @@ class Quotes : public cellui::TableModel {
   // The symbol an instrument says stands for its icon, shown where there is no picture.
   std::string iconFallback(int r, int c) const override;
   std::span<const float> trace(int r, int) const override;
+  std::span<const float> traceLight(int r, int) const override;
   std::optional<cellui::Color> color(int r, int c) const override;
   // Prices and changes sort by their values, not their rounded text; the others by their text, letters of either case alike.
   // The change is the number as shown: basis points for a rate, per cent for a price. In a preset that mixes rates and prices
@@ -119,7 +120,8 @@ class Quotes : public cellui::TableModel {
   std::vector<EdgeKey> keys_;
   size_t rows_seen_ = 0;  // how many of the store's rows (Snapshot::quoteRowCount()) the rows above are made from
   mutable std::unordered_map<uint64_t, std::string> marketLabels_, datasetNames_;
-  mutable std::unordered_map<int, std::vector<float>> traces_;  // the rows drawn lately, for the span trace() gives
+  const PeriodView & traceOf(int r) const;  // the row's period view with its trace, kept while it is drawn
+  mutable std::unordered_map<int, PeriodView> traces_;  // the rows drawn lately, for the span trace() gives
   mutable std::vector<double> numbers_[2];                      // the sort keys of price and change
   mutable std::vector<std::string> texts_[HISTORY];             // and of the text columns, in lower case
   mutable bool built_[HISTORY + 1] = {};
