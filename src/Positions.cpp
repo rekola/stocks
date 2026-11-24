@@ -107,11 +107,14 @@ std::string Positions::text(int r, int c) const {
   }
 }
 
-std::span<const float> Positions::trace(int r, int) const {
+std::span<const float> Positions::trace(int r, int) const { return traceOf(r).closes; }
+std::span<const float> Positions::traceLight(int r, int) const { return traceOf(r).light; }
+
+const PeriodView & Positions::traceOf(int r) const {
   auto it = traces_.find(r);
   if (it == traces_.end()) {
     const auto edge = priceEdge(r);
-    it = traces_.emplace(r, edge ? periodView(*snapshot_, *edge, period_, true).closes : std::vector<float>{}).first;
+    it = traces_.emplace(r, edge ? periodView(*snapshot_, *edge, period_, true) : PeriodView{}).first;
   }
   return it->second;
 }

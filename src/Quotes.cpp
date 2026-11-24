@@ -263,11 +263,14 @@ std::string Quotes::text(int r, int c) const {
   }
 }
 
-std::span<const float> Quotes::trace(int r, int) const {
+std::span<const float> Quotes::trace(int r, int) const { return traceOf(r).closes; }
+std::span<const float> Quotes::traceLight(int r, int) const { return traceOf(r).light; }
+
+const PeriodView & Quotes::traceOf(int r) const {
   auto it = traces_.find(r);
   if (it == traces_.end()) {
     if (traces_.size() > 1024) traces_.clear();  // far more than a screen draws at once
-    it = traces_.emplace(r, periodView(*snapshot_, edge(r), period_, true).closes).first;
+    it = traces_.emplace(r, periodView(*snapshot_, edge(r), period_, true)).first;
   }
   return it->second;
 }
