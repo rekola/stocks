@@ -294,7 +294,7 @@ TEST(a_metal_has_the_isin_of_its_commodity_and_is_the_instrument_another_source_
   const MarketId none = *s->findMarket(kNoMarket);
   CHECK(s->edges(none).size() == 14 && s->hasCandles({nordnetGold, *s->findInstrument("EUR"), none, *s->findDataset(kGoldPriceDataset)}, Resolution::Day));
   // The ISINs the metals have are real (valid) ones, and the coins, with none, have one of ours, which starts with ZZ.
-  for (auto [symbol, isin] : {std::pair{"XAU", "XC0009655157"}, {"XAG", "XC0009653103"}, {"XPT", "XC0009665545"}, {"XPD", "XC0009665552"}, {"HG", "XC0005705501"}}) {
+  for (auto [symbol, isin] : {std::pair{"XAU", "XC0009655157"}, {"XAG", "XC0009653103"}, {"XPT", "XC0009665545"}, {"XPD", "XC0009665529"}, {"HG", "XC0005705501"}}) {
     CHECK(isValidIsin(isin) && s->isin(*s->findInstrument(symbol)) == isin);
   }
   for (const char * symbol : {"BTC", "ETH"}) {

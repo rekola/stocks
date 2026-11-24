@@ -30,7 +30,7 @@ struct Known {
   const char * isin;  // empty for none
 };
 constexpr Known kKnown[] = {{"XAU", InstrumentKind::Commodity, "METAL", "XC0009655157"}, {"XAG", InstrumentKind::Commodity, "METAL", "XC0009653103"},
-                            {"XPT", InstrumentKind::Commodity, "METAL", "XC0009665545"}, {"XPD", InstrumentKind::Commodity, "METAL", "XC0009665552"},
+                            {"XPT", InstrumentKind::Commodity, "METAL", "XC0009665545"}, {"XPD", InstrumentKind::Commodity, "METAL", "XC0009665529"},
                             {"HG", InstrumentKind::Commodity, "METAL", "XC0005705501"}, {"BTC", InstrumentKind::Other, "CRYPTO", ""},
                             {"ETH", InstrumentKind::Other, "CRYPTO", ""}};
 
