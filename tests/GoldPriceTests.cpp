@@ -206,7 +206,7 @@ TEST(the_gold_estimate_is_made_in_euros_and_in_dollars_from_goldprice_dev_and_be
   Said said;
   GoldTable table;
   std::string error;
-  CHECK(parseGoldTable("spot,XAU\nspot,GOLD\nitem,GOLDBAR,Gold bar (1 g fine),0.0321507466,0.97,1.04\nitem,GOLDCOIN,Gold coin (1 oz fine),1,0.98,1.08\n", table, error));
+  CHECK(parseGoldTable("spot,gold,XAU\nspot,gold,GOLD\nitem,gold,GOLDBAR,Gold bar (1 g fine),0.0321507466,0.97,1.04\nitem,gold,GOLDCOIN,Gold coin (1 oz fine),1,0.98,1.08\n", table, error));
   GoldSource estimate(table);
   // Before goldprice.dev has answered: Nordnet's dollars only.
   estimate.load(*store, http, said);
@@ -243,4 +243,36 @@ TEST(the_gold_estimate_is_made_in_euros_and_in_dollars_from_goldprice_dev_and_be
   const portfolio::Valuation v = portfolio::value(portfolio::holdings(*after, p).positions, *after, eur);
   CHECK(v.rows.size() == 1 && v.rows[0].rate && *v.rows[0].rate == 1.0 && !v.incomplete);
   CHECK(v.rows[0].value && std::abs(*v.rows[0].value - 100 * 3240 * 0.0321507466 * 0.97) < 1e-4);
+}
+
+TEST(a_sample_of_physical_platinum_is_priced_from_the_platinum_spot_in_both_currencies_and_gold_is_not_touched) {
+  auto store = makeMemoryStore();
+  FakeHttp http;
+  Said said;
+  GoldTable shipped;
+  std::string error;
+  CHECK(loadGoldTable(shipped, error));  // the file the program ships with
+  GoldSource estimate(shipped);
+  // Only gold has a price at first (the other spot has not answered): the platinum is waited for, the gold is not.
+  GoldPriceSource prices(std::chrono::minutes(2), std::chrono::milliseconds(0), {"EUR", "USD"});
+  http.answer = [](const std::string & url) { return url.find("XPT") != std::string::npos ? failed(500) : answerPrices(url); };
+  prices.load(*store, http, said);
+  estimate.load(*store, http, said);
+  auto s = store->snapshot();
+  const MarketId off = *s->findMarket(kOffExchange);
+  CHECK(s->edges(off).size() == 4 && !s->findInstrument("PLATBAR"));
+  http.answer = answerPrices;
+  prices.load(*store, http, said);
+  estimate.load(*store, http, said);
+  s = store->snapshot();
+  CHECK(s->edges(off).size() == 6);  // the gold bar, the gold coin and the platinum bar, each in euros and in dollars
+  const DatasetId data = *s->findDataset(kGoldDataset);
+  const InstrumentId bar = *s->findInstrument("PLATBAR"), eur = *s->findInstrument("EUR"), usd = *s->findInstrument("USD");
+  CHECK(s->name(NodeRef(bar)) == "Platinum bar (1 g fine)" && s->kind(bar) == InstrumentKind::Commodity && portfolio::tradable(*s, EdgeKey{bar, eur, off, data}));
+  const double gram = 0.0321507466;
+  CHECK(std::abs(s->lastCandles({bar, eur, off, data}, Resolution::Day, 1).candles.back().close - 1300 * 0.9 * gram * 0.93) < 1e-6);
+  CHECK(std::abs(s->lastCandles({bar, usd, off, data}, Resolution::Day, 1).candles.back().close - 1300 * gram * 0.93) < 1e-6);
+  // The gold bar is the gold's, not the platinum's.
+  const InstrumentId goldBar = *s->findInstrument("GOLDBAR");
+  CHECK(std::abs(s->lastCandles({goldBar, usd, off, data}, Resolution::Day, 1).candles.back().close - 3600 * gram * 0.97) < 1e-6);
 }

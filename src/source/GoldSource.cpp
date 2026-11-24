@@ -45,22 +45,27 @@ bool parseGoldTable(const std::string & text, GoldTable & table, std::string & e
     const std::vector<std::string> f = fields(line);
     const std::string where = "line " + std::to_string(n) + ": ";
     if (f[0] == "spot") {
-      if (f.size() != 2 || f[1].empty()) {
-        error = where + "a spot row is spot,SYMBOL";
+      if (f.size() != 3 || f[1].empty() || f[2].empty()) {
+        error = where + "a spot row is spot,METAL,SYMBOL";
         return false;
       }
-      table.spots.push_back(f[1]);
+      table.spots.push_back({f[1], f[2]});
     } else if (f[0] == "item") {
-      if (f.size() != 6 && f.size() != 7) {
-        error = where + "an item row is item,SYMBOL,NAME,OUNCES,BID,ASK[,ICON_SYMBOL]";
+      if (f.size() != 7 && f.size() != 8) {
+        error = where + "an item row is item,METAL,SYMBOL,NAME,OUNCES,BID,ASK[,ICON_SYMBOL]";
         return false;
       }
-      const auto ounces = number(f[3]), bid = number(f[4]), ask = number(f[5]);
-      if (f[1].empty() || f[2].empty() || !ounces || !bid || !ask || *ounces <= 0 || *bid <= 0 || *ask <= 0) {
-        error = where + "an item needs a symbol, a name and numbers above zero";
+      const auto ounces = number(f[4]), bid = number(f[5]), ask = number(f[6]);
+      if (f[1].empty() || f[2].empty() || f[3].empty() || !ounces || !bid || !ask || *ounces <= 0 || *bid <= 0 || *ask <= 0) {
+        error = where + "an item needs a metal, a symbol, a name and numbers above zero";
         return false;
       }
-      table.items.push_back({f[1], f[2], *ounces, *bid, *ask, f.size() == 7 ? f[6] : std::string()});
+      const bool known = std::any_of(table.spots.begin(), table.spots.end(), [&](const GoldTable::Spot & x) { return x.metal == f[1]; });
+      if (!known) {
+        error = where + "no spot row for the metal " + f[1] + " before it";
+        return false;
+      }
+      table.items.push_back({f[1], f[2], f[3], *ounces, *bid, *ask, f.size() == 8 ? f[7] : std::string()});
     } else {
       error = where + "a row is spot or item";
       return false;
@@ -91,29 +96,30 @@ bool loadGoldTable(GoldTable & table, std::string & error) {
 
 void GoldSource::load(Store & store, Http &, SourceListener & listener) {
   const auto snapshot = store.snapshot();
-  // The spot prices there are, one for each currency they are in: of the symbols the file names, the first it names that has a price in that
-  // currency (the file puts the one with prices in both euros and dollars first).
+  // The spot prices there are, for each metal one for each currency they are in: of the symbols the file names for the metal, the first
+  // it names that has a price in that currency (the file puts the one with prices in both euros and dollars first).
   struct Spot {
     size_t rank;
     EdgeKey edge;
     Candle bar;
   };
-  std::map<uint64_t, Spot> spots;  // by the quote currency
+  std::map<std::string, std::map<uint64_t, Spot>> spots;  // by the metal, then by the quote currency
   if (const auto market = snapshot->findMarket(kNoMarket))
     for (const EdgeKey & key : snapshot->edges(*market)) {
       const auto listing = snapshot->listing(key);
       if (!listing) continue;
-      const auto at = std::find(table_.spots.begin(), table_.spots.end(), listing->symbol);
-      if (at == table_.spots.end()) continue;
       const CandleSeries last = snapshot->lastCandles(key, Resolution::Day, 1);
       if (last.candles.empty() || !isDefined(last.candles.back().close)) continue;
-      const size_t rank = static_cast<size_t>(at - table_.spots.begin());
-      const auto found = spots.find(key.quote.value);
-      if (found == spots.end() || rank < found->second.rank) spots[key.quote.value] = {rank, key, last.candles.back()};
+      for (size_t rank = 0; rank < table_.spots.size(); rank++) {
+        if (table_.spots[rank].symbol != listing->symbol) continue;
+        auto & of = spots[table_.spots[rank].metal];
+        const auto found = of.find(key.quote.value);
+        if (found == of.end() || rank < found->second.rank) of[key.quote.value] = {rank, key, last.candles.back()};
+      }
     }
   if (spots.empty()) {
     // Another source writes the spot, perhaps still loading: try again soon, and say so once if it stays away.
-    if (++misses_ == 3) listener.message("gold: no gold spot price in the store yet, so no estimate for gold");
+    if (++misses_ == 3) listener.message("gold: no spot price in the store yet, so no estimate for physical gold");
     return;
   }
   misses_ = 0;
@@ -121,6 +127,8 @@ void GoldSource::load(Store & store, Http &, SourceListener & listener) {
     const DatasetId dataset = b.addDataset(kGoldDataset, "Estimate");
     const MarketId market = b.addMarket(kOffExchange, marketNameOfMic(kOffExchange));
     for (const GoldItem & item : table_.items) {
+      const auto metal = spots.find(item.metal);
+      if (metal == spots.end()) continue;  // no price for this metal yet: nothing of it is made
       const InstrumentId instrument = b.resolveInstrument({}, {{predicate::name, item.name},
                                                                {predicate::symbol, item.symbol},
                                                                {predicate::kind, kindName(InstrumentKind::Commodity)},
@@ -128,8 +136,8 @@ void GoldSource::load(Store & store, Http &, SourceListener & listener) {
       if (!instrument.valid()) continue;
       if (!item.symbol_icon.empty()) b.setAttribute(NodeRef(instrument), {predicate::iconSymbol, item.symbol_icon});
       const double scale = item.ounces * item.bid;  // an undefined open, high or low stays undefined
-      // One edge for each currency the spot is in: a price in euros for an item held in euros, and one in dollars.
-      for (const auto & [quote, spot] : spots) {
+      // One edge for each currency the metal's spot is in: a price in euros for an item held in euros, and one in dollars.
+      for (const auto & [quote, spot] : metal->second) {
         const EdgeKey edge{instrument, spot.edge.quote, market, dataset};
         const Candle & bar = spot.bar;
         b.appendCandles(edge, Resolution::Day, {{bar.time, bar.open * scale, bar.high * scale, bar.low * scale, bar.close * scale, kUndefined}});
