@@ -164,6 +164,15 @@ Quotes::Quotes(std::shared_ptr<const Snapshot> snapshot, std::vector<EdgeKey> ke
   reset(std::move(snapshot), std::move(keys));
 }
 
+std::string iconSymbolOf(const Snapshot & snapshot, InstrumentId instrument) {
+  if (auto symbol = snapshot.attribute(instrument, predicate::iconSymbol)) return asText(*symbol).value_or("");
+  switch (snapshot.kind(instrument)) {
+    case InstrumentKind::Index: return "📈";
+    case InstrumentKind::Currency: return "💱";
+    default: return {};
+  }
+}
+
 std::string Quotes::iconUrl(int r) const {
   auto url = snapshot_->attribute(edge(r).base, predicate::iconUrl);
   return url ? asText(*url).value_or("") : std::string();
@@ -175,11 +184,7 @@ std::shared_ptr<const cellui::TableIcon> Quotes::icon(int r, int c) const {
   return url.empty() ? nullptr : icons_->get(url);
 }
 
-std::string Quotes::iconFallback(int r, int c) const {
-  if (c != ICON) return {};
-  auto symbol = snapshot_->attribute(edge(r).base, predicate::iconSymbol);
-  return symbol ? asText(*symbol).value_or("") : std::string();
-}
+std::string Quotes::iconFallback(int r, int c) const { return c == ICON ? iconSymbolOf(*snapshot_, edge(r).base) : std::string(); }
 
 void Quotes::reset(std::shared_ptr<const Snapshot> snapshot, std::vector<EdgeKey> keys) {
   keys_ = std::move(keys);

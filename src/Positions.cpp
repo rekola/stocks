@@ -66,9 +66,7 @@ std::shared_ptr<const cellui::TableIcon> Positions::icon(int r, int c) const {
 }
 
 std::string Positions::iconFallback(int r, int c) const {
-  if (c != ICON) return {};
-  auto symbol = snapshot_->attribute(row(r).position.instrument, predicate::iconSymbol);
-  return symbol ? asText(*symbol).value_or("") : std::string();
+  return c == ICON ? iconSymbolOf(*snapshot_, row(r).position.instrument) : std::string();
 }
 
 std::string Positions::symbolOf(int r) const {
