@@ -15,15 +15,29 @@ of her own and not in `facts.sqlite`.
   The price is therefore in the edge's quote currency, as everywhere else.
 - **Cost basis is the average cost** at first. FIFO and lots are later work, and are only a different derivation from the same
   transactions.
-- **Greenfield** (CLAUDE.md): no migration; a file of another schema is started over and says so once, as `facts.sqlite` does.
+- **Greenfield** (CLAUDE.md): no migration. But this file is the only copy of what the user typed, unlike `facts.sqlite`, which is
+  a cache the sources fill again. So a file of another schema is **moved aside** (`.old-<time>`, as a damaged one is moved to `.bad-<time>`)
+  and an empty one started, saying so once; it is never dropped in place. The user can still read the old file, and nothing is migrated.
+- **Two files, not one.** The facts file is public data that can be rebuilt, the portfolio file is private data that cannot, and they
+  differ in backup, deletion, privacy and sync (see "The server"). They share no table and no schema version.
+- **Ids are UUIDs**, not autoincrement integers, for portfolios and transactions, so that two devices can add entries without
+  clashing (see "The server").
 
 ## The file
 
 `portfolios.sqlite` beside `facts.sqlite` in the user's data directory; `--portfolios FILE` and `--no-portfolios`, as for facts.
-Behind an interface (`Ledger`: `load()`, `apply(change)`), with `SqliteLedger` in no header, like `FactStore`. Writes are rare and
-by hand, so they are synchronous (no writer thread). Tables: `portfolios(id, name)` and
-`transactions(id, portfolio, time, base, quote, market, dataset, kind, quantity, price, fee, fee_currency, note)`, the schema
-version in `PRAGMA user_version`.
+Behind an interface (`Ledger`: `load()`, `apply(operation)`), with `SqliteLedger` in no header, like `FactStore`. Writes are rare and
+by hand, so they are synchronous (no writer thread). Tables: `portfolios(id, name, currency)` and
+`transactions(id, portfolio, time, base, quote, market, dataset, kind, quantity, price, fee, fee_currency, note)` hold the current
+state, and `journal(seq, id, device, time, op, subject, before, after)` is an **append-only log of operations** (add, edit and delete
+of a portfolio or a transaction, with what it was and what it became). The schema version is in `PRAGMA user_version`.
+
+- **Every change is one operation** written with the state change in one transaction. Nothing changes the tables without a journal
+  entry.
+- **Undo and redo** work on the operations of the session (the stack is in memory and not kept between runs). Undo does not erase
+  the journal: it appends the inverse operation, which is what makes the journal mergeable later.
+- **Deleting** a portfolio or a transaction is an operation like the others, so it is undone like them (a deleted portfolio comes back
+  with its transactions).
 
 ## Valuation
 
@@ -34,6 +48,21 @@ version in `PRAGMA user_version`.
   shown in its own currency, left out of the total, and the total is marked incomplete. No rate is invented.
 - **A pure function** `derivePositions(transactions)` and `value(positions, snapshot, currency)` with unit tests; nothing in them
   touches the UI or the disk.
+
+## Several portfolios
+
+A user has any number of portfolios (a pension account, a trading account, a "watch and wait" one).
+
+- **A transaction belongs to exactly one portfolio.** A position is per portfolio and edge.
+- **"All" is a view, not a portfolio.** It is the last tag of the Portfolio context and adds the portfolios up: where one edge is held
+  in two, the quantities are summed and the cost is the quantity-weighted average. It cannot be bought or sold in; `buy` and `sell`
+  there ask which portfolio.
+- **Currency.** Each portfolio has its own currency. "All" converts through one **base currency** of the program (default EUR; a setting,
+  not a fact of any portfolio), and is marked incomplete in the same way as any total when a rate is missing.
+- **Commands**: `new-portfolio`, `rename-portfolio`, `delete-portfolio` (each asks in the form dialog; a delete asks to confirm and is
+  undoable). The first start has no portfolio: the Portfolio context says so and offers `new-portfolio`, and the first `buy` offers to make one.
+- **The buy and sell dialog has a Portfolio field**, defaulting to the selected tag, or to the one last used where "All" is selected.
+- The tags of the Portfolio context are the portfolios in the order they were made, then "All". Renaming does not change the order.
 
 ## The screen: Tab switches the context
 
@@ -66,14 +95,31 @@ An alternative that was considered and left: portfolios as tags among the preset
 columns of a portfolio (quantity, cost, P&L) are not those of a market, and the preset tags would mix the program's selections with the
 user's own data.
 
+## The server
+
+Not built, and not needed for any step below, but the design leaves room for it (`server.md` says only that the user's own list is
+"kept per user once there is one").
+
+- **Market data and portfolios are different.** Market data is shared, public and rebuildable, and the server is its source of truth.
+  A portfolio is private, per user and authenticated, and the server would be a backup and a sync point for it, never the only copy
+  and never readable by other users.
+- **A `RemoteLedger`** would implement `Ledger` as `RemoteStore` implements `Store`: the same operations, sent to and fetched from the
+  server per user.
+- **Merging is a union of journals.** Operations have a UUID and a device, so two devices that worked offline give two logs whose union,
+  in the order of time then device, is the state. An edit of one transaction on two devices is the one conflict: the later operation
+  stands, and the earlier one stays in the journal. A delete wins over an edit. This is the whole policy until it is shown to be too crude.
+- **Not decided**: the user's identity and authentication (a server question), and whether the journal is sent whole or from a mark.
+
 ## Steps
 
 1. `src/portfolio/`: `Transaction`, `derivePositions`, `value`, with tests (`tests/PortfolioTests.cpp`): buys and sells, average
    cost, a sell of more than is held (refused), a position closed and opened again, a missing rate.
-2. `Ledger` and `SqliteLedger`, with tests on a file in a temporary directory: round trip, another schema starts over, a damaged file moved aside.
+2. `Ledger` and `SqliteLedger`, with tests on a file in a temporary directory: round trip, the journal written with every change,
+   undo and redo (including a deleted portfolio), another schema moved aside and not lost, a damaged file moved aside, several portfolios.
 3. `Positions` model and the context switch in `Browser` (`next-context`, `previous-context`, keys, the help line), with
-   `BrowserTests` for the switch and for each context keeping its state.
-4. The form dialog in cellui; then `buy` and `sell` on a row, `undo`, and the status line's message for each.
+   `BrowserTests` for the switch, for each context keeping its state and for the "All" view.
+4. The form dialog in cellui; then `buy` and `sell` on a row, `new-portfolio`, `rename-portfolio`, `delete-portfolio`, `undo` and
+   `redo`, and the status line's message for each.
 5. README: the keys and the flags.
 
 ## Later, not planned in detail
@@ -83,6 +129,8 @@ by kind and country, a benchmark to compare the portfolio with, a transactions v
 
 ## Open
 
+- The base currency of "All": a setting kept where (the portfolio file, or a settings file of its own).
+- Whether the undo stack should survive a restart (not at first).
 - Whether a position in an edge that no source loads any more is shown from its last stored price or marked stale.
 - The keys for `buy` and `sell` on the desktop, and whether `next-preset` and `previous-preset` (unbound today) get keys of their own now
   that Tab is spoken for.
