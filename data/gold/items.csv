@@ -1,0 +1,13 @@
+# The physical gold the program estimates a price for (src/source/GoldSource.cpp), held off exchange (XOFF).
+#
+# spot,SYMBOL
+#   The listing symbol of the gold spot price on the market of what is priced and not traded (XXXX): per troy ounce, in its quote
+#   currency. The first one found is used.
+# item,SYMBOL,NAME,FINE_TROY_OUNCES_PER_UNIT,BID_FACTOR,ASK_FACTOR
+#   An item held in `unit`s of the fine weight given: its price is the spot price times the fine ounces in one unit times a factor.
+#   The bid factor is what a dealer pays against the melt value (the price a holding is valued at), the ask factor what a dealer
+#   charges. THE FACTORS ARE ESTIMATES, not any dealer's: until a dealer's list is read they stand for what a coin or a bar loses
+#   or costs in premium, and they are the one place that guess lives.
+spot,GOLD
+item,GOLDBAR,Gold bar (1 g fine),0.0321507466,0.97,1.04
+item,GOLDCOIN,Gold coin (1 oz fine),1,0.98,1.08

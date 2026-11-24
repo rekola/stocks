@@ -59,6 +59,14 @@ portfolio offers to make one.
 | `undo` | takes back your last change: a trade, a new, renamed or deleted portfolio | `C-x u`, `C-/` | `Ctrl+Z` |
 | `redo` | makes it again | `C-M-_` | `Ctrl+Y` |
 
+**Physical gold.** `gold` is a source (it runs beside the default one) that estimates two items held in hand, off exchange (XOFF), so
+they are bought and sold like any other row: **Gold bar (1 g fine)**, held by the gram, and **Gold coin (1 oz fine)**, held by the troy
+ounce. Their price is the gold spot price another source gives (Nordnet's `GOLD`, per troy ounce in dollars) times the fine weight of a unit
+and a bid factor, and a holding is valued at that, so the premium paid shows as a loss at first. **The factors in `data/gold/items.csv` are
+guesses, not any dealer's**: edit them to the dealer you use. They are in the `All` preset (market `Off exchange`, dataset `Gold (estimate)`);
+`buy` on the row, and the price in the form is yours to change. A dealer's real list, bid and ask, is planned
+(`plans/quotes.md`).
+
 Your portfolios are your own data: they are kept in `portfolios.sqlite` beside `facts.sqlite` in the data directory (`--portfolios FILE`
 chooses another, `--no-portfolios` keeps them for the session only). It is never the cache's file, which the sources rebuild: a portfolio
 is not written to it and a source cannot write one. A file of another schema is moved aside (`.old-<time>`) and a damaged one to
