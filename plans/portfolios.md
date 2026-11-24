@@ -1,6 +1,6 @@
 # Portfolios
 
-Status: being built, step by step ("Steps" below, with what is done). Built: 1 (node-valued facts), 2 (`src/portfolio/`), 3 (the model).
+Status: being built, step by step ("Steps" below, with what is done). Built: 1 (node-valued facts), 2 (`src/portfolio/`), 3 (the model), 4 (the portfolio file).
 
 A portfolio is what the user holds: positions in instruments she has bought, valued at the prices the store already has. It is
 modelled as the instruments are: **a portfolio is a node**, and what there is to know of it is facts and edges in the same
@@ -62,6 +62,14 @@ sync (see "The server"), and share no table and no schema version.
   It is a second `FactStore` (`Facts.h`): the store gives it the facts of the portfolio nodes and, new, **their edges' series and
   events**, which nothing keeps today ("What is kept between runs": the edges and the bars on them are not kept). Routed by the kind of
   the node, so a source cannot write a portfolio's name into the cache and a portfolio is never in it.
+- **What is built.** `openSqlitePortfolioStore()` (`SqliteFactStore.cpp`, the one place that names SQLite) is the second
+  `FactStore`: `FactBatch` also carries what is taken back (`removed`, `removed_nodes`) and the transactions (`events`,
+  `events_removed`), and `loadEvents()` reads them. `MemoryStore` routes by the kind of node and applies the portfolio part
+  in the thread of the write, so the file is current when the call returns (`synchronous = FULL`). It keeps facts and events: the
+  **position edges' series are derived** from the transactions on load, not kept a second time, where they could disagree with
+  them. A file that is not a database or damaged is moved to `.bad-<time>`, one of another schema to `.old-<time>` (a name
+  already there is never written over, `-2`...); where it cannot be moved nothing is kept and the status line says so. `--portfolios
+  FILE`, `--no-portfolios` (portfolios then live for the session in memory); default `portfolios.sqlite` beside `facts.sqlite`.
 - **Restoring** reads it before the sources run, as the facts are read, and makes no version.
 - **A file of another schema is moved aside** (`.old-<time>`; a damaged one to `.bad-<time>`) and an empty one started, saying so once;
   never dropped in place, since the user typed it. Nothing is migrated.
@@ -167,7 +175,7 @@ Not built, and not needed for any step below, but the model leaves room for it (
    index, a rate), one on XOFF and on a real market is kept, a portfolio that shows only when
    something is said of it, a name alone, positions and no name, a delete that makes it vanish, several portfolios, the same
    transactions under two datasets (holdings from the chosen one only).
-4. The portfolio file: a second `FactStore` routed by node kind, with tests on a file in a temporary directory: round trip, another
+4. (Done.) The portfolio file: a second `FactStore` routed by node kind, with tests on a file in a temporary directory: round trip, another
    schema moved aside and not lost, a damaged file moved aside, nothing of a portfolio in `facts.sqlite`.
 5. `Positions` model and the context switch in `Browser` (`next-context`, `previous-context`, keys, the help line),
    with `BrowserTests` for the switch, and for each context keeping its state.

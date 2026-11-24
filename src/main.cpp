@@ -12,6 +12,8 @@
 //   said of instruments, markets and datasets is kept between runs (default:
 //   facts.sqlite in the
 //                          user's data directory); --no-facts runs without it
+//   stocks --portfolios FILE  where the user's own portfolios are kept (default: portfolios.sqlite beside the facts file);
+//                          --no-portfolios keeps them for the session only
 //   stocks --market MIC    of those lists, load only that market, e.g. XHEL;
 //   XXXX is the indices, spot prices and currency pairs (repeatable)
 // Keys: arrows, PgUp/PgDn, Home/End move; Tab moves between the tags and the
@@ -83,6 +85,8 @@ int main(int argc, char ** argv) {
   std::vector<std::string> market_names;
   std::string facts_file;
   bool keep_facts = true;
+  std::string portfolios_file;
+  bool keep_portfolios = true;
   const auto & args = app->arguments();
   for (size_t i = 0; i < args.size(); i++) {
     if (args[i] == "--source" && i + 1 < args.size()) source_name = args[++i];
@@ -92,6 +96,9 @@ int main(int argc, char ** argv) {
     else if (args[i] == "--facts" && i + 1 < args.size()) facts_file = args[++i];
     else if (args[i].rfind("--facts=", 0) == 0) facts_file = args[i].substr(8);
     else if (args[i] == "--no-facts") keep_facts = false;
+    else if (args[i] == "--portfolios" && i + 1 < args.size()) portfolios_file = args[++i];
+    else if (args[i].rfind("--portfolios=", 0) == 0) portfolios_file = args[i].substr(13);
+    else if (args[i] == "--no-portfolios") keep_portfolios = false;
     else if (args[i] == "--lists" && i + 1 < args.size()) list_directory = args[++i];
     else if (args[i].rfind("--lists=", 0) == 0) list_directory = args[i].substr(8);
     else {
@@ -101,7 +108,7 @@ int main(int argc, char ** argv) {
               " [--ui auto|terminal|window] [--theme original|dark|light] "
               "[--source " +
               kSourceNames +
-              "] [--facts FILE | --no-facts] [--lists DIR] [--market MIC]...");
+              "] [--facts FILE | --no-facts] [--portfolios FILE | --no-portfolios] [--lists DIR] [--market MIC]...");
     }
   }
   // One source, for now: the instrument lists are the yahoo source's own (and the synthetic one follows them); each reads
@@ -140,6 +147,12 @@ int main(int argc, char ** argv) {
   if (keep_facts) {
     const std::filesystem::path file = facts_file.empty() ? defaultFactsFile() : std::filesystem::path(facts_file);
     if (!file.empty()) store_options.facts = openSqliteFactStore(file, [fact_messages](const std::string & text) { fact_messages->say("facts: " + text); });
+  }
+  // The user's own file, a second one: portfolios are never in the cache above, and no source can write one.
+  if (keep_portfolios) {
+    const std::filesystem::path file = portfolios_file.empty() ? defaultPortfoliosFile() : std::filesystem::path(portfolios_file);
+    if (!file.empty())
+      store_options.portfolios = openSqlitePortfolioStore(file, [fact_messages](const std::string & text) { fact_messages->say("portfolios: " + text); });
   }
   std::shared_ptr<Store> store = makeMemoryStore(std::move(store_options));
   // The loader and the sources run on threads of their own and tell the UI thread what happened.

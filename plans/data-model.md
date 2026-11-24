@@ -182,6 +182,9 @@ everything else on them are not kept, and there is no server in this step.
   real), a truth value is an integer with `tag` 1 and a link to a node the integer of its key with `tag` 2 (schema 5). An undefined number is not said, so it is not kept. A file that
   is not a database or is damaged is moved aside (`.bad-<time>`, with its WAL files) and
   an empty one started; where no file can be made the store keeps nothing and says so. Nothing throws out of `SqliteFactStore`.
+- **The user's own file** is another `FactStore`, `portfolios.sqlite` (`--portfolios FILE`, `--no-portfolios`): the facts of the portfolio
+  nodes and their transactions, routed by the kind of node, never in `facts.sqlite` and with a schema version of its own; see
+  [portfolios.md](portfolios.md), "Persistence".
 - **Where**: `--facts FILE`, else `facts.sqlite` in the user's data directory (`XDG_DATA_HOME` or `~/.local/share/stocks`;
   `%LOCALAPPDATA%\stocks` on Windows); `--no-facts` runs without. `makeMemoryStore()` with no argument keeps nothing, which
   is what the tests use.
