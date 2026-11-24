@@ -268,7 +268,8 @@ TEST(a_row_of_an_indicator_list_with_a_bad_isin_is_left_out_and_the_next_list_is
     return ok(fixture("indicators-commodities.json"));
   };
   auto lists = NordnetSource::defaultLists();
-  lists.erase(lists.begin(), lists.begin() + 4);  // only the three indicator lists
+  lists.erase(lists.begin(), lists.begin() + 4);
+  lists.resize(3);  // only the three indicator lists, not the news
   Listener listener;
   NordnetSource source(lists, std::chrono::milliseconds(0));
   source.load(*store, http, listener);  // does not throw
@@ -542,7 +543,9 @@ TEST(a_stock_bar_carries_the_volume_when_the_answer_has_it) {
 
 TEST(the_default_lists_are_the_etfs_the_certificates_the_funds_and_the_stocks) {
   auto lists = NordnetSource::defaultLists();
-  CHECK(lists.size() == 7);
+  CHECK(lists.size() == 8);
+  CHECK(lists[7].name == "news" && lists[7].shape == NordnetSource::List::Shape::News &&
+        lists[7].url.find("/news/v1/news/preview/main?includeInstruments=true") != std::string::npos);
   CHECK(lists[2].name == "fundlist" && lists[3].name == "stocklist");
   CHECK(lists[4].name == "indices" && lists[5].name == "currencies" && lists[6].name == "commodities");
   CHECK(lists[4].shape == NordnetSource::List::Shape::Indicators && lists[4].market == "Indices");
@@ -661,7 +664,8 @@ TEST(the_indicator_lists_make_indices_in_points_currency_pairs_and_commodities_i
     return ok(fixture("indicators-commodities.json"));
   };
   auto lists = NordnetSource::defaultLists();
-  lists.erase(lists.begin(), lists.begin() + 4);  // only the three indicator lists
+  lists.erase(lists.begin(), lists.begin() + 4);
+  lists.resize(3);  // only the three indicator lists, not the news
   Listener listener;
   NordnetSource(lists, std::chrono::milliseconds(0)).load(*store, http, listener);
   CHECK(http.urls.size() == 3 && http.urls[0].find("/instrument-screening/v1/indicator/web/list/WORLDMAP") != std::string::npos);
@@ -811,4 +815,17 @@ TEST(nordnet_types_are_mapped_onto_the_one_vocabulary_and_certificates_are_named
   CHECK(NordnetSource::kindOfType("ESHMTF") == InstrumentKind::Company && NordnetSource::kindOfType("ESHOTC") == InstrumentKind::Company);
   CHECK(NordnetSource::kindOfType("FUCITS") == InstrumentKind::Fund && NordnetSource::kindOfType("FOTH") == InstrumentKind::Fund);
   CHECK(NordnetSource::kindOfType("") == InstrumentKind::Other && NordnetSource::kindOfType("SOMETHING_NEW") == InstrumentKind::Other);
+}
+
+TEST(search_rows_give_the_instrument_the_id_the_news_refers_to_it_by) {
+  auto store = makeMemoryStore();
+  FakeHttp http;
+  http.answer = pages;
+  Listener listener;
+  quick().load(*store, http, listener);
+  auto s = store->snapshot();
+  const InstrumentId flxk = *s->findInstrumentByIsin("IE00BHZRR030");
+  CHECK(asText(*s->attribute(flxk, "nordnet-instrument")) == "e9cab3b7-681a-4676-9790-6cdcdd9e7527");
+  // And it finds the instrument by that id.
+  CHECK(s->findByAttribute(NodeType::Instrument, "nordnet-instrument", "e9cab3b7-681a-4676-9790-6cdcdd9e7527")->id == flxk.value);
 }
