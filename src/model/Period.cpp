@@ -47,9 +47,14 @@ std::optional<bool> trendUp(double change) {
   return change >= 0;
 }
 
+bool isRate(const Snapshot & snapshot, const EdgeKey & edge) {
+  return snapshot.kind(edge.quote) == InstrumentKind::Unit && snapshot.symbol(edge.quote) == kPercentUnit;
+}
+
 PeriodView periodView(const Snapshot & snapshot, const EdgeKey & edge, Period period, bool withTrace) {
   const PeriodInfo & in = info(period);
   PeriodView v;
+  v.rate = isRate(snapshot, edge);
   if (period == Period::Day) {
     const CandleSeries daily = snapshot.lastCandles(edge, Resolution::Day, 2);
     const Seq<Candle> & days = daily.candles;

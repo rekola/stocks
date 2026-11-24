@@ -113,7 +113,7 @@ bool SuomenPankkiSource::parse(const std::string & xml, Store & store, std::stri
   store.batch([&](Batch & b) {
     const DatasetId dataset = b.addDataset(kSuomenPankkiDataset, "Suomen Pankki");
     const MarketId market = b.addMarket(kNoMarket, marketNameOfMic(kNoMarket));
-    const InstrumentId quote = quoteNode(b, "pct");
+    const InstrumentId quote = quoteNode(b, kPercentUnit);
     for (const Tenor & t : kTenors) {
       auto it = bars.find(t.symbol);
       if (it == bars.end()) continue;

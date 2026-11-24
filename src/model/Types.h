@@ -108,6 +108,11 @@ inline constexpr const char *mic =
     "mic"; // a market's ISO 10383 code: its key, said as a fact too
 }  // namespace predicate
 
+// The units a quote can be in besides a currency (instruments of kind Unit): index points, and per cent for a rate. What a row is
+// (a price or a rate) is decided by its quote's unit, never by its provider; see `isRate` (Period.h).
+inline constexpr const char * kPointsUnit = "pts";
+inline constexpr const char * kPercentUnit = "pct";
+
 enum class NodeType : uint8_t { Instrument, Market, Dataset };
 
 // Any node. The typed ids convert to it.

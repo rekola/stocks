@@ -38,7 +38,7 @@ The period: the Change column and the trace beside it always show the same perio
 chooses it; `]` and `[` (`next-period`, `previous-period`) step through them, `C-c d w m q y` (`Alt+1` to `Alt+5` on the
 desktop keymap) choose one (`show-period-day`, `-week`, `-month`, `-quarter`, `-year`). It is one for every row, kept while the
 program runs, and starts at the three months. The change is the last price against the period's first (for the day, the
-previous close), and the colour of both is its sign. A row with no bars for the period shows no number and no trace. The rows on
+previous close); a rate's (a row quoted in per cent: Euribor, €STR) is the difference in basis points, and the colour of both is its sign. A row with no bars for the period shows no number and no trace. The rows on
 screen load what the period needs, and again once it is old (the day after 15 minutes, the week after an hour, the year after
 a day; see `NordnetHistory.h`).
 

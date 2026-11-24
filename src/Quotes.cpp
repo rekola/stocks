@@ -59,6 +59,7 @@ void appendRows(const Snapshot & snapshot, MarketId market, Period period, std::
     r.dataset = snapshot.name(key.dataset);
     r.history = std::move(view.closes);
     r.price = last.candles.back().close;
+    r.rate = view.rate;
     r.change = view.change();
     rows.push_back(std::move(r));
   }
@@ -239,10 +240,13 @@ std::string Quotes::text(int r, int c) const {
     case NAME: return nameOf(*snapshot_, edge(r));
     case MARKET: return marketLabel(edge(r).market);
     case DATASET: return datasetName(edge(r).dataset);
-    case PRICE: return fixed(price(r), 2);
+    case PRICE: return isRate(*snapshot_, edge(r)) ? fixed(price(r), 3) + "%" : fixed(price(r), 2);
     case CHANGE: {
       const double v = change(r);
-      return isDefined(v) ? fixed(v, 2, true) + "%" : "";  // no number yet: nothing, not a zero
+      if (!isDefined(v)) return "";  // no number yet: nothing, not a zero
+      if (!isRate(*snapshot_, edge(r))) return fixed(v, 2, true) + "%";
+      // A rate: basis points, whole, or one decimal below 10 bp.
+      return fixed(v, std::abs(v) < 9.95 ? 1 : 0, true) + " bp";
     }
     default: return "";
   }

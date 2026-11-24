@@ -1034,3 +1034,59 @@ TEST(the_presets_can_still_be_chosen_by_a_click_and_by_the_keyboard) {
   f.press(Key::Right);
   CHECK(f.browser->tags().selected() == 2);
 }
+
+namespace {
+// One edge quoted in `unit` ("pct": a rate, "pts": an index) with daily bars from `first` (90 days ago) to `last` (today).
+struct RateWorld {
+  std::unique_ptr<Store> store = makeMemoryStore();
+  EdgeKey edgeOf(const char * symbol, const char * unit, double first, double last) {
+    InstrumentId base = store->addInstrument(symbol, symbol, InstrumentKind::Other);
+    InstrumentId quote = store->addInstrument(unit, unit, InstrumentKind::Unit);
+    EdgeKey k{base, quote, store->addMarket("XXXX", "Rates"), store->addDataset("providera")};
+    std::vector<Candle> days;
+    for (int d = 90; d >= 0; d--) days.push_back({kToday - d, 1, 1, 1, d == 0 ? last : first, 1});
+    store->appendCandles(k, Resolution::Day, days);
+    return k;
+  }
+};
+
+int rowOf(Quotes & q, const EdgeKey & k) {
+  for (int i = 0; i < q.rowCount(); i++)
+    if (q.edge(i) == k) return i;
+  return -1;
+}
+}  // namespace
+
+TEST(a_rates_change_is_the_difference_in_basis_points) {
+  RateWorld w;
+  EdgeKey up = w.edgeOf("A", kPercentUnit, 3.00, 3.10), neg = w.edgeOf("B", kPercentUnit, -0.50, -0.40), zero = w.edgeOf("C", kPercentUnit, 0, 0.25);
+  EdgeKey small = w.edgeOf("D", kPercentUnit, 3.000, 3.025), index = w.edgeOf("E", kPointsUnit, 100, 101);
+  auto snap = w.store->snapshot();
+  CHECK(isRate(*snap, up) && !isRate(*snap, index));
+  PeriodView v = periodView(*snap, up, Period::Quarter, false);
+  CHECK(v.rate && std::abs(v.change() - 10) < 1e-9 && v.base == 3.00 && v.last == 3.10);
+  CHECK(std::abs(periodView(*snap, neg, Period::Quarter, false).change() - 10) < 1e-9);
+  PeriodView z = periodView(*snap, zero, Period::Quarter, false);
+  CHECK(z.hasChange() && std::abs(z.change() - 25) < 1e-9);
+  CHECK(std::abs(periodView(*snap, index, Period::Quarter, false).change() - 1.0) < 1e-9);  // percent, not basis points
+
+  Quotes q(w.store->snapshot(), {up, neg, zero, small, index});  // the quarter, by default
+  const int ru = rowOf(q, up), rn = rowOf(q, neg), rz = rowOf(q, zero), rs = rowOf(q, small), ri = rowOf(q, index);
+  CHECK(q.text(ru, Quotes::CHANGE) == "+10 bp" && q.text(rn, Quotes::CHANGE) == "+10 bp" && q.text(rz, Quotes::CHANGE) == "+25 bp");
+  CHECK(q.text(rs, Quotes::CHANGE) == "+2.5 bp");
+  CHECK(q.text(ri, Quotes::CHANGE) == "+1.00%");
+  CHECK(q.color(ru, Quotes::CHANGE) && q.color(ru, Quotes::CHANGE) == q.color(rn, Quotes::CHANGE) && q.color(ru, Quotes::CHANGE) == q.color(ru, Quotes::HISTORY));
+  CHECK(q.text(ru, Quotes::PRICE) == "3.100%" && q.text(ri, Quotes::PRICE) == "101.00");
+  // Sorting by Change orders the rates by basis points.
+  CHECK(std::abs(*q.number(rs, Quotes::CHANGE) - 2.5) < 1e-9 && std::abs(*q.number(rz, Quotes::CHANGE) - 25.0) < 1e-9);
+  CHECK(q.compare(rs, rz, Quotes::CHANGE) < 0 && q.compare(rz, ru, Quotes::CHANGE) > 0);
+}
+
+TEST(the_days_change_of_a_rate_is_the_difference_from_the_previous_close_in_basis_points) {
+  RateWorld w;
+  EdgeKey k = w.edgeOf("A", kPercentUnit, 3.00, 3.105);
+  w.store->appendCandles(k, Resolution::Min5, {{fiveMinuteSlot(kToday, 0), 1, 1, 1, 3.11, 1}, {fiveMinuteSlot(kToday, 1), 1, 1, 1, 3.105, 1}});
+  w.store->setPreviousClose(k, kToday, 3.10);
+  PeriodView v = periodView(*w.store->snapshot(), k, Period::Day, false);
+  CHECK(v.rate && v.base == 3.10 && std::abs(v.change() - 0.5) < 1e-9);
+}

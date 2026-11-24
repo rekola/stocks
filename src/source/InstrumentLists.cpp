@@ -197,9 +197,9 @@ InstrumentId addInstrumentUnlessSaid(Batch & store, const std::string & symbol, 
 }
 
 InstrumentId quoteNode(Batch & store, const std::string & code) {
-  if (code != "pts" && code != "pct") return currencyNode(store, code);
+  if (code != kPointsUnit && code != kPercentUnit) return currencyNode(store, code);
   if (auto known = store.view().findInstrument(code)) return *known;
-  return store.addInstrument(code, code == "pts" ? "Index points" : "Per cent", InstrumentKind::Unit);
+  return store.addInstrument(code, code == kPointsUnit ? "Index points" : "Per cent", InstrumentKind::Unit);
 }
 
 InstrumentId currencyNode(Store & store, const std::string & symbol) {
