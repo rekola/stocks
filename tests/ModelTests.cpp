@@ -597,7 +597,7 @@ TEST(the_same_bars_again_make_no_new_version_and_a_changed_close_does) {
 }
 
 TEST(an_instrument_with_no_isin_is_the_one_of_its_symbol_and_else_of_its_name_and_only_the_same_text_is_the_same_one) {
-  auto store = makeMemoryStore();  // no registry: numbered as they come
+  auto store = makeMemoryStore();  // may invent ISINs: numbered as they come
   // The symbol is tried before the name: two names for one symbol are one instrument.
   const InstrumentId bySymbol = store->resolveInstrument({}, {{predicate::symbol, "ZN"}, {predicate::name, "Zinc"}});
   CHECK(bySymbol.valid() && store->snapshot()->findInstrumentByIsin(store->snapshot()->isin(bySymbol)) == std::optional<InstrumentId>(bySymbol));

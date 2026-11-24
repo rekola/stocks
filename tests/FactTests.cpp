@@ -205,7 +205,7 @@ TEST(an_instrument_is_its_isin_and_a_currency_or_unit_its_code) {
   CHECK((nodes == std::set<uint64_t>{eur.value, pts.value, nokia.value}));
 }
 
-TEST(an_instrument_with_no_isin_that_is_no_currency_is_numbered_where_there_is_no_registry) {
+TEST(an_instrument_with_no_isin_that_is_no_currency_is_numbered_where_the_store_may_invent) {
   Clock clock;
   auto store = makeMemoryStore(optionsFor(nullptr, clock));
   InstrumentId acme = store->addInstrument("ACME", "Acme Corporation", InstrumentKind::Company);
