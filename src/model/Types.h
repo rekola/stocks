@@ -33,6 +33,7 @@ struct Id {
 using InstrumentId = Id<struct InstrumentTag>;
 using MarketId = Id<struct MarketTag>;
 using DatasetId = Id<struct DatasetTag>;
+using PortfolioId = Id<struct PortfolioTag>;  // a minted key: the user's own
 
 // An instant: whole seconds since the Unix epoch, UTC. Where whole seconds are not enough (order book snapshots) it is
 // floating-point seconds, never milliseconds. Sessions and time zones belong to the market, not here. A date is not an
@@ -111,6 +112,8 @@ inline constexpr const char * webUrl = "web-url";  // the instrument's page on i
 inline constexpr const char * firstTradeDay = "first-trade-day";  // a day number: where an instrument's history begins
 inline constexpr const char *mic =
     "mic"; // a market's ISO 10383 code: its key, said as a fact too
+inline constexpr const char * currency = "currency";  // a portfolio's: a link to the currency node its value is shown in
+inline constexpr const char * ledger = "ledger";      // a portfolio's: a link to the dataset node its holdings are derived from
 }  // namespace predicate
 
 // The units a quote can be in besides a currency (instruments of kind Unit): index points, and per cent for a rate. What a row is
@@ -118,7 +121,7 @@ inline constexpr const char *mic =
 inline constexpr const char * kPointsUnit = "pts";
 inline constexpr const char * kPercentUnit = "pct";
 
-enum class NodeType : uint8_t { Instrument, Market, Dataset };
+enum class NodeType : uint8_t { Instrument, Market, Dataset, Portfolio };
 
 // Any node. The typed ids convert to it.
 struct NodeRef {
@@ -128,6 +131,7 @@ struct NodeRef {
   NodeRef(InstrumentId i) : type(NodeType::Instrument), id(i.value) {}
   NodeRef(MarketId i) : type(NodeType::Market), id(i.value) {}
   NodeRef(DatasetId i) : type(NodeType::Dataset), id(i.value) {}
+  NodeRef(PortfolioId i) : type(NodeType::Portfolio), id(i.value) {}
   friend bool operator==(const NodeRef &, const NodeRef &) = default;
 };
 
@@ -135,7 +139,12 @@ struct NodeRef {
 inline NodeRef nodeOf(NodeKey key) {
   NodeRef n;
   n.id = key.value;
-  n.type = key.kind() == NodeKind::Market ? NodeType::Market : key.kind() == NodeKind::Dataset ? NodeType::Dataset : NodeType::Instrument;
+  switch (key.kind()) {
+    case NodeKind::Market: n.type = NodeType::Market; break;
+    case NodeKind::Dataset: n.type = NodeType::Dataset; break;
+    case NodeKind::Portfolio: n.type = NodeType::Portfolio; break;
+    default: n.type = NodeType::Instrument; break;  // an instrument or a currency
+  }
   return n;
 }
 
@@ -204,6 +213,17 @@ struct EventKey {
   friend bool operator==(const EventKey &, const EventKey &) = default;
   friend bool operator<(const EventKey & a, const EventKey & b) {
     return std::tie(a.instrument, a.dataset) < std::tie(b.instrument, b.dataset);
+  }
+};
+
+// The key of the transactions of a portfolio: what this dataset says about this portfolio (the user's own entries, later a broker's
+// export). The holdings are derived from one dataset, the one the portfolio's `ledger` names.
+struct LedgerKey {
+  PortfolioId portfolio;
+  DatasetId dataset;
+  friend bool operator==(const LedgerKey &, const LedgerKey &) = default;
+  friend bool operator<(const LedgerKey & a, const LedgerKey & b) {
+    return std::tie(a.portfolio, a.dataset) < std::tie(b.portfolio, b.dataset);
   }
 };
 
@@ -337,6 +357,12 @@ template <>
 struct std::hash<SeriesKey> {
   size_t operator()(const SeriesKey & k) const {
     return hashCombine(std::hash<EdgeKey>()(k.edge), std::hash<int>()(static_cast<int>(k.resolution)));
+  }
+};
+template <>
+struct std::hash<LedgerKey> {
+  size_t operator()(const LedgerKey & k) const {
+    return hashCombine(std::hash<PortfolioId>()(k.portfolio), std::hash<DatasetId>()(k.dataset));
   }
 };
 template <>

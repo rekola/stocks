@@ -1,6 +1,7 @@
 #pragma once
 
 #include "model/Store.h"
+#include "portfolio/Transaction.h"
 
 #include <cstdint>
 #include <optional>
@@ -11,27 +12,11 @@
 // screen or the disk (plans/portfolios.md).
 namespace portfolio {
 
-enum class Side : uint8_t { Buy, Sell };
-
-// One thing the user did: bought or sold some of an instrument on a market, at a price in a currency. Its `id` is minted when
-// it is made (`mintId()`), so that it can be corrected or deleted; the transactions of a portfolio are events on it
-// (Store.h), never summed from several datasets.
-struct Transaction {
-  uint64_t id = 0;
-  int64_t day = 0;  // the day it was done, as a day number (Dates.h)
-  Side side = Side::Buy;
-  InstrumentId instrument;
-  MarketId market;      // the listing it was done on: a real venue, or XOFF for a fund
-  InstrumentId quote;   // the currency the price and the fee are in
-  double quantity = 0;  // always positive; the side says which way
-  double price = 0;     // per unit, in `quote`
-  double fee = 0;       // in `quote`, never negative
-  std::string note;
-  friend bool operator==(const Transaction &, const Transaction &) = default;
-};
-
-// A random number below 2^62 and not zero: nothing to coordinate, so two devices that mint do not meet.
-uint64_t mintId();
+// The currency a portfolio's value is shown in: its `currency` fact, a link to a currency node. None where it says none.
+std::optional<InstrumentId> currencyOf(const Snapshot &, PortfolioId);
+// The dataset whose transactions its holdings are derived from: its `ledger` fact, a link to a dataset node, else the user's own
+// (`kUserDataset`). Only that one, never several added together, which would count a trade twice.
+DatasetId ledgerOf(const Snapshot &, PortfolioId);
 
 // One step of how many were held: after the transactions of a day.
 struct QuantityPoint {
@@ -89,6 +74,10 @@ std::optional<Price> latestPrice(const Snapshot &, InstrumentId instrument, Mark
 // other currency by two such edges. Only currencies are converted (not a unit such as points or a rate); none where the store
 // has no such edge. No rate is invented.
 std::optional<double> rate(const Snapshot &, InstrumentId from, InstrumentId to);
+
+// What a portfolio holds: derived from the transactions of the dataset it names, nothing else. The position edges
+// `portfolio -> instrument`, each with its quantity series.
+Derived holdings(const Snapshot &, PortfolioId);
 
 struct PositionValue {
   Position position;

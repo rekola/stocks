@@ -7,3 +7,6 @@ inline constexpr const char * kYahooDataset = "yahoo";
 inline constexpr const char * kSyntheticDataset = "synthetic";
 inline constexpr const char * kSuomenPankkiDataset = "SPFB";  // the Bank of Finland's publication of the Euribor rates
 inline constexpr const char * kEcbDataset = "ECB";  // the European Central Bank's data portal
+// Not a source: the dataset of what the user typed in herself, the transactions of a portfolio whose `ledger` says no other
+// (portfolio/Portfolio.h). A later import of a broker's export gets a dataset of its own.
+inline constexpr const char * kUserDataset = "user";

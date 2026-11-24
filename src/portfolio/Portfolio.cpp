@@ -1,9 +1,10 @@
 #include "portfolio/Portfolio.h"
 
+#include "source/DatasetCodes.h"
+
 #include <algorithm>
 #include <cmath>
 #include <map>
-#include <random>
 #include <tuple>
 
 namespace portfolio {
@@ -29,13 +30,6 @@ struct Group {
 };
 
 }  // namespace
-
-uint64_t mintId() {
-  static std::mt19937_64 random{std::random_device{}()};
-  uint64_t id = 0;
-  while (id == 0) id = random() & ((uint64_t{1} << 62) - 1);
-  return id;
-}
 
 Derived derivePositions(std::vector<Transaction> transactions) {
   std::stable_sort(transactions.begin(), transactions.end(), [](const Transaction & a, const Transaction & b) {
@@ -80,6 +74,25 @@ Derived derivePositions(std::vector<Transaction> transactions) {
   std::sort(open.begin(), open.end(), [](const Group * a, const Group * b) { return a->order < b->order; });
   for (const Group * g : open) out.positions.push_back(g->position);
   return out;
+}
+
+std::optional<InstrumentId> currencyOf(const Snapshot & snapshot, PortfolioId id) {
+  const auto link = snapshot.attribute(NodeRef(id), predicate::currency);
+  const auto key = link ? asNode(*link) : std::nullopt;
+  if (!key || !key->valid()) return std::nullopt;
+  return InstrumentId{key->value};
+}
+
+DatasetId ledgerOf(const Snapshot & snapshot, PortfolioId id) {
+  const auto link = snapshot.attribute(NodeRef(id), predicate::ledger);
+  if (const auto key = link ? asNode(*link) : std::nullopt; key && key->kind() == NodeKind::Dataset) return DatasetId{key->value};
+  const auto own = datasetKey(kUserDataset);
+  return DatasetId{own ? own->value : 0};
+}
+
+Derived holdings(const Snapshot & snapshot, PortfolioId id) {
+  const Seq<Transaction> all = snapshot.transactions(LedgerKey{id, ledgerOf(snapshot, id)});
+  return derivePositions(std::vector<Transaction>(all.begin(), all.end()));
 }
 
 bool tradable(MarketId market) {

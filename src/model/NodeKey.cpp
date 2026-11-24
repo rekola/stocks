@@ -3,6 +3,7 @@
 #include "model/Isin.h"
 
 #include <cstdio>
+#include <random>
 
 namespace {
 
@@ -91,6 +92,28 @@ std::optional<NodeKey> marketKey(const std::string &mic) {
   return NodeKey{withKind(NodeKind::Market, *packed)};
 }
 
+std::optional<NodeKey> portfolioKey(uint64_t identity) {
+  if (identity > NodeKey::kIdentityMask) return std::nullopt;
+  return NodeKey{withKind(NodeKind::Portfolio, identity)};
+}
+
+NodeKey mintPortfolioKey() {
+  static std::mt19937_64 random{std::random_device{}()};
+  return *portfolioKey(random() & NodeKey::kIdentityMask);
+}
+
+std::optional<NodeKey> portfolioKey(const std::string & text) {
+  if (text.size() != 16 || text[0] != 'P') return std::nullopt;
+  uint64_t identity = 0;
+  for (size_t i = 1; i < text.size(); i++) {
+    const char c = text[i];
+    const int digit = c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'f' ? c - 'a' + 10 : -1;
+    if (digit < 0) return std::nullopt;
+    identity = identity * 16 + static_cast<uint64_t>(digit);
+  }
+  return portfolioKey(identity);
+}
+
 std::string text(NodeKey key) {
   if (!key.valid()) return {};
   switch (key.kind()) {
@@ -116,6 +139,11 @@ std::string text(NodeKey key) {
     case NodeKind::Dataset:
     case NodeKind::Market:
       return unpackCode(key.identity());
+    case NodeKind::Portfolio: {
+      std::string out = "P";
+      for (int shift = 56; shift >= 0; shift -= 4) out += "0123456789abcdef"[(key.identity() >> shift) & 15];
+      return out;
+    }
   }
-  return {};
+  return {};  // kinds that are planned and not built (country, attribute) and the escape have no text
 }

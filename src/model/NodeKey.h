@@ -6,8 +6,16 @@
 
 // The key of a node: one 64-bit number that means the same in every run, so
 // that the facts file, the edges and a server all name a node in the same way.
-// The kind of node is in bits 61-60 and its identity in the low sixty, so a key
-// is below 2^62 (a positive int64 in SQLite) and zero is no key.
+// A key is a positive int64 (bit 63 is never set), which leaves 63 bits: the low
+// sixty are the identity, and bits 62-60 are the kind. Eight kinds, so adding one
+// changes the enum and this comment and no key that exists:
+//
+//   0 (000) instrument   1 (001) currency or unit   2 (010) market   3 (011) dataset   built
+//   4 (100) country      6 (110) attribute                                            planned, not built
+//   5 (101) portfolio                                                                  built
+//   7 (111) the escape: bits 59-52 are a second-level kind and the other 52 its identity (reserved)
+//
+// Zero is no key. See "Kinds and bits" in plans/data-model.md.
 //
 //   Instrument  its ISIN: two letters and nine letters or digits (26 x 26 x
 //   36^9 values, under 2^56), plus one so that the
@@ -21,6 +29,8 @@
 //               ones are markets too: XOFF (listed instruments traded off an
 //               exchange: funds) and XXXX (no market)
 //   Dataset     its code, packed as a currency's
+//   Portfolio   sixty random bits, minted when the user makes one (a portfolio has no
+//               natural identity); in text a "P" and the fifteen hex digits
 //
 // A string that does not fit is refused (an empty optional), never changed: an
 // ISIN must be valid, a code must be one to ten characters of 0-9A-Za-z, a MIC
@@ -29,7 +39,8 @@
 enum class NodeKind : uint8_t { Instrument = 0,
                                 Currency = 1,
                                 Market = 2,
-                                Dataset = 3 };
+                                Dataset = 3,
+                                Portfolio = 5 };
 
 struct NodeKey {
   uint64_t value = 0;
@@ -41,6 +52,14 @@ struct NodeKey {
 
   static constexpr uint64_t kIdentityMask = (uint64_t{1} << 60) - 1;
 };
+
+// A portfolio's key from its identity (the low sixty bits; none for an identity of more, which would be another kind's).
+std::optional<NodeKey> portfolioKey(uint64_t identity);
+// A key of sixty random bits, for a portfolio the user makes. Two machines that mint do not meet (a chance of about one in
+// 10^18 per pair), so nothing is asked of a server.
+NodeKey mintPortfolioKey();
+// The key of a portfolio's text ("P" and fifteen hex digits, as `text()` writes it).
+std::optional<NodeKey> portfolioKey(const std::string & text);
 
 constexpr size_t kMaxCodeLength = 10;
 

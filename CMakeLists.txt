@@ -76,13 +76,13 @@ FetchContent_MakeAvailable(SQLiteCpp)
 
 # The data model: plain values and the Store they live in. Knows nothing of the screen.
 add_library(stocks_model STATIC src/model/MemoryStore.cpp src/model/Isin.cpp src/model/Period.cpp src/model/NodeKey.cpp
-  src/model/FactWriter.cpp src/model/SqliteFactStore.cpp src/portfolio/Portfolio.cpp)
+  src/model/FactWriter.cpp src/model/SqliteFactStore.cpp src/portfolio/Portfolio.cpp src/portfolio/Transaction.cpp)
 target_include_directories(stocks_model PUBLIC src)
 target_compile_features(stocks_model PUBLIC cxx_std_20)
 find_package(Threads REQUIRED)
 target_link_libraries(stocks_model PUBLIC immer Threads::Threads)
 # Private: no header names SQLiteCpp.
-target_link_libraries(stocks_model PRIVATE SQLiteCpp)
+target_link_libraries(stocks_model PRIVATE SQLiteCpp nlohmann_json::nlohmann_json)
 
 # The browser: the screen, its commands and the rows it shows, as a library so the tests can drive it.
 add_library(stocks_lib STATIC src/Browser.cpp src/AttributeView.cpp src/Quotes.cpp src/Synthetic.cpp src/source/Http.cpp src/source/InstrumentLists.cpp

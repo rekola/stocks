@@ -133,3 +133,36 @@ TEST(keys_of_different_kinds_never_meet) {
   CHECK(orNone(isin).kind() == NodeKind::Instrument && orNone(currency).kind() == NodeKind::Currency && market.kind() == NodeKind::Market &&
         orNone(dataset).kind() == NodeKind::Dataset);
 }
+
+TEST(a_portfolio_is_a_minted_key_of_kind_five_with_sixty_bits_of_identity) {
+  const auto key = portfolioKey(0x123456789abcdefull);
+  CHECK(key && key->valid() && key->kind() == NodeKind::Portfolio && key->identity() == 0x123456789abcdefull);
+  CHECK(key && (key->value >> 60) == 5 && key->value < (uint64_t{1} << 63));  // bits 62-60 are 101, and bit 63 is never set
+  CHECK(!portfolioKey(uint64_t{1} << 60));  // more than sixty bits would be another kind
+  CHECK(portfolioKey(0) && portfolioKey(0)->valid());  // kind 5 makes even identity zero a key
+  CHECK(portfolioKey(NodeKey::kIdentityMask)->value == ((uint64_t{5} << 60) | NodeKey::kIdentityMask));
+  std::set<uint64_t> seen;
+  for (int i = 0; i < 1000; i++) {
+    const NodeKey minted = mintPortfolioKey();
+    CHECK(minted.valid() && minted.kind() == NodeKind::Portfolio && minted.value < (uint64_t{1} << 63));
+    seen.insert(minted.value);
+  }
+  CHECK(seen.size() == 1000);
+}
+
+TEST(a_portfolio_is_written_as_a_p_and_fifteen_hex_digits_and_read_back) {
+  const NodeKey key = *portfolioKey(0x0abc00000000001ull);
+  CHECK(text(key) == "P0abc00000000001" && describe(key) == text(key));
+  CHECK(portfolioKey(text(key)) && *portfolioKey(text(key)) == key);
+  for (int i = 0; i < 100; i++) {
+    const NodeKey minted = mintPortfolioKey();
+    CHECK(text(minted).size() == 16 && portfolioKey(text(minted)) == std::optional<NodeKey>(minted));
+  }
+  CHECK(!portfolioKey("P0abc0000000000") && !portfolioKey("p0abc00000000001") && !portfolioKey("P0abc0000000000g") && !portfolioKey("FI0009000681"));
+}
+
+TEST(the_kinds_that_are_planned_and_the_escape_have_no_text_and_the_built_ones_are_as_they_were) {
+  for (uint64_t kind : {4u, 6u, 7u}) CHECK(text(NodeKey{(kind << 60) | 1}).empty());  // country, attribute, the escape: not built
+  CHECK(currencyKey("EUR")->value >> 60 == 1 && marketKey("XHEL")->value >> 60 == 2 && datasetKey("nordnet")->value >> 60 == 3);
+  CHECK(instrumentKey("FI0009000681")->value >> 60 == 0);
+}

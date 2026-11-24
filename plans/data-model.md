@@ -205,8 +205,8 @@ node return its id (`addInstrument()`, `resolveInstrument()`, `addMarket()`, `re
 said of it is read with `Snapshot::name()`, `symbol()`, `kind()`, `isin()`, `said()` and `attribute()`; `nodeCount()` and
 `edgeMarkets()` take the place of sequences of nodes.
 
-A key is one 64-bit number below 2^62 (a positive `int64` in SQLite), with the kind of node in bits 61-60 and its identity in the
-low sixty (the kinds beyond the first four are planned and take bit 62: see "Kinds and bits" below):
+A key is one 64-bit number below 2^63 (a positive `int64` in SQLite), with the kind of node in bits 62-60 and its identity in the
+low sixty (country 4 and attribute 6 are planned, 5 is the portfolio, and 7 is an escape: see "Kinds and bits" below):
 
 | kind | node | low 60 bits |
 |---|---|---|
@@ -214,6 +214,7 @@ low sixty (the kinds beyond the first four are planned and take bit 62: see "Kin
 | 1 | currency or unit | its code: up to ten letters or digits, six bits each (0 is the end, 1 to 62 are `0-9A-Za-z`), case kept (`pts`) |
 | 2 | market | its MIC, the ISO 10383 market code: four characters of `A-Z0-9`, packed in the same way as a currency's |
 | 3 | dataset | its code, packed in the same way as a currency's |
+| 5 | portfolio | sixty random bits, minted when the user makes one; in text a `P` and fifteen hex digits (`mintPortfolioKey()`, `portfolioKey()`) |
 
 - **An instrument is an ISIN**, or a currency or a unit. An index, a fund or a commodity is an instrument like a share, with an
   ISIN: no kind of its own. One given no ISIN that is not a currency or a unit is given one of ours (`ZZ` and nine characters, made
@@ -252,7 +253,7 @@ kind changes the enum and the table, and no key that exists.
 | 2 | 010 | market | built |
 | 3 | 011 | dataset | built |
 | 4 | 100 | country | planned (below) |
-| 5 | 101 | portfolio | planned (below) |
+| 5 | 101 | portfolio | built (below) |
 | 6 | 110 | attribute | planned (below) |
 | 7 | 111 | **escape**: the identity's top eight bits (59-52) are a second-level kind, and the other 52 bits its identity | reserved |
 
@@ -288,11 +289,23 @@ value it takes (number, text, truth, node), its unit and how it is shown. A new 
 - **The facts file** keeps the attribute's key and not its text, so the `predicate` column becomes an integer.
 - Not built; it changes `Facts.h`, `Store.h` and every source that says a fact, so it is its own change, before the facts below grow.
 
-### Portfolios (planned)
+### Portfolios
 
-A portfolio is a node of its own kind: kind 5, with a minted key (sixty random bits, as it has no natural identity). It exists when
-something is said of it: a `name` fact and a `currency` link to a currency node, position edges `portfolio -> instrument`, and the
-transactions as events on `(portfolio, dataset)`. It is the user's own data, so it is kept in a file of its own. See
+A portfolio is a node of its own kind: kind 5, with a minted key (sixty random bits, as it has no natural identity). It has no
+record: **it exists when something is said of it**, a fact or a transaction, and is not listed (`Snapshot::portfolios()`, by name
+then key; an unnamed one under its key shortened) when nothing is. What is said of it:
+
+- facts: `name`, `currency` (a link to a currency node) and `ledger` (a link to a dataset node: whose transactions its holdings
+  are derived from; the user's own, `kUserDataset`, if none is said);
+- **transactions** as events on `(portfolio, dataset)` (`LedgerKey`, `Snapshot::transactions()`, `appendTransactions()`, `removeTransactions()`), each with a
+  minted id, replaced by it and kept by day then id. A transaction on a market that is no place to buy (`portfolio::tradable`:
+  XXXX) is refused with `std::invalid_argument` and nothing of the call is written;
+- **position edges** `portfolio -> instrument` (market, the ledger's dataset), derived and not stored twice:
+  `portfolio::holdings(snapshot, portfolio)` is the positions of the one dataset the portfolio names, each with its quantity series
+  (`Position::history`). Nothing in a file can disagree with the transactions.
+
+`removeAttribute()` and `removePortfolio()` take back what was said (only a portfolio's: a source's facts are not the user's to
+remove). It is the user's own data, so it is kept in a file of its own (`StoreOptions::portfolios`, step 4 of the plan). See
 [portfolios.md](portfolios.md).
 
 ### Not done

@@ -3,6 +3,7 @@
 #include "model/FactWriter.h"
 #include "model/Facts.h"
 #include "model/Types.h"
+#include "portfolio/Transaction.h"
 
 #include <immer/flex_vector.hpp>
 #include <immer/map.hpp>
@@ -96,6 +97,15 @@ class Snapshot {
   // day it was said for, so a value left from an earlier session is never used for a later one.
   std::optional<double> previousClose(const EdgeKey &, int64_t day) const;
 
+  // Portfolios. A portfolio is a minted key (NodeKey.h) with no record: it exists when something is said of it, a fact (its name, its
+  // `currency`, its `ledger`) or a transaction, and one that nothing is said of is not listed. By name, then key; one with no name
+  // has its key, shortened, as its name.
+  std::vector<PortfolioId> portfolios() const;
+  // What this dataset says the portfolio did, by day and then id. The holdings are derived from one dataset (portfolio/Portfolio.h).
+  Seq<portfolio::Transaction> transactions(const LedgerKey &) const;
+  // The datasets that say anything of what a portfolio did. Sorted.
+  std::vector<DatasetId> ledgers(PortfolioId) const;
+
   // The snapshots in `range`, oldest first.
   Seq<BookSnapshot> books(const EdgeKey &, TimeRange range = {}) const;
   // The snapshot standing at `time`: the latest at or before it.
@@ -120,6 +130,10 @@ class Snapshot {
   void appendBooks(const EdgeKey &, const std::vector<BookSnapshot> &);
   void appendAnnouncements(const EventKey &, const std::vector<Announcement> &);
   void appendActions(const EventKey &, const std::vector<CorporateAction> &);
+  void removeAttribute(NodeRef, const std::string & predicate);
+  void removePortfolio(PortfolioId);
+  void appendTransactions(const LedgerKey &, const std::vector<portfolio::Transaction> &);
+  void removeTransactions(const LedgerKey &, const std::vector<uint64_t> & ids);
 
   // For a store to make on its own copy, with the changes above. `setTime` is the time of the write in progress: what
   // `updated` becomes. `load` gives it what an earlier run said: the facts of nodes, which makes no version and no node but
@@ -132,6 +146,8 @@ class Snapshot {
     if (version_ != before) version_ = before + 1;
   }
   void load(const std::vector<StoredFact> &);
+  // The transactions an earlier run kept: no version, no write for the disk; one that cannot be read, or that is not tradable, is left out.
+  void loadEvents(const std::vector<StoredEvent> &);
   uint64_t revision() const { return version_ + checks_; }
   FactBatch takeFacts() { return std::exchange(outbox_, FactBatch{}); }
   // What the writes since the last call refused to say, in words: an ISIN that
@@ -163,6 +179,11 @@ class Snapshot {
   immer::map<EventKey, Seq<Announcement>> announcements_;
   immer::map<EventKey, Seq<CorporateAction>> actions_;
   immer::map<InstrumentId, immer::set<EventKey>> eventsByInstrument_;
+  immer::map<LedgerKey, Seq<portfolio::Transaction>> ledgers_;
+  immer::map<PortfolioId, immer::set<DatasetId>> ledgersOf_;  // the datasets that have transactions
+  immer::set<PortfolioId> portfolios_;                        // those that anything is said of
+  void settle(PortfolioId);                                   // lists or forgets the portfolio, by whether anything is said of it
+  void forget(uint64_t node, const std::string * predicate);  // takes what is waiting for the disk of the node back
 };
 
 // The writes a store takes, called one at a time on a `Store` (each its own change, published at once) or together in a
@@ -222,6 +243,19 @@ class StoreWrites {
   // at the same instant is kept beside it.
   virtual void appendAnnouncements(const EventKey &, const std::vector<Announcement> &) = 0;
   virtual void appendActions(const EventKey &, const std::vector<CorporateAction> &) = 0;
+
+  // Takes back what was said of a portfolio under a predicate: its facts are the user's own, so they can be taken back (a
+  // source's cannot, and says std::invalid_argument for a node that is no portfolio's). Nothing said: nothing changes.
+  virtual void removeAttribute(NodeRef, const std::string & predicate) = 0;
+  // Takes back everything said of a portfolio: its facts and every transaction in every dataset. It is not listed after.
+  virtual void removePortfolio(PortfolioId) = 0;
+  // Puts transactions in a portfolio's ledger (what this dataset says it did), each replacing the one with the same id. A transaction
+  // that cannot be bought (`portfolio::tradable`: an index, a spot price, a currency pair or a rate, whose market is XXXX) is
+  // refused: std::invalid_argument says which and why, and nothing of the call is written. So is a key or a transaction with a
+  // part that is none.
+  virtual void appendTransactions(const LedgerKey &, const std::vector<portfolio::Transaction> &) = 0;
+  // Takes back the transactions with these ids; ids not there change nothing.
+  virtual void removeTransactions(const LedgerKey &, const std::vector<uint64_t> & ids) = 0;
 };
 
 // What `Store::batch()` gives its function: the writes above, applied to one copy of the store that nothing sees until the
@@ -253,6 +287,10 @@ class Store : public StoreWrites {
 };
 
 struct StoreOptions {
+  // Where the user's own portfolios are kept: a second file, routed by the kind of node, so that a portfolio is never in `facts` and a
+  // source cannot write one into it. Read when the store is made; written at once and in the thread of the write, since the writes
+  // are rare and by hand. None: portfolios live in memory for the session.
+  std::shared_ptr<FactStore> portfolios;
   // Where the node attributes are kept between runs. Read when the store is made, before anything writes to it; every
   // change and every fact said again is written through on a thread of its own. None: nothing is kept.
   std::shared_ptr<FactStore> facts;

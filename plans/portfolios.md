@@ -1,6 +1,6 @@
 # Portfolios
 
-Status: being built, step by step ("Steps" below, with what is done). Built: 1 (node-valued facts), 2 (`src/portfolio/`).
+Status: being built, step by step ("Steps" below, with what is done). Built: 1 (node-valued facts), 2 (`src/portfolio/`), 3 (the model).
 
 A portfolio is what the user holds: positions in instruments she has bought, valued at the prices the store already has. It is
 modelled as the instruments are: **a portfolio is a node**, and what there is to know of it is facts and edges in the same
@@ -162,7 +162,7 @@ Not built, and not needed for any step below, but the model leaves room for it (
    currency node; its own change, before this one. The attribute node kind (kind 6) is separate and does not block this plan.
 2. (Done.) `src/portfolio/Portfolio.{h,cpp}`: `Transaction`, `derivePositions`, `value`, `tradable`, `rate`, `latestPrice`, with tests (`tests/PortfolioTests.cpp`): buys and sells, average
    cost, a sell of more than is held (refused), a position closed and opened again, a missing rate.
-3. The model: the portfolio node kind (5) and its minted keys, the position edge and the transaction events in `Store`/`MemoryStore`
+3. (Done.) The model: the portfolio node kind (5) and its minted keys, the position edge and the transaction events in `Store`/`MemoryStore`
    (writes, reads, a snapshot of them), with tests in `tests/ModelTests.cpp` and `NodeKeyTests.cpp`: a transaction on XXXX is refused (an
    index, a rate), one on XOFF and on a real market is kept, a portfolio that shows only when
    something is said of it, a name alone, positions and no name, a delete that makes it vanish, several portfolios, the same

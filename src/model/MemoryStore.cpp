@@ -1,6 +1,7 @@
 #include "model/Store.h"
 
 #include "model/Isin.h"
+#include "portfolio/Portfolio.h"
 
 #include <algorithm>
 #include <atomic>
@@ -164,6 +165,7 @@ std::string Snapshot::isin(InstrumentId id) const { return NodeKey{id.value}.kin
 std::string Snapshot::name(NodeRef n) const {
   const auto * attrs = attributes_.find(n);
   std::string name = attrs ? textFact(*attrs, predicate::name) : std::string();
+  if (n.type == NodeType::Portfolio && name.empty()) return text(NodeKey{n.id}).substr(0, 7);  // its key, shortened, until it is named
   if (name.empty() && attrs && n.type != NodeType::Instrument)
     return text(NodeKey{n.id}); // the code or the MIC, until a name is said
   return name;
@@ -352,6 +354,7 @@ void Snapshot::load(const std::vector<StoredFact> & facts) {
         byAttribute_ = byAttribute_.set(said, (ids ? *ids : immer::set<uint64_t>{}).insert(n.id));
       }
     attributes_ = attributes_.set(n, std::move(attrs));
+    if (n.type == NodeType::Portfolio) settle(PortfolioId{n.id});
   }
 }
 
@@ -416,6 +419,7 @@ void Snapshot::setAttributes(NodeRef n, const std::vector<Attribute> & in) {
   for (size_t i : changed) outbox_.changed.push_back(stored(n.id, attrs[i]));
   for (size_t i : rechecked) outbox_.rechecked.push_back(stored(n.id, attrs[i]));
   attributes_ = attributes_.set(n, attrs);
+  if (n.type == NodeType::Portfolio) settle(PortfolioId{n.id});
   if (changed.empty()) {
     checks_++;  // only times moved: no new version
     return;
@@ -587,6 +591,188 @@ void Snapshot::appendActions(const EventKey & k, const std::vector<CorporateActi
   version_++;
 }
 
+
+// ---- Portfolios
+
+namespace {
+
+void requireLedger(const LedgerKey & k) {
+  if (!k.portfolio.valid() || NodeKey{k.portfolio.value}.kind() != NodeKind::Portfolio || !k.dataset.valid())
+    throw std::invalid_argument("a ledger needs a portfolio and a dataset");
+}
+
+// A transaction that can be kept: all of its parts, and a market that something is bought on.
+void requireBuyable(const Snapshot & s, const LedgerKey & ledger, const portfolio::Transaction & t) {
+  if (t.id == 0 || !t.instrument.valid() || !t.market.valid() || !t.quote.valid())
+    throw std::invalid_argument("a transaction needs an id, an instrument, a market and a currency");
+  if (!portfolio::tradable(s, EdgeKey{t.instrument, t.quote, t.market, ledger.dataset}))
+    throw std::invalid_argument("a transaction on the market " + marketCode(t.market) +
+                                " is refused: what is priced there and not bought (an index, a spot price, a currency pair, a rate) cannot be held");
+}
+
+// Where a transaction goes in a ledger kept by day and then id.
+bool before(const portfolio::Transaction & a, const portfolio::Transaction & b) { return std::tie(a.day, a.id) < std::tie(b.day, b.id); }
+
+StoredEvent storedEvent(const LedgerKey & k, const portfolio::Transaction & t) {
+  return StoredEvent{k.portfolio.value, k.dataset.value, t.id, t.day, portfolio::encodeBody(t)};
+}
+
+}  // namespace
+
+std::vector<PortfolioId> Snapshot::portfolios() const {
+  std::vector<std::pair<std::string, PortfolioId>> named;
+  for (PortfolioId id : portfolios_) named.emplace_back(name(NodeRef(id)), id);
+  std::sort(named.begin(), named.end(), [](const auto & a, const auto & b) { return std::tie(a.first, a.second) < std::tie(b.first, b.second); });
+  std::vector<PortfolioId> out;
+  for (const auto & entry : named) out.push_back(entry.second);
+  return out;
+}
+Seq<portfolio::Transaction> Snapshot::transactions(const LedgerKey & k) const {
+  const auto * t = ledgers_.find(k);
+  return t ? *t : Seq<portfolio::Transaction>{};
+}
+std::vector<DatasetId> Snapshot::ledgers(PortfolioId id) const { return sorted(ledgersOf_.find(id)); }
+
+void Snapshot::settle(PortfolioId id) {
+  const auto * l = ledgersOf_.find(id);
+  const bool said = attributes_.find(NodeRef(id)) != nullptr || (l && l->size() > 0);
+  const bool listed = portfolios_.count(id) > 0;
+  if (said && !listed) portfolios_ = portfolios_.insert(id);
+  else if (!said && listed) portfolios_ = portfolios_.erase(id);
+}
+
+// What waits for the disk of a node (or of one predicate of it) is not wanted once it is taken back.
+void Snapshot::forget(uint64_t node, const std::string * predicate) {
+  const auto gone = [&](const StoredFact & f) { return f.node == node && (!predicate || f.predicate == *predicate); };
+  std::erase_if(outbox_.changed, gone);
+  std::erase_if(outbox_.rechecked, gone);
+  if (!predicate) {
+    std::erase_if(outbox_.events, [&](const StoredEvent & e) { return e.portfolio == node; });
+    std::erase_if(outbox_.events_removed, [&](const StoredEvent & e) { return e.portfolio == node; });
+  }
+}
+
+void Snapshot::removeAttribute(NodeRef n, const std::string & predicate) {
+  if (n.type != NodeType::Portfolio) throw std::invalid_argument("only what is said of a portfolio can be taken back");
+  const std::vector<Attribute> * old = attributes_.find(n);
+  if (!old) return;
+  std::vector<Attribute> attrs = *old;
+  const auto at = std::find_if(attrs.begin(), attrs.end(), [&](const Attribute & a) { return a.predicate == predicate; });
+  if (at == attrs.end()) return;
+  if (const auto value = indexedValue(at->value)) {
+    const std::string key = indexKey(n.type, predicate, *value);
+    if (const auto * ids = byAttribute_.find(key)) {
+      auto rest = ids->erase(n.id);
+      byAttribute_ = rest.size() ? byAttribute_.set(key, rest) : byAttribute_.erase(key);
+    }
+  }
+  attrs.erase(at);
+  attributes_ = attrs.empty() ? attributes_.erase(n) : attributes_.set(n, std::move(attrs));
+  forget(n.id, &predicate);
+  outbox_.removed.emplace_back(n.id, predicate);
+  settle(PortfolioId{n.id});
+  version_++;
+}
+
+void Snapshot::removePortfolio(PortfolioId id) {
+  if (!id.valid() || NodeKey{id.value}.kind() != NodeKind::Portfolio) throw std::invalid_argument("not a portfolio");
+  const NodeRef n(id);
+  bool changed = false;
+  if (const auto * old = attributes_.find(n)) {
+    for (const Attribute & a : *old)
+      if (const auto value = indexedValue(a.value)) {
+        const std::string key = indexKey(n.type, a.predicate, *value);
+        if (const auto * ids = byAttribute_.find(key)) {
+          auto rest = ids->erase(n.id);
+          byAttribute_ = rest.size() ? byAttribute_.set(key, rest) : byAttribute_.erase(key);
+        }
+      }
+    attributes_ = attributes_.erase(n);
+    changed = true;
+  }
+  for (DatasetId d : ledgers(id)) ledgers_ = ledgers_.erase(LedgerKey{id, d});
+  if (ledgersOf_.find(id)) {
+    ledgersOf_ = ledgersOf_.erase(id);
+    changed = true;
+  }
+  if (!changed) return;
+  forget(id.value, nullptr);
+  outbox_.removed_nodes.push_back(id.value);
+  settle(id);
+  version_++;
+}
+
+void Snapshot::appendTransactions(const LedgerKey & k, const std::vector<portfolio::Transaction> & in) {
+  requireLedger(k);
+  for (const portfolio::Transaction & t : in) requireBuyable(*this, k, t);
+  if (in.empty()) return;
+  std::vector<portfolio::Transaction> all;
+  if (const auto * old = ledgers_.find(k)) all.assign(old->begin(), old->end());
+  bool changed = false;
+  for (const portfolio::Transaction & t : in) {
+    auto at = std::find_if(all.begin(), all.end(), [&](const portfolio::Transaction & x) { return x.id == t.id; });
+    if (at != all.end() && *at == t) continue;
+    if (at != all.end()) *at = t;
+    else all.push_back(t);
+    changed = true;
+    std::erase_if(outbox_.events, [&](const StoredEvent & e) { return e.portfolio == k.portfolio.value && e.dataset == k.dataset.value && e.id == t.id; });
+    outbox_.events.push_back(storedEvent(k, t));
+  }
+  if (!changed) return;
+  std::stable_sort(all.begin(), all.end(), before);
+  ledgers_ = ledgers_.set(k, Seq<portfolio::Transaction>(all.begin(), all.end()));
+  const auto * of = ledgersOf_.find(k.portfolio);
+  ledgersOf_ = ledgersOf_.set(k.portfolio, (of ? *of : immer::set<DatasetId>{}).insert(k.dataset));
+  settle(k.portfolio);
+  version_++;
+}
+
+void Snapshot::removeTransactions(const LedgerKey & k, const std::vector<uint64_t> & ids) {
+  requireLedger(k);
+  const auto * old = ledgers_.find(k);
+  if (!old) return;
+  std::vector<portfolio::Transaction> kept;
+  bool changed = false;
+  for (const portfolio::Transaction & t : *old) {
+    if (std::find(ids.begin(), ids.end(), t.id) == ids.end()) {
+      kept.push_back(t);
+      continue;
+    }
+    changed = true;
+    std::erase_if(outbox_.events, [&](const StoredEvent & e) { return e.portfolio == k.portfolio.value && e.dataset == k.dataset.value && e.id == t.id; });
+    outbox_.events_removed.push_back({k.portfolio.value, k.dataset.value, t.id, t.day, {}});
+  }
+  if (!changed) return;
+  if (kept.empty()) {
+    ledgers_ = ledgers_.erase(k);
+    const auto rest = ledgersOf_.find(k.portfolio)->erase(k.dataset);
+    ledgersOf_ = rest.size() ? ledgersOf_.set(k.portfolio, rest) : ledgersOf_.erase(k.portfolio);
+  } else {
+    ledgers_ = ledgers_.set(k, Seq<portfolio::Transaction>(kept.begin(), kept.end()));
+  }
+  settle(k.portfolio);
+  version_++;
+}
+
+void Snapshot::loadEvents(const std::vector<StoredEvent> & events) {
+  std::map<LedgerKey, std::vector<portfolio::Transaction>> grouped;
+  for (const StoredEvent & e : events) {
+    const NodeKey portfolioKey{e.portfolio}, datasetKey{e.dataset};
+    if (portfolioKey.kind() != NodeKind::Portfolio || datasetKey.kind() != NodeKind::Dataset) continue;
+    const LedgerKey key{PortfolioId{e.portfolio}, DatasetId{e.dataset}};
+    auto t = portfolio::decodeTransaction(e.id, e.time, e.body);
+    if (!t || t->id == 0 || !t->instrument.valid() || !t->market.valid() || !t->quote.valid() || !portfolio::tradable(t->market)) continue;
+    grouped[key].push_back(std::move(*t));
+  }
+  for (auto & [key, list] : grouped) {
+    std::stable_sort(list.begin(), list.end(), before);
+    ledgers_ = ledgers_.set(key, Seq<portfolio::Transaction>(list.begin(), list.end()));
+    const auto * of = ledgersOf_.find(key.portfolio);
+    ledgersOf_ = ledgersOf_.set(key.portfolio, (of ? *of : immer::set<DatasetId>{}).insert(key.dataset));
+    settle(key.portfolio);
+  }
+}
+
 namespace {
 
 // Writers take the lock one at a time and publish a new snapshot with one pointer swap; readers only load the pointer.
@@ -639,6 +825,10 @@ class SnapshotBatch : public Batch {
   void appendBooks(const EdgeKey & k, const std::vector<BookSnapshot> & b) override { s_.appendBooks(k, b); }
   void appendAnnouncements(const EventKey & k, const std::vector<Announcement> & a) override { s_.appendAnnouncements(k, a); }
   void appendActions(const EventKey & k, const std::vector<CorporateAction> & a) override { s_.appendActions(k, a); }
+  void removeAttribute(NodeRef n, const std::string & p) override { s_.removeAttribute(n, p); }
+  void removePortfolio(PortfolioId id) override { s_.removePortfolio(id); }
+  void appendTransactions(const LedgerKey & k, const std::vector<portfolio::Transaction> & t) override { s_.appendTransactions(k, t); }
+  void removeTransactions(const LedgerKey & k, const std::vector<uint64_t> & ids) override { s_.removeTransactions(k, ids); }
 
  private:
   Snapshot & s_;
@@ -656,13 +846,22 @@ class MemoryStore : public Store {
         return static_cast<TimestampMs>(
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
       };
-    if (options.facts) {
-      // What was kept is the facts of its nodes, which makes no version and no edge. Read before any source can write.
+    portfolios_ = std::move(options.portfolios);
+    if (options.facts || portfolios_) {
+      // What was kept is the facts of its nodes (and the user's transactions), which makes no version and no edge. Read before any source
+      // can write. A portfolio is in its own file and never in the cache: one that is found there anyway is not read.
       Snapshot first;
-      first.load(options.facts->loadAll());
+      std::vector<StoredFact> kept = options.facts ? options.facts->loadAll() : std::vector<StoredFact>{};
+      std::erase_if(kept, [](const StoredFact & f) { return NodeKey{f.node}.kind() == NodeKind::Portfolio; });
+      if (portfolios_) {
+        for (StoredFact & f : portfolios_->loadAll())
+          if (NodeKey{f.node}.kind() == NodeKind::Portfolio) kept.push_back(std::move(f));
+        first.loadEvents(portfolios_->loadEvents());
+      }
+      first.load(kept);
       tell(first.takeNotices());
       current_.store(std::make_shared<const Snapshot>(std::move(first)));
-      writer_ = std::make_unique<FactWriter>(std::move(options.facts), options.writer);
+      if (options.facts) writer_ = std::make_unique<FactWriter>(std::move(options.facts), options.writer);
     }
   }
 
@@ -715,6 +914,18 @@ class MemoryStore : public Store {
   void appendActions(const EventKey & k, const std::vector<CorporateAction> & a) override {
     write([&](Snapshot & s) { s.appendActions(k, a); });
   }
+  void removeAttribute(NodeRef n, const std::string & p) override {
+    write([&](Snapshot & s) { s.removeAttribute(n, p); });
+  }
+  void removePortfolio(PortfolioId id) override {
+    write([&](Snapshot & s) { s.removePortfolio(id); });
+  }
+  void appendTransactions(const LedgerKey & k, const std::vector<portfolio::Transaction> & t) override {
+    write([&](Snapshot & s) { s.appendTransactions(k, t); });
+  }
+  void removeTransactions(const LedgerKey & k, const std::vector<uint64_t> & ids) override {
+    write([&](Snapshot & s) { s.removeTransactions(k, ids); });
+  }
 
  private:
   void tell(const std::vector<std::string> & notices) {
@@ -736,6 +947,20 @@ class MemoryStore : public Store {
       next.settleVersion(old->version());
       tell(next.takeNotices());
       FactBatch facts = next.takeFacts();
+      // Routed by the kind of node: the user's own go to their file, at once, and never into the cache.
+      FactBatch mine;
+      mine.removed = std::move(facts.removed);
+      mine.removed_nodes = std::move(facts.removed_nodes);
+      mine.events = std::move(facts.events);
+      mine.events_removed = std::move(facts.events_removed);
+      const auto portfolioFact = [](const StoredFact & f) { return NodeKey{f.node}.kind() == NodeKind::Portfolio; };
+      for (auto * list : {&facts.changed, &facts.rechecked}) {
+        auto & to = list == &facts.changed ? mine.changed : mine.rechecked;
+        for (StoredFact & f : *list)
+          if (portfolioFact(f)) to.push_back(f);
+        std::erase_if(*list, portfolioFact);  // what is left is the sources'
+      }
+      if (portfolios_ && !mine.empty()) portfolios_->apply(mine);
       if (writer_) writer_->post(std::move(facts));
       if (next.revision() != old->revision()) current_.store(std::make_shared<const Snapshot>(std::move(next)));
     };
@@ -755,6 +980,7 @@ class MemoryStore : public Store {
   std::function<TimestampMs()> clock_;
   std::function<void(const std::string &)> notice_;
   std::set<std::string> told_;          // what notice_ has been told, which it is told once
+  std::shared_ptr<FactStore> portfolios_;  // the user's file, if there is one
   std::unique_ptr<FactWriter> writer_;  // last: its thread ends first, with everything written
 };
 
