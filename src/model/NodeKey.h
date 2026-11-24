@@ -11,8 +11,8 @@
 // changes the enum and this comment and no key that exists:
 //
 //   0 (000) instrument   1 (001) currency or unit   2 (010) market   3 (011) dataset   built
-//   4 (100) country      6 (110) attribute                                            planned, not built
-//   5 (101) portfolio                                                                  built
+//   4 (100) country      5 (101) portfolio                                              built
+//   6 (110) attribute                                                                   planned, not built
 //   7 (111) the escape: bits 59-52 are a second-level kind and the other 52 its identity (reserved)
 //
 // Zero is no key. See "Kinds and bits" in plans/data-model.md.
@@ -29,6 +29,7 @@
 //               ones are markets too: XOFF (listed instruments traded off an
 //               exchange: funds) and XXXX (no market)
 //   Dataset     its code, packed as a currency's
+//   Country     its ISO 3166 alpha-2 code: two characters of A-Z, packed as a code
 //   Portfolio   sixty random bits, minted when the user makes one (a portfolio has no
 //               natural identity); in text a "P" and the fifteen hex digits
 //
@@ -40,6 +41,7 @@ enum class NodeKind : uint8_t { Instrument = 0,
                                 Currency = 1,
                                 Market = 2,
                                 Dataset = 3,
+                                Country = 4,
                                 Portfolio = 5 };
 
 struct NodeKey {
@@ -66,6 +68,7 @@ constexpr size_t kMaxCodeLength = 10;
 std::optional<NodeKey> instrumentKey(const std::string & isin);  // a valid ISIN
 std::optional<NodeKey> currencyKey(const std::string & code);    // a currency's or a unit's code
 std::optional<NodeKey> datasetKey(const std::string & code);
+std::optional<NodeKey> countryKey(const std::string & code);  // exactly two characters of A-Z
 std::optional<NodeKey>
 marketKey(const std::string &mic); // exactly four characters of A-Z0-9
 

@@ -1,6 +1,7 @@
 #include "Browser.h"
 
 #include "AttributeView.h"
+#include "News.h"
 #include "Quotes.h"
 #include "RowActions.h"
 #include "source/Source.h"
@@ -32,6 +33,27 @@ constexpr Preset kPresets[] = {
     // What is held in hand and traded off exchange: the estimated gold bar and coin now, platinum and scrap gold when they come. Commodities on XOFF.
     {"Physical", "show-physical", kOffExchange, InstrumentKind::Commodity},
     {"All", "show-all"}};
+
+// A news preset is a selection of the news by what it says under a predicate: its kind (press release, analysis, news), or, with
+// `general`, the news that is about nothing in particular.
+struct NewsPreset {
+  const char * tag;
+  const char * command;
+  const char * kind = nullptr;
+  bool general = false;
+};
+constexpr NewsPreset kNewsPresets[] = {{"All", "show-all-news"},
+                                       {"Press releases", "show-press-releases", kPressRelease},
+                                       {"Analyses", "show-analyses", kAnalysis},
+                                       {"News", "show-news-stories", kNewsStory},
+                                       {"General", "show-general-news", nullptr, true}};
+
+std::function<bool(const NewsItem &)> newsKeep(const NewsPreset & preset) {
+  if (preset.general) return [](const NewsItem & n) { return n.about.empty(); };
+  if (!preset.kind) return {};
+  const std::string kind = preset.kind;
+  return [kind](const NewsItem & n) { return newsText(n, predicate::kind) == kind; };
+}
 
 // What the buttons at the end of a row do: a glyph and the command that runs for the selected row. A new action is a new line.
 struct RowAction {
@@ -128,7 +150,8 @@ Browser::Browser(Application & app, std::shared_ptr<Store> store, std::shared_pt
     if (i < 0 || restoring_) return;
     showTag(i);
     table_.select(0);
-    if (context_ == Context::Markets) status_.setMessage(std::string("Showing ") + kPresets[i].tag);
+    if (context_ == Context::News) status_.setMessage(std::string("Showing ") + kNewsPresets[i].tag + " news");
+    else if (context_ == Context::Markets) status_.setMessage(std::string("Showing ") + kPresets[i].tag);
     else if (const auto positions = std::dynamic_pointer_cast<Positions>(table_.model())) status_.setMessage(positions->summary());
   });
   changed_ = table_.on<StoreChanged>([this](const StoreChanged &, EventContext &) {
@@ -161,6 +184,14 @@ Browser::Browser(Application & app, std::shared_ptr<Store> store, std::shared_pt
 }
 
 void Browser::setColumns() {
+  if (context_ == Context::News) {
+    table_.setColumns({{.title = "Time (UTC)", .width = 16},
+                       {.title = "Kind", .width = 14},
+                       {.title = "Headline", .width = 0},
+                       {.title = "About", .width = 26},
+                       {.title = "Source", .width = 9}});
+    return;
+  }
   if (context_ == Context::Markets) {
     table_.setColumns({{.title = "", .width = 2, .sortable = false, .icon = true},
                        {.title = "Base", .width = 8},
@@ -277,6 +308,10 @@ void Browser::refresh() {
     if (snapshot->version() != shown_version_) refreshPortfolio(std::move(snapshot));
     return;
   }
+  if (context_ == Context::News) {
+    if (snapshot->version() != shown_version_) refreshNews(std::move(snapshot));
+    return;
+  }
   const int preset = tags_.selected();
   if (preset < 0 || snapshot->version() == shown_version_) return;
   std::optional<EdgeKey> selected;
@@ -332,6 +367,50 @@ void Browser::refreshPortfolio(std::shared_ptr<const Snapshot> snapshot) {
   showEmptyHint();
 }
 
+// The same for the News context: the items again from the newer snapshot, which keeps the sort, the scroll position and the item
+// selected.
+void Browser::refreshNews(std::shared_ptr<const Snapshot> snapshot) {
+  auto news = std::dynamic_pointer_cast<NewsTable>(table_.model());
+  if (!news || tags_.selected() != shown_news_) {
+    const int column = table_.sortColumn();
+    const SortOrder order = table_.sortOrder();
+    showNews(tags_.selected());
+    if (column >= 0) table_.sortBy(column, order);
+    return;
+  }
+  const std::string selected = selectedNewsKey();
+  news->setSnapshot(snapshot);
+  shown_version_ = snapshot->version();
+  table_.modelChanged();
+  int row = news->rowCount() > 0 ? 0 : -1;
+  if (!selected.empty()) row = std::max(row, rowOfNewsKey(selected));
+  if (row >= 0) table_.reselect(row);
+  showEmptyHint();
+}
+
+void Browser::showNews(int i) {
+  i = std::clamp(i, 0, static_cast<int>(std::size(kNewsPresets)) - 1);
+  auto snapshot = store_->snapshot();
+  table_.setModel(std::make_shared<NewsTable>(snapshot, newsKeep(kNewsPresets[i])));
+  shown_version_ = snapshot->version();
+  shown_news_ = i;
+  last_refresh_ = std::chrono::steady_clock::now();
+  showEmptyHint();
+}
+
+std::string Browser::selectedNewsKey() const {
+  const auto * news = dynamic_cast<const NewsTable *>(table_.model().get());
+  const int row = table_.selectedRow();
+  return news && row >= 0 && row < news->rowCount() ? NewsTable::keyOf(news->item(row)) : std::string();
+}
+
+int Browser::rowOfNewsKey(const std::string & key) const {
+  const auto * news = dynamic_cast<const NewsTable *>(table_.model().get());
+  for (int r = 0; news && r < news->rowCount(); r++)
+    if (NewsTable::keyOf(news->item(r)) == key) return r;
+  return -1;
+}
+
 // The tags on the top row (one cell in), a gap, the table, the info line and the status line.
 void Browser::layout(int rows, int cols) {
   layoutRows(0, 0, rows, cols, {{.size = 1}, {.size = 1}, {.widget = &table_, .fill = 1}, {.size = 1}, {.widget = &status_}});
@@ -359,6 +438,19 @@ void Browser::showHelp() {
 
 void Browser::showInfo() {
   const int row = action_row_.value_or(table_.selectedRow());
+  if (auto news = std::dynamic_pointer_cast<NewsTable>(table_.model())) {
+    if (row < 0 || row >= news->rowCount()) {
+      status_.setMessage("No row selected");
+      return;
+    }
+    auto snapshot = store_->snapshot();
+    const NewsItem item = news->item(row);
+    AttributeModal modal(app_.widgets(), app_.root(), app_.backend().eventLoop(), "News: " + item.headline, snapshot, buildNewsInfo(*snapshot, item));
+    app_.requestFrame();
+    modal.showModal();
+    app_.requestFrame();
+    return;
+  }
   auto quotes = std::dynamic_pointer_cast<Quotes>(table_.model());
   auto positions = std::dynamic_pointer_cast<Positions>(table_.model());
   if ((!quotes && !positions) || row < 0) {
@@ -405,6 +497,7 @@ int Browser::rowOfKey(const EdgeKey & key) const {
 
 void Browser::showTag(int i) {
   if (context_ == Context::Markets) showPreset(i);
+  else if (context_ == Context::News) showNews(i);
   else showPortfolio(i);
 }
 
@@ -444,6 +537,10 @@ void Browser::showEmptyHint() {
     else if (auto positions = std::dynamic_pointer_cast<Positions>(table_.model()); positions && positions->rowCount() == 0)
       text = "Nothing held in this portfolio yet. Buy from a row in Markets (Tab): the buy button at the end of the row.";
   }
+  if (context_ == Context::News) {
+    if (auto news = std::dynamic_pointer_cast<NewsTable>(table_.model()); news && news->rowCount() == 0)
+      text = "No news yet: a source that has news loads it as it runs.";
+  }
   hint_.setText(text);
   hint_.setVisible(!text.empty());
 }
@@ -456,13 +553,14 @@ void Browser::saveView() {
   v.sort_order = table_.sortOrder();
   v.first_position = table_.firstVisiblePosition();
   v.selected = selectedKey();
+  v.news = selectedNewsKey();
 }
 
 void Browser::restoreView() {
   const View & v = views_[static_cast<size_t>(context_)];
   if (v.sort_column >= 0 && v.sort_column < static_cast<int>(table_.columns().size())) table_.sortBy(v.sort_column, v.sort_order);
   const int count = table_.model() ? table_.model()->rowCount() : 0;
-  int row = v.selected ? rowOfKey(*v.selected) : -1;
+  int row = context_ == Context::News ? (v.news.empty() ? -1 : rowOfNewsKey(v.news)) : v.selected ? rowOfKey(*v.selected) : -1;
   if (row < 0 && count > 0) row = 0;
   if (row >= 0) table_.reselect(row);
   table_.scrollToPosition(v.first_position);
@@ -482,6 +580,14 @@ void Browser::enterContext() {
     tags_.select(tag);
     setColumns();
     showPreset(tag);
+  } else if (context_ == Context::News) {
+    std::vector<std::string> tags;
+    for (const NewsPreset & preset : kNewsPresets) tags.push_back(preset.tag);
+    tags_.setTags(std::move(tags));
+    const int tag = std::clamp(v.tag, 0, static_cast<int>(std::size(kNewsPresets)) - 1);
+    tags_.select(tag);
+    setColumns();
+    showNews(tag);
   } else {
     syncPortfolioTags(*snapshot, v.portfolio);
     showPortfolio(tags_.selected());
@@ -491,6 +597,7 @@ void Browser::enterContext() {
   hint_.setVisible(false);
   showEmptyHint();
   if (context_ == Context::Markets) status_.setMessage(std::string("Showing Markets: ") + kPresets[static_cast<size_t>(tags_.selected())].tag);
+  else if (context_ == Context::News) status_.setMessage(std::string("Showing News: ") + kNewsPresets[static_cast<size_t>(tags_.selected())].tag);
   else if (auto positions = std::dynamic_pointer_cast<Positions>(table_.model()); positions && portfolio_.valid()) status_.setMessage(positions->summary());
   else status_.setMessage("Showing Portfolio: none yet");
   app_.requestFrame();
@@ -517,10 +624,16 @@ void Browser::defineCommands() {
       tags_.select(static_cast<int>(i));
     });
   }
+  for (size_t i = 0; i < std::size(kNewsPresets); i++) {
+    commands.define(kNewsPresets[i].command, std::string("Show the ") + kNewsPresets[i].tag + " news, newest first", [this, i] {
+      showContext(Context::News);
+      tags_.select(static_cast<int>(i));
+    });
+  }
   commands.define("next-preset", "Show the next tag (preset, or portfolio)", [this] { tags_.select(std::min(tags_.selected() + 1, static_cast<int>(tags_.tags().size()) - 1)); });
   commands.define("previous-preset", "Show the previous tag (preset, or portfolio)", [this] { tags_.select(std::max(tags_.selected() - 1, 0)); });
-  commands.define("next-context", "Switch to the next context (Markets, Portfolio)", [this] { nextContext(1); });
-  commands.define("previous-context", "Switch to the previous context (Markets, Portfolio)", [this] { nextContext(-1); });
+  commands.define("next-context", "Switch to the next context (Markets, Portfolio, News)", [this] { nextContext(1); });
+  commands.define("previous-context", "Switch to the previous context (Markets, Portfolio, News)", [this] { nextContext(-1); });
   for (size_t i = 0; i < kPeriodCount; i++) {
     const PeriodInfo & p = info(static_cast<Period>(i));
     commands.define(std::string("show-period-") + p.id, std::string("Show the change and the trace over ") + p.trace, [this, i] { showPeriod(static_cast<Period>(i)); });

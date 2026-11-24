@@ -1,0 +1,185 @@
+{
+ "excluded": {},
+ "limit": 5,
+ "news": [
+  {
+   "agency": {
+    "id": "GLOBE_NEWSWIRE",
+    "logoLink": "https://cdn.prod.nntech.io/cms-proxy/s4yelc7ht8vm/1VdlBKJBukHBbiyE9AG3HK/5f2776337159feaa403474112dbccc6d/GlobeNewswire.png",
+    "name": "GlobeNewswire"
+   },
+   "headline": "Stor sulfidfyndighet vid Rockley-projektet",
+   "id": "14bb98f5-a35f-46a9-9891-cc0cdd8b2d98",
+   "instrumentIds": [
+    "e66ae6a8-5427-4f91-94c1-c59a11eb1ff5",
+    "f0bd5805-0ab3-48f2-92e3-f7dc094b214b"
+   ],
+   "instruments": [
+    {
+     "countryCode": "US",
+     "displaySlug": "alkane-resources-ltd-alkef-xotc",
+     "instrumentClass": "STOCK",
+     "instrumentId": "e66ae6a8-5427-4f91-94c1-c59a11eb1ff5",
+     "legacyInstrumentId": 16156652,
+     "name": "Alkane Resources Ltd",
+     "orderBookId": "03647806-90f4-42d7-ba8b-85e07791973b",
+     "symbol": "ALKEF"
+    }
+   ],
+   "intro": "PERTH, Västra Australien, Nov. 20, 2026 (GLOBE NEWSWIRE) -- Alkane Resources Limited (ASX: ALK, TSX: ALK, OTCQX: ALKRY) (\"Alkane\") är glada att kunna presentera",
+   "language": "sv",
+   "newsType": "PRESS_RELEASE",
+   "newsTypeName": "Lehdistötiedotteet",
+   "originalArticleLink": "https://www.globenewswire.com/NewsRoom/ReleaseNg/7972385",
+   "published": 1795214447000,
+   "tags": [
+    "COMMODITIES",
+    "WORLD",
+    "OCEANIA"
+   ],
+   "views": 53
+  },
+  {
+   "agency": {
+    "id": "GLOBE_NEWSWIRE",
+    "logoLink": "https://cdn.prod.nntech.io/cms-proxy/s4yelc7ht8vm/1VdlBKJBukHBbiyE9AG3HK/5f2776337159feaa403474112dbccc6d/GlobeNewswire.png",
+    "name": "GlobeNewswire"
+   },
+   "headline": "Oatly Confirms Commencement of Tender Offer by Verlinvest",
+   "id": "dd92125f-2407-49a2-9e89-992244939e42",
+   "instrumentIds": [
+    "3d4edb9f-bbca-493c-8fb7-d6a9eacb0519",
+    "7fb9dda7-a3b1-4bf3-a266-75706e95b7f6",
+    "f12f6d2e-95cb-44d8-ac64-e623603dc12a"
+   ],
+   "instruments": [
+    {
+     "countryCode": "US",
+     "displaySlug": "oatly-adr-otly-xnas",
+     "iconUrl": "https://cdn.prod.nntech.io/cms-proxy/6xe8ehctp75g/5UX2cGHxZRePSKlH6kf8rJ/c42decbfc336c2fcb65ff23aa62937f6/image.png",
+     "instrumentClass": "STOCK",
+     "instrumentId": "7fb9dda7-a3b1-4bf3-a266-75706e95b7f6",
+     "legacyInstrumentId": 18644851,
+     "name": "Oatly ADR",
+     "orderBookId": "50280b2d-c7cd-4372-b784-d6447e2af3a2",
+     "symbol": "OTLY"
+    }
+   ],
+   "intro": "Oatly Confirms Commencement of Tender Offer by Verlinvest. The Disinterested Directors of the Oatly Board are Evaluating the Tender Offer and Urge Securityholde",
+   "language": "en",
+   "newsType": "PRESS_RELEASE",
+   "newsTypeName": "Lehdistötiedotteet",
+   "originalArticleLink": "https://www.globenewswire.com/NewsRoom/ReleaseNg/402567093",
+   "published": 1795210200000,
+   "tags": [
+    "WORLD",
+    "AGRICULTURE",
+    "EUROPE",
+    "CONSUMER",
+    "BUYBACKS",
+    "SE"
+   ],
+   "views": 39
+  },
+  {
+   "agency": {
+    "id": "GLOBE_NEWSWIRE",
+    "logoLink": "https://cdn.prod.nntech.io/cms-proxy/s4yelc7ht8vm/1VdlBKJBukHBbiyE9AG3HK/5f2776337159feaa403474112dbccc6d/GlobeNewswire.png",
+    "name": "GlobeNewswire"
+   },
+   "headline": "Multimedia Update - Gangnan District: Building a Billion-Yuan Selenium-Rich Squab Industry Cluster",
+   "id": "c0c1ed35-bfac-4a1d-952c-0cfea7361fa1",
+   "instrumentIds": [],
+   "instruments": [],
+   "intro": "GUIGANG, China, Nov. 21, 2026 (GLOBE NEWSWIRE) -- From November 13 to 15, 2026, a series of events marking Guigang's celebration of the Chinese Farmers' Harvest",
+   "language": "en",
+   "newsType": "PRESS_RELEASE",
+   "newsTypeName": "Lehdistötiedotteet",
+   "originalArticleLink": "https://www.globenewswire.com/NewsRoom/ReleaseNg/7979392",
+   "published": 1795203718000,
+   "tags": [
+    "EMERGING_MARKETS",
+    "AGRICULTURE",
+    "ASIA",
+    "CONSUMER"
+   ],
+   "views": 8
+  },
+  {
+   "agency": {
+    "id": "GLOBE_NEWSWIRE",
+    "logoLink": "https://cdn.prod.nntech.io/cms-proxy/s4yelc7ht8vm/1VdlBKJBukHBbiyE9AG3HK/5f2776337159feaa403474112dbccc6d/GlobeNewswire.png",
+    "name": "GlobeNewswire"
+   },
+   "headline": "Form 8.3 - Ashtead Technology Holdings plc",
+   "id": "1e128464-e157-4f41-8ce8-ca2836ea2004",
+   "instrumentIds": [
+    "c82ae97e-5eda-41c9-8447-498334340cdc"
+   ],
+   "instruments": [
+    {
+     "countryCode": "GB",
+     "displaySlug": "ashtead-technology-holdings-plc-atl-chix",
+     "instrumentClass": "STOCK",
+     "instrumentId": "c82ae97e-5eda-41c9-8447-498334340cdc",
+     "legacyInstrumentId": 18920445,
+     "name": "Ashtead Technology Holdings Plc",
+     "orderBookId": "a69add2c-d568-42db-905a-d70587ef9fc2",
+     "symbol": "ATl"
+    }
+   ],
+   "intro": "**FORM 8. 3**. **PUBLIC OPENING POSITION DISCLOSURE/DEALING DISCLOSURE BY**. **A PERSON WITH INTERESTS IN RELEVANT SECURITIES REPRESENTING 1% OR MORE**. **Rule ",
+   "language": "en",
+   "newsType": "PRESS_RELEASE",
+   "newsTypeName": "Lehdistötiedotteet",
+   "originalArticleLink": "https://www.globenewswire.com/NewsRoom/ReleaseNg/7979117",
+   "published": 1795202732000,
+   "tags": [
+    "FINANCIALS",
+    "WORLD"
+   ],
+   "views": 2
+  },
+  {
+   "agency": {
+    "id": "GLOBE_NEWSWIRE",
+    "logoLink": "https://cdn.prod.nntech.io/cms-proxy/s4yelc7ht8vm/1VdlBKJBukHBbiyE9AG3HK/5f2776337159feaa403474112dbccc6d/GlobeNewswire.png",
+    "name": "GlobeNewswire"
+   },
+   "headline": "Banco Comercial Português, S.A. informs about Interim report on the transactions conducted under the Share Buy-Back Programme",
+   "id": "fd30b97d-76f8-45a5-af51-ad32bf168b0b",
+   "instrumentIds": [
+    "39cb23e9-3fff-4051-a16e-23bd609f7a0e"
+   ],
+   "instruments": [
+    {
+     "countryCode": "PT",
+     "displaySlug": "b0c0p0-bco-comercial-portugues-bcp-xlis",
+     "iconUrl": "https://cdn.prod.nntech.io/cms-proxy/6xe8ehctp75g/NBhoTYQ4fYMpyjLkbuOBj/ff55b5b3b361ec7d47dbe51456aa386a/download.png",
+     "instrumentClass": "STOCK",
+     "instrumentId": "39cb23e9-3fff-4051-a16e-23bd609f7a0e",
+     "legacyInstrumentId": 16618915,
+     "name": "B.C.P.-BCO COMERCIAL PORTUGUES",
+     "orderBookId": "446ded6e-234b-47d0-803f-8995a4bc71d0",
+     "symbol": "BCP"
+    }
+   ],
+   "intro": "Banco Comercial Português, S. A. informs about Interim report on the transactions conducted under the Share Buy-Back Programme. **Attachment**. * [20261120 SBB ",
+   "language": "en",
+   "newsType": "PRESS_RELEASE",
+   "newsTypeName": "Lehdistötiedotteet",
+   "originalArticleLink": "https://www.globenewswire.com/NewsRoom/ReleaseNg/402567185",
+   "published": 1795200225000,
+   "tags": [
+    "FINANCIALS",
+    "WORLD",
+    "LARGE_CAP",
+    "EUROPE",
+    "BUYBACKS"
+   ],
+   "views": 5
+  }
+ ],
+ "offset": 0,
+ "total": 100
+}

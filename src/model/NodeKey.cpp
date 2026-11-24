@@ -80,6 +80,15 @@ std::optional<NodeKey> datasetKey(const std::string & code) {
   return NodeKey{withKind(NodeKind::Dataset, *packed)};
 }
 
+std::optional<NodeKey> countryKey(const std::string & code) {
+  if (code.size() != 2) return std::nullopt;
+  for (char c : code)
+    if (c < 'A' || c > 'Z') return std::nullopt;
+  const auto packed = packCode(code);
+  if (!packed) return std::nullopt;
+  return NodeKey{withKind(NodeKind::Country, *packed)};
+}
+
 std::optional<NodeKey> marketKey(const std::string &mic) {
   if (mic.size() != 4)
     return std::nullopt;
@@ -138,6 +147,7 @@ std::string text(NodeKey key) {
     case NodeKind::Currency:
     case NodeKind::Dataset:
     case NodeKind::Market:
+    case NodeKind::Country:
       return unpackCode(key.identity());
     case NodeKind::Portfolio: {
       std::string out = "P";
@@ -145,5 +155,5 @@ std::string text(NodeKey key) {
       return out;
     }
   }
-  return {};  // kinds that are planned and not built (country, attribute) and the escape have no text
+  return {};  // kinds that are planned and not built (attribute) and the escape have no text
 }

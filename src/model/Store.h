@@ -15,7 +15,7 @@
 #include <utility>
 
 // One immutable version of everything the application knows. A snapshot never changes: a reader that holds one reads it
-// without locks, for as long as it likes, and sees one consistent world (the candles, books, announcements and
+// without locks, for as long as it likes, and sees one consistent world (the candles, books, news and
 // actions as of one moment). Copying a snapshot is cheap and shares all of its storage; a write makes a new snapshot
 // that shares almost everything with the one before. Slices a snapshot returns share storage with it too.
 class Snapshot {
@@ -111,9 +111,12 @@ class Snapshot {
   // The snapshot standing at `time`: the latest at or before it.
   std::optional<BookSnapshot> bookAt(const EdgeKey &, double time) const;
 
-  Seq<Announcement> announcements(const EventKey &, TimeRange range = {}) const;
+  // The news that `query` selects, newest first (the same time: by dataset, then id). Values, not references into the store.
+  std::vector<NewsItem> news(const NewsQuery & query = {}) const;
+  // How many items there are, in every dataset.
+  size_t newsCount() const;
   Seq<CorporateAction> actions(const EventKey &, TimeRange range = {}) const;
-  // The datasets that have announcements or actions for an instrument. Sorted.
+  // The datasets that have corporate actions for an instrument. Sorted.
   std::vector<EventKey> events(InstrumentId) const;
 
   // Changes, for a store to make on its own copy before publishing it. Nothing that holds a published snapshot
@@ -128,7 +131,7 @@ class Snapshot {
   void appendCandles(const EdgeKey &, Resolution, const std::vector<Candle> &);
   void setPreviousClose(const EdgeKey &, int64_t day, double close);
   void appendBooks(const EdgeKey &, const std::vector<BookSnapshot> &);
-  void appendAnnouncements(const EventKey &, const std::vector<Announcement> &);
+  void appendNews(DatasetId, const std::vector<NewsItem> &);
   void appendActions(const EventKey &, const std::vector<CorporateAction> &);
   void removeAttribute(NodeRef, const std::string & predicate);
   void removePortfolio(PortfolioId);
@@ -176,7 +179,9 @@ class Snapshot {
   immer::map<EdgeKey, Seq<BookSnapshot>> books_;
   immer::map<MarketId, immer::set<EdgeKey>> edgesByMarket_;
   immer::map<InstrumentId, immer::set<EdgeKey>> edgesByBase_, edgesByQuote_;
-  immer::map<EventKey, Seq<Announcement>> announcements_;
+  immer::map<DatasetId, Seq<NewsItem>> news_;                 // per dataset, by time
+  immer::map<DatasetId, immer::set<std::string>> newsIds_;    // the ids it has said
+  size_t newsCount_ = 0;
   immer::map<EventKey, Seq<CorporateAction>> actions_;
   immer::map<InstrumentId, immer::set<EventKey>> eventsByInstrument_;
   immer::map<LedgerKey, Seq<portfolio::Transaction>> ledgers_;
@@ -238,10 +243,12 @@ class StoreWrites {
   virtual void setPreviousClose(const EdgeKey &, int64_t day, double close) = 0;
   // Order book snapshots, time-ordered; one at a time already in the series replaces it.
   virtual void appendBooks(const EdgeKey &, const std::vector<BookSnapshot> &) = 0;
-  // Announcements and corporate actions of an instrument, per dataset, time-ordered. An announcement at the same time
-  // with the same headline, or an action at the same time of the same kind, replaces the one there; anything else
-  // at the same instant is kept beside it.
-  virtual void appendAnnouncements(const EventKey &, const std::vector<Announcement> &) = 0;
+  // News, by the dataset that says it. An item is its dataset and its id: one that is there already is left as it was (a dataset
+  // that says a story again changes nothing, and two datasets with the same story have two items); one with no id is refused
+  // with std::invalid_argument and nothing of the call is written. `dataset` of an item is set to the dataset given.
+  virtual void appendNews(DatasetId, const std::vector<NewsItem> &) = 0;
+  // Corporate actions of an instrument, per dataset, time-ordered. An action at the same time of the same kind replaces the one
+  // there; anything else at the same instant is kept beside it.
   virtual void appendActions(const EventKey &, const std::vector<CorporateAction> &) = 0;
 
   // Takes back what was said of a portfolio under a predicate: its facts are the user's own, so they can be taken back (a

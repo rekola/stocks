@@ -2,7 +2,7 @@
 
 Status: built as an immutable persistent store (`src/model/`: `Types.h`, `Store.h`, `MemoryStore.cpp`, tests in
 `tests/ModelTests.cpp`). The table shows what the store holds, filled by a data source (or made-up data) on a thread of its own.
-The order book, announcements and a universal scraper are not built yet.
+The order book and a universal scraper are not built yet.
 
 ## Goals
 
@@ -67,12 +67,19 @@ On an edge key (a price of something):
   different kind of fact, but under the same key. Quotes carry information even
   when nothing traded.
 
-On an event key `(instrument, dataset)` (something said about the company
-itself, so it has no market or quote currency):
+**News** is one more kind of fact, kept per dataset and about any nodes. An item is its dataset
+and the dataset's own id for it (what it is, so saying it again changes nothing and the store never
+replaces one by another: a dataset that gives duplicates under different ids cleans them up itself, and
+two datasets with one story have two items). It has a time, a headline, a body (the preview) and a url, a list of
+the nodes it is about (instruments, markets, countries, any node: none for the news of the world, which
+needs no node of its own) and attributes: its `kind` in the common vocabulary (`press-release`,
+`analysis`, `news`, as an instrument has its kind), the dataset's own `type`, `agency`, `language`. A selection of
+the news is made as one of the instruments is, by what it says under a predicate (a preset), and the
+newest first is the order. A country is a node (key kind four, its ISO alpha-2 code).
 
-- **Announcements**: time, category, headline, body, url. Press releases,
-  filings, profit warnings. Same time and headline replaces; same time with
-  another headline is a second announcement.
+On an event key `(instrument, dataset)` (something said about the company itself, so it has no market
+or quote currency):
+
 - **Corporate actions**: the ex-date, a kind (`Split`, `Dividend`, `Other`), a
   value (new shares per old for a split, amount per share for a dividend), the
   currency instrument of a dividend and a note. Same time and kind replaces.
@@ -123,15 +130,15 @@ the in-memory one, and a server-backed store would hand out snapshots too.
 
 - Writes: `addInstrument`/`addMarket`/`addDataset` (by symbol or name: the
   record already there is returned), `appendCandles`, `appendBooks`,
-  `appendAnnouncements`, `appendActions`. Writers take a lock one at a time and
+  `appendNews`, `appendActions`. Writers take a lock one at a time and
   publish the new snapshot with one pointer swap; `snapshot()` never waits. A
   write that changes nothing publishes nothing, and each one that does makes the
   next `version()`.
 - Reads on a snapshot: lookups by id and name, `edges(market)` (keys with
   candles or a book in a market), `candles(key, resolution, range)`,
   `lastCandles(key, resolution, n)`, `resolutions(key)` (the resolutions an edge has),
-  `books(key, range)`, `bookAt(key, time)`, `announcements`, `actions`, and
-  `events(instrument)` for the datasets that say anything about an instrument.
+  `books(key, range)`, `bookAt(key, time)`, `news(query)` (a time range, a node, a selection, newest first), `actions`, and
+  `events(instrument)` for the datasets that have actions for an instrument.
 - Series come back as `Seq<T>` (an immer `flex_vector`): slices share storage
   with the snapshot, and a reference into one is valid as long as it is held.
   Time ranges are half-open `[from, to)`, in seconds or in day numbers as the series is keyed.
@@ -394,7 +401,7 @@ Not done:
   edges by type is not used yet (see server.md for what is hard about it).
 
 - Prices are `double`. Nothing here settles trades.
-- The model has a slot for corporate actions and announcements, kept as their
+- The model has a slot for corporate actions and news, kept as their
   own series (above). Prices are stored as reported; adjusting for splits and
   dividends is computed from the corporate actions when a model asks, never
   written back over the bars.

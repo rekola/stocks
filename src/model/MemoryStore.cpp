@@ -76,9 +76,6 @@ bool sameLevels(const std::vector<BookLevel> & a, const std::vector<BookLevel> &
 bool sameBook(const BookSnapshot & a, const BookSnapshot & b) {
   return sameNumber(a.time, b.time) && sameLevels(a.bids, b.bids) && sameLevels(a.asks, b.asks);
 }
-bool sameAnnouncement(const Announcement & a, const Announcement & b) {
-  return a.time == b.time && a.category == b.category && a.headline == b.headline && a.body == b.body && a.url == b.url;
-}
 bool sameAction(const CorporateAction & a, const CorporateAction & b) {
   return a.time == b.time && a.kind == b.kind && sameNumber(a.value, b.value) && a.currency == b.currency && a.note == b.note;
 }
@@ -311,10 +308,23 @@ std::optional<BookSnapshot> Snapshot::bookAt(const EdgeKey & k, double t) const 
   return *(after - 1);
 }
 
-Seq<Announcement> Snapshot::announcements(const EventKey & k, TimeRange r) const {
-  const auto * s = announcements_.find(k);
-  return s ? slice(*s, r) : Seq<Announcement>{};
+std::vector<NewsItem> Snapshot::news(const NewsQuery & q) const {
+  std::vector<NewsItem> out;
+  for (const auto & [dataset, items] : news_) {
+    const auto first = std::lower_bound(items.begin(), items.end(), q.range.from, [](const NewsItem & i, Timestamp t) { return i.time < t; });
+    for (auto it = first; it != items.end() && it->time < q.range.to; ++it) {
+      if (q.about && std::find(it->about.begin(), it->about.end(), *q.about) == it->about.end()) continue;
+      if (q.keep && !q.keep(*it)) continue;
+      out.push_back(*it);
+    }
+  }
+  std::sort(out.begin(), out.end(), [](const NewsItem & a, const NewsItem & b) {
+    return std::tie(b.time, a.dataset, a.id) < std::tie(a.time, b.dataset, b.id);  // newest first, then by dataset and id
+  });
+  if (q.limit && out.size() > q.limit) out.resize(q.limit);
+  return out;
 }
+size_t Snapshot::newsCount() const { return newsCount_; }
 Seq<CorporateAction> Snapshot::actions(const EventKey & k, TimeRange r) const {
   const auto * s = actions_.find(k);
   return s ? slice(*s, r) : Seq<CorporateAction>{};
@@ -568,15 +578,27 @@ void Snapshot::appendBooks(const EdgeKey & k, const std::vector<BookSnapshot> & 
   version_++;
 }
 
-void Snapshot::appendAnnouncements(const EventKey & k, const std::vector<Announcement> & in) {
-  require(k);
-  if (in.empty())
-    return;
-  if (!appendTo(announcements_, k, in, [](const Announcement & a, const Announcement & b) { return a.headline == b.headline; },
-                sameAnnouncement))
-    return;
-  const auto * set = eventsByInstrument_.find(k.instrument);
-  eventsByInstrument_ = eventsByInstrument_.set(k.instrument, (set ? *set : immer::set<EventKey>{}).insert(k));
+void Snapshot::appendNews(DatasetId dataset, const std::vector<NewsItem> & in) {
+  if (!dataset.valid() || NodeKey{dataset.value}.kind() != NodeKind::Dataset) throw std::invalid_argument("news needs a dataset");
+  for (const NewsItem & item : in)
+    if (item.id.empty()) throw std::invalid_argument("an item of news needs the dataset's id for it");
+  const auto * oldItems = news_.find(dataset);
+  const auto * oldIds = newsIds_.find(dataset);
+  Seq<NewsItem> items = oldItems ? *oldItems : Seq<NewsItem>{};
+  immer::set<std::string> ids = oldIds ? *oldIds : immer::set<std::string>{};
+  size_t added = 0;
+  for (NewsItem item : in) {
+    if (ids.count(item.id)) continue;  // said before: left as it was
+    ids = ids.insert(item.id);
+    item.dataset = dataset;
+    const size_t at = static_cast<size_t>(std::upper_bound(items.begin(), items.end(), item.time, [](Timestamp t, const NewsItem & i) { return t < i.time; }) - items.begin());
+    items = items.insert(at, std::move(item));
+    added++;
+  }
+  if (!added) return;
+  news_ = news_.set(dataset, items);
+  newsIds_ = newsIds_.set(dataset, ids);
+  newsCount_ += added;
   version_++;
 }
 
@@ -823,7 +845,7 @@ class SnapshotBatch : public Batch {
   void appendCandles(const EdgeKey & k, Resolution r, const std::vector<Candle> & c) override { s_.appendCandles(k, r, c); }
   void setPreviousClose(const EdgeKey & k, int64_t day, double close) override { s_.setPreviousClose(k, day, close); }
   void appendBooks(const EdgeKey & k, const std::vector<BookSnapshot> & b) override { s_.appendBooks(k, b); }
-  void appendAnnouncements(const EventKey & k, const std::vector<Announcement> & a) override { s_.appendAnnouncements(k, a); }
+  void appendNews(DatasetId d, const std::vector<NewsItem> & n) override { s_.appendNews(d, n); }
   void appendActions(const EventKey & k, const std::vector<CorporateAction> & a) override { s_.appendActions(k, a); }
   void removeAttribute(NodeRef n, const std::string & p) override { s_.removeAttribute(n, p); }
   void removePortfolio(PortfolioId id) override { s_.removePortfolio(id); }
@@ -908,8 +930,8 @@ class MemoryStore : public Store {
   void appendBooks(const EdgeKey & k, const std::vector<BookSnapshot> & b) override {
     write([&](Snapshot & s) { s.appendBooks(k, b); });
   }
-  void appendAnnouncements(const EventKey & k, const std::vector<Announcement> & a) override {
-    write([&](Snapshot & s) { s.appendAnnouncements(k, a); });
+  void appendNews(DatasetId d, const std::vector<NewsItem> & n) override {
+    write([&](Snapshot & s) { s.appendNews(d, n); });
   }
   void appendActions(const EventKey & k, const std::vector<CorporateAction> & a) override {
     write([&](Snapshot & s) { s.appendActions(k, a); });

@@ -545,7 +545,7 @@ TEST(a_stock_bar_carries_the_volume_when_the_answer_has_it) {
 
 TEST(the_default_lists_are_the_etfs_the_certificates_the_funds_and_the_stocks) {
   auto lists = NordnetSource::defaultLists();
-  CHECK(lists.size() == 7);
+  CHECK(lists.size() == 8);
   // The three small indicator lists go first, the commodities (the gold spot that physical gold is estimated from) before the pairs
   // (that value it in euros): none of them waits for the minutes the big lists take.
   CHECK(lists[0].name == "commodities" && lists[1].name == "currencies" && lists[2].name == "indices");
@@ -554,6 +554,9 @@ TEST(the_default_lists_are_the_etfs_the_certificates_the_funds_and_the_stocks) {
   CHECK(lists[3].name == "etflist" && lists[4].name == "certificatelist" && lists[5].name == "fundlist" && lists[6].name == "stocklist");
   CHECK(lists[6].url.find("/stocklist?") != std::string::npos && lists[6].pageSize == 1000);
   for (size_t i = 3; i < 7; i++) CHECK(lists[i].shape != NordnetSource::List::Shape::Indicators);
+  // The news is last: its items are about the instruments the lists before it have found.
+  CHECK(lists[7].name == "news" && lists[7].shape == NordnetSource::List::Shape::News &&
+        lists[7].url.find("/news/v1/news/preview/main?includeInstruments=true") != std::string::npos);
 }
 
 TEST(
@@ -817,4 +820,17 @@ TEST(nordnet_types_are_mapped_onto_the_one_vocabulary_and_certificates_are_named
   CHECK(NordnetSource::kindOfType("ESHMTF") == InstrumentKind::Company && NordnetSource::kindOfType("ESHOTC") == InstrumentKind::Company);
   CHECK(NordnetSource::kindOfType("FUCITS") == InstrumentKind::Fund && NordnetSource::kindOfType("FOTH") == InstrumentKind::Fund);
   CHECK(NordnetSource::kindOfType("") == InstrumentKind::Other && NordnetSource::kindOfType("SOMETHING_NEW") == InstrumentKind::Other);
+}
+
+TEST(search_rows_give_the_instrument_the_id_the_news_refers_to_it_by) {
+  auto store = makeMemoryStore();
+  FakeHttp http;
+  http.answer = pages;
+  Listener listener;
+  quick().load(*store, http, listener);
+  auto s = store->snapshot();
+  const InstrumentId flxk = *s->findInstrumentByIsin("IE00BHZRR030");
+  CHECK(asText(*s->attribute(flxk, "nordnet-instrument")) == "e9cab3b7-681a-4676-9790-6cdcdd9e7527");
+  // And it finds the instrument by that id.
+  CHECK(s->findByAttribute(NodeType::Instrument, "nordnet-instrument", "e9cab3b7-681a-4676-9790-6cdcdd9e7527")->id == flxk.value);
 }

@@ -134,6 +134,15 @@ TEST(keys_of_different_kinds_never_meet) {
         orNone(dataset).kind() == NodeKind::Dataset);
 }
 
+TEST(a_country_is_its_two_letter_code_of_kind_four) {
+  const auto fi = countryKey("FI"), se = countryKey("SE");
+  CHECK(fi && se && fi->valid() && fi->kind() == NodeKind::Country && *fi != *se);
+  CHECK((fi->value >> 60) == 4 && fi->value < (uint64_t{1} << 63));
+  CHECK(text(*fi) == "FI" && text(*se) == "SE");
+  CHECK(!countryKey("fi") && !countryKey("F") && !countryKey("FIN") && !countryKey("F1") && !countryKey(""));
+  CHECK(*marketKey("FI01") != *fi);  // not another kind's key
+}
+
 TEST(a_portfolio_is_a_minted_key_of_kind_five_with_sixty_bits_of_identity) {
   const auto key = portfolioKey(0x123456789abcdefull);
   CHECK(key && key->valid() && key->kind() == NodeKind::Portfolio && key->identity() == 0x123456789abcdefull);

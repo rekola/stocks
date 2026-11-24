@@ -3,6 +3,7 @@
 #include "AttributeView.h"
 #include "Browser.h"
 #include "model/Dates.h"
+#include "News.h"
 #include "Quotes.h"
 #include "Positions.h"
 #include "portfolio/Portfolio.h"
@@ -1186,8 +1187,12 @@ TEST(tab_switches_the_context_and_shift_tab_goes_back_and_both_are_commands) {
   CHECK(f.browser->context() == Context::Markets);
   f.press(Key::Tab);
   CHECK(f.browser->context() == Context::Portfolio);
-  f.press(Key::Tab);  // two contexts: round to the first
+  f.press(Key::Tab);
+  CHECK(f.browser->context() == Context::News);
+  f.press(Key::Tab);  // three contexts: round to the first
   CHECK(f.browser->context() == Context::Markets);
+  f.press(Key::Tab, kModShift);
+  CHECK(f.browser->context() == Context::News);
   f.press(Key::Tab, kModShift);
   CHECK(f.browser->context() == Context::Portfolio);
   f.press(Key::Tab, kModShift);
@@ -1298,6 +1303,7 @@ TEST(the_period_tags_stay_and_apply_to_both_contexts) {
   CHECK(f.browser->period() == Period::Week && f.text().find("Change 1w") != std::string::npos);
   f.app->execute("show-period-year");
   CHECK(f.text().find("Change 1y") != std::string::npos);
+  f.press(Key::Tab);  // News, which has no change, and then round to Markets
   f.press(Key::Tab);
   CHECK(f.browser->period() == Period::Year && f.text().find("Change 1y") != std::string::npos);
 }
@@ -1939,6 +1945,80 @@ TEST(tab_and_shift_tab_switch_the_context_in_both_profiles_and_buy_and_sell_have
     f.type("buy");
     CHECK(f.app->commandPaletteOpen() && f.text().find("buy") != std::string::npos && f.text().find("sell") == std::string::npos);
   }
+}
+
+// ---- News
+
+namespace {
+
+NewsItem newsItem(const char * id, Timestamp time, const char * headline, std::vector<NodeRef> about, const char * kind) {
+  NewsItem n;
+  n.id = id;
+  n.time = time;
+  n.headline = headline;
+  n.about = std::move(about);
+  n.attributes.push_back({predicate::kind, kind});
+  return n;
+}
+
+}  // namespace
+
+TEST(the_news_context_shows_the_news_newest_first_and_a_preset_is_a_selection_by_kind) {
+  Fixture f(false, 160);
+  const InstrumentId nokia = f.store->addInstrument("", "Nokia Oyj", InstrumentKind::Company, "FI0009000681", "ESH");
+  const DatasetId data = f.store->addDataset("nordnet", "Nordnet");
+  const NodeRef finland = nodeOf(*countryKey("FI"));
+  f.store->appendNews(data, {newsItem("1", 1795214400, "Nokia buys back shares", {nokia, finland}, kPressRelease),
+                             newsItem("2", 1795218000, "Analyst raises Nokia", {nokia}, kAnalysis),
+                             newsItem("3", 1795221600, "Markets close higher", {}, kNewsStory)});
+  f.app->execute("show-all-news");
+  CHECK(f.browser->context() == Context::News && f.browser->tags().selected() == 0);
+  auto & table = f.browser->table();
+  const auto * news = dynamic_cast<const NewsTable *>(table.model().get());
+  CHECK(news && news->rowCount() == 3);
+  CHECK(news->item(0).headline == "Markets close higher" && news->item(2).headline == "Nokia buys back shares");  // newest first
+  const std::string screen = f.text();
+  CHECK(screen.find("Markets close higher") != std::string::npos && screen.find("Nokia Oyj, FI") != std::string::npos);
+  CHECK(news->text(2, NewsTable::TIME) == "2026-11-20 22:40" && news->text(2, NewsTable::KIND) == kPressRelease);
+  CHECK(news->text(2, NewsTable::SOURCE) == "Nordnet");
+  // The presets select by what the item says under `kind`, and the general one by what it is about.
+  f.app->execute("show-analyses");
+  CHECK(f.browser->tags().selected() == 2 && table.model()->rowCount() == 1 && table.model()->text(0, NewsTable::HEADLINE) == "Analyst raises Nokia");
+  f.app->execute("show-press-releases");
+  CHECK(table.model()->rowCount() == 1 && table.model()->text(0, NewsTable::HEADLINE) == "Nokia buys back shares");
+  f.app->execute("show-general-news");
+  CHECK(table.model()->rowCount() == 1 && table.model()->text(0, NewsTable::HEADLINE) == "Markets close higher");
+  CHECK(f.browser->tags().tags().size() == 5);
+  // News that arrives while it is shown comes in at once, and the selection stays.
+  f.app->execute("show-all-news");
+  table.select(1);
+  f.store->appendNews(data, {newsItem("4", 1795225200, "A fresh item", {}, kNewsStory)});
+  f.app->widgets().postToRoot(StoreChanged{});
+  f.app->present();
+  CHECK(table.model()->rowCount() == 4 && table.model()->text(0, NewsTable::HEADLINE) == "A fresh item");
+  CHECK(table.model()->text(table.selectedRow(), NewsTable::HEADLINE) == "Analyst raises Nokia");
+  // Tab goes round Markets, Portfolio and News; every command has its description.
+  for (const char * name : {"show-all-news", "show-press-releases", "show-analyses", "show-news-stories", "show-general-news"}) CHECK(!f.app->commands().description(name).empty());
+}
+
+TEST(the_info_of_a_news_item_says_whom_it_is_about_and_the_info_of_a_row_lists_its_latest_news) {
+  Fixture f(false, 160);
+  const InstrumentId eur = f.store->addInstrument("EUR", "Euro", InstrumentKind::Currency, "", "");
+  const InstrumentId nokia = f.store->addInstrument("", "Nokia Oyj", InstrumentKind::Company, "FI0009000681", "ESH");
+  const MarketId hel = f.store->addMarket("XHEL", "Nasdaq Helsinki");
+  const DatasetId data = f.store->addDataset("nordnet", "Nordnet");
+  f.store->appendCandles({nokia, eur, hel, data}, Resolution::Day, {{dayNumber(2026, 1, 2), 1, 1, 1, 4.2, 1}});
+  f.store->appendNews(data, {newsItem("1", 1795214400, "Nokia buys back shares", {nokia}, kPressRelease)});
+  auto snapshot = f.store->snapshot();
+  std::string all;
+  for (const InfoSection & section : buildInfo(*snapshot, {nokia, eur, hel, data}))
+    for (const InfoRow & row : section.rows) all += section.title + "|" + row.predicate + "|" + row.value.text + "\n";
+  CHECK(all.find("Latest news|2026-11-20 22:40|Nokia buys back shares") != std::string::npos);
+  all.clear();
+  for (const InfoSection & section : buildNewsInfo(*snapshot, snapshot->news()[0]))
+    for (const InfoRow & row : section.rows) all += section.title + "|" + row.predicate + "|" + row.value.text + "\n";
+  CHECK(all.find("News|headline|Nokia buys back shares") != std::string::npos && all.find("About|instrument|Nokia Oyj") != std::string::npos);
+  CHECK(all.find("Attributes|kind|press-release") != std::string::npos);
 }
 
 TEST(the_physical_preset_has_what_is_held_in_hand_and_not_the_funds_or_the_spot) {

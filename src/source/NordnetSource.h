@@ -15,6 +15,7 @@ struct NordnetListing {
   int marketId = 0, marketSubId = 0;
   std::string identifier;  // the instrument's identifier on that market
   std::string symbol, name, isin, currency, type, issuer, slug, clearingPlace, country;
+  std::string nnxId;  // Nordnet's id for the instrument (a uuid): what its news refers to it by
   std::string list;    // the list it was found in
   std::string bookId;  // market_data_order_book_id: what the price history is asked for by
   // Today's bar from the listing's price block: what discovery gives besides the instrument. Absent where the listing
@@ -53,7 +54,7 @@ class NordnetSource : public Source {
     std::chrono::milliseconds interval{0};
     // What the list holds: the search lists above (paged, with a market per row), or an indicator list (indices,
     // currency pairs or commodities in one answer) whose rows are all on the market named here.
-    enum class Shape { Search, Indicators } shape = Shape::Search;
+    enum class Shape { Search, Indicators, News } shape = Shape::Search;
     std::string market;
   };
   // The lists loaded: the ETFs, the certificates of type PTC, the funds and the stocks, then the indices, the currency pairs
@@ -113,5 +114,7 @@ class NordnetSource : public Source {
   NordnetDetails details_;
   std::shared_ptr<NordnetHistory> history_ = std::make_shared<NordnetHistory>();
   size_t loadIndicators(const List &, Store &, Http &, SourceListener &, bool & stop);
+  // The latest news: two pages the first time, one after. Each item says whom it is about (none for a general one).
+  size_t loadNews(const List &, Store &, Http &, SourceListener &, bool & stop, bool first);
   std::map<std::string, std::chrono::steady_clock::time_point> loaded_;  // when each list was last loaded
 };

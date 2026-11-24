@@ -1,5 +1,7 @@
 #include "AttributeView.h"
 
+#include "News.h"
+
 #include "Quotes.h"
 #include "model/Dates.h"
 
@@ -118,7 +120,56 @@ std::vector<InfoSection> buildInfo(const Snapshot & snapshot, const EdgeKey & ed
   }
   out.push_back(std::move(series));
 
+  // The latest news of the instrument, of its market and of the market's country: a few headlines, newest first.
+  {
+    InfoSection latest{"Latest news", {}};
+    std::vector<NodeRef> nodes = {NodeRef(edge.base), NodeRef(edge.market)};
+    if (const std::string code = snapshot.said(NodeRef(edge.market), predicate::country); !code.empty())
+      if (const auto key = countryKey(code)) nodes.push_back(nodeOf(*key));
+    std::vector<NewsItem> items;
+    for (const NodeRef & node : nodes) {
+      NewsQuery q;
+      q.about = node;
+      q.limit = 5;
+      for (NewsItem & n : snapshot.news(q)) items.push_back(std::move(n));
+    }
+    std::sort(items.begin(), items.end(), [](const NewsItem & a, const NewsItem & b) { return a.time > b.time; });
+    for (const NewsItem & n : items) {
+      if (latest.rows.size() >= 8) break;
+      latest.rows.push_back({NewsTable::timeText(n.time), {n.headline, std::nullopt}});
+    }
+    if (!latest.rows.empty()) out.push_back(std::move(latest));
+  }
+
   // A section with nothing to say is not shown.
+  out.erase(std::remove_if(out.begin(), out.end(), [](const InfoSection & s) { return s.rows.empty(); }), out.end());
+  return out;
+}
+
+std::vector<InfoSection> buildNewsInfo(const Snapshot & snapshot, const NewsItem & item) {
+  std::vector<InfoSection> out;
+  InfoSection about{"News", {}};
+  auto add = [&](const char * predicate, std::string text) {
+    if (!text.empty()) about.rows.push_back({predicate, {std::move(text), std::nullopt}});
+  };
+  add("headline", item.headline);
+  add("time", NewsTable::timeText(item.time) + " UTC");
+  add("dataset", snapshot.name(NodeRef(item.dataset)));
+  add("id", item.id);
+  add("url", item.url);
+  out.push_back(std::move(about));
+  InfoSection attributes{"Attributes", {}};
+  for (const Attribute & a : item.attributes) attributes.rows.push_back({a.predicate, showValue(snapshot, a.predicate, a.value)});
+  out.push_back(std::move(attributes));
+  InfoSection whom{"About", {}};
+  for (const NodeRef & n : item.about) {
+    std::string name = snapshot.name(n);
+    if (name.empty()) name = text(NodeKey{n.id});
+    const char * kind = n.type == NodeType::Instrument ? "instrument" : n.type == NodeType::Market ? "market" : n.type == NodeType::Country ? "country" : "node";
+    whom.rows.push_back({kind, {std::move(name), n}});
+  }
+  out.push_back(std::move(whom));
+  if (!item.body.empty()) out.push_back({"Text", {{"intro", {item.body, std::nullopt}}}});
   out.erase(std::remove_if(out.begin(), out.end(), [](const InfoSection & s) { return s.rows.empty(); }), out.end());
   return out;
 }

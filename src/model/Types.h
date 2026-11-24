@@ -33,6 +33,7 @@ struct Id {
 using InstrumentId = Id<struct InstrumentTag>;
 using MarketId = Id<struct MarketTag>;
 using DatasetId = Id<struct DatasetTag>;
+using CountryId = Id<struct CountryTag>;  // an ISO 3166 alpha-2 code
 using PortfolioId = Id<struct PortfolioTag>;  // a minted key: the user's own
 
 // An instant: whole seconds since the Unix epoch, UTC. Where whole seconds are not enough (order book snapshots) it is
@@ -121,7 +122,7 @@ inline constexpr const char * ledger = "ledger";      // a portfolio's: a link t
 inline constexpr const char * kPointsUnit = "pts";
 inline constexpr const char * kPercentUnit = "pct";
 
-enum class NodeType : uint8_t { Instrument, Market, Dataset, Portfolio };
+enum class NodeType : uint8_t { Instrument, Market, Dataset, Portfolio, Country };
 
 // Any node. The typed ids convert to it.
 struct NodeRef {
@@ -132,6 +133,7 @@ struct NodeRef {
   NodeRef(MarketId i) : type(NodeType::Market), id(i.value) {}
   NodeRef(DatasetId i) : type(NodeType::Dataset), id(i.value) {}
   NodeRef(PortfolioId i) : type(NodeType::Portfolio), id(i.value) {}
+  NodeRef(CountryId i) : type(NodeType::Country), id(i.value) {}
   friend bool operator==(const NodeRef &, const NodeRef &) = default;
 };
 
@@ -143,6 +145,7 @@ inline NodeRef nodeOf(NodeKey key) {
     case NodeKind::Market: n.type = NodeType::Market; break;
     case NodeKind::Dataset: n.type = NodeType::Dataset; break;
     case NodeKind::Portfolio: n.type = NodeType::Portfolio; break;
+    case NodeKind::Country: n.type = NodeType::Country; break;
     default: n.type = NodeType::Instrument; break;  // an instrument or a currency
   }
   return n;
@@ -312,10 +315,40 @@ struct BookSnapshot {
   std::vector<BookLevel> bids, asks;
 };
 
-// Something a company said: a press release, a filing, a profit warning.
-struct Announcement {
+// A piece of news: something reported or said, by one dataset, about whom it concerns: a country, a market, an instrument, several of
+// those, or nothing in particular (the news of the world). Its identity is the dataset and the dataset's own id for it, so two
+// datasets with the same story have two items, and one that says an item again changes nothing; a dataset that gives duplicates
+// under different ids has to clean them up itself. What is said of the item (its type, its agency, its language) is attributes,
+// as for a node, so that a selection of the news is made the way one of the instruments is: by what it says under a predicate.
+struct NewsItem {
+  std::string id;  // the dataset's own, not empty
   Timestamp time = 0;  // when it was published: UTC seconds
-  std::string category, headline, body, url;
+  std::string headline, body, url;
+  std::vector<NodeRef> about;         // who it concerns: any nodes, none for news of the world
+  std::vector<Attribute> attributes;  // its `type` ("press release", "filing", ...), `agency`, `language`
+  DatasetId dataset;                  // which dataset said it: set by the store, whatever it was
+};
+
+// What an item of news is, in one vocabulary for all datasets (`predicate::kind`, as for an instrument): each adapter maps its own types
+// onto these, and keeps its own under `predicate::type`. A selection of the news by kind is a preset.
+inline constexpr const char * kPressRelease = "press-release";  // what a company or an institution says of itself
+inline constexpr const char * kAnalysis = "analysis";           // an analyst's or a house's view
+inline constexpr const char * kNewsStory = "news";              // a report by a newsroom, and anything else
+
+// The text of an attribute of an item under `predicate`, else empty.
+inline std::string newsText(const NewsItem & item, const char * predicate) {
+  for (const Attribute & a : item.attributes)
+    if (a.predicate == predicate)
+      if (const auto * text = std::get_if<std::string>(&a.value)) return *text;
+  return {};
+}
+
+// Which news: in a time range, about a node, with any further selection by what the item says. Newest first.
+struct NewsQuery {
+  TimeRange range;
+  std::optional<NodeRef> about;                         // only what names this node
+  std::function<bool(const NewsItem &)> keep;           // only what this accepts
+  size_t limit = 0;                                     // at most this many (the newest); 0 for all
 };
 
 enum class ActionKind {
