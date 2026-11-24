@@ -2029,7 +2029,7 @@ TEST(the_physical_preset_has_what_is_held_in_hand_and_not_the_funds_or_the_spot)
   InstrumentId gold = f.store->addInstrument("GOLDCOIN", "Gold coin (1 oz fine)", InstrumentKind::Commodity);
   InstrumentId spot = f.store->addInstrument("GOLD", "Gold", InstrumentKind::Commodity, "XC0009655157");
   MarketId off = *f.store->snapshot()->findMarket(kOffExchange), none = *f.store->snapshot()->findMarket(kNoMarket);
-  DatasetId data = f.store->addDataset(kGoldDataset, "Estimate");
+  DatasetId data = f.store->addDataset(kPhysicalDataset, "Estimate");
   for (const EdgeKey & k : {EdgeKey{gold, h.usd, off, data}, EdgeKey{spot, h.usd, none, h.user}})
     f.store->appendCandles(k, Resolution::Day, {{kNow, 1, 1, 1, 2900, 1}});
   f.store->setListing({EdgeKey{gold, h.usd, off, data}, "GOLDCOIN", "", "", "PHYSICAL", "Gold coin (1 oz fine)"});
