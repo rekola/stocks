@@ -21,6 +21,7 @@ constexpr KnownMarket kMarkets[] = {
     {53, "First North Sweden", "FNSE"},
     {54, "First North Finland", "FNFI"},
     {55, "First North Denmark", "FNDK"},
+    {61, "Nordic MTF", "NMTF"},
     {67, "Spotlight Stock Market DK", "SPDK"},
     {68, "Spotlight Stock Market NO", "SPNO"},
     {70, "London Stock Exchange", "XLON"},

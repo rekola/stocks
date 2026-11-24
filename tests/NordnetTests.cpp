@@ -67,17 +67,18 @@ TEST(a_market_is_named_by_its_nordnet_id_where_that_is_known) {
   CHECK(std::string(NordnetSource::knownMarketName(53)) == "First North Sweden");
   CHECK(std::string(NordnetSource::knownMarketName(19)) == "Nasdaq" && std::string(NordnetSource::knownMarketMic(19)) == "XNAS");
   CHECK(std::string(NordnetSource::knownMarketName(49)) == "Euronext Growth Oslo");
-  CHECK(NordnetSource::knownMarketName(61) == nullptr);  // not known
+  CHECK(std::string(NordnetSource::knownMarketName(61)) == "Nordic MTF");  // Nordic Growth Market's multilateral facility
+  CHECK(NordnetSource::knownMarketName(58) == nullptr);  // not known
   CHECK(std::string(NordnetSource::knownMarketMic(24)) == "XHEL" &&
         NordnetSource::knownMarketMic(53) == std::string("FNSE") &&
-        NordnetSource::knownMarketMic(61) == nullptr);
+        std::string(NordnetSource::knownMarketMic(61)) == "NMTF" && NordnetSource::knownMarketMic(58) == nullptr);
   // A code identifies a market, so two markets never share one (Oslo's growth market has its segment's, not Oslo Børs's), nor a name.
   std::set<std::string> codes, names;
   for (int id = 0; id < 200; id++) {
     if (const char * name = NordnetSource::knownMarketName(id)) CHECK(names.insert(name).second);
     if (const char * mic = NordnetSource::knownMarketMic(id)) CHECK(codes.insert(mic).second);
   }
-  CHECK(names.size() >= 29);
+  CHECK(names.size() >= 30);
 }
 
 TEST(a_page_of_certificates_has_the_same_shape) {
@@ -131,10 +132,10 @@ TEST(loading_pages_through_every_list_and_stores_instruments_markets_and_edges) 
 
   // The store is told after each page, not once at the end.
   CHECK(listener.changes == 3);
-  // One certificate is on a market this table has no MIC for (61): it is said
+  // One certificate is on a market this table has no MIC for (58): it is said
   // once and left out.
   CHECK(listener.messages.size() == 2 &&
-        listener.messages[0].find("Nordnet market 61") != std::string::npos);
+        listener.messages[0].find("Nordnet market 58") != std::string::npos);
   CHECK(listener.messages[1] ==
         "nordnet: 8 listings (etflist 5, certificatelist 3), 1 rows left out");
   CHECK(source.listings().size() == 8 &&
