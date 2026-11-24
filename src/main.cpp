@@ -1,11 +1,11 @@
 // The stock browser: cellui's Table, TagBar and trace chart over a store of
 // candles that data sources fill on a thread of their own.
 //   stocks                 on the display cellui picks, with Nordnet's data, or
-//   Yahoo's if Nordnet gives nothing, and the small loaders (suomenpankki, ecb, every funds:SCHEMA of data/funds); --source replaces that set stocks --ui terminal   in the terminal;
+//   Yahoo's if Nordnet gives nothing, and the small loaders (spfb, ecb, every funds:SCHEMA of data/funds); --source replaces that set stocks --ui terminal   in the terminal;
 //   --ui window  in a window stocks --source NAME   the data source (several,
 //   comma-separated, run at once): auto (the default: nordnet, and yahoo if
 //   nordnet gives nothing),
-//                          nordnet, yahoo, suomenpankki (the Euribor rates), ecb (the €STR), goldprice (goldprice.dev: spot
+//                          nordnet, yahoo, spfb (the Bank of Finland: the Euribor rates), ecb (the €STR), goldprice (goldprice.dev: spot
 //                          prices of gold and other metals, in euros and dollars), physical (physical metals held in hand: a gold
 //                          bar by the gram, a gold coin by the ounce, a platinum bar, estimated from the spot prices another
 //                          source gives; it runs beside the default), funds:SCHEMA (a fund company: a
@@ -74,7 +74,7 @@ std::unique_ptr<Source> makeSource(const std::string & name, const ListSpec & li
     }
     return std::make_unique<PhysicalSource>(std::move(table));
   }
-  if (name == "suomenpankki") return std::make_unique<SuomenPankkiSource>();
+  if (name == "spfb") return std::make_unique<SuomenPankkiSource>();
   if (name == "synthetic") return std::make_unique<SyntheticSource>(lists);
   return nullptr;
 }
@@ -82,7 +82,7 @@ std::unique_ptr<Source> makeSource(const std::string & name, const ListSpec & li
 // What runs when no --source is given: the market data ("auto") and the small loaders that have no options of their own (the rates, the
 // €STR, goldprice.dev's spot prices, the estimate of the physical metals and every fund company schema of data/funds), so they are there without being asked for.
 std::string defaultSources() {
-  std::string names = "auto,suomenpankki,ecb,goldprice,physical";  // physical estimates the metals held in hand from the spot prices the others give
+  std::string names = "auto,spfb,ecb,goldprice,physical";  // physical estimates the metals held in hand from the spot prices the others give
   std::vector<std::string> funds;
   std::error_code ec;
   const std::filesystem::path dir = findDataDirectory("funds");
@@ -94,7 +94,7 @@ std::string defaultSources() {
   return names;
 }
 
-constexpr const char * kSourceNames = "auto, nordnet, yahoo, suomenpankki, ecb, goldprice, physical, funds:SCHEMA, synthetic";
+constexpr const char * kSourceNames = "auto, nordnet, yahoo, spfb, ecb, goldprice, physical, funds:SCHEMA, synthetic";
 
 }  // namespace
 

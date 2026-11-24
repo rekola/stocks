@@ -24,7 +24,7 @@ session if the first gives nothing (no network, a refusal).
     build/stocks --ui window     # in a window, when cellui is built with GTK
     build/stocks --source synthetic   # made-up prices, no network
     build/stocks --market XHEL   # load only that market
-    build/stocks --source suomenpankki   # the daily Euribor rates (1 week to 12 months) from the Bank of Finland, in per cent, no key
+    build/stocks --source spfb   # the daily Euribor rates (1 week to 12 months) from the Bank of Finland, in per cent, no key
     build/stocks --source ecb   # the euro short-term rate (€STR) and its compounded index from the European Central Bank, no key
     build/stocks --source nordnet,funds:NAME   # several sources, at once; funds:NAME is a fund company by its schema, data/funds/NAME.json (shown under All)
 
