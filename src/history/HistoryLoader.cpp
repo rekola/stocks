@@ -4,13 +4,13 @@
 #include <atomic>
 
 // The loader's Http as a provider sees it: every request goes through to it, and is counted, so that the loader knows whether a load
-// made one (and pauses after it) without a provider having to say so. Cancelling is the loader's own, on the Http behind.
+// made one (and pauses after it) without a provider having to say so. Cancelling is the loader's own, on the Http behind, which every
+// request reaches: this one's own flag is never set or read.
 class CountedHttp : public Http {
  public:
   explicit CountedHttp(Http & inner) : inner_(inner) {}
   HttpResult get(const std::string & url, const HttpHeaders & headers) override {
     requests_++;
-    if (inner_.cancelled()) cancel();
     return inner_.get(url, headers);
   }
   int requests() const { return requests_; }
@@ -32,7 +32,6 @@ HistoryLoader::~HistoryLoader() {
     stop_ = true;
   }
   if (http_) http_->cancel();  // a request in progress ends too
-  if (counted_) counted_->cancel();
   wake_.notify_all();
   if (thread_.joinable()) thread_.join();
 }
