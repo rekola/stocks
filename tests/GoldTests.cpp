@@ -22,7 +22,7 @@ GoldTable table() {
   GoldTable t;
   std::string error;
   const bool ok = parseGoldTable(
-      "# a comment\n\nspot,GOLD\nitem,GOLDBAR,Gold bar (1 g fine)," + std::to_string(1 / kOunce) + ",0.97,1.04\nitem,GOLDCOIN,Gold coin (1 oz fine),1,0.98,1.08,🪙\n", t, error);
+      "# a comment\n\nspot,gold,GOLD\nitem,gold,GOLDBAR,Gold bar (1 g fine)," + std::to_string(1 / kOunce) + ",0.97,1.04\nitem,gold,GOLDCOIN,Gold coin (1 oz fine),1,0.98,1.08,🪙\n", t, error);
   CHECK(ok);
   return t;
 }
@@ -52,21 +52,22 @@ struct World {
 
 TEST(the_gold_table_is_read_with_its_comments_and_a_wrong_row_says_which) {
   GoldTable t = table();
-  CHECK(t.spots == std::vector<std::string>{"GOLD"} && t.items.size() == 2);
+  CHECK(t.spots.size() == 1 && t.spots[0].metal == "gold" && t.spots[0].symbol == "GOLD" && t.items.size() == 2 && t.items[0].metal == "gold");
   CHECK(t.items[0].symbol == "GOLDBAR" && std::abs(t.items[0].ounces - 1 / kOunce) < 1e-6 && t.items[0].bid == 0.97 && t.items[0].ask == 1.04);
   CHECK(t.items[0].symbol_icon.empty() && t.items[1].symbol_icon == "🪙");  // the optional symbol
   CHECK(t.items[1].ounces == 1 && t.items[1].name == "Gold coin (1 oz fine)");
   std::string error;
   GoldTable bad;
-  CHECK(!parseGoldTable("spot,GOLD\nitem,A,Name,1,x,1\n", bad, error) && error.find("line 2") == 0);
-  CHECK(!parseGoldTable("spot,GOLD\nitem,A,Name,0,1,1\n", bad, error) && error.find("line 2") == 0);  // no weight
-  CHECK(!parseGoldTable("spot,GOLD\nitem,A,Name,1,1\n", bad, error));
-  CHECK(!parseGoldTable("item,A,Name,1,1,1\n", bad, error));  // no spot
-  CHECK(!parseGoldTable("spot,GOLD\n", bad, error));          // no item
-  CHECK(!parseGoldTable("spot,GOLD\nthing,1\n", bad, error) && error.find("line 2") == 0);
+  CHECK(!parseGoldTable("spot,gold,GOLD\nitem,gold,A,Name,1,x,1\n", bad, error) && error.find("line 2") == 0);
+  CHECK(!parseGoldTable("spot,gold,GOLD\nitem,gold,A,Name,0,1,1\n", bad, error) && error.find("line 2") == 0);  // no weight
+  CHECK(!parseGoldTable("spot,gold,GOLD\nitem,gold,A,Name,1,1\n", bad, error));
+  CHECK(!parseGoldTable("item,gold,A,Name,1,1,1\n", bad, error));  // no spot
+  CHECK(!parseGoldTable("spot,gold,GOLD\n", bad, error));          // no item
+  CHECK(!parseGoldTable("spot,gold,GOLD\nitem,platinum,A,Name,1,1,1\n", bad, error) && error.find("line 2") == 0);  // a metal with no spot row
+  CHECK(!parseGoldTable("spot,gold,GOLD\nthing,1\n", bad, error) && error.find("line 2") == 0);
   GoldTable shipped;
   CHECK(loadGoldTable(shipped, error) || !error.empty());  // the file the program ships with reads, where the data is found
-  if (error.empty()) CHECK(shipped.items.size() == 2 && shipped.items[0].symbol == "GOLDBAR" && shipped.items[1].symbol == "GOLDCOIN");
+  if (error.empty()) CHECK(shipped.items.size() == 3 && shipped.items[0].symbol == "GOLDBAR" && shipped.items[1].symbol == "GOLDCOIN" && shipped.items[2].symbol == "PLATBAR" && shipped.items[2].metal == "platinum");
 }
 
 TEST(the_two_golds_are_priced_from_the_spot_off_exchange_in_their_own_dataset) {
@@ -127,7 +128,7 @@ TEST(with_no_spot_nothing_is_written_and_it_says_so_once_after_a_few_tries) {
   source.load(*w.store, http, listener);
   CHECK(listener.messages.empty() && listener.changes == 0);
   source.load(*w.store, http, listener);
-  CHECK(listener.messages.size() == 1 && listener.messages[0].find("no gold spot price") != std::string::npos);
+  CHECK(listener.messages.size() == 1 && listener.messages[0].find("no spot price") != std::string::npos);
   source.load(*w.store, http, listener);
   CHECK(listener.messages.size() == 1 && w.store->snapshot()->version() == version && !w.edgeOf("GOLDBAR"));
   // It arrives, and the estimate follows.

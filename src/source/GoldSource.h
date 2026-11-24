@@ -8,16 +8,18 @@
 #include <string>
 #include <vector>
 
-// Physical gold, estimated: the gold spot price the store already has (whichever source gave it, found by its listing symbol, which
-// data/gold/items.csv names) turned into the price of what is held in hand: a gold bar by the gram, a gold coin by the troy ounce.
+// Physical gold and platinum, estimated: the gold spot prices the store already has (whichever source gave them, found by their listing symbols,
+// which data/gold/items.csv names, one price for each currency: goldprice.dev's gold in euros and in dollars, else Nordnet's in dollars)
+// turned into the price of what is held in hand: a gold bar by the gram, a gold coin by the troy ounce.
 // Nothing publishes such a price, so each item's is the spot price per ounce, times the fine ounces in one unit, times a bid factor from
 // the file (what a dealer pays, which is what a holding is valued at: the premium is lost when it is sold). The items are instruments
-// of their own on XOFF (traded off exchange, so they can be bought and sold like a fund) in the dataset "GOLDEST", quoted in the spot's
-// currency, one daily bar each, on the day of the spot's last bar.
+// of their own on XOFF (traded off exchange, so they can be bought and sold like a fund) in the dataset "GOLDEST", one edge in each currency the spot has, one
+// daily bar each, on the day of the spot's last bar.
 //
 // The factors are estimates and are the one place the guess lives. It writes nothing until a spot price exists, and says so once after a
 // few tries (spaced five seconds apart: the lists may be loading), and then it loads again every half minute so that the price follows the spot's.
 struct GoldItem {
+  std::string metal;  // which spot prices it is made from: "gold", "platinum" (the rows `spot,METAL,SYMBOL` of the file)
   std::string symbol, name;
   double ounces = 0;  // fine troy ounces in one unit
   double bid = 1, ask = 1;  // against the melt value; the ask is not used until the store keeps quotes
@@ -25,7 +27,10 @@ struct GoldItem {
 };
 
 struct GoldTable {
-  std::vector<std::string> spots;  // listing symbols to look for, best first
+  struct Spot {
+    std::string metal, symbol;  // a listing symbol to look for the metal's price by
+  };
+  std::vector<Spot> spots;  // best first, for each metal
   std::vector<GoldItem> items;
 };
 

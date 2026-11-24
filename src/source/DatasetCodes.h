@@ -13,3 +13,5 @@ inline constexpr const char * kUserDataset = "user";
 // Not a provider's: the estimate of what physical gold (a bar by the gram, a coin by the ounce) is worth, made from the gold spot price
 // and the factors in data/gold (GoldSource). A dealer's real list is a dataset of its own and wins where there is one.
 inline constexpr const char * kGoldDataset = "GOLDEST";
+// goldprice.dev (api.gold-api.com): the spot prices of metals (and a few coins) in dollars and euros, GoldPriceSource.
+inline constexpr const char * kGoldPriceDataset = "GOLDPRICE";
