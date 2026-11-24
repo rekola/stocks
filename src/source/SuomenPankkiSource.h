@@ -9,7 +9,7 @@
 
 // The Bank of Finland's daily Euribor rates (1 week, 1, 3, 6 and 12 months), from the XML report it publishes: one request for the
 // whole history it keeps (from 2021), newest first. No key. Each rate is an index, quoted in per cent as the bank gives it (not
-// accumulated into a price: see the notes in the .cpp), with one daily bar of its own on the market XXXX. The dataset is "suomenpank".
+// accumulated into a price: see the notes in the .cpp), with one daily bar of its own on the market XXXX. The dataset is "SPFB".
 class SuomenPankkiSource : public Source {
  public:
   explicit SuomenPankkiSource(std::chrono::milliseconds refresh = std::chrono::hours(6)) : refresh_(refresh) {}
