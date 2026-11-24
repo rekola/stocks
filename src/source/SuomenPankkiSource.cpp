@@ -5,11 +5,11 @@
 #include "source/KnownMarkets.h"
 #include "source/LeftOut.h"
 
+#include <cellui/NumberParse.h>
 #include <pugixml.hpp>
 
 #include <algorithm>
 #include <cmath>
-#include <cstdlib>
 #include <map>
 #include <optional>
 
@@ -51,9 +51,11 @@ std::optional<double> rateOf(std::string text) {
   std::replace(text.begin(), text.end(), ',', '.');
   text.erase(std::remove(text.begin(), text.end(), ' '), text.end());
   if (text.empty()) return std::nullopt;
-  char * end = nullptr;
-  const double v = std::strtod(text.c_str(), &end);
-  if (*end != '\0' || !std::isfinite(v)) return std::nullopt;
+  // cellui::parseFloat, not strtod: the window toolkit sets the locale, and strtod would stop at the point in one with a decimal comma.
+  double v = 0;
+  const char * last = text.data() + text.size();
+  const auto parsed = cellui::parseFloat(text.data(), last, v);
+  if (parsed.ec != std::errc() || parsed.ptr != last || !std::isfinite(v)) return std::nullopt;
   return v;
 }
 
