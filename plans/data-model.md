@@ -202,7 +202,7 @@ said of it is read with `Snapshot::name()`, `symbol()`, `kind()`, `isin()`, `sai
 `edgeMarkets()` take the place of sequences of nodes.
 
 A key is one 64-bit number below 2^62 (a positive `int64` in SQLite), with the kind of node in bits 61-60 and its identity in the
-low sixty:
+low sixty (the kinds beyond the first four are planned and take bit 62: see "Kinds and bits" below):
 
 | kind | node | low 60 bits |
 |---|---|---|
@@ -234,9 +234,31 @@ low sixty:
   the noise: the bars are nearly all of the memory.
 - The server adopts these keys (`server.md`, "Keys").
 
+### Kinds and bits
+
+A key is a positive `int64`: bit 63 is the sign and is never set, which leaves **63 bits**. Sixty of them are the identity (bits 59-0). The
+other three, **bits 62-60, are the kind**: eight kinds, of which four are built and three are planned, so that **one is left over**
+and is an escape that cannot run out. `NodeKey::kind()` is already `value >> 60`, which gives 0 to 7 with bit 63 clear, so adding a
+kind changes the enum and the table, and no key that exists.
+
+| kind | bits 62-60 | node | state |
+|---|---|---|---|
+| 0 | 000 | instrument | built |
+| 1 | 001 | currency or unit | built |
+| 2 | 010 | market | built |
+| 3 | 011 | dataset | built |
+| 4 | 100 | country | planned (below) |
+| 5 | 101 | portfolio | planned (below) |
+| 6 | 110 | attribute | planned (below) |
+| 7 | 111 | **escape**: the identity's top eight bits (59-52) are a second-level kind, and the other 52 bits its identity | reserved |
+
+The escape gives 256 more kinds with 52 bits each, so a new kind never needs a new bit. Nothing is put in it until a kind is needed that
+the first seven do not fit. Identities that are a packed code (currency, market, dataset, country, attribute) use at most the low
+sixty bits and none depends on the kind bits.
+
 ### Countries (planned)
 
-A country is a node of its own kind: kind 4, which takes bit 62 of the key, so every key above stays what it is and keys stay
+A country is a node of its own kind: kind 4 (bit 62), so every key above stays what it is and keys stay
 below 2^63. Its key is its ISO 3166-1 alpha-2 code, packed as a code is (`FI`, `SE`; `XK` for Kosovo, which the standard leaves to
 its users). Countries that no longer exist (`SU`, `YU`) are kept: markets and ISINs of them do.
 
@@ -250,11 +272,24 @@ its users). Countries that no longer exist (`SU`, `YU`) are kept: markets and IS
 - **Open**: whether the `country` fact of a market becomes a node-valued link when there are such links, and the names of a
   country in several languages.
 
+### Attributes (planned)
+
+An attribute (a predicate such as `name`, `isin`, `shares`, `pe`) is a node of its own kind: kind 6. A fact is then `(node, attribute
+node, value, updated)` and not `(node, string, value, updated)`, so an attribute has facts of its own: its label ("P/E"), the type of
+value it takes (number, text, truth, node), its unit and how it is shown. A new attribute needs no change to the program.
+
+- **Its key is its code**, packed as a currency's (up to ten characters of `0-9A-Za-z`, so `PE`, `MCAP`, `DIVYIELD`), and its label is a
+  fact, as a currency's name is: a long or odd name is what the label is for. Open: whether ten characters are enough, or an
+  attribute needs a numbered table instead.
+- **The facts file** keeps the attribute's key and not its text, so the `predicate` column becomes an integer.
+- Not built; it changes `Facts.h`, `Store.h` and every source that says a fact, so it is its own change, before the facts below grow.
+
 ### Portfolios (planned)
 
-A portfolio is a node of its own kind, with a minted key (sixty random bits, as it has no natural identity). It exists when something is
-said of it: a `name` and a `currency` fact, position edges `portfolio -> instrument`, and the transactions as events on
-`(portfolio, dataset)`. It is the user's own data, so it is kept in a file of its own. See [portfolios.md](portfolios.md).
+A portfolio is a node of its own kind: kind 5, with a minted key (sixty random bits, as it has no natural identity). It exists when
+something is said of it: a `name` fact and a `currency` link to a currency node, position edges `portfolio -> instrument`, and the
+transactions as events on `(portfolio, dataset)`. It is the user's own data, so it is kept in a file of its own. See
+[portfolios.md](portfolios.md).
 
 ### Not done
 

@@ -13,12 +13,12 @@ in a file of her own (see "Persistence"), not in `facts.sqlite`.
   it is facts and edges. There is no list of portfolios and no create or delete: **a portfolio exists when something is said of it**
   and shows when it has an edge or a name; nothing else is needed to be one. A key with nothing said of it is not shown, as a node
   with no edge is not shown today.
-- **Its key is minted**, since a portfolio has no natural identity (an instrument has its ISIN). A new node kind, the next free one
-  (its bits are settled with the planned country kind in "Node keys"), and sixty random bits as the identity, drawn when the user
-  makes one. Two devices mint without meeting and do not clash (a chance of about one in 10^18 per pair), so no UUIDs are needed.
+- **Its key is minted**, since a portfolio has no natural identity (an instrument has its ISIN). Its kind is 5 (bits 62-60 = 101: see "Kinds and bits" in `data-model.md`, which
+  also lays out country as 4 and attribute as 6), and its sixty bits of identity are random, drawn when the user makes one. Two devices mint without meeting and do not clash (a chance of about one in 10^18 per pair), so no UUIDs are needed.
 - **What is said of a portfolio is of two kinds, as for an instrument:**
-  - **Facts of the node**: `name` (what the user calls it) and `currency` (the node of a currency, which its value is shown in).
-    This is the naming. A portfolio with only a name shows, empty; one with positions and no name shows under a placeholder (its key,
+  - **Facts of the node**: `name` (what the user calls it, a literal) and `currency` (an edge to a currency node: the one its value
+    is shown in). This is the naming. A fact is an edge to a value, which is a literal or a node; the node-valued ones are **not
+    built yet** (`data-model.md`, "Not done"), so they come first (step 1). A portfolio with only a name shows, empty; one with positions and no name shows under a placeholder (its key,
     shortened) until it is named.
   - **Edges**: a **position** is an edge `portfolio -> instrument`: "one of this portfolio is this many of the instrument", which
     is the same sentence as "one of base costs this much quote", with a quantity in place of a price. Its market is the listing
@@ -31,9 +31,17 @@ in a file of her own (see "Persistence"), not in `facts.sqlite`.
   **The position edge is derived from them**: the quantity series is the running sum, the average cost the quantity-weighted mean of
   the buys. Nothing but the transactions is typed in; keeping only a quantity and a cost would lose the history that realized P&L,
   FIFO and a corrected mistake need.
-- **The dataset is the ledger's** (a code of its own, `source/DatasetCodes.h`), so that what the user says of her portfolio and what
-  something else says of the same node stay side by side and are never merged: a portfolio made by a prediction or a backtest is the
-  same node and edges under another dataset, which is what the data model means by predictions as datasets on the same keys.
+- **What the dataset has to do with the transactions.** In the data model an event key is `(node, dataset)` and means *what this
+  dataset says about this node* (the announcements and corporate actions of a company are the events of `(instrument, dataset)`, one
+  series for each source that says them). So `(portfolio, dataset)` is *the transactions that this dataset says about this portfolio*,
+  and the dataset is where they came from: the user's own entries (a dataset of its own, `source/DatasetCodes.h`), later a broker's
+  export that she imports, or a backtest. Facts from different origins sit side by side and are never merged, which here means a
+  trade typed by hand and the same trade imported are two entries in two datasets, not one entry replaced by the other.
+- **A portfolio's holdings are derived from one dataset**, never from several added together (that would count a trade twice). The
+  portfolio says which in a fact, `ledger`, an edge to a dataset node (the user's own by default). The position edge carries that
+  dataset, as the edge of a price carries the dataset it came from. Importing the same file again replaces by transaction id inside its
+  own dataset, so it does not double either. For the first version there is only the user's own dataset, and the rest is the room the
+  model gives for free.
 - **A position does not name a price edge.** It names the instrument and the market, and the price is whichever edge of that
   instrument on that market the store has (see "Valuation"), so a holding survives a change of provider.
 - **Cost basis is the average cost** at first. FIFO and lots are later work, and are only a different derivation from the same transactions.
@@ -75,8 +83,11 @@ Nothing special is needed: there are as many portfolios as there are nodes with 
 - **A position belongs to one portfolio** (the base of its edge), and so does a transaction.
 - **"All" is a view, not a node**: the selection "every portfolio". It adds up quantities where one instrument is held in two
   portfolios, and takes the quantity-weighted cost. It cannot be bought or sold in; `buy` and `sell` there ask which portfolio.
-- **Currency.** Each portfolio has its own; "All" converts through one **base currency** of the program (default EUR), marked
-  incomplete like any total with a missing rate.
+- **Currency.** Each portfolio has its own (its `currency` fact), and a total needs one currency to add up in, so "All" over a
+  euro portfolio and a dollar one must pick. The currency a table shows its values in is the **display currency**: a choice of the
+  session like the period (one for every row, kept while the program runs, `show-currency`), which starts as the selected portfolio's
+  own currency and, for "All", as the currency all portfolios share, or EUR when they differ. A total is marked incomplete, as always,
+  when a rate is missing.
 - **Commands**: `new-portfolio` (asks a name in the form dialog, mints the key, says the name), `rename-portfolio` (says the name
   again; the last said stands, as for any fact), and `delete-portfolio` (asks to confirm, then removes everything said of it, after
   which it is not shown; undoable). The first start has none: the Portfolio context says so and offers `new-portfolio`, and the
@@ -132,19 +143,21 @@ Not built, and not needed for any step below, but the model leaves room for it (
 
 ## Steps
 
-1. `src/portfolio/`: `Transaction`, `derivePositions`, `value`, with tests (`tests/PortfolioTests.cpp`): buys and sells, average
+1. **Node-valued facts** (`data-model.md`, "Links between nodes"): a value that is a node, so that `currency` can be an edge to a
+   currency node; its own change, before this one. The attribute node kind (kind 6) is separate and does not block this plan.
+2. `src/portfolio/`: `Transaction`, `derivePositions`, `value`, with tests (`tests/PortfolioTests.cpp`): buys and sells, average
    cost, a sell of more than is held (refused), a position closed and opened again, a missing rate.
-2. The model: the portfolio node kind and its minted keys, the position edge and the transaction events in `Store`/`MemoryStore` (writes,
-   reads, a snapshot of them), with tests in `tests/ModelTests.cpp` and `NodeKeyTests.cpp`: a portfolio that shows only when something
-   is said of it, a name alone, positions and no name, a delete that makes it vanish, several portfolios, the same transactions
-   under two datasets.
-3. The portfolio file: a second `FactStore` routed by node kind, with tests on a file in a temporary directory: round trip, another
+3. The model: the portfolio node kind (5) and its minted keys, the position edge and the transaction events in `Store`/`MemoryStore`
+   (writes, reads, a snapshot of them), with tests in `tests/ModelTests.cpp` and `NodeKeyTests.cpp`: a portfolio that shows only when
+   something is said of it, a name alone, positions and no name, a delete that makes it vanish, several portfolios, the same
+   transactions under two datasets (holdings from the chosen one only).
+4. The portfolio file: a second `FactStore` routed by node kind, with tests on a file in a temporary directory: round trip, another
    schema moved aside and not lost, a damaged file moved aside, nothing of a portfolio in `facts.sqlite`.
-4. `Positions` model and the context switch in `Browser` (`next-context`, `previous-context`, keys, the help line), with
-   `BrowserTests` for the switch, for each context keeping its state and for the "All" view.
-5. The form dialog in cellui; then `buy` and `sell` on a row, `new-portfolio`, `rename-portfolio`, `delete-portfolio`, `undo` and
+5. `Positions` model and the context switch in `Browser` (`next-context`, `previous-context`, keys, the help line, `show-currency`),
+   with `BrowserTests` for the switch, for each context keeping its state and for the "All" view.
+6. The form dialog in cellui; then `buy` and `sell` on a row, `new-portfolio`, `rename-portfolio`, `delete-portfolio`, `undo` and
    `redo`, and the status line's message for each.
-6. README: the keys and the flags.
+7. README: the keys and the flags.
 
 ## Later, not planned in detail
 
@@ -153,9 +166,8 @@ by kind and country, a benchmark to compare the portfolio with, a transactions v
 
 ## Open
 
-- The base currency of "All": a setting kept where (a fact of a node of its own in the portfolio file, or a settings file).
 - Whether the undo stack should survive a restart (not at first).
-- The bits of the new node kind, settled with the country kind.
+- Whether the display currency should be kept between runs (not at first).
 - Which price edge values a position when two datasets have the instrument on the market (the latest bar, at first).
 - Whether a position in an edge that no source loads any more is shown from its last stored price or marked stale.
 - The keys for `buy` and `sell` on the desktop, and whether `next-preset` and `previous-preset` (unbound today) get keys of their own now

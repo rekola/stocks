@@ -55,9 +55,10 @@ anywhere translates between ids, and no table holds an "internal id" of its own:
 - the kind of node is in the top bits, and a key is below 2^62, so it is a positive `BIGINT` in MariaDB and a `UInt64` in ClickHouse;
 - in text, an instrument is its ISIN, a currency or dataset its code and a market its MIC (`describe()`), which is
   what a URL carries;
-- more kinds of node take the kind values 4 to 7 in bit 62, and keys stay below 2^63, so none of the keys above changes. The
-  first is the **country** (kind 4: its key is its ISO 3166-1 alpha-2 code, see "Countries" in `data-model.md`); an issuer or a
-  person would come after. An index is not a kind: it is an instrument, identified by its ISIN like a share.
+- more kinds of node take the kind values 4 to 7 (the kind is bits 62-60), and keys stay below 2^63, so none of the keys above changes.
+  The planned ones are the **country** (kind 4: its key is its ISO 3166-1 alpha-2 code, see "Countries" in `data-model.md`), the
+  **portfolio** (5, a minted key) and the **attribute** (6); kind 7 is an escape with a second-level kind in the identity ("Kinds and
+  bits" in `data-model.md`), so an issuer or a person would come after in that. An index is not a kind: it is an instrument, identified by its ISIN like a share.
 
 **A market's key is made from what it is**, like the others, so any machine makes the same one and no catalog mints keys. The
 `markets` table holds the MIC as the key and the name, country and time zone as facts. A provider's id for a market is not kept: the
