@@ -1511,7 +1511,8 @@ TEST(a_click_on_the_buy_button_opens_the_form_for_that_row_and_not_the_selected_
       size_t end = screen.find('\n', from);
       if (end == std::string::npos) end = screen.size();
       const std::string line = screen.substr(from, end - from);
-      if (line.find("NOKIA") == 0) {
+      const size_t first = line.find_first_not_of(' ');  // the icon column comes before the base
+      if (first != std::string::npos && line.compare(first, 5, "NOKIA") == 0) {
         const auto at = cellOf(line, kBuyGlyphText);
         target_row = row;
         target_col = at.second;
