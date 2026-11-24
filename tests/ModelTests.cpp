@@ -162,18 +162,79 @@ TEST(order_book_snapshots_are_keyed_by_floating_point_seconds) {
   CHECK(w.snap()->books(k).size() == 3 && w.snap()->bookAt(k, 1000.5)->bids[0].size == 9);
 }
 
-TEST(announcements_are_kept_per_instrument_and_dataset_in_time_order) {
+namespace {
+NewsItem item(const char * id, Timestamp time, const char * headline, std::vector<NodeRef> about = {}, const char * type = "") {
+  NewsItem n;
+  n.id = id;
+  n.time = time;
+  n.headline = headline;
+  n.about = std::move(about);
+  if (*type) n.attributes.push_back({predicate::type, type});
+  return n;
+}
+}  // namespace
+
+TEST(news_is_kept_per_dataset_by_its_id_and_never_replaced) {
   World w;
-  EventKey ka{w.nokia, w.a}, kb{w.nokia, w.b};
-  w.store->appendAnnouncements(ka, {{2000, "results", "Q2 results", "Q2", ""}, {1000, "guidance", "Raises guidance", "", ""}});
-  w.store->appendAnnouncements(ka, {{2000, "results", "Q2 results", "Q2 (corrected)", ""}});  // same time and headline
-  w.store->appendAnnouncements(ka, {{2000, "mgmt", "New CFO", "", ""}});                      // same time, other headline
-  w.store->appendAnnouncements(kb, {{1500, "results", "Other source", "", ""}});
-  auto a = w.snap()->announcements(ka);
-  CHECK(a.size() == 3 && a[0].headline == "Raises guidance" && a[1].body == "Q2 (corrected)" && a[2].headline == "New CFO");
-  CHECK(w.snap()->announcements(ka, {1500, 2500}).size() == 2);
-  CHECK(w.snap()->announcements(kb).size() == 1);
-  CHECK(w.snap()->announcements({w.eur, w.a}).empty());
+  w.store->appendNews(w.a, {item("n1", 2000, "Q2 results", {w.nokia}), item("n2", 1000, "Raises guidance", {w.nokia})});
+  // Said again: the same item, left as it was (even if the source now words it differently).
+  const uint64_t version = w.snap()->version();
+  w.store->appendNews(w.a, {item("n1", 2000, "Q2 results (corrected)", {w.nokia})});
+  CHECK(w.snap()->version() == version && w.snap()->newsCount() == 2);
+  // The same time and headline under another id is another item: the dataset's own duplicates are its to clean up.
+  w.store->appendNews(w.a, {item("n3", 2000, "Q2 results", {w.nokia})});
+  // Another dataset with the same story has its own item.
+  w.store->appendNews(w.b, {item("n1", 2000, "Q2 results", {w.nokia})});
+  CHECK(w.snap()->newsCount() == 4);
+  auto all = w.snap()->news();
+  CHECK(all.size() == 4 && all[3].headline == "Raises guidance");  // newest first: the last is the oldest
+  CHECK(all[0].time == 2000 && all[1].time == 2000 && all[2].time == 2000);
+  CHECK(all[0].dataset == w.a && all[0].id == "n1" && all[1].dataset == w.a && all[1].id == "n3" && all[2].dataset == w.b);  // ties: dataset, id
+  CHECK(w.snap()->news({{1500, 2500}}).size() == 3);
+}
+
+TEST(news_is_found_by_whom_it_is_about_by_what_it_says_and_the_newest_come_first) {
+  World w;
+  const NodeRef finland{CountryId{countryKey("FI")->value}};
+  const NodeRef sweden{CountryId{countryKey("SE")->value}};
+  w.store->appendNews(w.a, {item("1", 100, "Nokia news", {w.nokia, finland}, "press release"),
+                            item("2", 200, "Finland's economy", {finland}, "report"),
+                            item("3", 300, "Sweden's rates", {sweden, w.hel}, "report"),
+                            item("4", 400, "The world", {}, "report")});  // about nothing in particular
+  auto snap = w.snap();
+  CHECK(snap->news().size() == 4 && snap->news()[0].headline == "The world");
+  NewsQuery q;
+  q.about = finland;
+  CHECK(snap->news(q).size() == 2 && snap->news(q)[0].headline == "Finland's economy");
+  q.about = NodeRef(w.nokia);
+  CHECK(snap->news(q).size() == 1);
+  q.about = NodeRef(w.hel);
+  CHECK(snap->news(q).size() == 1 && snap->news(q)[0].headline == "Sweden's rates");
+  q = {};
+  q.keep = [](const NewsItem & n) { return newsText(n, predicate::type) == "report"; };  // a preset: by an attribute
+  CHECK(snap->news(q).size() == 3);
+  q = {};
+  q.limit = 2;
+  CHECK(snap->news(q).size() == 2 && snap->news(q)[1].headline == "Sweden's rates");
+  CHECK(snap->news({{150, 350}}).size() == 2);
+  CHECK(w.snap()->news({{1000, 2000}}).empty() && sweden.type == NodeType::Country && nodeOf(*countryKey("SE")) == sweden);
+}
+
+TEST(an_item_of_news_with_no_id_or_no_dataset_is_refused_and_nothing_of_the_call_is_written) {
+  World w;
+  const uint64_t version = w.snap()->version();
+  bool refusedId = false, refusedDataset = false;
+  try {
+    w.store->appendNews(w.a, {item("ok", 1, "fine"), item("", 2, "no id")});
+  } catch (const std::invalid_argument &) {
+    refusedId = true;
+  }
+  try {
+    w.store->appendNews(DatasetId{}, {item("x", 1, "no dataset")});
+  } catch (const std::invalid_argument &) {
+    refusedDataset = true;
+  }
+  CHECK(refusedId && refusedDataset && w.snap()->version() == version && w.snap()->newsCount() == 0);
 }
 
 TEST(corporate_actions_carry_their_kind_and_value) {
@@ -193,7 +254,6 @@ TEST(corporate_actions_carry_their_kind_and_value) {
 TEST(events_lists_the_datasets_that_say_something_about_an_instrument) {
   World w;
   CHECK(w.snap()->events(w.nokia).empty());
-  w.store->appendAnnouncements({w.nokia, w.a}, {{1, "x", "x", "", ""}});
   w.store->appendActions({w.nokia, w.a}, {{1, ActionKind::Split, 2, {}, ""}});
   w.store->appendActions({w.nokia, w.b}, {{1, ActionKind::Split, 2, {}, ""}});
   CHECK(w.snap()->events(w.nokia).size() == 2);
@@ -451,8 +511,6 @@ TEST(
     CHECK(throws([&] { w.store->setListing({bad, "X", "", "", "", ""}); }));
   }
   CHECK(throws(
-      [&] { w.store->appendAnnouncements({refused, w.a}, {Announcement{}}); }));
-  CHECK(throws(
       [&] { w.store->appendActions({refused, w.a}, {CorporateAction{}}); }));
   CHECK(w.snap()->version() ==
         version); // nothing changed: no edge under a part that is none
@@ -525,13 +583,13 @@ TEST(the_same_bars_again_make_no_new_version_and_a_changed_close_does) {
   CHECK(w.snap()->version() == first->version() + 1);
   CHECK(w.snap()->lastCandles(edge, Resolution::Day, 1).candles[0].close == 7);
   // The other series are the same: a repeat changes nothing.
-  const Announcement news{10, "c", "headline", "body", "url"};
+  const NewsItem news = item("n", 10, "headline");
   const CorporateAction action{10, ActionKind::Split, 2, {}, ""};
   const BookSnapshot book{1.5, {{10, 1}}, {{11, 1}}};
   const EventKey event{w.nokia, w.a};
   for (int i = 0; i < 2; i++) {
     const uint64_t before = w.snap()->version();
-    w.store->appendAnnouncements(event, {news});
+    w.store->appendNews(w.a, {news});
     w.store->appendActions(event, {action});
     w.store->appendBooks(edge, {book});
     CHECK(w.snap()->version() == before + (i == 0 ? 3 : 0));
