@@ -102,7 +102,7 @@ void GoldSource::load(Store & store, Http &, SourceListener & listener) {
   misses_ = 0;
   const Candle spotBar = last.candles.back();
   store.batch([&](Batch & b) {
-    const DatasetId dataset = b.addDataset(kGoldDataset, "Gold (estimate)");
+    const DatasetId dataset = b.addDataset(kGoldDataset, "Estimate");
     const MarketId market = b.addMarket(kOffExchange, marketNameOfMic(kOffExchange));
     for (const GoldItem & item : table_.items) {
       const InstrumentId instrument = b.resolveInstrument({}, {{predicate::name, item.name},

@@ -80,7 +80,7 @@ TEST(the_two_golds_are_priced_from_the_spot_off_exchange_in_their_own_dataset) {
   CHECK(bar && coin);
   if (!bar || !coin) return;
   const auto s = w.store->snapshot();
-  CHECK(bar->quote == w.usd && coin->quote == w.usd && bar->dataset == coin->dataset && s->name(bar->dataset) == "Gold (estimate)");
+  CHECK(bar->quote == w.usd && coin->quote == w.usd && bar->dataset == coin->dataset && s->name(bar->dataset) == "Estimate");
   CHECK(s->findDataset(kGoldDataset) && bar->market == *s->findMarket(kOffExchange));
   // A gram of fine gold at the dealer's bid, and an ounce coin at its.
   const Candle b = s->lastCandles(*bar, Resolution::Day, 1).candles.back(), c = s->lastCandles(*coin, Resolution::Day, 1).candles.back();
@@ -186,4 +186,23 @@ TEST(the_gold_source_names_a_dataset_no_other_source_writes) {
   CHECK(sources[0]->datasetCodes() == std::vector<std::string>{kGoldDataset});
   sources.push_back(std::make_unique<GoldSource>(table()));
   CHECK(!datasetCodeClash(sources).empty());
+}
+
+TEST(without_a_spot_it_tries_again_in_seconds_and_with_one_at_its_own_interval) {
+  World w;
+  GoldSource source(table());  // its interval is half a minute
+  FakeHttp http;
+  GoldListener listener;
+  CHECK(source.refreshInterval() == std::chrono::seconds(30));
+  source.load(*w.store, http, listener);  // Nordnet is still loading its big lists
+  CHECK(source.refreshInterval() == std::chrono::seconds(5));
+  w.setSpot(3000);
+  source.load(*w.store, http, listener);
+  CHECK(source.refreshInterval() == std::chrono::seconds(30));
+  // A short interval is not made longer by the retry.
+  GoldSource quick(table(), std::chrono::seconds(1));
+  quick.load(*w.store, http, listener);
+  World none;
+  quick.load(*none.store, http, listener);
+  CHECK(quick.refreshInterval() == std::chrono::seconds(1));
 }

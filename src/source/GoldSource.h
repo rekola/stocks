@@ -3,6 +3,7 @@
 #include "source/DatasetCodes.h"
 #include "source/Source.h"
 
+#include <algorithm>
 #include <chrono>
 #include <string>
 #include <vector>
@@ -15,7 +16,7 @@
 // currency, one daily bar each, on the day of the spot's last bar.
 //
 // The factors are estimates and are the one place the guess lives. It writes nothing until a spot price exists, and says so once after a
-// few tries (Nordnet's lists may be loading), and it loads again every half minute so that the price follows the spot's.
+// few tries (spaced five seconds apart: the lists may be loading), and then it loads again every half minute so that the price follows the spot's.
 struct GoldItem {
   std::string symbol, name;
   double ounces = 0;  // fine troy ounces in one unit
@@ -40,10 +41,12 @@ class GoldSource : public Source {
   std::vector<std::string> datasetCodes() const override { return {kGoldDataset}; }
   std::string description() const override { return "Physical gold (a bar by the gram, a coin by the ounce), estimated from the gold spot price of another source"; }
   void load(Store &, Http &, SourceListener &) override;
-  std::chrono::milliseconds refreshInterval() const override { return refresh_; }
+  // Until a spot price is found, it tries again every few seconds (the source that has it is loading); after, at the refresh.
+  std::chrono::milliseconds refreshInterval() const override { return misses_ > 0 ? std::min(refresh_, kRetry) : refresh_; }
 
  private:
   GoldTable table_;
+  static constexpr std::chrono::milliseconds kRetry{5000};
   std::chrono::milliseconds refresh_;
   int misses_ = 0;  // loads that found no spot price
 };

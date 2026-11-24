@@ -29,6 +29,8 @@ constexpr Preset kPresets[] = {
     {"Currencies", "show-currencies", kNoMarket, InstrumentKind::Currency},
     {"Indices", "show-indices", kNoMarket, InstrumentKind::Index},
     {"Funds", "show-funds", nullptr, InstrumentKind::Fund},  // of every market, whoever lists them
+    // What is held in hand and traded off exchange: the estimated gold bar and coin now, platinum and scrap gold when they come. Commodities on XOFF.
+    {"Physical", "show-physical", kOffExchange, InstrumentKind::Commodity},
     {"All", "show-all"}};
 
 // What the buttons at the end of a row do: a glyph and the command that runs for the selected row. A new action is a new line.

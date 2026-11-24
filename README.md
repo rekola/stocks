@@ -63,7 +63,7 @@ portfolio offers to make one.
 they are bought and sold like any other row: **Gold bar (1 g fine)**, held by the gram, and **Gold coin (1 oz fine)**, held by the troy
 ounce. Their price is the gold spot price another source gives (Nordnet's `GOLD`, per troy ounce in dollars) times the fine weight of a unit
 and a bid factor, and a holding is valued at that, so the premium paid shows as a loss at first. **The factors in `data/gold/items.csv` are
-guesses, not any dealer's**: edit them to the dealer you use. They are in the `All` preset (market `Off exchange`, dataset `Gold (estimate)`);
+guesses, not any dealer's**: edit them to the dealer you use. They are in the `Physical` preset (market `Off exchange`, dataset `Estimate`; platinum and scrap gold would go there too) and in `All`;
 `buy` on the row, and the price in the form is yours to change. A dealer's real list, bid and ask, is planned
 (`plans/quotes.md`).
 
