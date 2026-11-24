@@ -445,7 +445,7 @@ see data-model.md).
   markets is one instrument with two edges: 16 such pairs among a few thousand ETFs), plus aliases (each
   provider's ids and symbol, FIGI). Nothing else is without one: a currency or a unit is its code (a
   currency pair is an edge between two currencies), and anything else that has no ISIN of its
-  own has one from the registry (`data/isins/registry.csv`: the real ISIN where known, else one of ours in the private `ZZ` namespace, numbered, never made up from a text). Open: how aliases are matched when a
+  own has one its adapter names (`src/source/KnownIsins.h`: the real ISIN where known, else one of ours in the private `ZZ` namespace, numbered, never made up from a text). Open: how aliases are matched when a
   new provider is added.
 
 ## A graph of statements (proposed by the owner)
@@ -650,12 +650,11 @@ they decide how history has to be collected):
   - in the attribute viewer, a node-valued attribute shown as a link to the node it names (built; it is drawn as a link and not
     yet followed),
     with the reverse links ("is the CEO of") listed on the target.
-- **ISINs for what has none**: a thing that has none (a commodity or an index a provider gives no ISIN, a coin, a physical bar) is in the registry
-  `data/isins/registry.csv`, found by its symbol or else its name: its real ISIN where one exists (the commodities and indices that no
-  country numbers have ISINs under `XC`: zinc is `XC0005705584`), else one of ours, `ZZ` (ISO 3166-1's user-assigned code element; no
-  numbering agency issues ISINs under it), nine digits numbered on, and the check digit. Nothing is hashed from a text, so there is one zinc
-  whoever lists it, and no two things share a number except by a mistake that the loader and a test refuse. Used for indicator rows with
-  no ISIN (some metals and indices).
+- **ISINs for what has none**: a thing that has none (a commodity or an index a provider gives no ISIN, a coin, a physical bar) has one that its adapter
+  names from `src/source/KnownIsins.h`: its real ISIN where one exists (the commodities and indices that no country numbers have ISINs under
+  `XC`: zinc is `XC0005705584`), else one of ours, `ZZ` (ISO 3166-1's user-assigned code element; no numbering agency issues ISINs under it),
+  nine digits numbered on, and the check digit. Nothing is hashed from a text, so there is one zinc whoever lists it, and a missing, invalid or repeated
+  ISIN does not compile. Used for indicator rows with no ISIN (some metals and indices).
 - **A source with no discovery carries the ISIN in its data files** next to the ticker: it
   makes its instrument from the file, by its ISIN, which is the same node another source
   made, and its own edge has its ticker as the symbol. Nothing waits on the load order. A

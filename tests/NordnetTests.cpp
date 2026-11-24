@@ -1,5 +1,4 @@
 #include "TestFramework.h"
-#include "TestRegistry.h"
 
 #include "FakeHttp.h"
 #include "model/Dates.h"
@@ -664,7 +663,7 @@ TEST(an_indicator_list_gives_instruments_with_an_isin_and_a_bar_with_no_open_and
 }
 
 TEST(the_indicator_lists_make_indices_in_points_currency_pairs_and_commodities_in_dollars) {
-  auto store = storeWithRegistry();
+  auto store = makeMemoryStore();
   FakeHttp http;
   http.answer = [](const std::string & url) {
     if (url.find("WORLDMAP") != std::string::npos) return ok(fixture("indicators-indices.json"));
@@ -690,8 +689,9 @@ TEST(the_indicator_lists_make_indices_in_points_currency_pairs_and_commodities_i
   CHECK(!s->listing(onDax)->orderBook.empty() && s->listing(onDax)->type == "INDEX");  // what its history is asked for by
   CHECK(asText(*s->attribute(dax, "country")) == "DE");
 
-  // One with no ISIN has the one the registry has for its symbol: ours (ZZ) for the index, the real one of the commodity (XC) for lead.
-  const std::string bric = "ZZ0000000016", leadIsin = "XC0005705527";
+  // One with no ISIN has the one source/KnownIsins.h has for its symbol: the real one of the index and of
+  // the commodity (XC) for lead.
+  const std::string bric = "US26075E1047", leadIsin = "XC0005705527";
   CHECK(s->findInstrumentByIsin(bric) && s->kind(*s->findInstrumentByIsin(bric)) == InstrumentKind::Index);
   CHECK(s->kind(*s->findInstrumentByIsin(leadIsin)) == InstrumentKind::Commodity);
 

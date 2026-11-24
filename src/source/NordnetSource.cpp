@@ -5,6 +5,7 @@
 #include "source/InstrumentLists.h"
 #include "source/KnownMarkets.h"
 #include "source/NordnetNews.h"
+#include "source/KnownIsins.h"
 #include "source/LeftOut.h"
 #include "source/NordnetHeaders.h"
 
@@ -143,6 +144,20 @@ std::optional<double> price(const json & block, const char * key) {
 }
 
 
+
+}  // namespace
+
+namespace {
+
+// The ISIN of a row of Nordnet's indicator lists that gives none: by its symbol, from the ones the program knows (source/KnownIsins.h). A name
+// that is not in this table is not a thing the program knows: empty. Naming the constants is what makes a missing one a compile error.
+std::string missingIsin(const std::string & symbol) {
+  static const std::pair<const char *, const char *> table[] = {
+      {"ZINC", known_isin::kZinc}, {"LEAD", known_isin::kLead}, {"BRIC50D", known_isin::kBricIndia}};
+  for (const auto & [name, isin] : table)
+    if (symbol == name) return isin;
+  return {};
+}
 
 }  // namespace
 
@@ -313,10 +328,15 @@ size_t NordnetSource::loadIndicators(const List & list, Store & store, Http & ht
         base = currencyNode(b, row.name.substr(0, slash));
         quote = currencyNode(b, row.name.substr(slash + 1));
       } else {
-        // An index or a commodity is its ISIN; where Nordnet has none the store finds it in the registry by its symbol (Zinc, Lead, ...).
-        std::vector<Attribute> identifying;
-        if (!row.isin.empty()) identifying.push_back({predicate::isin, row.isin});
-        else identifying.push_back({predicate::symbol, row.symbol});
+        // An index or a commodity is its ISIN; where Nordnet has none, one of the adapter's (Zinc, Lead, ...: source/KnownIsins.h), and a row
+        // that has none there is left out and said.
+        const std::string isin = row.isin.empty() ? missingIsin(row.symbol) : row.isin;
+        if (isin.empty()) {
+          leftOut.add(row.symbol);
+          refused.push_back(i);
+          continue;
+        }
+        std::vector<Attribute> identifying = {{predicate::isin, isin}};
         const InstrumentKind kind = row.type == "INDEX" ? InstrumentKind::Index
                                     : row.type == "COMMODITY" ? InstrumentKind::Commodity
                                                               : InstrumentKind::Other;

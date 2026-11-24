@@ -2,6 +2,7 @@
 
 #include "model/Dates.h"
 #include "source/DataDirectory.h"
+#include "source/KnownIsins.h"
 #include "source/KnownMarkets.h"
 
 #include <cellui/NumberParse.h>
@@ -29,6 +30,16 @@ std::optional<double> number(const std::string & text) {
   const auto parsed = cellui::parseFloat(text.data(), last, v);
   if (text.empty() || parsed.ec != std::errc() || parsed.ptr != last || !std::isfinite(v)) return std::nullopt;
   return v;
+}
+
+// The ISIN of an item, by its symbol: the one source/KnownIsins.h gives it, so an item that is added to the file needs its ISIN added there first
+// (naming the constant here is what makes a missing one a compile error). Empty for an item not named here.
+std::string itemIsin(const std::string & symbol) {
+  static const std::pair<const char *, const char *> table[] = {
+      {"GOLDBAR", known_isin::kGoldBar}, {"GOLDCOIN", known_isin::kGoldCoin}, {"PLATBAR", known_isin::kPlatinumBar}};
+  for (const auto & [name, isin] : table)
+    if (symbol == name) return isin;
+  return {};
 }
 
 }  // namespace
@@ -65,7 +76,12 @@ bool parseGoldTable(const std::string & text, GoldTable & table, std::string & e
         error = where + "no spot row for the metal " + f[1] + " before it";
         return false;
       }
-      table.items.push_back({f[1], f[2], f[3], *ounces, *bid, *ask, f.size() == 8 ? f[7] : std::string()});
+      const std::string isin = itemIsin(f[2]);
+      if (isin.empty()) {
+        error = where + "the item " + f[2] + " has no ISIN: add one to source/KnownIsins.h and name it in itemIsin() in GoldSource.cpp";
+        return false;
+      }
+      table.items.push_back({f[1], f[2], f[3], *ounces, *bid, *ask, f.size() == 8 ? f[7] : std::string(), isin});
     } else {
       error = where + "a row is spot or item";
       return false;
@@ -129,7 +145,7 @@ void GoldSource::load(Store & store, Http &, SourceListener & listener) {
     for (const GoldItem & item : table_.items) {
       const auto metal = spots.find(item.metal);
       if (metal == spots.end()) continue;  // no price for this metal yet: nothing of it is made
-      const InstrumentId instrument = b.resolveInstrument({}, {{predicate::name, item.name},
+      const InstrumentId instrument = b.resolveInstrument({{predicate::isin, item.isin}}, {{predicate::name, item.name},
                                                                {predicate::symbol, item.symbol},
                                                                {predicate::kind, kindName(InstrumentKind::Commodity)},
                                                                {predicate::type, "PHYSICAL"}});

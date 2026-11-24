@@ -2,7 +2,6 @@
 
 #include "model/FactWriter.h"
 #include "model/Facts.h"
-#include "model/IsinRegistry.h"
 #include "model/Types.h"
 #include "portfolio/Transaction.h"
 
@@ -144,9 +143,9 @@ class Snapshot {
   // what is said. `revision` is the version plus the writes of facts that were only said again, which no version counts: a
   // store publishes a copy when it moves. `takeFacts` is what the writes since the last call ask of the disk.
   void setTime(TimestampMs now) { now_ = now; }
-  // Where an instrument with no ISIN gets one (IsinRegistry.h). With none, such an instrument is numbered in the private namespace as it is
-  // asked for (ZZ999999999 down), the same text the same number: for tests and for a run with no registry, and kept in no file.
-  void setRegistry(std::shared_ptr<const IsinRegistry> registry) { registry_ = std::move(registry); }
+  // Whether an instrument with no ISIN is numbered in the private namespace as it is asked for (ZZ999999999 down, the same text the same
+  // number), for tests and the made-up data; else it is refused and told of: the adapters give their own ISINs (source/KnownIsins.h).
+  void setInventIsins(bool invent) { invent_ = invent; }
   void setRecheckInterval(std::chrono::milliseconds interval) { recheck_ = interval; }
   // Makes the changes since the version was `before` one version: a batch of writes is one change to a reader.
   void settleVersion(uint64_t before) {
@@ -170,8 +169,8 @@ class Snapshot {
   uint64_t checks_ = 0;
   TimestampMs now_ = 0;
   std::chrono::milliseconds recheck_{0};
-  std::shared_ptr<const IsinRegistry> registry_;
-  immer::map<std::string, std::string> numbered_;  // the ISINs made up as asked for where there is no registry, by the text they were asked by
+  bool invent_ = true;
+  immer::map<std::string, std::string> numbered_;  // the ISINs numbered as asked for, by the text they were asked by
   FactBatch outbox_;                                              // what to keep, for the store that made this copy
   std::vector<std::string> notices_;                              // what was refused, for the store that made this copy
   immer::map<EdgeKey, Listing> listings_;
@@ -300,9 +299,9 @@ class Store : public StoreWrites {
 };
 
 struct StoreOptions {
-  // The registry of the ISINs of what has none (data/isins/registry.csv). With one, an instrument with no ISIN that it does not list is
-  // refused and told of; with none, such instruments are numbered as they come (tests, the made-up data).
-  std::shared_ptr<const IsinRegistry> isins;
+  // Whether an instrument that comes with no ISIN is numbered as it comes (the tests, the made-up data: the default), or refused and told of
+  // (the program: its adapters give the ISINs they supply from source/KnownIsins.h, so one that has none is a mistake to show).
+  bool invent_isins = true;
   // Where the user's own portfolios are kept: a second file, routed by the kind of node, so that a portfolio is never in `facts` and a
   // source cannot write one into it. Read when the store is made; written at once and in the thread of the write, since the writes
   // are rare and by hand. None: portfolios live in memory for the session.
