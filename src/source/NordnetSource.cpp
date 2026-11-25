@@ -135,12 +135,14 @@ std::vector<Attribute> attributesOf(const json & row) {
   return out;
 }
 
-// A price in the price block: {"price": 65.03, "decimals": 2}.
+// A price in the price block: {"price": 65.03, "decimals": 2}. A price of 0 is no price: a suspended instrument (order book paused)
+// is listed with zeros, and a 0 is not a quote to show or a bar to keep.
 std::optional<double> price(const json & block, const char * key) {
   auto it = block.find(key);
   if (it == block.end() || !it->is_object()) return std::nullopt;
   auto p = it->find("price");
-  return p != it->end() && p->is_number() ? std::optional<double>(p->get<double>()) : std::nullopt;
+  if (p == it->end() || !p->is_number() || p->get<double>() == 0.0) return std::nullopt;
+  return p->get<double>();
 }
 
 
@@ -229,6 +231,9 @@ bool NordnetSource::parsePage(const std::string & body, Page & page, std::string
     if (row.is_object() && row.contains("price_info") && row["price_info"].is_object()) {
       const json & p = row["price_info"];
       auto open = price(p, "open"), high = price(p, "high"), low = price(p, "low"), last = price(p, "last");
+      // A halted instrument has no last price today: its final price is the previous close, which Nordnet shows too (and no change
+      // with it: with no open, high and low there is no bar for today).
+      if (!last) last = price(p, "close");
       const int64_t tick = integer(p, "tick_timestamp") / 1000;  // the answer is in milliseconds; seconds from here on
       // A fund has only its NAV: the bar's close, which is also the last price while the slot is still in progress (the
       // NAV of the day is dated by its tick). Its open, high and low are undefined, and so is a volume the answer lacks.
