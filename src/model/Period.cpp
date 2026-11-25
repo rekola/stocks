@@ -21,6 +21,13 @@ int64_t dayOf(Resolution r, int64_t key) { return isDateResolution(r) ? key : da
 // The first key of a bar that is on `day` or later.
 int64_t keyOf(Resolution r, int64_t day) { return isDateResolution(r) ? day : slotOfInstant(r, (day - kUnixEpochDayNumber) * 86400); }
 
+// The last day of a period: the day of the price (the quote's), or of the queue's last bar where that is later or there is no quote. A queue that
+// has no bars for the last days (the source is behind, or has stopped) still has the bar that was a month ago a month ago, so the period is
+// counted back from the present the data knows of, not from where the queue happens to end.
+int64_t lastDayOf(const std::optional<Quote> & quote, int64_t lastBarDay) {
+  return quote && quote->time != 0 ? std::max(lastBarDay, dayNumberOfInstant(quote->time)) : lastBarDay;
+}
+
 // A bar's start as UTC seconds: a date is its midnight.
 Timestamp instantOf(Resolution r, int64_t key) { return isDateResolution(r) ? (key - kUnixEpochDayNumber) * 86400 : instantOfSlot(r, key); }
 
@@ -110,7 +117,7 @@ Covered periodCovered(const Snapshot & snapshot, const EdgeKey & edge, Period pe
     const Resolution r = in.feeds[f];
     const auto c = snapshot.coverage(edge, r);
     if (!c) continue;
-    const int64_t end = dayOf(r, c->last_key), start = end - in.days + 1;
+    const int64_t end = lastDayOf(snapshot.quote(edge), dayOf(r, c->last_key)), start = end - in.days + 1;
     if (dayOf(r, c->first_key) > start + in.days / 3) continue;  // does not reach back far enough
     out.covered = f < in.primary;
     out.fetched = c->fetched;
@@ -171,7 +178,7 @@ PeriodView periodView(const Snapshot & snapshot, const EdgeKey & edge, Period pe
     const Resolution r = in.feeds[f];
     const Seq<Candle> queue = snapshot.queue(edge, r);
     if (queue.empty()) continue;
-    const int64_t end = dayOf(r, queue.back().time), start = end - in.days + 1;
+    const int64_t end = lastDayOf(quote, dayOf(r, queue.back().time)), start = end - in.days + 1;
     const Seq<Candle> bars = from(queue, keyOf(r, start));
     if (bars.empty() || dayOf(r, bars[0].time) > start + in.days / 3) continue;  // does not reach back far enough
     v.primary = f < in.primary;
