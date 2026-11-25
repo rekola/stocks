@@ -10,6 +10,7 @@
 #include <cellui/Utf8.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 
 using namespace cellui;
@@ -63,6 +64,46 @@ std::string barTime(Resolution r, int64_t time) {
 }
 
 }  // namespace
+
+std::vector<std::string> wrapText(const std::string & text, int cols) {
+  std::vector<std::string> lines;
+  if (cols < 1) return {text};
+  std::string line;
+  int width = 0;
+  auto flush = [&] {
+    lines.push_back(std::move(line));
+    line.clear();
+    width = 0;
+  };
+  size_t at = 0;
+  while (at < text.size()) {
+    while (at < text.size() && std::isspace(static_cast<unsigned char>(text[at]))) at++;
+    const size_t start = at;
+    while (at < text.size() && !std::isspace(static_cast<unsigned char>(text[at]))) at++;
+    if (start == at) break;
+    const std::string word = text.substr(start, at - start);
+    const int w = utf8::displayWidth(word);
+    if (width > 0 && width + 1 + w <= cols) {
+      line += ' ' + word;
+      width += 1 + w;
+    } else if (w <= cols) {
+      if (width > 0) flush();
+      line = word;
+      width = w;
+    } else {
+      // Wider than a line: starts on a fresh one and is cut between characters.
+      if (width > 0) flush();
+      for (const std::string & cluster : utf8::clusters(word)) {
+        const int cw = utf8::displayWidth(cluster);
+        if (width > 0 && width + cw > cols) flush();
+        line += cluster;
+        width += cw;
+      }
+    }
+  }
+  if (width > 0 || lines.empty()) flush();
+  return lines;
+}
 
 std::string realText(double v) {
   if (!isDefined(v)) return "-";
@@ -204,24 +245,48 @@ AttributeModal::AttributeModal(Widget & root, Plane & screen, EventLoop & loop, 
                                std::vector<InfoSection> sections)
     : ModalDialog(root, screen, loop), title_(std::move(title)), snapshot_(std::move(snapshot)) {
   for (const InfoSection & section : sections) {
-    if (!lines_.empty()) lines_.push_back({});
-    lines_.push_back({Line::HEADING, section.title, "", false});
+    if (!rows_.empty()) rows_.push_back({});
+    rows_.push_back({Line::HEADING, section.title, "", false});
     for (const InfoRow & row : section.rows) {
-      lines_.push_back({Line::ROW, row.predicate, row.value.text, row.value.link.has_value()});
+      rows_.push_back({Line::ROW, row.predicate, row.value.text, row.value.link.has_value()});
       predicate_width_ = std::max(predicate_width_, utf8::displayWidth(row.predicate));
     }
   }
   predicate_width_ = std::min(predicate_width_, kMaxPredicateWidth);
+  wrapLines(kMaxWidth);
 }
 
 std::vector<std::string> AttributeModal::lines() const {
   std::vector<std::string> out;
-  for (const Line & line : lines_) out.push_back(line.kind == Line::ROW ? line.predicate + "  " + line.text : line.predicate);
+  for (const Line & line : lines_) {
+    if (line.kind != Line::ROW) out.push_back(line.predicate);
+    else if (line.continued) out.push_back(std::string(static_cast<size_t>(predicate_width_ + 2), ' ') + line.text);
+    else out.push_back(line.predicate + "  " + line.text);
+  }
   return out;
+}
+
+void AttributeModal::wrapLines(int value_cols) {
+  if (value_cols == value_cols_) return;
+  value_cols_ = value_cols;
+  lines_.clear();
+  for (const Line & row : rows_) {
+    if (row.kind != Line::ROW) {
+      lines_.push_back(row);
+      continue;
+    }
+    bool first = true;
+    for (std::string & part : wrapText(row.text, value_cols)) {
+      lines_.push_back({Line::ROW, first ? row.predicate : "", std::move(part), row.link, !first});
+      first = false;
+    }
+  }
 }
 
 void AttributeModal::layout(Plane & screen, int rows, int cols) {
   const int width = std::min(kMaxWidth, std::max(20, cols - 4));
+  const int valueX = 1 + predicate_width_ + 2, valueCols = std::max(1, width - 1 - valueX);
+  wrapLines(valueCols);
   // Padding, title, a gap, the lines, a gap, the hint, padding.
   constexpr int kChrome = 6;
   const int height = std::min(static_cast<int>(lines_.size()) + kChrome, std::max(kChrome + 1, rows - 2));
@@ -253,7 +318,6 @@ void AttributeModal::layout(Plane & screen, int rows, int cols) {
   plane_->move(top, left);
   body_.layout(screen, *plane_, top, left, 3, body_rows_, width - 1, bg, fg, quiet, strong);
   Plane & body = body_.plane();
-  const int valueX = 1 + predicate_width_ + 2, valueCols = std::max(0, width - 1 - valueX);
   const TextStyle plain{TextFont::PROPORTIONAL, TextOverflow::ELLIPSIS, kPlainFace, TextAlign::LEFT};
   for (int i = 0; i < body_.drawnRows(); i++) {
     const size_t at = static_cast<size_t>(body_.firstLine() + i);
@@ -264,7 +328,7 @@ void AttributeModal::layout(Plane & screen, int rows, int cols) {
       body.putText(i, 1, inner, line.predicate, TextStyle{TextFont::PROPORTIONAL, TextOverflow::ELLIPSIS, kBoldFace, TextAlign::LEFT});
     } else if (line.kind == Line::ROW) {
       body.setFgColor(quiet);
-      body.putText(i, 1, predicate_width_, line.predicate, plain);
+      if (!line.continued) body.putText(i, 1, predicate_width_, line.predicate, plain);
       body.setFgColor(line.link ? strong : fg);  // where a value refers to a node it will be a link
       body.putText(i, valueX, valueCols, line.text, plain);
     }

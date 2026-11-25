@@ -31,6 +31,10 @@ std::string dateText(int64_t dayNumber);
 // Whether a predicate says a day number.
 bool isDayPredicate(const std::string & predicate);
 
+// `text` as lines of at most `cols` cells: broken at whitespace, filled greedily, and a word wider than a line (a URL)
+// broken between characters, so all of it shows and can be copied. Always at least one line.
+std::vector<std::string> wrapText(const std::string & text, int cols);
+
 struct InfoRow {
   std::string predicate;
   ShownValue value;
@@ -53,8 +57,12 @@ class AttributeModal : public cellui::ModalDialog {
   AttributeModal(cellui::Widget & root, cellui::Plane & screen, cellui::EventLoop & loop, std::string title,
                  std::shared_ptr<const Snapshot> snapshot, std::vector<InfoSection> sections);
 
-  // The lines the dialog scrolls through, as text (what a reader sees: headings, "predicate  value", blank lines).
+  // The lines the dialog scrolls through, as text (what a reader sees: headings, "predicate  value", the rest of a
+  // wrapped value indented under it, blank lines), for the width of the last layout.
   std::vector<std::string> lines() const;
+
+  // The display selects and copies the text, not the application.
+  bool wantsNativeSelection() const override { return true; }
 
  protected:
   void layout(cellui::Plane & screen, int rows, int cols) override;
@@ -74,13 +82,18 @@ class AttributeModal : public cellui::ModalDialog {
     enum Kind { HEADING, ROW, BLANK } kind = BLANK;
     std::string predicate, text;
     bool link = false;
+    bool continued = false;  // the rest of the value above
   };
+  // The dialog's lines for a value column `value_cols` wide: a row's value wrapped onto as many lines as it needs.
+  void wrapLines(int value_cols);
   int bodyRows() const { return body_rows_; }
   void scrollBy(int delta);
 
   std::string title_;
   std::shared_ptr<const Snapshot> snapshot_;
-  std::vector<Line> lines_;
+  std::vector<Line> rows_;    // one for each heading, row and gap
+  std::vector<Line> lines_;   // what is drawn: rows_ with the long values wrapped; `predicate` is empty on a continuation
+  int value_cols_ = -1;       // the width lines_ was wrapped for
   int predicate_width_ = 0;
   int body_rows_ = 1;
   cellui::ScrollBody body_;
