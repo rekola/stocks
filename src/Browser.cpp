@@ -484,6 +484,7 @@ void Browser::showChart() {
   cellui::ChartData data;
   data.title = label + "  " + info(period_).trace;
   data.values = view.closes;
+  data.light = view.light;  // the volume traded at each point, as how bright the line is there, as in the table
   for (const Timestamp at : view.times) data.labels.push_back(timeLabel(at, view.dated));
   data.format = [rate](float v) { return rate ? fixed(v, 3) + "%" : fixed(v, 2); };
   // The line is the colour of the period's change, as the table's trace is.

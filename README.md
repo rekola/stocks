@@ -49,7 +49,8 @@ item with its link and what it is about, and the info of a row of Markets lists 
 An item is its dataset and the dataset's own id: two datasets with the same story show it twice, and nothing is replaced.
 
 **Charts.** A click on a row's trace (or `Enter` with the cursor on it, or `c` for the selected row; the command is `show-chart`) shows the
-trace of the period chosen as a large chart over the dimmed screen, with no window around it: the line in the colour of the period's change, the
+trace of the period chosen as a large chart over the dimmed screen, with no window around it: the line in the colour of the period's change (brighter
+where more was traded, as in the table), the
 values on the left, the first and last date under it, and a cursor with a reading of the date and the value under it. `Left` and `Right` move
 the cursor (`Page Up`/`Page Down` by a tenth, `Home`/`End` to the ends), and so does the pointer; `Esc`, `Enter`, `q` or a click away from the
 chart close it. The chart is cellui's `ChartModal`, drawn by the same line chart as the table's traces.
