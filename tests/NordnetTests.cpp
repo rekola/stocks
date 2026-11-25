@@ -476,6 +476,17 @@ TEST(a_listing_without_a_price_is_a_node_and_has_no_edge) {
         *s->findInstrumentByIsin("ZZ0000000016"));
 }
 
+TEST(a_suspended_instrument_priced_at_zero_has_no_quote_and_no_bar) {
+  const char * body = R"({"rows":1,"total_hits":1,"results":[
+    {"instrument_info":{"instrument_id":1,"symbol":"LEHTO","isin":"ZZ0000000016","currency":"EUR","name":"Suspended","instrument_type":"ESH"},
+     "market_info":{"market_id":4,"identifier":"LEHTO"},
+     "price_info":{"last":{"price":0},"open":{"price":0},"high":{"price":0},"low":{"price":0},"bid":{"price":0},"ask":{"price":0},"tick_timestamp":1795192200000}}]})";
+  NordnetSource::Page page;
+  std::string error;
+  CHECK(NordnetSource::parsePage(body, page, error));
+  CHECK(page.listings.size() == 1 && !page.listings[0].hasQuote && !page.listings[0].hasBar);
+}
+
 TEST(an_instrument_keeps_the_type_nordnet_gives_it_and_edges_can_be_selected_by_it) {
   auto store = makeMemoryStore();
   FakeHttp http;

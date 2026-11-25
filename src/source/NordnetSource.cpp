@@ -135,12 +135,14 @@ std::vector<Attribute> attributesOf(const json & row) {
   return out;
 }
 
-// A price in the price block: {"price": 65.03, "decimals": 2}.
+// A price in the price block: {"price": 65.03, "decimals": 2}. A price of 0 is no price: a suspended instrument (order book paused)
+// is listed with zeros, and a 0 is not a quote to show or a bar to keep.
 std::optional<double> price(const json & block, const char * key) {
   auto it = block.find(key);
   if (it == block.end() || !it->is_object()) return std::nullopt;
   auto p = it->find("price");
-  return p != it->end() && p->is_number() ? std::optional<double>(p->get<double>()) : std::nullopt;
+  if (p == it->end() || !p->is_number() || p->get<double>() == 0.0) return std::nullopt;
+  return p->get<double>();
 }
 
 
