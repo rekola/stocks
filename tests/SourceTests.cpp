@@ -6,6 +6,7 @@
 #include "model/Isin.h"
 #include "source/AutoSource.h"
 #include "source/EcbSource.h"
+#include "source/GoldApiSource.h"
 #include "source/GoldPriceSource.h"
 #include "source/PhysicalSource.h"
 #include "source/SuomenPankkiSource.h"
@@ -888,6 +889,7 @@ TEST(a_source_is_named_by_the_dataset_it_writes) {
   sources.push_back(std::make_unique<SyntheticSource>(testList()));
   sources.push_back(std::make_unique<SuomenPankkiSource>());
   sources.push_back(std::make_unique<EcbSource>());
+  sources.push_back(std::make_unique<GoldApiSource>());
   sources.push_back(std::make_unique<GoldPriceSource>());
   PhysicalTable table;
   std::string error;

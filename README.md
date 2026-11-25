@@ -65,13 +65,13 @@ portfolio offers to make one.
 | `undo` | takes back your last change: a trade, a new, renamed or deleted portfolio | `C-x u`, `C-/` | `Ctrl+Z` |
 | `redo` | makes it again | `C-M-_` | `Ctrl+Y` |
 
-**Spot prices of metals.** `goldprice` is a source ([gold-api.com](https://gold-api.com), no key; it runs by default) that lists its
+**Spot prices of metals.** Two sources give them, each a dataset of its own with its own row for the same instrument (the rows are never merged in the store; what reads a spot picks one, see below). `goldprice` ([goldprice.dev](https://goldprice.dev), no key; it runs by default) asks one request for the prices of gold, silver and copper (it stores euros and dollars) and has daily bars: the last 30 days of gold in dollars without a key, which the month shows as a trace. Its prices come 15 minutes late. `goldapi` ([gold-api.com](https://gold-api.com), no key; it runs by default) lists its
 symbols (gold, silver, platinum, palladium, copper, and Bitcoin and Ethereum) and asks the price of each in euros and in dollars: each is an
 instrument with a price in both currencies on the market of what is priced and not traded, in the Commodities preset (the metals) and in
 All. They are spot prices and cannot be bought. The API takes them from several data providers (another answers when one is down) and cross-checks them, but does not guarantee them: verify a price before a financial decision. A price is for the unit its row's name says: the metals by the troy ounce (`Gold, per troy oz`), copper by the metric tonne (`Copper, per tonne`: the API quotes it per pound and it is converted, so it is the same number as another source's copper of the same ISIN), a coin by the coin.
 
 **Physical metals.** `physical` is a source (it runs beside the default one) that estimates the metals held in hand, off exchange (XOFF),
-from the spot prices of gold-api.com (in euros and in dollars, each its own price; Nordnet's gold in dollars where gold-api.com has none),
+from the spot prices the others give (in euros and in dollars, each its own price: the one with the newest bar, and of those of one day the first that `data/physical/items.csv` names, goldprice.dev's before gold-api.com's, so one that stops answering is passed by the other; Nordnet's gold in dollars where neither has any),
 so they are bought and sold like any other row: **Gold bar (1 g fine)**, held by the gram, **Gold coin (1 oz fine)**, held by the troy
 ounce, and a sample, **Platinum bar (1 g fine)**. Their price in each currency is their metal's spot price in it (per troy ounce) times the fine weight of a unit
 and a bid factor, and a holding is valued at that, so the premium paid shows as a loss at first. **The factors in `data/physical/items.csv` are

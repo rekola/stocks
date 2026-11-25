@@ -30,6 +30,7 @@ struct PhysicalItem {
 struct PhysicalTable {
   struct Spot {
     std::string metal, symbol;  // a listing symbol to look for the metal's price by
+    std::string dataset;        // the dataset it has to be in; empty: any
   };
   std::vector<Spot> spots;  // best first, for each metal
   std::vector<PhysicalItem> items;
