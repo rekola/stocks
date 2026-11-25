@@ -170,9 +170,11 @@ std::vector<NordnetSource::List> NordnetSource::defaultLists() {
   const std::string sorted = "sort_order=asc&sort_attribute=symbol";  // a key that does not move between pages
   // The indicator lists first: each is one small answer, and what they hold (the gold spot price that the physical gold is estimated from, the
   // currency pairs that value it in euros) should not wait for the minutes the big lists take. Commodities before the pairs, the pairs
-  // before the indices.
+  // before the indices. The Norwegian currency list (pairs against NOK, which the global one lacks) is asked with its sparkline, which
+  // the rows carry as percentages of development with no times: not bars, so nothing is kept of it.
   return {{"commodities", indicators + "COMMODITIES", 0, std::chrono::milliseconds(0), Shape::Indicators, "Commodities"},
           {"currencies", indicators + "CURRENCY_GLOBAL", 0, std::chrono::milliseconds(0), Shape::Indicators, "Currencies"},
+          {"currencies-no", indicators + "NO_CURRENCY?spark=true", 0, std::chrono::milliseconds(0), Shape::Indicators, "Currencies"},
           {"indices", indicators + "WORLDMAP", 0, std::chrono::milliseconds(0), Shape::Indicators, "Indices"},
           {"etflist", base + "etflist?" + sorted, 500},
           {"certificatelist", base + "certificatelist?apply_filters=instrument_type%3DPTC&" + sorted, 1000},
