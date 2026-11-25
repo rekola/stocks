@@ -1,18 +1,21 @@
 # The physical metals the program estimates a price for (src/source/PhysicalSource.cpp), held off exchange (XOFF).
 #
-# spot,METAL,SYMBOL
+# spot,METAL,SYMBOL[,DATASET]
 #   METAL is a name the items below use (gold, platinum). SYMBOL is the listing symbol of that metal's spot price on the market of what is priced and not traded (XXXX): per troy ounce, in its quote
-#   currency. An item is priced in each currency a spot has; where several rows have a price in one currency, the first row wins. XAU and XPT
-#   are gold-api.com's, in euros and in dollars; GOLD is Nordnet's, in dollars only.
+#   currency. An item is priced in each currency a spot has: where several rows have one, the newest bar wins (a source that has stopped
+#   answering is passed by the next) and, among those of the same day, the first row. XAU is goldprice.dev's and gold-api.com's, in euros
+#   and in dollars (the dataset field says which, where a row is for one dataset), XPT gold-api.com's, GOLD Nordnet's, in dollars only.
+#   spot,METAL,SYMBOL[,DATASET]
 # item,METAL,SYMBOL,NAME,FINE_TROY_OUNCES_PER_UNIT,BID_FACTOR,ASK_FACTOR[,ICON_SYMBOL]
 #   The optional last field is a Unicode symbol shown where there is no picture.
 #   An item held in `unit`s of the fine weight given: its price is the spot price times the fine ounces in one unit times a factor.
 #   The bid factor is what a dealer pays against the melt value (the price a holding is valued at), the ask factor what a dealer
 #   charges. THE FACTORS ARE ESTIMATES, not any dealer's: until a dealer's list is read they stand for what a coin or a bar loses
 #   or costs in premium, and they are the one place that guess lives.
-spot,gold,XAU
+spot,gold,XAU,GOLDPRICE
+spot,gold,XAU,GOLDAPI
 spot,gold,GOLD
-spot,platinum,XPT
+spot,platinum,XPT,GOLDAPI
 item,gold,GOLDBAR,Gold bar (1 g fine),0.0321507466,0.97,1.04
 item,gold,GOLDCOIN,Gold coin (1 oz fine),1,0.98,1.08,🪙
 # A sample of platinum: a bar by the gram. Its premium is a guess, higher than gold's.

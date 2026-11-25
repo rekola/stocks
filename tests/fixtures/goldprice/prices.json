@@ -1,0 +1,49 @@
+{
+ "symbols": [
+  {
+   "symbol": "HG",
+   "quote_currency": "USD",
+   "unit": "pound",
+   "contract_type": "spot",
+   "price": "5.2595",
+   "is_stale": false,
+   "computed_at": "2026-11-25T14:22:01.418143+00:00"
+  },
+  {
+   "symbol": "XAG",
+   "quote_currency": "USD",
+   "unit": "troy_ounce",
+   "contract_type": "spot",
+   "price": "39.288",
+   "is_stale": false,
+   "computed_at": "2026-11-25T14:22:01.418143+00:00"
+  },
+  {
+   "symbol": "XAU",
+   "quote_currency": "EUR",
+   "unit": "troy_ounce",
+   "contract_type": "spot",
+   "price": "3179.04",
+   "is_stale": false,
+   "computed_at": "2026-11-25T14:22:01.418143+00:00"
+  },
+  {
+   "symbol": "XAU",
+   "quote_currency": "SEK",
+   "unit": "troy_ounce",
+   "contract_type": "spot",
+   "price": "35744.31",
+   "is_stale": false,
+   "computed_at": "2026-11-25T14:22:01.418143+00:00"
+  },
+  {
+   "symbol": "XAU",
+   "quote_currency": "USD",
+   "unit": "troy_ounce",
+   "contract_type": "spot",
+   "price": "3479.11",
+   "is_stale": false,
+   "computed_at": "2026-11-25T14:22:01.418143+00:00"
+  }
+ ]
+}

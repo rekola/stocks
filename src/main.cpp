@@ -5,7 +5,8 @@
 //   --ui window  in a window stocks --source NAME   the data source (several,
 //   comma-separated, run at once): auto (the default: nordnet, and yahoo if
 //   nordnet gives nothing),
-//                          nordnet, yahoo, spfb (the Bank of Finland: the Euribor rates), ecb (the €STR), goldprice (gold-api.com: spot
+//                          nordnet, yahoo, spfb (the Bank of Finland: the Euribor rates), ecb (the €STR), goldprice (goldprice.dev: spot prices and
+//                          daily bars of gold, silver and copper, in euros and dollars), goldapi (gold-api.com: spot
 //                          prices of gold and other metals, in euros and dollars), physical (physical metals held in hand: a gold
 //                          bar by the gram, a gold coin by the ounce, a platinum bar, estimated from the spot prices another
 //                          source gives; it runs beside the default), funds:SCHEMA (a fund company: a
@@ -36,6 +37,7 @@
 #include "source/NordnetSource.h"
 #include "source/FundSource.h"
 #include "source/EcbSource.h"
+#include "source/GoldApiSource.h"
 #include "source/GoldPriceSource.h"
 #include "source/PhysicalSource.h"
 #include "source/SuomenPankkiSource.h"
@@ -68,6 +70,7 @@ std::unique_ptr<Source> makeSource(const std::string & name, const ListSpec & li
   if (name == "yahoo") return std::make_unique<YahooSource>(lists);
   if (name == "nordnet") return std::make_unique<NordnetSource>();
   if (name == "ecb") return std::make_unique<EcbSource>();
+  if (name == "goldapi") return std::make_unique<GoldApiSource>();
   if (name == "goldprice") return std::make_unique<GoldPriceSource>();
   if (name == "physical") {
     PhysicalTable table;
@@ -83,9 +86,9 @@ std::unique_ptr<Source> makeSource(const std::string & name, const ListSpec & li
 }
 
 // What runs when no --source is given: the market data ("auto") and the small loaders that have no options of their own (the rates, the
-// €STR, gold-api.com's spot prices, the estimate of the physical metals and every fund company schema of data/funds), so they are there without being asked for.
+// €STR, the spot prices of goldprice.dev and gold-api.com, the estimate of the physical metals and every fund company schema of data/funds), so they are there without being asked for.
 std::string defaultSources() {
-  std::string names = "auto,spfb,ecb,goldprice,physical";  // physical estimates the metals held in hand from the spot prices the others give
+  std::string names = "auto,spfb,ecb,goldprice,goldapi,physical";  // physical estimates the metals held in hand from the spot prices the others give
   std::vector<std::string> funds;
   std::error_code ec;
   const std::filesystem::path dir = findDataDirectory("funds");
@@ -97,7 +100,7 @@ std::string defaultSources() {
   return names;
 }
 
-constexpr const char * kSourceNames = "auto, nordnet, yahoo, spfb, ecb, goldprice, physical, funds:SCHEMA, synthetic";
+constexpr const char * kSourceNames = "auto, nordnet, yahoo, spfb, ecb, goldprice, goldapi, physical, funds:SCHEMA, synthetic";
 
 }  // namespace
 

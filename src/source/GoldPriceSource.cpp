@@ -1,46 +1,58 @@
 #include "source/GoldPriceSource.h"
 
 #include "model/Dates.h"
+#include "source/GoldPriceHistory.h"
 #include "source/InstrumentLists.h"
 #include "source/KnownIsins.h"
 #include "source/KnownMarkets.h"
+#include "source/MetalUnits.h"
 
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <charconv>
 #include <cmath>
 
 using json = nlohmann::json;
 
 namespace {
 
-constexpr const char * kBase = "https://api.gold-api.com";
+constexpr const char * kPrices = "https://api.goldprice.dev/v1/prices";
 
 std::string text(const json & row, const char * key) {
   auto it = row.find(key);
   return it != row.end() && it->is_string() ? it->get<std::string>() : std::string();
 }
 
-// What a symbol is: a metal is a commodity, a coin is of no kind, and each has the ISIN source/KnownIsins.h gives it (the real one of the
-// commodity, the one every other source and list gives it, so that gold here is the gold Nordnet's list has and not another instrument; a coin
-// has one of ours). The API says none of it. A symbol that is not here has none, and the store refuses it and says so.
+// A price is a string ("3551.34"), though a number is read too.
+std::optional<double> amount(const json & row, const char * key) {
+  auto it = row.find(key);
+  if (it == row.end()) return std::nullopt;
+  if (it->is_number()) return it->get<double>();
+  if (!it->is_string()) return std::nullopt;
+  const std::string s = it->get<std::string>();
+  double v = 0;
+  const auto [end, ec] = std::from_chars(s.data(), s.data() + s.size(), v);
+  if (ec != std::errc() || end != s.data() + s.size()) return std::nullopt;
+  return v;
+}
+
+// What a symbol is, and what its price is multiplied by to be for the unit of the instrument for each unit the API says (the unit goes with the
+// ISIN: Nordnet's copper is per tonne, the API's per pound).
 struct Known {
   const char * symbol;
-  InstrumentKind kind;
-  const char * type;
+  const char * name;
   const char * isin;
-  const char * unit;  // what the instrument's price is for: it is tied to the ISIN (Nordnet's copper, which has the same ISIN, is per metric tonne)
-  double factor;      // what the API's price is multiplied by to be for that unit: the answer does not say what its price is for, and copper is per pound
+  const char * unit;  // the instrument's
+  struct Conversion {
+    const char * api_unit;
+    double factor;
+  } conversions[2];
 };
 
-constexpr double kPoundsPerTonne = 1000.0 / 0.45359237;  // a metric tonne is 1000 kg, a pound 0.45359237 kg
-constexpr Known kKnown[] = {{"XAU", InstrumentKind::Commodity, "METAL", known_isin::kGold, "troy oz", 1},
-                            {"XAG", InstrumentKind::Commodity, "METAL", known_isin::kSilver, "troy oz", 1},
-                            {"XPT", InstrumentKind::Commodity, "METAL", known_isin::kPlatinum, "troy oz", 1},
-                            {"XPD", InstrumentKind::Commodity, "METAL", known_isin::kPalladium, "troy oz", 1},
-                            {"HG", InstrumentKind::Commodity, "METAL", known_isin::kCopper, "tonne", kPoundsPerTonne},  // the API quotes it per pound
-                            {"BTC", InstrumentKind::Other, "CRYPTO", known_isin::kBitcoin, "coin", 1},
-                            {"ETH", InstrumentKind::Other, "CRYPTO", known_isin::kEthereum, "coin", 1}};
+constexpr Known kKnown[] = {{"XAU", "Gold", known_isin::kGold, "troy oz", {{"troy_ounce", 1}, {nullptr, 0}}},
+                            {"XAG", "Silver", known_isin::kSilver, "troy oz", {{"troy_ounce", 1}, {nullptr, 0}}},
+                            {"HG", "Copper", known_isin::kCopper, "tonne", {{"pound", kPoundsPerTonne}, {nullptr, 0}}}};
 
 const Known * knownSymbol(const std::string & symbol) {
   for (const Known & k : kKnown)
@@ -50,131 +62,96 @@ const Known * knownSymbol(const std::string & symbol) {
 
 }  // namespace
 
-bool GoldPriceSource::parseSymbols(const std::string & body, std::vector<Symbol> & out, std::string & error) {
+GoldPriceSource::GoldPriceSource(std::chrono::milliseconds refresh, std::vector<std::string> currencies)
+    : refresh_(refresh), currencies_(std::move(currencies)), history_(std::make_shared<GoldPriceHistory>()) {}
+
+bool GoldPriceSource::parsePrices(const std::string & body, std::vector<Price> & out, std::string & error) {
   out.clear();
   json doc = json::parse(body, nullptr, /*allow_exceptions=*/false);
-  if (doc.is_discarded() || !doc.is_array()) {
-    error = "not a list of symbols";
+  if (doc.is_discarded() || !doc.is_object() || !doc.contains("symbols") || !doc["symbols"].is_array()) {
+    error = "not a list of prices";
     return false;
   }
-  for (const json & row : doc) {
+  for (const json & row : doc["symbols"]) {
     if (!row.is_object()) continue;
-    Symbol s{text(row, "symbol"), text(row, "name")};
-    if (s.symbol.empty()) continue;
-    if (s.name.empty()) s.name = s.symbol;
-    out.push_back(std::move(s));
+    Price p;
+    p.symbol = text(row, "symbol");
+    p.currency = text(row, "quote_currency");
+    p.unit = text(row, "unit");
+    const auto price = amount(row, "price");
+    // "2026-11-25T14:22:01.418143+00:00": the date is the first ten characters, which is UTC for the offset +00:00 the API writes.
+    const auto day = dayNumberOfIsoDate(text(row, "computed_at").substr(0, 10));
+    if (p.symbol.empty() || p.currency.empty() || p.unit.empty() || !price || !std::isfinite(*price) || *price <= 0 || !day) continue;
+    p.price = *price;
+    p.day = *day;
+    if (auto stale = row.find("is_stale"); stale != row.end() && stale->is_boolean()) p.stale = stale->get<bool>();
+    // Spot only: the API names the contract (a future would be another price of the metal).
+    if (const std::string type = text(row, "contract_type"); !type.empty() && type != "spot") continue;
+    out.push_back(std::move(p));
   }
   if (out.empty()) {
-    error = "no symbols in the list";
+    error = "no prices in the answer";
     return false;
   }
-  return true;
-}
-
-bool GoldPriceSource::parsePrice(const std::string & body, Price & out, std::string & error) {
-  json doc = json::parse(body, nullptr, /*allow_exceptions=*/false);
-  if (doc.is_discarded() || !doc.is_object()) {
-    error = "not a price";
-    return false;
-  }
-  out = {};
-  out.symbol = text(doc, "symbol");
-  out.name = text(doc, "name");
-  out.currency = text(doc, "currency");
-  auto p = doc.find("price");
-  if (p == doc.end() || !p->is_number()) {
-    error = "no price";
-    return false;
-  }
-  out.price = p->get<double>();
-  if (!std::isfinite(out.price) || out.price <= 0) {
-    error = "the price is not above zero";
-    return false;
-  }
-  if (out.symbol.empty() || out.currency.empty()) {
-    error = "no symbol or currency";
-    return false;
-  }
-  // "2026-11-24T14:19:44Z": the date is the first ten characters.
-  const auto day = dayNumberOfIsoDate(text(doc, "updatedAt").substr(0, 10));
-  if (!day) {
-    error = "no update date";
-    return false;
-  }
-  out.day = *day;
   return true;
 }
 
 void GoldPriceSource::load(Store & store, Http & http, SourceListener & listener) {
   if (listener.cancelled()) return;
-  HttpResult r = http.get(std::string(kBase) + "/symbols", {});
+  const HttpResult r = http.get(kPrices, {});
+  std::vector<Price> prices;
   std::string error;
-  std::vector<Symbol> symbols;
-  if (!r.ok() || !parseSymbols(r.body, symbols, error)) {
-    listener.message("goldprice: symbols: " + (!r.ok() ? (r.status == 0 ? (r.error.empty() ? std::string("no answer") : r.error) : "HTTP " + std::to_string(r.status)) : error) +
-                     (known_.empty() ? "" : "; using the list from before"));
-    if (known_.empty()) return;
-    symbols = known_;
-  } else {
-    known_ = symbols;
+  if (!r.ok() || !parsePrices(r.body, prices, error)) {
+    listener.message("goldprice: " + (!r.ok() ? (r.status == 0 ? (r.error.empty() ? std::string("no answer") : r.error) : "HTTP " + std::to_string(r.status)) : error));
+    return;
   }
   // Gold first: the estimate of physical gold waits for it.
-  std::stable_sort(symbols.begin(), symbols.end(), [](const Symbol & a, const Symbol & b) { return (a.symbol == "XAU") > (b.symbol == "XAU"); });
-  bool first = true;
-  for (const Symbol & s : symbols) {
-    std::vector<Price> prices;
-    for (const std::string & currency : currencies_) {
-      if (listener.cancelled()) return;
-      if (!first && pause_.count() > 0 && !listener.pause(pause_)) return;
-      first = false;
-      HttpResult answer = http.get(std::string(kBase) + "/price/" + s.symbol + "/" + currency, {});
-      if (!answer.ok()) {
-        const bool refused = answer.status == 429 || answer.status == 403;
-        listener.message("goldprice: " + s.symbol + "/" + currency + ": " +
-                         (answer.status == 0 ? (answer.error.empty() ? std::string("no answer") : answer.error) : "HTTP " + std::to_string(answer.status)) +
-                         (refused ? ", stopping" : ""));
-        if (refused) return;
+  std::stable_sort(prices.begin(), prices.end(), [](const Price & a, const Price & b) { return (a.symbol == "XAU") > (b.symbol == "XAU"); });
+  std::vector<std::string> symbols;
+  for (const Price & p : prices)
+    if (std::find(symbols.begin(), symbols.end(), p.symbol) == symbols.end()) symbols.push_back(p.symbol);
+
+  int stale = 0;
+  for (const std::string & symbol : symbols) {
+    const Known * known = knownSymbol(symbol);
+    if (!known) continue;  // a symbol we have no ISIN for: the store would refuse it
+    struct Row {
+      std::string currency;
+      double value;
+      int64_t day;
+    };
+    std::vector<Row> rows;
+    for (const Price & p : prices) {
+      if (p.symbol != symbol) continue;
+      if (!currencies_.empty() && std::find(currencies_.begin(), currencies_.end(), p.currency) == currencies_.end()) continue;
+      if (p.stale) {
+        stale++;
         continue;
       }
-      Price price;
-      if (!parsePrice(answer.body, price, error)) {
-        listener.message("goldprice: " + s.symbol + "/" + currency + ": " + error);
+      double factor = 0;
+      for (const auto & c : known->conversions)
+        if (c.api_unit && p.unit == c.api_unit) factor = c.factor;
+      if (factor <= 0) {
+        listener.message("goldprice: " + symbol + "/" + p.currency + ": a price per " + p.unit + " is not one this adapter knows");
         continue;
       }
-      // What was asked for, not another symbol or currency in its place.
-      if (price.symbol != s.symbol || price.currency != currency) {
-        listener.message("goldprice: " + s.symbol + "/" + currency + ": the answer is for " + price.symbol + "/" + price.currency);
-        continue;
-      }
-      prices.push_back(std::move(price));
+      rows.push_back({p.currency, p.price * factor, p.day});
     }
-    if (prices.empty()) continue;
-    // One symbol, both currencies: one publication.
+    if (rows.empty()) continue;
     store.batch([&](Batch & b) {
       const DatasetId dataset = b.addDataset(kGoldPriceDataset, "goldprice");
       const MarketId market = b.addMarket(kNoMarket, marketNameOfMic(kNoMarket));
-      const Known * known = knownSymbol(s.symbol);
-      const InstrumentKind kind = known ? known->kind : InstrumentKind::Other;
-      InstrumentId base;
-      if (known && *known->isin) {
-        // The instrument another source made by this ISIN: its name and type stand where they are said, and ours are said only where none is.
-        base = addInstrumentUnlessSaid(b, s.symbol, s.name, kind, known->isin, known->type);
-      } else {
-        std::vector<Attribute> rest = {{predicate::name, s.name}, {predicate::symbol, s.symbol}, {predicate::type, known ? known->type : "SPOT"}};
-        if (kind != InstrumentKind::Other) rest.push_back({predicate::kind, kindName(kind)});
-        base = b.resolveInstrument({}, rest);
-      }
+      const InstrumentId base = addInstrumentUnlessSaid(b, symbol, known->name, InstrumentKind::Commodity, known->isin, "METAL");
       if (!base.valid()) return;
-      for (const Price & p : prices) {
-        const InstrumentId quote = currencyNode(b, p.currency);
+      for (const Row & row : rows) {
+        const InstrumentId quote = currencyNode(b, row.currency);
         if (!quote.valid()) continue;
         const EdgeKey edge{base, quote, market, dataset};
-        // In the unit of the instrument, so that this source's copper and another's, of one ISIN, are the same number.
-        b.appendCandles(edge, Resolution::Day, {{p.day, kUndefined, kUndefined, kUndefined, p.price * (known ? known->factor : 1.0), kUndefined}});
-        // The unit is in the name the row shows: a price of copper is for a tonne and one of gold for a troy ounce.
-        b.setListing({edge, s.symbol, "", "", known ? known->type : "SPOT", known ? s.name + ", per " + known->unit : s.name});
+        b.appendCandles(edge, Resolution::Day, {{row.day, kUndefined, kUndefined, kUndefined, row.value, kUndefined}});
+        b.setListing({edge, symbol, "", "", "METAL", std::string(known->name) + ", per " + known->unit});
       }
     });
     listener.changed();
   }
+  if (stale > 0) listener.message("goldprice: " + std::to_string(stale) + " stale price" + (stale == 1 ? "" : "s") + " not stored");
 }

@@ -2,13 +2,12 @@
 
 #include "FakeHttp.h"
 #include "model/Dates.h"
-#include "model/Isin.h"
-#include "portfolio/Portfolio.h"
+#include "source/GoldApiSource.h"
+#include "source/GoldPriceHistory.h"
 #include "source/GoldPriceSource.h"
 #include "source/PhysicalSource.h"
 
 #include <fstream>
-#include <map>
 #include <sstream>
 
 namespace {
@@ -25,285 +24,189 @@ struct Said : SourceListener {
   int changes = 0;
   void changed() override { changes++; }
   void message(const std::string & m) override { messages.push_back(m); }
-  bool pause(std::chrono::milliseconds) override { return true; }  // no waiting in a test
 };
 
-std::string priceBody(const std::string & symbol, const std::string & name, const std::string & currency, double price, const std::string & updated = "2026-11-24T14:19:44Z") {
-  return "{\"currency\":\"" + currency + "\",\"exchangeRate\":1.0,\"name\":\"" + name + "\",\"price\":" + std::to_string(price) + ",\"symbol\":\"" + symbol +
-         "\",\"updatedAt\":\"" + updated + "\"}";
-}
-
-// Prices for every symbol of the real list, in euros 0.9 of dollars.
-HttpResult answerPrices(const std::string & url) {
-  if (url == "https://api.gold-api.com/symbols") return ok(fixture("symbols.json"));
-  const std::string tail = url.substr(std::string("https://api.gold-api.com/price/").size());
-  const std::string symbol = tail.substr(0, tail.find('/')), currency = tail.substr(tail.find('/') + 1);
-  const std::map<std::string, std::pair<std::string, double>> table = {{"XAU", {"Gold", 3600}}, {"XAG", {"Silver", 45}}, {"XPT", {"Platinum", 1300}},
-                                                                      {"XPD", {"Palladium", 1100}}, {"HG", {"Copper", 5}}, {"BTC", {"Bitcoin", 60000}}, {"ETH", {"Ethereum", 3000}}};
-  const auto it = table.find(symbol);
-  if (it == table.end()) return failed(404);
-  return ok(priceBody(symbol, it->second.first, currency, it->second.second * (currency == "EUR" ? 0.9 : 1.0)));
+std::string row(const std::string & symbol, const std::string & currency, const std::string & unit, const std::string & price, bool stale = false,
+                const std::string & at = "2026-11-25T14:22:01.418143+00:00", const std::string & contract = "spot") {
+  return "{\"symbol\":\"" + symbol + "\",\"quote_currency\":\"" + currency + "\",\"unit\":\"" + unit + "\",\"contract_type\":\"" + contract + "\",\"price\":\"" + price +
+         "\",\"is_stale\":" + (stale ? "true" : "false") + ",\"computed_at\":\"" + at + "\"}";
 }
 
 }  // namespace
 
-TEST(the_symbols_answer_is_read_and_a_row_without_a_symbol_is_left_out) {
-  std::vector<GoldPriceSource::Symbol> symbols;
+TEST(the_prices_answer_is_read_with_its_strings_and_what_is_not_a_spot_price_is_left_out) {
+  std::vector<GoldPriceSource::Price> prices;
   std::string error;
-  CHECK(GoldPriceSource::parseSymbols(fixture("symbols.json"), symbols, error));
-  CHECK(symbols.size() == 7 && symbols[1].symbol == "XAU" && symbols[1].name == "Gold" && symbols[6].symbol == "XPT" && symbols[6].name == "Platinum");
-  CHECK(GoldPriceSource::parseSymbols(R"([{"name":"Gold","symbol":"XAU"},{"name":"No symbol"},{"symbol":"X"},5])", symbols, error));
-  CHECK(symbols.size() == 2 && symbols[1].symbol == "X" && symbols[1].name == "X");  // a name defaults to the symbol
-  CHECK(!GoldPriceSource::parseSymbols("", symbols, error) && !error.empty());
-  CHECK(!GoldPriceSource::parseSymbols("{}", symbols, error) && !GoldPriceSource::parseSymbols("[]", symbols, error));
+  CHECK(GoldPriceSource::parsePrices(fixture("prices.json"), prices, error) && prices.size() == 5);
+  CHECK(prices[0].symbol == "HG" && prices[0].unit == "pound" && std::abs(prices[0].price - 5.2595) < 1e-12 && prices[0].day == dayNumber(2026, 11, 25) && !prices[0].stale);
+  const std::string body = "{\"symbols\":[" + row("XAU", "USD", "troy_ounce", "10") + "," + row("XAU", "EUR", "troy_ounce", "0") + "," + row("XAU", "GBP", "troy_ounce", "x") + "," +
+                           row("XAU", "SEK", "", "5") + "," + row("XAU", "NOK", "troy_ounce", "5", false, "yesterday") + "," + row("GC", "USD", "troy_ounce", "9", false, "2026-11-25T00:00:00+00:00", "future") +
+                           "," + row("XAG", "USD", "troy_ounce", "30", true) + ",5]}";
+  CHECK(GoldPriceSource::parsePrices(body, prices, error) && prices.size() == 2 && prices[1].symbol == "XAG" && prices[1].stale);
+  for (const char * bad : {"", "[]", "{}", "{\"symbols\":[]}", "{\"symbols\":[5]}"}) CHECK(!GoldPriceSource::parsePrices(bad, prices, error) && !error.empty());
 }
 
-TEST(a_price_answer_is_read_with_the_date_of_its_update) {
-  GoldPriceSource::Price p;
-  std::string error;
-  CHECK(GoldPriceSource::parsePrice(fixture("price-XAU-EUR.json"), p, error));
-  CHECK(p.symbol == "XAU" && p.name == "Gold" && p.currency == "EUR" && std::abs(p.price - 3312.7278451306997) < 1e-9 && p.day == dayNumber(2026, 11, 24));
-  CHECK(GoldPriceSource::parsePrice(fixture("price-XAU-USD.json"), p, error) && p.currency == "USD" && std::abs(p.price - 3617.699951) < 1e-9);
-  CHECK(GoldPriceSource::parsePrice(fixture("price-BTC-USD.json"), p, error) && p.symbol == "BTC");
-  for (const char * bad : {"", "[]", "{}", R"({"symbol":"XAU","currency":"EUR","price":"3000","updatedAt":"2026-11-24T14:19:44Z"})",
-                           R"({"symbol":"XAU","currency":"EUR","price":0,"updatedAt":"2026-11-24T14:19:44Z"})",
-                           R"({"symbol":"XAU","currency":"EUR","price":-3,"updatedAt":"2026-11-24T14:19:44Z"})",
-                           R"({"symbol":"XAU","price":3000,"updatedAt":"2026-11-24T14:19:44Z"})",
-                           R"({"symbol":"XAU","currency":"EUR","price":3000})",
-                           R"({"symbol":"XAU","currency":"EUR","price":3000,"updatedAt":"yesterday"})"})
-    CHECK(!GoldPriceSource::parsePrice(bad, p, error) && !error.empty());
-}
-
-TEST(every_symbol_is_priced_in_euros_and_in_dollars_as_edges_of_the_dataset) {
+TEST(the_prices_are_one_request_and_the_metals_are_stored_in_the_unit_of_their_instrument) {
   auto store = makeMemoryStore();
   FakeHttp http;
-  http.answer = answerPrices;
+  http.answer = [](const std::string &) { return ok(fixture("prices.json")); };
   Said said;
-  GoldPriceSource source(std::chrono::minutes(2), std::chrono::milliseconds(0));
+  GoldPriceSource source;
   source.load(*store, http, said);
-  CHECK(said.messages.empty() && said.changes == 7);  // one publication for each symbol
-  // The list, then each symbol in each currency: 1 + 7 x 2 requests, gold first.
-  CHECK(http.urls.size() == 15 && http.urls[0] == "https://api.gold-api.com/symbols");
-  CHECK(http.urls[1] == "https://api.gold-api.com/price/XAU/EUR" && http.urls[2] == "https://api.gold-api.com/price/XAU/USD");
+  CHECK(http.urls == std::vector<std::string>{"https://api.goldprice.dev/v1/prices"} && said.messages.empty() && said.changes == 3);  // gold, silver and copper
   const auto s = store->snapshot();
   const MarketId none = *s->findMarket(kNoMarket);
-  const InstrumentId eur = *s->findInstrument("EUR"), usd = *s->findInstrument("USD");
-  CHECK(s->kind(eur) == InstrumentKind::Currency && s->kind(usd) == InstrumentKind::Currency);
   const DatasetId data = *s->findDataset(kGoldPriceDataset);
-  CHECK(s->name(NodeRef(data)) == "goldprice" && s->edges(none).size() == 14);
-  const InstrumentId gold = *s->findInstrument("XAU");
-  const CandleSeries inEuros = s->candles({gold, eur, none, data}, Resolution::Day), inDollars = s->candles({gold, usd, none, data}, Resolution::Day);
-  CHECK(inEuros.candles.size() == 1 && inDollars.candles.size() == 1);
-  CHECK(std::abs(inEuros.candles[0].close - 3240) < 1e-6 && std::abs(inDollars.candles[0].close - 3600) < 1e-9);
-  CHECK(inEuros.candles[0].time == dayNumber(2026, 11, 24) && !isDefined(inEuros.candles[0].open) && !isDefined(inEuros.candles[0].volume));
-  CHECK(s->symbol(EdgeKey{gold, eur, none, data}) == "XAU" && s->name(NodeRef(gold)) == "Gold");
-  // What a price is for is in the name the row shows: the metals by the troy ounce, copper by the pound, a coin by the coin.
-  for (auto [symbol, shown] : {std::pair{"XAU", "Gold, per troy oz"}, {"XAG", "Silver, per troy oz"}, {"XPT", "Platinum, per troy oz"},
-                               {"XPD", "Palladium, per troy oz"}, {"HG", "Copper, per tonne"}, {"BTC", "Bitcoin, per coin"}, {"ETH", "Ethereum, per coin"}})
-    for (const InstrumentId currency : {eur, usd}) CHECK(s->listing({*s->findInstrument(symbol), currency, none, data})->name == shown);
-  // Copper is quoted per pound by the API and is kept per metric tonne, the unit of the instrument (another source's copper has the same ISIN).
-  CHECK(std::abs(s->lastCandles({*s->findInstrument("HG"), usd, none, data}, Resolution::Day, 1).candles.back().close - 5 * 1000 / 0.45359237) < 1e-6);
-  CHECK(std::abs(s->lastCandles({*s->findInstrument("HG"), eur, none, data}, Resolution::Day, 1).candles.back().close - 4.5 * 1000 / 0.45359237) < 1e-6);
-  CHECK(std::abs(s->lastCandles({*s->findInstrument("XAG"), usd, none, data}, Resolution::Day, 1).candles.back().close - 45) < 1e-9);  // the others as they come
-  // The metals are commodities (so in the Commodities preset), the coins are of no kind.
-  for (const char * metal : {"XAU", "XAG", "XPT", "XPD", "HG"}) CHECK(s->kind(*s->findInstrument(metal)) == InstrumentKind::Commodity);
-  for (const char * coin : {"BTC", "ETH"}) CHECK(s->kind(*s->findInstrument(coin)) == InstrumentKind::Other);
-  CHECK(s->name(NodeRef(*s->findInstrument("XPT"))) == "Platinum" && std::string(s->said(NodeRef(gold), predicate::type)) == "METAL");
-  // Not tradable: a spot price is priced and not bought.
-  CHECK(!portfolio::tradable(*s, EdgeKey{gold, eur, none, data}));
+  CHECK(s->name(NodeRef(data)) == "goldprice" && s->edges(none).size() == 4);  // XAU in EUR and USD (not SEK: it was not asked for), XAG and HG in USD
+  const InstrumentId gold = *s->findInstrument("XAU"), eur = *s->findInstrument("EUR"), usd = *s->findInstrument("USD");
+  CHECK(!s->findInstrument("SEK"));
+  const auto last = [&](InstrumentId base, InstrumentId quote) { return s->lastCandles({base, quote, none, data}, Resolution::Day, 1).candles.back(); };
+  CHECK(std::abs(last(gold, eur).close - 3179.04) < 1e-9 && std::abs(last(gold, usd).close - 3479.11) < 1e-9);
+  CHECK(last(gold, eur).time == dayNumber(2026, 11, 25) && !isDefined(last(gold, eur).open));
+  // Copper: the answer says "pound", and the instrument (the ISIN Nordnet's copper has) is per tonne.
+  CHECK(std::abs(last(*s->findInstrument("HG"), usd).close - 5.2595 * 1000 / 0.45359237) < 1e-6);
+  CHECK(s->listing({*s->findInstrument("HG"), usd, none, data})->name == "Copper, per tonne" && s->listing({gold, eur, none, data})->name == "Gold, per troy oz");
+  CHECK(s->isin(gold) == "XC0009655157" && s->isin(*s->findInstrument("HG")) == "XC0005705501" && s->kind(gold) == InstrumentKind::Commodity);
+  // A second load replaces the day's bar, not adds one.
+  source.load(*store, http, said);
+  CHECK(store->snapshot()->candles({gold, eur, none, data}, Resolution::Day).candles.size() == 1);
 }
 
-TEST(a_second_load_replaces_the_days_bar_and_a_new_day_adds_one) {
+TEST(a_stale_price_is_not_stored_and_a_unit_it_does_not_know_is_said) {
   auto store = makeMemoryStore();
   FakeHttp http;
-  double gold = 3600;
-  std::string updated = "2026-11-24T14:19:44Z";
-  http.answer = [&](const std::string & url) {
-    if (url.find("/symbols") != std::string::npos) return ok(R"([{"name":"Gold","symbol":"XAU"}])");
-    return ok(priceBody("XAU", "Gold", url.substr(url.rfind('/') + 1), gold, updated));
+  http.answer = [](const std::string &) {
+    return ok("{\"symbols\":[" + row("XAU", "USD", "troy_ounce", "3500") + "," + row("XAU", "EUR", "troy_ounce", "3000", true) + "," + row("XAG", "USD", "gram", "1") + "," +
+              row("XPT", "USD", "troy_ounce", "1000") + "]}");
   };
   Said said;
-  GoldPriceSource source(std::chrono::minutes(2), std::chrono::milliseconds(0));
+  GoldPriceSource source;
   source.load(*store, http, said);
-  gold = 3650;
-  source.load(*store, http, said);
-  auto s = store->snapshot();
-  const EdgeKey usd{*s->findInstrument("XAU"), *s->findInstrument("USD"), *s->findMarket(kNoMarket), *s->findDataset(kGoldPriceDataset)};
-  CHECK(s->candles(usd, Resolution::Day).candles.size() == 1 && s->candles(usd, Resolution::Day).candles[0].close == 3650);
-  updated = "2026-11-25T00:00:05Z";
-  source.load(*store, http, said);
-  const auto bars = store->snapshot()->candles(usd, Resolution::Day).candles;
-  CHECK(bars.size() == 2 && bars[1].time == dayNumber(2026, 11, 25) && bars[1].close == 3650);
-  const uint64_t version = store->snapshot()->version();
-  source.load(*store, http, said);  // the same again
-  CHECK(store->snapshot()->version() == version);
+  const auto s = store->snapshot();
+  const MarketId none = *s->findMarket(kNoMarket);
+  CHECK(s->edges(none).size() == 1 && !s->findInstrument("XPT"));  // the stale euro price, silver in grams and a symbol with no ISIN are not stored
+  CHECK(said.messages.size() == 2 && said.messages[0].find("XAG/USD") != std::string::npos && said.messages[1].find("1 stale price") != std::string::npos);
 }
 
-TEST(a_refusal_ends_the_load_and_another_failure_only_that_request) {
-  {
+TEST(a_failed_prices_request_is_said_and_writes_nothing) {
+  for (const HttpResult & answer : {failed(0), failed(429), ok("not json"), ok("{\"symbols\":[]}")}) {
     auto store = makeMemoryStore();
     FakeHttp http;
-    http.answer = [](const std::string & url) { return url.find("XAG") != std::string::npos ? failed(429) : answerPrices(url); };
+    http.answer = [&](const std::string &) { return answer; };
     Said said;
-    GoldPriceSource source(std::chrono::minutes(2), std::chrono::milliseconds(0));
+    GoldPriceSource source;
     source.load(*store, http, said);
-    const auto s = store->snapshot();
-    CHECK(s->findInstrument("XAU") && !s->findInstrument("XPT"));  // gold was first; silver was refused, and the rest were not asked for
-    CHECK(said.messages.size() == 1 && said.messages[0].find("XAG/EUR: HTTP 429, stopping") != std::string::npos);
-    CHECK(http.urls.back().find("XAG/EUR") != std::string::npos);
+    CHECK(said.messages.size() == 1 && said.messages[0].rfind("goldprice: ", 0) == 0 && said.changes == 0 && !store->snapshot()->findDataset(kGoldPriceDataset));
   }
-  {
-    auto store = makeMemoryStore();
+  GoldPriceSource source(std::chrono::minutes(7));
+  CHECK(source.refreshInterval() == std::chrono::minutes(7) && source.name() == "goldprice" && source.datasetCodes() == std::vector<std::string>{kGoldPriceDataset});
+  CHECK(source.historyProvider() && source.historyProvider()->dataset() == kGoldPriceDataset);
+}
+
+TEST(the_bars_answer_is_read_oldest_first_and_a_row_without_a_close_is_left_out) {
+  GoldPriceHistory::Bars bars;
+  std::string error;
+  CHECK(GoldPriceHistory::parse(fixture("bars-XAU-USD.json"), bars, error) && bars.bars.size() == 3 && bars.next_cursor.empty());
+  CHECK(bars.bars[0].time == dayNumber(2026, 11, 20) && bars.bars[2].time == dayNumber(2026, 11, 24));
+  CHECK(std::abs(bars.bars[2].open - 3630.79) < 1e-9 && std::abs(bars.bars[2].high - 3678.332) < 1e-9 && std::abs(bars.bars[2].low - 3546.8679) < 1e-9 &&
+        std::abs(bars.bars[2].close - 3551.34) < 1e-9 && !isDefined(bars.bars[2].volume));
+  const std::string body = R"({"bars":[{"bar_start":"2026-11-24T00:00:00Z","close":"5"},{"bar_start":"2026-11-23T00:00:00Z"},{"close":"4"},{"bar_start":"x","close":"4"}],"next_cursor":"abc"})";
+  CHECK(GoldPriceHistory::parse(body, bars, error) && bars.bars.size() == 1 && !isDefined(bars.bars[0].open) && bars.next_cursor == "abc");
+  for (const char * bad : {"", "[]", "{}"}) CHECK(!GoldPriceHistory::parse(bad, bars, error) && !error.empty());
+}
+
+namespace {
+
+struct Edge {
+  std::unique_ptr<Store> store = makeMemoryStore();
+  EdgeKey key;
+  Edge() {
     FakeHttp http;
-    http.answer = [](const std::string & url) { return url.find("XAG/EUR") != std::string::npos ? failed(500) : answerPrices(url); };
+    http.answer = [](const std::string &) { return ok(fixture("prices.json")); };
     Said said;
-    GoldPriceSource source(std::chrono::minutes(2), std::chrono::milliseconds(0));
-    source.load(*store, http, said);
+    GoldPriceSource().load(*store, http, said);
     const auto s = store->snapshot();
-    const InstrumentId silver = *s->findInstrument("XAG");
-    CHECK(s->edges(*s->findMarket(kNoMarket)).size() == 13 && s->findInstrument("ETH"));  // only that one price is missing
-    CHECK(said.messages.size() == 1 && said.messages[0].find("XAG/EUR: HTTP 500") != std::string::npos && silver.valid());
+    key = {*s->findInstrument("XAU"), *s->findInstrument("USD"), *s->findMarket(kNoMarket), *s->findDataset(kGoldPriceDataset)};
+  }
+};
+
+}  // namespace
+
+TEST(the_bars_of_an_edge_are_asked_by_its_symbol_and_currency_for_the_days_the_plan_has) {
+  Edge edge;
+  GoldPriceHistory history;
+  FakeHttp http;
+  http.answer = [](const std::string &) { return ok(fixture("bars-XAU-USD.json")); };
+  CHECK(history.load(*edge.store, http, edge.key, 0, [] { return true; }) == HistoryProvider::Outcome::Ok);
+  CHECK(http.urls.size() == 1 && http.urls[0].rfind("https://api.goldprice.dev/v1/bars?symbol=XAU/USD&interval=1d&from=", 0) == 0);
+  CHECK(edge.store->snapshot()->candles(edge.key, Resolution::Day).candles.size() == 4);  // the three days and today's spot bar
+  // The day and the week are intraday, which the plan has none of; the others read daily bars.
+  const auto s = edge.store->snapshot();
+  CHECK(!history.need(*s, edge.key, Period::Day) && !history.need(*s, edge.key, Period::Week));
+  CHECK(history.need(*s, edge.key, Period::Month) && history.need(*s, edge.key, Period::Quarter) && history.need(*s, edge.key, Period::Year));
+}
+
+TEST(a_page_with_a_cursor_is_followed_and_what_the_plan_refuses_is_missing_not_refused) {
+  Edge edge;
+  GoldPriceHistory history;
+  int n = 0;
+  FakeHttp http;
+  http.answer = [&](const std::string & url) {
+    n++;
+    if (n == 1) return ok(R"({"bars":[{"bar_start":"2026-11-24T00:00:00Z","close":"5"}],"next_cursor":"c1"})");
+    CHECK(url.find("&cursor=c1") != std::string::npos);
+    return ok(R"({"bars":[{"bar_start":"2026-11-23T00:00:00Z","close":"4"}],"next_cursor":null})");
+  };
+  CHECK(history.load(*edge.store, http, edge.key, 0, [] { return true; }) == HistoryProvider::Outcome::Ok && n == 2);
+  CHECK(edge.store->snapshot()->candles(edge.key, Resolution::Day).candles.size() == 3);
+  using Outcome = HistoryProvider::Outcome;
+  for (auto [answer, outcome] : {std::pair{failed(403), Outcome::Missing}, {failed(404), Outcome::Missing}, {ok(R"({"bars":[],"next_cursor":null})"), Outcome::Missing},
+                                 {ok("not json"), Outcome::Missing}, {failed(429), Outcome::Refused}, {failed(0), Outcome::Offline}, {failed(503), Outcome::Offline}}) {
+    Edge other;
+    FakeHttp refusing;
+    refusing.answer = [&, a = answer](const std::string &) { return a; };
+    CHECK(history.load(*other.store, refusing, other.key, 0, [] { return true; }) == outcome);
   }
 }
 
-TEST(an_answer_for_another_symbol_or_currency_or_no_price_is_not_taken_for_the_one_asked) {
+TEST(of_two_sources_of_one_spot_the_newest_bar_wins_and_on_the_same_day_the_row_the_file_names_first) {
   auto store = makeMemoryStore();
   FakeHttp http;
+  Said said;
+  // goldprice.dev: gold 3479.11 USD on the 25th; gold-api.com: its own on the 25th.
+  http.answer = [](const std::string &) { return ok(fixture("prices.json")); };
+  GoldPriceSource().load(*store, http, said);
+  const auto day = [&](const char * dataset) {
+    const auto s = store->snapshot();
+    return s->lastCandles({*s->findInstrument("XAU"), *s->findInstrument("USD"), *s->findMarket(kNoMarket), *s->findDataset(dataset)}, Resolution::Day, 1).candles.back().time;
+  };
+  CHECK(day(kGoldPriceDataset) == dayNumber(2026, 11, 25));
   http.answer = [](const std::string & url) {
     if (url.find("/symbols") != std::string::npos) return ok(R"([{"name":"Gold","symbol":"XAU"}])");
-    if (url.find("XAU/EUR") != std::string::npos) return ok(priceBody("XAU", "Gold", "USD", 3600));      // the wrong currency
-    return ok("<html>maintenance</html>");
+    const std::string currency = url.substr(url.rfind('/') + 1);
+    return ok("{\"currency\":\"" + currency + "\",\"name\":\"Gold\",\"price\":3400.0,\"symbol\":\"XAU\",\"updatedAt\":\"2026-11-25T14:19:44Z\"}");
   };
-  Said said;
-  GoldPriceSource source(std::chrono::minutes(2), std::chrono::milliseconds(0));
-  source.load(*store, http, said);
-  CHECK(!store->snapshot()->findInstrument("XAU") && said.messages.size() == 2);
-  CHECK(said.messages[0].find("the answer is for XAU/USD") != std::string::npos && said.messages[1].find("not a price") != std::string::npos);
-}
-
-TEST(a_failed_symbols_request_uses_the_list_from_before_and_with_none_says_so) {
-  auto store = makeMemoryStore();
-  FakeHttp http;
-  bool down = true;
-  http.answer = [&](const std::string & url) { return down && url.find("/symbols") != std::string::npos ? failed(503) : answerPrices(url); };
-  Said said;
-  GoldPriceSource source(std::chrono::minutes(2), std::chrono::milliseconds(0));
-  source.load(*store, http, said);
-  CHECK(http.urls.size() == 1 && said.messages.size() == 1 && said.messages[0].find("symbols: HTTP 503") != std::string::npos);
-  down = false;
-  source.load(*store, http, said);
-  CHECK(store->snapshot()->findInstrument("XPT"));
-  down = true;
-  said.messages.clear();
-  source.load(*store, http, said);  // the list is not there, the prices of the one before are asked for again
-  CHECK(said.messages.size() == 1 && said.messages[0].find("using the list from before") != std::string::npos);
-  CHECK(source.refreshInterval() == std::chrono::minutes(2) && source.datasetCodes() == std::vector<std::string>{kGoldPriceDataset} && source.name() == "goldprice");
-}
-
-TEST(the_gold_estimate_is_made_in_euros_and_in_dollars_from_gold_api_com_and_beats_the_other_spot) {
-  auto store = makeMemoryStore();
-  // Nordnet's gold, in dollars only, a little different; and gold-api.com's, in both.
-  InstrumentId usd = store->addInstrument("USD", "US dollar", InstrumentKind::Currency), eur = store->addInstrument("EUR", "Euro", InstrumentKind::Currency);
-  InstrumentId kulta = store->addInstrument("GOLD", "Kulta", InstrumentKind::Commodity, "XC0009655157");
-  MarketId none = store->addMarket(kNoMarket, "No market");
-  DatasetId nordnet = store->addDataset("nordnet");
-  const EdgeKey spot{kulta, usd, none, nordnet};
-  const int64_t day = dayNumber(2026, 11, 24);
-  store->appendCandles(spot, Resolution::Day, {{day, kUndefined, kUndefined, kUndefined, 3500, kUndefined}});
-  store->setListing({spot, "GOLD", "", "", "COMMODITY", "Kulta"});
-  FakeHttp http;
-  Said said;
+  GoldApiSource(std::chrono::minutes(2), std::chrono::milliseconds(0)).load(*store, http, said);
   PhysicalTable table;
   std::string error;
-  CHECK(parsePhysicalTable("spot,gold,XAU\nspot,gold,GOLD\nitem,gold,GOLDBAR,Gold bar (1 g fine),0.0321507466,0.97,1.04\nitem,gold,GOLDCOIN,Gold coin (1 oz fine),1,0.98,1.08\n", table, error));
+  CHECK(parsePhysicalTable("spot,gold,XAU,GOLDPRICE\nspot,gold,XAU,GOLDAPI\nitem,gold,GOLDCOIN,Coin,1,1,1\n", table, error));
   PhysicalSource estimate(table);
-  // Before gold-api.com has answered: Nordnet's dollars only.
+  const auto coin = [&](const char * currency) {
+    const auto s = store->snapshot();
+    const DatasetId data = *s->findDataset(kPhysicalDataset);
+    return s->lastCandles({*s->findInstrument("GOLDCOIN"), *s->findInstrument(currency), *s->findMarket(kOffExchange), data}, Resolution::Day, 1).candles.back().close;
+  };
   estimate.load(*store, http, said);
-  auto s = store->snapshot();
-  const MarketId off = *s->findMarket(kOffExchange);
-  CHECK(s->edges(off).size() == 2);
-  GoldPriceSource prices(std::chrono::minutes(2), std::chrono::milliseconds(0));
-  http.answer = answerPrices;
-  prices.load(*store, http, said);
+  CHECK(std::abs(coin("USD") - 3479.11) < 1e-9);  // the same day: the first row of the file
+  // goldprice.dev stops answering and gold-api.com goes on into the 26th: its newer bar wins whatever the order.
+  http.answer = [](const std::string & url) {
+    if (url.find("/symbols") != std::string::npos) return ok(R"([{"name":"Gold","symbol":"XAU"}])");
+    const std::string currency = url.substr(url.rfind('/') + 1);
+    return ok("{\"currency\":\"" + currency + "\",\"name\":\"Gold\",\"price\":3500.0,\"symbol\":\"XAU\",\"updatedAt\":\"2026-11-26T08:00:00Z\"}");
+  };
+  GoldApiSource(std::chrono::minutes(2), std::chrono::milliseconds(0)).load(*store, http, said);
   estimate.load(*store, http, said);
-  s = store->snapshot();
-  CHECK(s->edges(off).size() == 4);  // the bar and the coin, each in euros and in dollars
-  const DatasetId estimateData = *s->findDataset(kPhysicalDataset);
-  const InstrumentId coin = *s->findInstrument("GOLDCOIN"), bar = *s->findInstrument("GOLDBAR");
-  const double inEuros = s->lastCandles({coin, eur, off, estimateData}, Resolution::Day, 1).candles.back().close;
-  const double inDollars = s->lastCandles({coin, usd, off, estimateData}, Resolution::Day, 1).candles.back().close;
-  CHECK(std::abs(inEuros - 3240 * 0.98) < 1e-6);     // gold-api.com's euros
-  CHECK(std::abs(inDollars - 3600 * 0.98) < 1e-6);   // and its dollars, not Nordnet's 3500
-  CHECK(std::abs(s->lastCandles({bar, eur, off, estimateData}, Resolution::Day, 1).candles.back().close - 3240 * 0.0321507466 * 0.97) < 1e-6);
-  // A portfolio in euros holds the bar and values it in euros directly, with no pair needed.
-  const PortfolioId p{portfolioKey(1)->value};
-  const DatasetId user = store->addDataset(kUserDataset);
-  store->setAttributes(NodeRef(p), {{predicate::name, "Gold"}, {predicate::currency, NodeKey{eur.value}}});
-  portfolio::Transaction t;
-  t.id = 1;
-  t.day = day - 5;
-  t.instrument = bar;
-  t.market = off;
-  t.quote = eur;
-  t.quantity = 100;
-  t.price = 3300 * 0.0321507466 * 1.04;
-  store->appendTransactions({p, user}, {t});
-  const auto after = store->snapshot();
-  const portfolio::Valuation v = portfolio::value(portfolio::holdings(*after, p).positions, *after, eur);
-  CHECK(v.rows.size() == 1 && v.rows[0].rate && *v.rows[0].rate == 1.0 && !v.incomplete);
-  CHECK(v.rows[0].value && std::abs(*v.rows[0].value - 100 * 3240 * 0.0321507466 * 0.97) < 1e-4);
-}
-
-TEST(a_sample_of_physical_platinum_is_priced_from_the_platinum_spot_in_both_currencies_and_gold_is_not_touched) {
-  auto store = makeMemoryStore();
-  FakeHttp http;
-  Said said;
-  PhysicalTable shipped;
-  std::string error;
-  CHECK(loadPhysicalTable(shipped, error));  // the file the program ships with
-  PhysicalSource estimate(shipped);
-  // Only gold has a price at first (the other spot has not answered): the platinum is waited for, the gold is not.
-  GoldPriceSource prices(std::chrono::minutes(2), std::chrono::milliseconds(0), {"EUR", "USD"});
-  http.answer = [](const std::string & url) { return url.find("XPT") != std::string::npos ? failed(500) : answerPrices(url); };
-  prices.load(*store, http, said);
-  estimate.load(*store, http, said);
-  auto s = store->snapshot();
-  const MarketId off = *s->findMarket(kOffExchange);
-  CHECK(s->edges(off).size() == 4 && !s->findInstrument("PLATBAR"));
-  http.answer = answerPrices;
-  prices.load(*store, http, said);
-  estimate.load(*store, http, said);
-  s = store->snapshot();
-  CHECK(s->edges(off).size() == 6);  // the gold bar, the gold coin and the platinum bar, each in euros and in dollars
-  const DatasetId data = *s->findDataset(kPhysicalDataset);
-  const InstrumentId bar = *s->findInstrument("PLATBAR"), eur = *s->findInstrument("EUR"), usd = *s->findInstrument("USD");
-  CHECK(s->name(NodeRef(bar)) == "Platinum bar (1 g fine)" && s->kind(bar) == InstrumentKind::Commodity && portfolio::tradable(*s, EdgeKey{bar, eur, off, data}));
-  const double gram = 0.0321507466;
-  CHECK(std::abs(s->lastCandles({bar, eur, off, data}, Resolution::Day, 1).candles.back().close - 1300 * 0.9 * gram * 0.93) < 1e-6);
-  CHECK(std::abs(s->lastCandles({bar, usd, off, data}, Resolution::Day, 1).candles.back().close - 1300 * gram * 0.93) < 1e-6);
-  // The gold bar is the gold's, not the platinum's.
-  const InstrumentId goldBar = *s->findInstrument("GOLDBAR");
-  CHECK(std::abs(s->lastCandles({goldBar, usd, off, data}, Resolution::Day, 1).candles.back().close - 3600 * gram * 0.97) < 1e-6);
-}
-
-TEST(a_metal_has_the_isin_of_its_commodity_and_is_the_instrument_another_source_made_by_it) {
-  auto store = makeMemoryStore();
-  // Nordnet's list was there first: gold by its ISIN, called Kulta.
-  const InstrumentId nordnetGold = store->addInstrument("", "Kulta", InstrumentKind::Commodity, "XC0009655157", "COMMODITY");
-  FakeHttp http;
-  http.answer = answerPrices;
-  Said said;
-  GoldPriceSource source(std::chrono::minutes(2), std::chrono::milliseconds(0));
-  source.load(*store, http, said);
-  const auto s = store->snapshot();
-  // The same instrument: one gold, with its name and type as they were said, and the prices of both sources on it.
-  CHECK(s->findInstrumentByIsin("XC0009655157") == std::optional<InstrumentId>(nordnetGold) && s->findInstrument("XAU") == std::optional<InstrumentId>(nordnetGold));
-  CHECK(s->name(NodeRef(nordnetGold)) == "Kulta" && s->said(NodeRef(nordnetGold), predicate::type) == "COMMODITY");
-  const MarketId none = *s->findMarket(kNoMarket);
-  CHECK(s->edges(none).size() == 14 && s->hasCandles({nordnetGold, *s->findInstrument("EUR"), none, *s->findDataset(kGoldPriceDataset)}, Resolution::Day));
-  // Every symbol has a real (valid) ISIN, the ones source/KnownIsins.h names, and none is one of ours: there is no second gold, and the coins are not private.
-  for (auto [symbol, isin] : {std::pair{"XAU", "XC0009655157"}, {"XAG", "XC0009653103"}, {"XPT", "XC0009665545"}, {"XPD", "XC0009665529"}, {"HG", "XC0005705501"},
-                              {"BTC", "XTV15WLZJMF0"}, {"ETH", "XTD5RG2FHH04"}}) {
-    CHECK(isValidIsin(isin) && s->isin(*s->findInstrument(symbol)) == isin && std::string(isin).rfind("ZZ", 0) != 0);
-  }
+  CHECK(std::abs(coin("USD") - 3500.0) < 1e-9);
+  // A row naming a dataset the store has not is skipped, and a bad row is said.
+  CHECK(!parsePhysicalTable("spot,gold,XAU,A,B\nitem,gold,GOLDCOIN,Coin,1,1,1\n", table, error) && error.find("spot,METAL,SYMBOL") != std::string::npos);
 }

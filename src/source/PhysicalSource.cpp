@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cmath>
 #include <map>
+#include <optional>
 #include <fstream>
 #include <sstream>
 
@@ -56,11 +57,11 @@ bool parsePhysicalTable(const std::string & text, PhysicalTable & table, std::st
     const std::vector<std::string> f = fields(line);
     const std::string where = "line " + std::to_string(n) + ": ";
     if (f[0] == "spot") {
-      if (f.size() != 3 || f[1].empty() || f[2].empty()) {
-        error = where + "a spot row is spot,METAL,SYMBOL";
+      if ((f.size() != 3 && f.size() != 4) || f[1].empty() || f[2].empty()) {
+        error = where + "a spot row is spot,METAL,SYMBOL[,DATASET]";
         return false;
       }
-      table.spots.push_back({f[1], f[2]});
+      table.spots.push_back({f[1], f[2], f.size() == 4 ? f[3] : std::string()});
     } else if (f[0] == "item") {
       if (f.size() != 7 && f.size() != 8) {
         error = where + "an item row is item,METAL,SYMBOL,NAME,OUNCES,BID,ASK[,ICON_SYMBOL]";
@@ -112,14 +113,17 @@ bool loadPhysicalTable(PhysicalTable & table, std::string & error) {
 
 void PhysicalSource::load(Store & store, Http &, SourceListener & listener) {
   const auto snapshot = store.snapshot();
-  // The spot prices there are, for each metal one for each currency they are in: of the symbols the file names for the metal, the first
-  // it names that has a price in that currency (the file puts the one with prices in both euros and dollars first).
+  // The spot prices there are, for each metal one for each currency they are in: the one with the newest bar (a source that has stopped
+  // answering is passed by the next, whatever the file's order), and of those of that day the first row of the file that names it (a symbol, and
+  // the dataset where the row names one); the file puts the one it trusts first.
   struct Spot {
     size_t rank;
     EdgeKey edge;
     Candle bar;
   };
   std::map<std::string, std::map<uint64_t, Spot>> spots;  // by the metal, then by the quote currency
+  std::vector<std::optional<DatasetId>> rowDatasets;     // the dataset each spot row names, if it does and the store has it
+  for (const auto & row : table_.spots) rowDatasets.push_back(row.dataset.empty() ? std::nullopt : snapshot->findDataset(row.dataset));
   if (const auto market = snapshot->findMarket(kNoMarket))
     for (const EdgeKey & key : snapshot->edges(*market)) {
       const auto listing = snapshot->listing(key);
@@ -128,9 +132,12 @@ void PhysicalSource::load(Store & store, Http &, SourceListener & listener) {
       if (last.candles.empty() || !isDefined(last.candles.back().close)) continue;
       for (size_t rank = 0; rank < table_.spots.size(); rank++) {
         if (table_.spots[rank].symbol != listing->symbol) continue;
+        if (!table_.spots[rank].dataset.empty() && (!rowDatasets[rank] || *rowDatasets[rank] != key.dataset)) continue;
         auto & of = spots[table_.spots[rank].metal];
         const auto found = of.find(key.quote.value);
-        if (found == of.end() || rank < found->second.rank) of[key.quote.value] = {rank, key, last.candles.back()};
+        const Candle & bar = last.candles.back();
+        const bool better = found == of.end() || bar.time > found->second.bar.time || (bar.time == found->second.bar.time && rank < found->second.rank);
+        if (better) of[key.quote.value] = {rank, key, bar};
       }
     }
   if (spots.empty()) {
