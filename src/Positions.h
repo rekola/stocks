@@ -42,7 +42,9 @@ class Positions : public cellui::TableModel {
   int rowCount() const override { return static_cast<int>(valuation_.rows.size()); }
   std::string text(int r, int c) const override;
   std::span<const float> trace(int r, int) const override;
+  std::span<const float> traceLight(int r, int) const override;
   std::shared_ptr<const cellui::TableIcon> icon(int r, int c) const override;
+  std::string iconFallback(int r, int c) const override;
   std::optional<cellui::Color> color(int r, int c) const override;
   std::optional<double> number(int r, int c) const override;
   // A position is of something that is traded, so every row has all three buttons (the default).
@@ -64,5 +66,6 @@ class Positions : public cellui::TableModel {
   Period period_ = kDefaultPeriod;
   portfolio::Valuation valuation_;
   std::string name_;
-  mutable std::unordered_map<int, std::vector<float>> traces_;
+  const PeriodView & traceOf(int r) const;  // the row's period view with its trace, kept while it is drawn
+  mutable std::unordered_map<int, PeriodView> traces_;
 };

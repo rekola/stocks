@@ -2,7 +2,7 @@
 
 Status: built as an immutable persistent store (`src/model/`: `Types.h`, `Store.h`, `MemoryStore.cpp`, tests in
 `tests/ModelTests.cpp`). The table shows what the store holds, filled by a data source (or made-up data) on a thread of its own.
-The order book, announcements and a universal scraper are not built yet.
+The order book and a universal scraper are not built yet.
 
 ## Goals
 
@@ -67,12 +67,19 @@ On an edge key (a price of something):
   different kind of fact, but under the same key. Quotes carry information even
   when nothing traded.
 
-On an event key `(instrument, dataset)` (something said about the company
-itself, so it has no market or quote currency):
+**News** is one more kind of fact, kept per dataset and about any nodes. An item is its dataset
+and the dataset's own id for it (what it is, so saying it again changes nothing and the store never
+replaces one by another: a dataset that gives duplicates under different ids cleans them up itself, and
+two datasets with one story have two items). It has a time, a headline, a body (the preview) and a url, a list of
+the nodes it is about (instruments, markets, countries, any node: none for the news of the world, which
+needs no node of its own) and attributes: its `kind` in the common vocabulary (`press-release`,
+`analysis`, `news`, as an instrument has its kind), the dataset's own `type`, `agency`, `language`. A selection of
+the news is made as one of the instruments is, by what it says under a predicate (a preset), and the
+newest first is the order. A country is a node (key kind four, its ISO alpha-2 code).
 
-- **Announcements**: time, category, headline, body, url. Press releases,
-  filings, profit warnings. Same time and headline replaces; same time with
-  another headline is a second announcement.
+On an event key `(instrument, dataset)` (something said about the company itself, so it has no market
+or quote currency):
+
 - **Corporate actions**: the ex-date, a kind (`Split`, `Dividend`, `Other`), a
   value (new shares per old for a split, amount per share for a dividend), the
   currency instrument of a dividend and a note. Same time and kind replaces.
@@ -107,9 +114,9 @@ Open: how a selection names "these markets", by a list of names or by a fact on 
 the preset file short, but then whose fact it is (which dataset says that a market is a commodity market) is the statements
 question in `server.md`.
 
-A row needs the instrument's symbol and name, the dataset, the latest price and
-the change over the last day (from `lastCandles` of the daily series; an edge with
-only intraday bars has no row yet), and the trace of recent closes. So the table gets a Dataset column. The row's identity is the edge key.
+A row needs the instrument's symbol and name, the dataset, the latest price (the edge's quote) and
+the change over the period shown and the trace of recent closes (both from the edge's queue: see "The summary"). An edge is
+a row once it has a last price or a daily queue, and one restored from disk with none of its data in memory is a row. So the table gets a Dataset column. The row's identity is the edge key.
 
 ## Store and snapshots
 
@@ -123,15 +130,16 @@ the in-memory one, and a server-backed store would hand out snapshots too.
 
 - Writes: `addInstrument`/`addMarket`/`addDataset` (by symbol or name: the
   record already there is returned), `appendCandles`, `appendBooks`,
-  `appendAnnouncements`, `appendActions`. Writers take a lock one at a time and
+  `appendNews`, `appendActions`. Writers take a lock one at a time and
   publish the new snapshot with one pointer swap; `snapshot()` never waits. A
   write that changes nothing publishes nothing, and each one that does makes the
   next `version()`.
 - Reads on a snapshot: lookups by id and name, `edges(market)` (keys with
-  candles or a book in a market), `candles(key, resolution, range)`,
-  `lastCandles(key, resolution, n)`, `resolutions(key)` (the resolutions an edge has),
-  `books(key, range)`, `bookAt(key, time)`, `announcements`, `actions`, and
-  `events(instrument)` for the datasets that say anything about an instrument.
+  a quote, a queue, candles or a book in a market), `candles(key, resolution, range)`,
+  `lastCandles(key, resolution, n)`, `resolutions(key)` (the resolutions an edge has; these read the data),
+  `quote(key)`, `queue(key, resolution)`, `coverage(key, resolution)`, `queues(key)` (these read the summary),
+  `books(key, range)`, `bookAt(key, time)`, `news(query)` (a time range, a node, a selection, newest first), `actions`, and
+  `events(instrument)` for the datasets that have actions for an instrument.
 - Series come back as `Seq<T>` (an immer `flex_vector`): slices share storage
   with the snapshot, and a reference into one is valid as long as it is held.
   Time ranges are half-open `[from, to)`, in seconds or in day numbers as the series is keyed.
@@ -199,6 +207,127 @@ everything else on them are not kept, and there is no server in this step.
   listing (the market whose `country` is the ISIN's first two letters) and from another listing only where none are said yet;
   Yahoo and the fund sources say them only where none are said yet. `kind` and `isin` are the same wherever they come from.
 
+## The summary
+
+**The summary is not the data.** The data is the series of bars a source writes (`Candle`, `appendCandles`, `Snapshot::candles()`): it
+stays in memory only, exactly as written, and nothing persists or changes it; it is what charting and the prediction models will read,
+with a store of their own. The summary is a separate record that the store keeps of each edge, for the tables, the sparklines and the
+portfolios, and it is the only thing kept on disk about prices. No reader of the data reads a summary, or the opposite.
+
+An edge's summary is its **quote** and, for each resolution, a **queue**:
+
+- The **quote** is the last price, the bid and the ask, and the one time (seconds, UTC) they are for. A provider that gives only a last
+  price, or none, leaves the rest undefined.
+- A **queue** is the bars that the periods using a resolution show: time-ordered, a bar at a time already there replaces it, a new time is
+  pushed, and bars older than the window are popped from the old end. There is no downsampling and no base bar. The window is measured back
+  from the *last bar* of that resolution, not from the clock, so the day's sparkline on a Sunday is Friday's session. How long it is is the
+  provider's knowledge (`HistoryProvider::keep(Resolution)`).
+
+Two packed forms are kept, little-endian, chosen by the kind of the edge's instrument (`queueKindOf()`):
+
+| record | for | bytes | fields |
+|---|---|---|---|
+| candle | everything but a fund and an index | 28 | `uint32 slot`, `double open`, `float high, low, close` (each the difference from the open), `uint32 volume` |
+| value | a fund's NAV, an index's value | 12 | `uint32 slot`, `double value` |
+
+`slot` is the bar's key as the model has it (a slot number for an intraday resolution, a day number for a date resolution). A volume of 0
+is no volume, a larger one saturates at 4294967295 and a fraction is rounded; a bar with no open takes its close as its base, with its high
+and low undefined; an undefined delta is NaN. A value record is read back as a bar whose open, high, low and close are the value and whose
+volume is undefined. A bar is read back as a `Candle` with the sum in a double, and `summary::normalized()` is what any bar reads back as, so
+"the same bar again" is decided on the stored form: a refresh that brings the same bars makes no version and no disk write. A bar whose key
+does not fit 32 bits, or with no close, is not in a queue (it stays in the data).
+
+- **Layers** (`src/model/`): `Summary.h` has the plain records (`Quote`, `StoredEdge`, `StoredQueue`, `SummaryBatch`) and the interfaces,
+  `SummaryStore` (one dataset: `loadEdges()` is every edge with its listing, quote, close before the session and the coverage of each queue
+  — when it was fetched, the keys of its first and last bar, the count — in one query and no bars; `readQueue(edge, resolution)`; `apply(batch)`
+  as one transaction) and `SummaryStores` (the store for a dataset's code, and which exist), which a server-backed store can implement
+  instead. None throws: one that cannot read or write says so through its log and carries on. `SummaryRecords.h` has the two records and
+  the rules for a queue's bars (`put`, `trim`, `fold`). `SummaryWriter` takes batches from the store and gives them to the stores on a thread
+  of its own, so a write never waits for the disk: what is waiting is one row per edge and one blob per (edge, resolution), the last said, and
+  the edges go after `delay` (200 ms: a quote is small) and the queues after `queue_delay` (a minute: a list that says every daily queue again every few
+  minutes would write tens of megabytes each time, so what is said meanwhile is one write); the destructor and `flush()` write everything waiting. `SqliteSummaryStore` (SQLiteCpp, behind
+  `openSqliteSummaryStore()`, in no header) is the SQLite one.
+- **A queue put or merged.** A queue the store holds in memory is *put*, replacing the one in the file. One it does not hold (it is on the
+  disk only, not read yet) cannot be replaced without reading it, so a source's bars for it are *merged*: the writer folds them into what is
+  waiting for the same queue, and the SQLite store merges them into the blob on its own thread (the bars put in, the window cut from the last
+  bar). The store therefore never reads the disk to say a bar.
+- **The files**: one per dataset, `summaries/<dataset code>.sqlite` in the user data directory beside `facts.sqlite` (`--summaries DIR`
+  chooses another directory, `--no-summaries` runs without). Tables `edges` (one row per edge: its base, quote and market as node keys; symbol,
+  identifier, order book, type and name of the listing; last, bid, ask and quote time, NULL where not said; the close before the session and the
+  day it was said for) and `queues` (one row per edge and resolution: kind, when it was fetched, count, keys of the first and last bar, a digest of the last bar's record, and
+  the blob: a version byte, a kind byte and the records). WAL mode, the schema in `PRAGMA user_version` (2); a file of another schema is emptied
+  and started over, a damaged one moved aside (`.bad-<time>`), with the same messages as the facts store. Writes use one connection and reads
+  another, so a read never waits for a batch to be written.
+- **Writes derive it.** `appendCandles` writes the bars to the data, as given, and updates the queue of their resolution: a bar at a
+  time already there replaces it, a new time is pushed and bars older than the window are popped, the window being what the provider
+  keeps for the resolution (`HistoryProvider::keep()`, handed to the store by `Store::setRetention()` when the loader is given the
+  provider; for a source with none, the longest period `Period.cpp` lists for the resolution: a day for the intraday ones, a week for
+  the hourly, a year for the daily and the weekly; an adapter that knows its requests says its own: the market-data adapter keeps a day of 5-minute
+  bars, a week of hourly, three months of daily and a year of weekly). A resolution no period reads has no queue. The adapters write no summary: a source that has a price says it with
+  `setQuote()` (an adapter whose lists give a price block says its last price, bid and ask and the tick time); a source that gives only bars still gives a price, since a bar
+  newer than the quote sets the quote's last price to its close and its time to the bar's, and a bar older does not overwrite it. A
+  bar's time is the start of its slot, or midnight UTC of its day; a quote's time is the tick's, so a list's quote of today stands over
+  the bars of today. The newest quote says: one said with an earlier time than the quote there is left out.
+- **What is read.** `Snapshot::quote(edge)` and `queue(edge, resolution)` (the decoded bars, oldest first), and `coverage()`, which
+  says what the file has of a queue that is not in memory (when it was fetched, the keys of its first and last bar, the count). The table's
+  price is the quote's last price; the change over a period is the last price against the first bar of the period's queue (there is no
+  base bar, so it moves a little as bars are popped); the sparkline is the queue's closes and then the last price. What `Period.cpp` keeps
+  of its rules is in "Periods" below. A row whose queue is not in memory shows its price and no trace until it is read.
+- **On demand.** At start only `loadEdges()` is read, and a portfolio is valued from the quotes with no network. `Store::want(series)`
+  (called by `HistoryLoader::want`, so by the path the Browser uses for the rows on screen and a margin) says which queues are wanted;
+  those not in memory are read by a thread of the store's own, in batches, and published into the store as one write: a new version
+  (the table redraws on a version, and a trace appears), nothing written back, and a snapshot already held keeps what it had. Reading
+  a cell never waits for the disk. A bar a source writes for a queue that is only on the disk is kept beside it and *merged* on the
+  disk by the writer, and when the queue is read what was said wins. The loader asks the summary before the network: a queue that is
+  in the file, whose `fetched` is inside the provider's `lifetime` and which covers the period costs no request (`periodCovered()`, which reads
+  coverage); the answer, which is data, feeds the queue as `appendCandles` derives it.
+- **When it was fetched.** `fetched` is when a fetch last went through for the queue: it moves when bars change it and, to within the recheck interval
+  (an hour), when a fetch brings the same bars, with no version and a write of that time alone, as a fact said again is. A queue is therefore not
+  asked for again at every start on a day nothing moves.
+- **The first refresh after a start.** The edges' queues are on the disk only, so bars said for them cannot be compared with what is there; the file keeps
+  a digest of each queue's last bar (`QueueCoverage::last_hash`), and the last bar said again unchanged (what a list says every few minutes) is
+  recognised by its key and digest and writes nothing. A fetch of many bars is merged; one for a queue in memory is compared with it.
+- **Eviction.** Above `StoreOptions::queue_budget` (32 MiB by default: 48 bytes a bar, some 700,000 bars, where a screen of rows with a
+  margin is a few thousand), the queues in memory that were wanted the longest ago are dropped, down to nine tenths of the budget; the
+  quote of an edge always stays, the file has the queue, and what is wanted now (the rows on screen and the margin, which are the rows
+  of a portfolio shown too) is not dropped from under the reader. A queue wanted again is read again. A store with no summary files drops nothing.
+
+- **Periods** (`Period.cpp`, on the queues). A period reads the queues of the resolutions that feed it (`readsOf()`); where the rules
+  are the same as before they work on the queue's bars, decoded to `Candle`s, and what changed is here:
+  - *The last price* was the latest daily bar's close where that bar was as new as the series; it is now the quote's last price, which the
+    store keeps at least as new as every bar it was given, and with no quote the last bar's close. The trace ends with it as before. A daily
+    bar is dated by its day, which is no time of it, so the newest word of a day is the source's quote (the list's, with its tick time) or a
+    bar later in the day, not the daily bar.
+  - *The base* is the first bar of the period's window of the queue: the month and the quarter are cut from the same daily queue (30 and
+    90 days back from its last bar; the queue keeps 92), the week from the hourly one, the year from the weekly one. A period is shown only
+    from bars that reach back within a third of it, as before. There is no base bar, so the change moves a little as bars are popped.
+  - *The day* is the last session in the queue of the finest resolution that has one, whose bars are those of that session's UTC date
+    (the queue's window of a day reaches into the one before), with the close before the session (`previousClose`, only for the day it
+    was said for, kept on disk with the quote) as the base, else the last daily bar before the session. A session older than the
+    daily queue's last bar is not shown. With no intraday queue the base is the last daily bar before the day of the price, where it
+    was the previous one only when there were exactly two daily bars.
+  - *A fund's NAV* is a bar of one value; its day and week are the quarter's queue as before.
+  - *What the loader asks* (`periodCovered()`): whether the queues cover the period is read from their coverage (the key of the first and
+    the last bar, which a queue on the disk has), not from the bars, so the first bar of the window is the queue's first.
+- **Start-up.** `StoreOptions::Restore::InBackground` (the program's): the store is made at once, with the user's own portfolios (a small
+  file of their own), and a thread of its own reads the rest in chunks, each published as it is read: first what the portfolios hold (the
+  facts of their instruments, markets and currencies, the listings and quotes of their edges and of the edges from the currencies they are valued
+  through), then every other edge in chunks of 2,000, the facts of the nodes it ends in before the edge itself, so a row never shows before
+  its name. After each chunk the UI is told (`StoreOptions::changed`), and redraws at the rate it always has. `Store::restoring()` and
+  `waitRestored()` say when it ends; with `Restore::Now` (the default: the tests) the same code runs before the constructor returns.
+  - A source that writes meanwhile does not wait for it and is not lost: what it said is newer than what the disk has and stands (a fact
+    said is kept and the disk adds the facts it did not say; a quote with a later time stands; a bar said for a queue that is on the disk
+    is merged into it when it is read). A queue a source writes before the file's own is known is held as pending, and the queues the files
+    turn out to have none of are settled when the last chunk is in.
+  - An instrument that gets its first edge from a source has the facts the disk kept of it read then, on the reader's thread, and what the source has
+    said stands (`Store::restoring()` is true until they are in, and the details loader waits for it, so that what an earlier run fetched is not fetched again).
+  - Restoring makes no node that has no edge: the facts read are those of the nodes that an edge ends in (its instrument, quote, market and
+    dataset) and of what the portfolios hold, found by key (`FactStore::loadNodes`); an instrument with facts and no edge is left on
+    the disk, nothing selects it and a source says it again. Where no summaries are kept there are no edges, and all the facts are read. A
+    fact keeps the `updated` the disk had, and what is read is not written back.
+  - `Snapshot::load` is a bulk build: the attributes of all the nodes of a chunk are put in on a transient, and the lookup index of each
+    text and link is added to once for all the nodes that say it, where one fact at a time made a new path of the map for each.
+
 ## Node keys
 
 A node has no record of its own: it is its **key** (`src/model/NodeKey.h`), the same number in every run, and what is said of it
@@ -220,8 +349,13 @@ low sixty (country 4 and attribute 6 are planned, 5 is the portfolio, and 7 is a
 | 5 | portfolio | sixty random bits, minted when the user makes one; in text a `P` and fifteen hex digits (`mintPortfolioKey()`, `portfolioKey()`) |
 
 - **An instrument is an ISIN**, or a currency or a unit. An index, a fund or a commodity is an instrument like a share, with an
-  ISIN: no kind of its own. One given no ISIN that is not a currency or a unit is given one of ours (`ZZ` and nine characters, made
-  from its symbol or else its name, `privateIsin()`); one that cannot be keyed, or whose ISIN is not valid, is refused and told of
+  ISIN: no kind of its own. One given no ISIN that is not a currency or a unit gets it from its adapter: the ISINs an
+  adapter supplies (what its source gives none for, and the physical items) are named constants in `src/source/KnownIsins.h`, the real ones where
+  there is one (zinc `XC0005705584`, lead `XC0005705527`, the BRIC 50 India index `US26075E1047`) and else ours, `ZZ` (the user-assigned code element
+  of ISO 3166, in which no numbering agency issues ISINs), nine digits numbered on from 1 and the check digit. An adapter names the constant, so a
+  missing one does not compile; `static_assert`s make an invalid ISIN, a repeated ISIN and a gap in the numbering fail to compile too, and the head of
+  the file says how to add one. Nothing is made up from a text: the program's store refuses an instrument that comes with none
+  (`StoreOptions::invent_isins` off) and the status line says so; a store left to invent (the tests) numbers them as they come, from `ZZ999999999` down. One that cannot be keyed, or whose ISIN is not valid, is refused and told of
   (`StoreOptions::notice`), and what is said of an edge with a part that was refused is said of nothing.
 - **A market is its MIC**, which never changes, so nothing is minted and nothing is looked up by a name or a provider's id: a source
   that has only an id for a market maps it to a MIC (Nordnet: `KnownMarkets`) and leaves out what it cannot map, saying so. A code
@@ -394,7 +528,7 @@ Not done:
   edges by type is not used yet (see server.md for what is hard about it).
 
 - Prices are `double`. Nothing here settles trades.
-- The model has a slot for corporate actions and announcements, kept as their
+- The model has a slot for corporate actions and news, kept as their
   own series (above). Prices are stored as reported; adjusting for splits and
   dividends is computed from the corporate actions when a model asks, never
   written back over the bars.

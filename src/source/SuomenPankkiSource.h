@@ -14,7 +14,7 @@ class SuomenPankkiSource : public Source {
  public:
   explicit SuomenPankkiSource(std::chrono::milliseconds refresh = std::chrono::hours(6)) : refresh_(refresh) {}
 
-  std::string name() const override { return "suomenpankki"; }
+  std::string name() const override { return "spfb"; }
   std::vector<std::string> datasetCodes() const override { return {kSuomenPankkiDataset}; }
   std::string description() const override { return "Bank of Finland: the daily Euribor rates, 1 week to 12 months (no key)"; }
   void load(Store &, Http &, SourceListener &) override;

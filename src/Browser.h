@@ -19,16 +19,16 @@
 
 // The screen: tags on the top row, the table filling what is between them
 // and the info and status lines, laid out again whenever the display changes size.
-// A **context** is a view of the store with its own tags, columns and model: Markets (the presets of edges, `Quotes`) and Portfolio (the
-// portfolios by name, and what the chosen one holds, `Positions`). Tab goes to the next context and Shift+Tab to the previous; the
+// A **context** is a view of the store with its own tags, columns and model: Markets (the presets of edges, `Quotes`), Portfolio (the
+// portfolios by name, and what the chosen one holds, `Positions`) and News (the presets of news by its kind, newest first, `NewsTable`). Tab goes to the next context and Shift+Tab to the previous; the
 // period tags stay and apply to both, and each context keeps its own tag, sort and scroll position while the program runs.
 // The period tags at the right end of that row choose the period the Change and the trace columns show (the headings
 // name it); it is one for every row, and kept while the session runs.
 // Commands (named, run by a key or from the application's command palette) do what
 // the keys and the mouse do: show a preset, choose a period, move the focus, quit. A click on a
 // heading sorts by it. The status line is the echo area.
-enum class Context { Markets, Portfolio };
-inline constexpr size_t kContextCount = 2;
+enum class Context { Markets, Portfolio, News };
+inline constexpr size_t kContextCount = 3;
 
 class Browser {
  public:
@@ -60,6 +60,9 @@ class Browser {
   void showPreset(int i);
   // The positions of the `i`th portfolio of the tags.
   void showPortfolio(int i);
+  // The news of the `i`th news preset.
+  void showNews(int i);
+  void refreshNews(std::shared_ptr<const Snapshot>);
   // What a tag stands for in the context shown.
   void showTag(int i);
   void showContext(Context);
@@ -77,6 +80,9 @@ class Browser {
   // The key a row is known by across refreshes (an edge in Markets, a position in Portfolio).
   std::optional<EdgeKey> selectedKey() const;
   int rowOfKey(const EdgeKey &) const;
+  // The same for the News context: an item is its dataset and its id.
+  std::string selectedNewsKey() const;
+  int rowOfNewsKey(const std::string &) const;
   // Tells the icon loader which rows are on screen and near it: those first, then the screens after and before.
   void requestIcons();
   // Shows `period` in the change and the trace columns, their headings and the period tags.
@@ -136,6 +142,7 @@ class Browser {
   cellui::StatusLine status_;
   uint64_t shown_version_ = 0;  // of the snapshot the table shows
   int shown_preset_ = -1;       // the preset the table shows
+  int shown_news_ = -1;         // the news preset the table shows
   Context context_ = Context::Markets;
   PortfolioId portfolio_;                    // the portfolio the Portfolio context shows
   std::vector<PortfolioId> portfolio_ids_;   // the portfolios, as the tags of the Portfolio context list them
@@ -148,6 +155,7 @@ class Browser {
     cellui::SortOrder sort_order = cellui::SortOrder::NONE;
     int first_position = 0;
     std::optional<EdgeKey> selected;
+    std::string news;  // the item selected in News
   };
   View views_[kContextCount];
   std::vector<Change> undo_, redo_;

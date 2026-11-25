@@ -76,7 +76,7 @@ FetchContent_MakeAvailable(SQLiteCpp)
 
 # The data model: plain values and the Store they live in. Knows nothing of the screen.
 add_library(stocks_model STATIC src/model/MemoryStore.cpp src/model/Isin.cpp src/model/Period.cpp src/model/NodeKey.cpp
-  src/model/FactWriter.cpp src/model/SqliteFactStore.cpp src/portfolio/Portfolio.cpp src/portfolio/Transaction.cpp)
+  src/model/FactWriter.cpp src/model/SqliteFactStore.cpp src/model/SummaryRecords.cpp src/model/SummaryWriter.cpp src/model/SqliteSummaryStore.cpp src/portfolio/Portfolio.cpp src/portfolio/Transaction.cpp)
 target_include_directories(stocks_model PUBLIC src)
 target_compile_features(stocks_model PUBLIC cxx_std_20)
 find_package(Threads REQUIRED)
@@ -85,9 +85,9 @@ target_link_libraries(stocks_model PUBLIC immer Threads::Threads)
 target_link_libraries(stocks_model PRIVATE SQLiteCpp nlohmann_json::nlohmann_json)
 
 # The browser: the screen, its commands and the rows it shows, as a library so the tests can drive it.
-add_library(stocks_lib STATIC src/Browser.cpp src/BrowserPortfolio.cpp src/Positions.cpp src/AttributeView.cpp src/Quotes.cpp src/Synthetic.cpp src/source/Http.cpp src/source/InstrumentLists.cpp
+add_library(stocks_lib STATIC src/Browser.cpp src/BrowserPortfolio.cpp src/Positions.cpp src/News.cpp src/AttributeView.cpp src/Quotes.cpp src/Synthetic.cpp src/source/Http.cpp src/source/InstrumentLists.cpp
   src/icons/IconLoader.cpp src/history/HistoryLoader.cpp src/source/NordnetHistory.cpp src/source/YahooSource.cpp src/source/NordnetSource.cpp src/source/SourceRunner.cpp src/source/DatasetCodes.cpp src/source/AutoSource.cpp
-  src/source/DataDirectory.cpp src/source/FundRows.cpp src/source/FundSource.cpp src/source/NordnetDetails.cpp src/source/Countries.cpp src/source/KnownMarkets.cpp src/source/SuomenPankkiSource.cpp src/source/EcbSource.cpp)
+  src/source/DataDirectory.cpp src/source/FundRows.cpp src/source/FundSource.cpp src/source/NordnetDetails.cpp src/source/Countries.cpp src/source/KnownMarkets.cpp src/source/NordnetNews.cpp src/source/SuomenPankkiSource.cpp src/source/EcbSource.cpp src/source/PhysicalSource.cpp src/source/GoldApiSource.cpp src/source/GoldPriceSource.cpp src/source/GoldPriceHistory.cpp)
 target_include_directories(stocks_lib PUBLIC src)
 target_link_libraries(stocks_lib PUBLIC cellui stocks_model httpclient::httpclient nlohmann_json::nlohmann_json pugixml::pugixml)
 target_compile_definitions(stocks_lib PUBLIC STOCKS_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
@@ -110,16 +110,35 @@ add_executable(stocks_frame_bench tools/FrameBench.cpp)
 target_link_libraries(stocks_frame_bench PRIVATE stocks_lib)
 add_executable(stocks_period_bench tools/PeriodBench.cpp)
 target_link_libraries(stocks_period_bench PRIVATE stocks_lib)
+# What start-up costs on a million facts and thirty thousand edges (run it in a Release build; see the file).
+add_executable(stocks_restore_bench tools/RestoreBench.cpp)
+target_link_libraries(stocks_restore_bench PRIVATE stocks_model)
 
 enable_testing()
 # The program starts, reads its command line through cellui and says what is wrong with it.
 add_test(NAME stocks_rejects_an_unknown_ui COMMAND stocks --ui nonesuch)
 set_tests_properties(stocks_rejects_an_unknown_ui PROPERTIES PASS_REGULAR_EXPRESSION "unknown --ui")
 
+# The benchmarks are built with everything else (above), and run here at a tiny size, so that a change to the store's interface
+# breaks a test and not a benchmark nobody runs. Their numbers mean nothing at this size; a crash or a missing line fails.
+add_test(NAME stocks_period_bench_smoke COMMAND stocks_period_bench 30)
+set_tests_properties(stocks_period_bench_smoke PROPERTIES PASS_REGULAR_EXPRESSION "30 rows, 60 daily bars each.*build.*reference.*year +period" TIMEOUT 60)
+add_test(NAME stocks_period_bench_full_smoke COMMAND stocks_period_bench 30 full)
+set_tests_properties(stocks_period_bench_full_smoke PROPERTIES PASS_REGULAR_EXPRESSION "30 rows, 60 daily \\+ 100 5m.*year +period" TIMEOUT 60)
+add_test(NAME stocks_frame_bench_smoke COMMAND stocks_frame_bench 30)
+set_tests_properties(stocks_frame_bench_smoke PROPERTIES PASS_REGULAR_EXPRESSION "PageDown.*present again.*store change" TIMEOUT 60)
+
+# The one-off script that moves a portfolio file's transactions from one ISIN to another (tools/rekey_isin.py).
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_Interpreter_FOUND)
+  add_test(NAME stocks_rekey_isin COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/tools/rekey_isin.py --selftest)
+  set_tests_properties(stocks_rekey_isin PROPERTIES PASS_REGULAR_EXPRESSION "rekey_isin: ok")
+endif()
+
 # The browser on a test display: keys in, what it shows out. cellui's test display
 # (TestBackend) is built where there is a POSIX event loop, so not on Windows.
 if(NOT WIN32)
-  add_executable(stocks_tests tests/test_main.cpp tests/BrowserTests.cpp tests/ModelTests.cpp tests/SourceTests.cpp tests/InstrumentListsTests.cpp tests/NordnetTests.cpp tests/HistoryTests.cpp tests/NordnetHistoryTests.cpp tests/DatesTests.cpp tests/IconTests.cpp tests/FundTests.cpp tests/DataDirectoryTests.cpp tests/FactTests.cpp tests/NodeKeyTests.cpp tests/NordnetDetailsTests.cpp tests/SuomenPankkiTests.cpp tests/EcbTests.cpp tests/PortfolioTests.cpp tests/PortfolioFileTests.cpp)
+  add_executable(stocks_tests tests/test_main.cpp tests/BrowserTests.cpp tests/ModelTests.cpp tests/SourceTests.cpp tests/InstrumentListsTests.cpp tests/NordnetTests.cpp tests/HistoryTests.cpp tests/NordnetHistoryTests.cpp tests/DatesTests.cpp tests/IconTests.cpp tests/FundTests.cpp tests/DataDirectoryTests.cpp tests/FactTests.cpp tests/NodeKeyTests.cpp tests/NordnetDetailsTests.cpp tests/NordnetNewsTests.cpp tests/SuomenPankkiTests.cpp tests/EcbTests.cpp tests/PortfolioTests.cpp tests/PortfolioFileTests.cpp tests/PhysicalTests.cpp tests/KnownIsinsTests.cpp tests/GoldApiTests.cpp tests/GoldPriceTests.cpp tests/SummaryTests.cpp tests/SummaryStoreTests.cpp)
   target_link_libraries(stocks_tests PRIVATE stocks_lib SQLiteCpp)  # the tests of the file make an old one with it
   add_test(NAME stocks_tests COMMAND stocks_tests)
   set_tests_properties(stocks_tests PROPERTIES TIMEOUT 60)

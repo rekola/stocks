@@ -10,3 +10,10 @@ inline constexpr const char * kEcbDataset = "ECB";  // the European Central Bank
 // Not a source: the dataset of what the user typed in herself, the transactions of a portfolio whose `ledger` says no other
 // (portfolio/Portfolio.h). A later import of a broker's export gets a dataset of its own.
 inline constexpr const char * kUserDataset = "user";
+// Not a provider's: the estimate of what the physical metals (a gold bar by the gram, a gold coin by the ounce, a platinum bar) are worth, made from
+// their spot prices and the factors in data/physical (PhysicalSource). A dealer's real list is a dataset of its own and wins where there is one.
+inline constexpr const char * kPhysicalDataset = "PHYSICAL";
+// gold-api.com (api.gold-api.com): the spot prices of metals (and a few coins) in dollars and euros, GoldApiSource.
+inline constexpr const char * kGoldApiDataset = "GOLDAPI";
+// goldprice.dev (api.goldprice.dev): the spot prices of gold, silver and copper in 31 currencies, and their daily bars, GoldPriceSource.
+inline constexpr const char * kGoldPriceDataset = "GOLDPRICE";

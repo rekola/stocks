@@ -32,7 +32,7 @@ int main(int argc, char ** argv) {
   const bool full = argc > 2 && std::string(argv[2]) == "full";
   auto store = makeMemoryStore();
   const InstrumentId usd = store->addInstrument("USD", "US dollar", InstrumentKind::Currency);
-  const MarketId market = store->addMarket("Nasdaq Helsinki");
+  const MarketId market = store->addMarket("XHEL", "Nasdaq Helsinki");
   const DatasetId dataset = store->addDataset("nordnet");
   const int64_t today = dayNumber(2026, 12, 1), dayStart = (today - kUnixEpochDayNumber) * 86400 + 7 * 3600;
   std::mt19937 rng(1);
@@ -98,12 +98,13 @@ int main(int argc, char ** argv) {
     // A frame.
     t = Clock::now();
     size_t sink = 0;
-    for (int r = 0; r < 50; r++) {
+    const int shown = std::min(50, quotes.rowCount());  // a table shorter than a screen has fewer rows to draw
+    for (int r = 0; r < shown; r++) {
       sink += quotes.text(r, Quotes::CHANGE).size() + quotes.trace(r, Quotes::HISTORY).size() + quotes.color(r, Quotes::CHANGE).has_value() +
               quotes.color(r, Quotes::HISTORY).has_value() + quotes.text(r, Quotes::PRICE).size();
     }
     const double frame = since(t);
-    std::printf("%-7s period %.3f ms, sorted by Change %.1f ms | refresh %.1f ms, sorted by Change %.1f ms | frame of 50 rows %.3f ms (%zu)\n",
-                info(period).id, choose, chooseSorted, refresh, refreshSorted, frame, sink);
+    std::printf("%-7s period %.3f ms, sorted by Change %.1f ms | refresh %.1f ms, sorted by Change %.1f ms | frame of %d rows %.3f ms (%zu)\n",
+                info(period).id, choose, chooseSorted, refresh, refreshSorted, shown, frame, sink);
   }
 }

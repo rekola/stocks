@@ -1,4 +1,5 @@
 #include "TestFramework.h"
+#include "source/KnownIsins.h"
 
 #include "model/Isin.h"
 #include "model/NodeKey.h"
@@ -66,12 +67,14 @@ TEST(an_isin_that_is_not_valid_has_no_key) {
   CHECK(!instrumentKey("1I0009000681"));  // a digit for a letter of the country
 }
 
-TEST(the_isins_we_make_ourselves_have_keys) {
-  for (const char * name : {"Zinc", "Lead", "Gold", "OMXH25", "Brent"}) {
-    const std::string isin = privateIsin(name);
-    CHECK(!isin.empty() && isin.rfind("ZZ", 0) == 0);
+TEST(the_isins_the_adapters_supply_have_keys) {
+  for (const char * isin : known_isin::kReal) {
     const auto key = instrumentKey(isin);
     CHECK(key && text(*key) == isin);
+  }
+  for (const char * isin : known_isin::kPrivate) {
+    const auto key = instrumentKey(isin);
+    CHECK(key && text(*key) == isin && std::string(isin).rfind("ZZ", 0) == 0);
   }
 }
 
@@ -132,6 +135,15 @@ TEST(keys_of_different_kinds_never_meet) {
   CHECK(all.size() == 4);
   CHECK(orNone(isin).kind() == NodeKind::Instrument && orNone(currency).kind() == NodeKind::Currency && market.kind() == NodeKind::Market &&
         orNone(dataset).kind() == NodeKind::Dataset);
+}
+
+TEST(a_country_is_its_two_letter_code_of_kind_four) {
+  const auto fi = countryKey("FI"), se = countryKey("SE");
+  CHECK(fi && se && fi->valid() && fi->kind() == NodeKind::Country && *fi != *se);
+  CHECK((fi->value >> 60) == 4 && fi->value < (uint64_t{1} << 63));
+  CHECK(text(*fi) == "FI" && text(*se) == "SE");
+  CHECK(!countryKey("fi") && !countryKey("F") && !countryKey("FIN") && !countryKey("F1") && !countryKey(""));
+  CHECK(*marketKey("FI01") != *fi);  // not another kind's key
 }
 
 TEST(a_portfolio_is_a_minted_key_of_kind_five_with_sixty_bits_of_identity) {

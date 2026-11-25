@@ -1,18 +1,29 @@
 #include "model/Store.h"
 
+#include "model/Dates.h"
 #include "model/Isin.h"
+#include "model/Period.h"
+#include "model/SummaryRecords.h"
 #include "portfolio/Portfolio.h"
 
+#include <immer/map_transient.hpp>
+#include <immer/set_transient.hpp>
+
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
+#include <deque>
 #include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <set>
 #include <stdexcept>
+#include <thread>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace {
 
@@ -75,9 +86,6 @@ bool sameLevels(const std::vector<BookLevel> & a, const std::vector<BookLevel> &
 }
 bool sameBook(const BookSnapshot & a, const BookSnapshot & b) {
   return sameNumber(a.time, b.time) && sameLevels(a.bids, b.bids) && sameLevels(a.asks, b.asks);
-}
-bool sameAnnouncement(const Announcement & a, const Announcement & b) {
-  return a.time == b.time && a.category == b.category && a.headline == b.headline && a.body == b.body && a.url == b.url;
 }
 bool sameAction(const CorporateAction & a, const CorporateAction & b) {
   return a.time == b.time && a.kind == b.kind && sameNumber(a.value, b.value) && a.currency == b.currency && a.note == b.note;
@@ -283,6 +291,7 @@ void Snapshot::setPreviousClose(const EdgeKey & k, int64_t day, double close) {
   const auto * p = previousClose_.find(k);
   if (p && *p == std::make_pair(day, close)) return;
   previousClose_ = previousClose_.set(k, {day, close});
+  dirtyEdges_.insert(k);
   version_++;
 }
 bool Snapshot::hasCandles(const EdgeKey & k, Resolution r) const {
@@ -311,10 +320,23 @@ std::optional<BookSnapshot> Snapshot::bookAt(const EdgeKey & k, double t) const 
   return *(after - 1);
 }
 
-Seq<Announcement> Snapshot::announcements(const EventKey & k, TimeRange r) const {
-  const auto * s = announcements_.find(k);
-  return s ? slice(*s, r) : Seq<Announcement>{};
+std::vector<NewsItem> Snapshot::news(const NewsQuery & q) const {
+  std::vector<NewsItem> out;
+  for (const auto & [dataset, items] : news_) {
+    const auto first = std::lower_bound(items.begin(), items.end(), q.range.from, [](const NewsItem & i, Timestamp t) { return i.time < t; });
+    for (auto it = first; it != items.end() && it->time < q.range.to; ++it) {
+      if (q.about && std::find(it->about.begin(), it->about.end(), *q.about) == it->about.end()) continue;
+      if (q.keep && !q.keep(*it)) continue;
+      out.push_back(*it);
+    }
+  }
+  std::sort(out.begin(), out.end(), [](const NewsItem & a, const NewsItem & b) {
+    return std::tie(b.time, a.dataset, a.id) < std::tie(a.time, b.dataset, b.id);  // newest first, then by dataset and id
+  });
+  if (q.limit && out.size() > q.limit) out.resize(q.limit);
+  return out;
 }
+size_t Snapshot::newsCount() const { return newsCount_; }
 Seq<CorporateAction> Snapshot::actions(const EventKey & k, TimeRange r) const {
   const auto * s = actions_.find(k);
   return s ? slice(*s, r) : Seq<CorporateAction>{};
@@ -337,25 +359,50 @@ namespace {
 StoredFact stored(uint64_t node, const Attribute & a) { return StoredFact{node, a.predicate, a.value, a.updated}; }
 }  // namespace
 
-void Snapshot::load(const std::vector<StoredFact> & facts) {
+void Snapshot::load(std::vector<StoredFact> facts) {
   std::unordered_map<NodeRef, std::vector<Attribute>> grouped;
-  for (const StoredFact & f : facts) {
+  grouped.reserve(facts.size() / 8 + 1);
+  for (StoredFact & f : facts) {
     const NodeKey key{f.node};
     if (!key.valid() || !says(f.value) || f.predicate.empty()) continue;
-    Attribute a(f.predicate, f.value);
+    Attribute a(std::move(f.predicate), std::move(f.value));
     a.updated = f.updated;
     grouped[refOf(key)].push_back(std::move(a));
   }
-  for (auto & [n, attrs] : grouped) {
-    for (const Attribute & a : attrs)
-      if (const auto value = indexedValue(a.value)) {
-        const std::string said = indexKey(n.type, a.predicate, *value);
-        const auto * ids = byAttribute_.find(said);
-        byAttribute_ = byAttribute_.set(said, (ids ? *ids : immer::set<uint64_t>{}).insert(n.id));
-      }
-    attributes_ = attributes_.set(n, std::move(attrs));
-    if (n.type == NodeType::Portfolio) settle(PortfolioId{n.id});
+  // Built in bulk, on transients: the node's attributes go in whole, and the index of each text and link is added to once for all the
+  // nodes that say it, not once for each fact.
+  auto attrs = attributes_.transient();
+  std::unordered_map<std::string, std::vector<uint64_t>> added;  // index key -> the nodes that say it
+  std::vector<PortfolioId> portfolios;
+  for (auto & [n, list] : grouped) {
+    const std::vector<Attribute> * old = attrs.find(n);
+    if (old) {
+      // A source has said something of the node since: that stands, and the disk adds what was not said.
+      std::vector<Attribute> merged = *old;
+      for (Attribute & a : list)
+        if (std::none_of(merged.begin(), merged.end(), [&](const Attribute & x) { return x.predicate == a.predicate; })) {
+          if (const auto value = indexedValue(a.value)) added[indexKey(n.type, a.predicate, *value)].push_back(n.id);
+          merged.push_back(std::move(a));
+        }
+      attrs.set(n, std::move(merged));
+    } else {
+      for (const Attribute & a : list)
+        if (const auto value = indexedValue(a.value)) added[indexKey(n.type, a.predicate, *value)].push_back(n.id);
+      attrs.set(n, std::move(list));
+    }
+    if (n.type == NodeType::Portfolio) portfolios.push_back(PortfolioId{n.id});
   }
+  attributes_ = attrs.persistent();
+  auto index = byAttribute_.transient();
+  for (auto & [key, ids] : added) {
+    const auto * existing = index.find(key);
+    auto nodes = (existing ? *existing : immer::set<uint64_t>{}).transient();
+    for (uint64_t id : ids) nodes.insert(id);
+    index.set(key, nodes.persistent());
+  }
+  byAttribute_ = index.persistent();
+  for (PortfolioId id : portfolios) settle(id);
+  if (!grouped.empty()) checks_++;  // published, but no version: restoring makes none
 }
 
 void Snapshot::setAttributes(NodeRef n, const std::vector<Attribute> & in) {
@@ -433,8 +480,9 @@ bool isCurrencyKind(const std::string & kind) { return kind == kindName(Instrume
 
 }  // namespace
 
-// An instrument is its ISIN; a currency or a unit its code; anything else that has no ISIN is given one of our own, made from its
-// symbol or else its name (isin.h), the way a thing is given a name nobody else uses. What cannot be given a key is refused.
+// An instrument is its ISIN; a currency or a unit its code; anything else that has no ISIN is numbered as it is
+// asked for, or refused where the store is told not to (`StoreOptions::invent_isins`: the program's adapters give their own ISINs, from
+// source/KnownIsins.h). What cannot be given a key is refused.
 InstrumentId Snapshot::resolveInstrument(const std::vector<Attribute> & identifying, const std::vector<Attribute> & rest) {
   std::vector<Attribute> all = identifying;
   all.insert(all.end(), rest.begin(), rest.end());
@@ -447,10 +495,22 @@ InstrumentId Snapshot::resolveInstrument(const std::vector<Attribute> & identify
     key = currencyKey(symbol);
     if (!key) notices_.push_back("instrument: the code " + symbol + " is not one to ten letters or digits, so it is not kept");
   } else {
-    for (const std::string & candidate : {symbol, name})
-      if (!key && !candidate.empty())
-        if (const std::string own = privateIsin(candidate); !own.empty()) key = instrumentKey(own);
-    if (!key) notices_.push_back("instrument: " + (symbol.empty() ? name : symbol) + " has no ISIN and none can be made for it, so it is not kept");
+    const std::string called = symbol.empty() ? name : symbol;
+    std::string own;
+    if (!called.empty() && invent_) {
+      // The same text is the same number, counting down from the top of the private namespace.
+      if (const std::string * made = numbered_.find(called)) own = *made;
+      else {
+        std::string number = std::to_string(999999999 - numbered_.size());
+        const std::string first11 = "ZZ" + std::string(9 - number.size(), '0') + number;
+        own = first11 + isinCheckDigit(first11);
+        numbered_ = numbered_.set(called, own);
+      }
+    } else if (!called.empty()) {
+      notices_.push_back("instrument: " + called + " has no ISIN, so it is not kept");
+    }
+    if (!own.empty()) key = instrumentKey(own);
+    if (!key && called.empty()) notices_.push_back("instrument: one with no ISIN, symbol or name is not kept");
   }
   if (!key) return InstrumentId{};
   const InstrumentId id{key->value};
@@ -519,6 +579,7 @@ void Snapshot::indexSymbol(const EdgeKey & k) {
 void Snapshot::addEdge(const EdgeKey & k) {
   if (hasData(k)) return;
   const auto * set = edgesByMarket_.find(k.market);
+  newEdges_.push_back(k);
   edgesByMarket_ = edgesByMarket_.set(k.market, (set ? *set : immer::set<EdgeKey>{}).insert(k));
   const auto * of = edgesByBase_.find(k.base);
   edgesByBase_ = edgesByBase_.set(k.base, (of ? *of : immer::set<EdgeKey>{}).insert(k));
@@ -528,16 +589,22 @@ void Snapshot::addEdge(const EdgeKey & k) {
 }
 
 void Snapshot::setListing(const Listing & l) {
+  require(l.key);
+  putListing(l, false);
+}
+
+// The listing of an edge. One that is read from the disk does not replace what a source has said, and asks nothing of the disk.
+void Snapshot::putListing(const Listing & l, bool fromDisk) {
   const EdgeKey & k = l.key;
-  require(k);
   const Listing * old = listings_.find(k);
-  if (old && *old == l) return;
+  if (old && (fromDisk || *old == l)) return;
   if (old && old->symbol != l.symbol) {
     const std::string key = symbolKey(k.market, old->symbol);
     if (const EdgeKey * holder = edgeBySymbol_.find(key); holder && *holder == k) edgeBySymbol_ = edgeBySymbol_.erase(key);
   }
   listings_ = listings_.set(k, l);
   indexSymbol(k);
+  if (!fromDisk) dirtyEdges_.insert(k);
   version_++;
 }
 
@@ -545,18 +612,379 @@ void Snapshot::appendCandles(const EdgeKey & k, Resolution r, const std::vector<
   require(k);
   if (in.empty())
     return;
+  // The data: the bars as written, which only memory keeps.
   const SeriesKey key{k, r};
   const auto * old = series_.find(key);
   Seq<Candle> bars = old ? *old : Seq<Candle>{};
   bool changed = false;
   for (const Candle & c : in) bars = upsert(bars, c, [](const Candle &, const Candle &) { return true; }, sameBar, changed);
-  if (!changed) return;  // the same bars again: no new version, nothing for a reader to refresh
-  series_ = series_.set(key, bars);
-  const auto * known = resolutions_.find(k);
-  if (r == Resolution::Day && !(known && known->count(static_cast<int>(r)))) quoteRows_ = quoteRows_.push_back(k);
-  resolutions_ = resolutions_.set(k, (known ? *known : immer::set<int>{}).insert(static_cast<int>(r)));
+  // The summary: the quote and the queue of the resolution, derived from the same bars.
+  const bool summarised = deriveSummary(k, r, in);
+  if (!changed && !summarised) return;  // the same bars again: no new version, nothing for a reader to refresh
+  if (changed) {
+    series_ = series_.set(key, bars);
+    const auto * known = resolutions_.find(k);
+    resolutions_ = resolutions_.set(k, (known ? *known : immer::set<int>{}).insert(static_cast<int>(r)));
+  }
   addEdge(k);
   version_++;
+}
+
+// ---- The summary: the quote and the queues, which are not the data above
+
+namespace {
+
+std::array<int64_t, 11> defaultRules() {
+  std::array<int64_t, 11> rules{};
+  for (int r = 0; r <= static_cast<int>(Resolution::Quarter); r++)
+    if (const auto keep = defaultKeep(static_cast<Resolution>(r))) rules[static_cast<size_t>(r)] = keep->count();
+  return rules;
+}
+
+// The bars of a queue cut to the window measured back from the last one; `changed` where bars were popped.
+Seq<Candle> cutToWindow(Seq<Candle> bars, Resolution r, int64_t keep, bool & changed) {
+  if (bars.empty() || keep <= 0) return bars;
+  const int64_t from = summary::instantOf(r, bars.back().time) - keep;
+  size_t popped = 0;
+  while (popped < bars.size() && summary::instantOf(r, bars[popped].time) < from) popped++;
+  if (!popped) return bars;
+  changed = true;
+  return bars.drop(popped);
+}
+
+QueueCoverage coverageOf(const QueueState & q) {
+  if (q.resident) {
+    QueueCoverage c;
+    c.kind = q.kind;
+    c.fetched = q.fetched;
+    c.count = static_cast<uint32_t>(q.bars.size());
+    if (!q.bars.empty()) {
+      c.first_key = q.bars.front().time;
+      c.last_key = q.bars.back().time;
+      c.last_hash = summary::hashOf(q.kind, q.bars.back());
+    }
+    return c;
+  }
+  QueueCoverage c = q.disk;
+  c.kind = q.kind;
+  c.fetched = std::max(q.disk.fetched, q.fetched);
+  if (!q.bars.empty()) {
+    // Said since, and not known to be among the file's: an upper bound on the count.
+    c.first_key = c.count ? std::min(c.first_key, q.bars.front().time) : q.bars.front().time;
+    if (!c.count || q.bars.back().time >= c.last_key) c.last_hash = summary::hashOf(q.kind, q.bars.back());
+    c.last_key = c.count ? std::max(c.last_key, q.bars.back().time) : q.bars.back().time;
+    c.count += static_cast<uint32_t>(q.bars.size());
+  }
+  return c;
+}
+
+constexpr size_t kBarBytes = sizeof(Candle);
+
+}  // namespace
+
+bool Snapshot::listed(const EdgeKey & k) const { return rows_.count(k) > 0; }
+std::optional<Quote> Snapshot::quote(const EdgeKey & k) const {
+  const Quote * q = quotes_.find(k);
+  return q ? std::optional<Quote>(*q) : std::nullopt;
+}
+Seq<Candle> Snapshot::queue(const EdgeKey & k, Resolution r) const {
+  const QueueState * q = queues_.find(SeriesKey{k, r});
+  return q && q->resident ? q->bars : Seq<Candle>{};
+}
+std::optional<QueueCoverage> Snapshot::coverage(const EdgeKey & k, Resolution r) const {
+  const QueueState * q = queues_.find(SeriesKey{k, r});
+  if (!q || (q->resident && q->bars.empty())) return std::nullopt;
+  return coverageOf(*q);
+}
+bool Snapshot::queueResident(const EdgeKey & k, Resolution r) const {
+  const QueueState * q = queues_.find(SeriesKey{k, r});
+  return q && q->resident;
+}
+std::vector<Resolution> Snapshot::queues(const EdgeKey & k) const {
+  std::vector<Resolution> out;
+  for (int r = 0; r <= static_cast<int>(Resolution::Quarter); r++)
+    if (coverage(k, static_cast<Resolution>(r))) out.push_back(static_cast<Resolution>(r));
+  return out;
+}
+int64_t Snapshot::keep(DatasetId d, Resolution r) const {
+  if (const auto * rules = retention_.find(d)) return (*rules)[static_cast<size_t>(r)];
+  static const std::array<int64_t, 11> defaults = defaultRules();
+  return defaults[static_cast<size_t>(r)];
+}
+
+void Snapshot::setRetention(DatasetId d, Resolution r, std::optional<std::chrono::seconds> keep) {
+  if (!d.valid()) return;
+  std::array<int64_t, 11> rules = retention_.find(d) ? *retention_.find(d) : defaultRules();
+  const int64_t seconds = keep ? keep->count() : 0;
+  if (rules[static_cast<size_t>(r)] == seconds) return;
+  rules[static_cast<size_t>(r)] = seconds;
+  retention_ = retention_.set(d, rules);
+  checks_++;  // a rule, not something shown: published, no version
+}
+
+// An edge is a row of the table once it has a last price or a daily queue.
+void Snapshot::noteRow(const EdgeKey & k) {
+  if (rows_.count(k)) return;
+  const Quote * q = quotes_.find(k);
+  const bool row = (q && isDefined(q->last)) || coverage(k, Resolution::Day);
+  if (!row) return;
+  rows_ = rows_.insert(k);
+  quoteRows_ = quoteRows_.push_back(k);
+}
+
+void Snapshot::setQuote(const EdgeKey & k, const Quote & in) {
+  require(k);
+  if (!in.says()) return;
+  const Quote * old = quotes_.find(k);
+  if (old && in.time != 0 && old->time != 0 && in.time < old->time) return;  // the newest says
+  if (old && *old == in) return;
+  quotes_ = quotes_.set(k, in);
+  dirtyEdges_.insert(k);
+  addEdge(k);
+  noteRow(k);
+  version_++;
+}
+
+// The summary of the bars a source writes: the quote moves to the newest bar if that is newer than it, and the queue of the resolution takes
+// the bars. True where either changed.
+bool Snapshot::deriveSummary(const EdgeKey & k, Resolution r, const std::vector<Candle> & in) {
+  bool changed = false;
+  // A bar newer than the quote sets its last price and its time (the bid and the ask stay): a source that gives only bars gives a price.
+  const Candle * newest = nullptr;
+  for (const Candle & c : in)
+    if (std::isfinite(c.close) && (!newest || c.time >= newest->time)) newest = &c;
+  if (newest) {
+    const int64_t instant = summary::instantOf(r, newest->time);
+    const Quote * old = quotes_.find(k);
+    // A quote that says no time is a source's own, and no bar is older than it that we can tell.
+    const bool newer = !old || (old->time != 0 ? instant > old->time : !isDefined(old->last));
+    if (newer) {
+      Quote q = old ? *old : Quote{};
+      q.last = newest->close;
+      q.time = instant;
+      if (!old || !(*old == q)) {
+        quotes_ = quotes_.set(k, q);
+        dirtyEdges_.insert(k);
+        changed = true;
+      }
+    }
+  }
+  const int64_t window = keep(k.dataset, r);
+  if (window > 0) {
+    const QueueKind kind = queueKindOf(this->kind(k.base));
+    const SeriesKey key{k, r};
+    const QueueState * old = queues_.find(key);
+    QueueState state;
+    if (old) {
+      state = *old;
+    } else {
+      state.kind = kind;
+      state.resident = !restoring_;
+      state.unknown = restoring_;
+    }
+    // The bars that stand: those of the window of what there is and what is said, as stored.
+    int64_t last = state.bars.empty() ? std::numeric_limits<int64_t>::min() : summary::instantOf(r, state.bars.back().time);
+    if (!state.resident && state.disk.count) last = std::max(last, summary::instantOf(r, state.disk.last_key));
+    std::vector<Candle> said;
+    for (const Candle & c : in)
+      if (summary::fits(c)) said.push_back(summary::normalized(state.kind, c));
+    for (const Candle & c : said) last = std::max(last, summary::instantOf(r, c.time));
+    std::vector<Candle> put;  // what changed the queue: for the merge of one that is not in memory
+    bool queueChanged = false;
+    Seq<Candle> bars = state.bars;
+    for (const Candle & c : said) {
+      if (summary::instantOf(r, c.time) < last - window) continue;  // older than the window: no bar of it
+      // The file's last bar said again: told by its digest, so that a restart does not write the queue of every edge at its first refresh.
+      if (!state.resident && !state.unknown && state.disk.count && c.time == state.disk.last_key && summary::hashOf(state.kind, c) == state.disk.last_hash &&
+          std::none_of(state.bars.begin(), state.bars.end(), [&](const Candle & p) { return p.time == c.time; }))
+        continue;
+      bool one = false;
+      bars = upsert(bars, c, [](const Candle &, const Candle &) { return true; }, summary::sameBar, one);
+      if (one) {
+        queueChanged = true;
+        put.push_back(c);
+      }
+    }
+    if (queueChanged) {
+      bars = cutToWindow(bars, r, window, queueChanged);
+      queueBytes_ += bars.size() * kBarBytes;
+      queueBytes_ -= std::min(queueBytes_, state.bars.size() * kBarBytes);
+      state.bars = std::move(bars);
+      state.fetched = now_;
+      queues_ = queues_.set(key, std::move(state));
+      dirtyEdges_.insert(k);
+      if (queues_.find(key)->resident) {
+        putQueues_.insert(key);
+      } else {
+        auto & waiting = mergeQueues_[key];
+        for (const Candle & c : put) summary::put(waiting, c);
+      }
+      touchQueues_.erase(key);
+      changed = true;
+    } else if (old && !said.empty() && (recheck_.count() <= 0 || now_ - std::max(old->fetched, old->disk.fetched) >= recheck_.count())) {
+      // Said again and the same, a fetch that went through: it was fetched now. As a fact said again is, to within the recheck interval, and
+      // with no version: nothing that is shown changes.
+      QueueState touched = *old;
+      touched.fetched = now_;
+      queues_ = queues_.set(key, std::move(touched));
+      touchQueues_[key] = now_;
+      checks_++;
+    }
+  }
+  if (changed) noteRow(k);
+  return changed;
+}
+
+void Snapshot::loadEdges(const std::vector<StoredEdge> & edges) {
+  bool any = false;
+  for (const StoredEdge & e : edges) {
+    const EdgeKey & k = e.listing.key;
+    if (!k.base.valid() || !k.quote.valid() || !k.market.valid() || !k.dataset.valid()) continue;
+    any = true;
+    if (e.hasListing()) putListing(e.listing, true);
+    if (e.quote.says()) {
+      // What a source has said is newer than the disk, and the disk's is taken only where nothing said is as new.
+      const Quote * old = quotes_.find(k);
+      if (!old || (e.quote.time != 0 && old->time != 0 && e.quote.time > old->time)) quotes_ = quotes_.set(k, e.quote);
+    }
+    if (isDefined(e.previous_close) && !previousClose_.find(k)) previousClose_ = previousClose_.set(k, {e.previous_close_day, e.previous_close});
+    for (const auto & [r, c] : e.queues) {
+      const SeriesKey key{k, r};
+      const QueueState * old = queues_.find(key);
+      if (!old) {
+        QueueState state;
+        state.kind = c.kind;
+        state.fetched = c.fetched;
+        state.resident = false;
+        state.disk = c;
+        queues_ = queues_.set(key, std::move(state));
+      } else if (old->unknown) {
+        QueueState state = *old;
+        state.unknown = false;
+        state.disk = c;
+        queues_ = queues_.set(key, std::move(state));
+      }
+    }
+    addEdge(k);
+    noteRow(k);
+  }
+  if (any) version_++;
+}
+
+void Snapshot::settleRestored() {
+  std::vector<SeriesKey> unknown;
+  for (const auto & [key, state] : queues_)
+    if (state.unknown) unknown.push_back(key);
+  for (const SeriesKey & key : unknown) {
+    QueueState state = *queues_.find(key);
+    state.unknown = false;
+    state.resident = true;  // the file has none: what was said is the whole of it
+    queues_ = queues_.set(key, std::move(state));
+    putQueues_.insert(key);
+    mergeQueues_.erase(key);
+  }
+  if (!unknown.empty()) checks_++;
+}
+
+void Snapshot::loadQueue(const StoredQueue & in) {
+  const SeriesKey key{in.edge, in.resolution};
+  const QueueState * old = queues_.find(key);
+  if (old && old->resident) return;  // made resident by a write or another read since
+  QueueState state;
+  if (old) state = *old;
+  state.kind = in.kind;
+  const int64_t window = keep(in.edge.dataset, in.resolution);
+  std::vector<Candle> merged;
+  for (const Candle & c : in.bars)
+    if (summary::fits(c)) merged.push_back(summary::normalized(in.kind, c));
+  for (const Candle & c : state.bars) summary::put(merged, c);  // what was said since wins
+  summary::trim(merged, in.resolution, window);
+  queueBytes_ -= std::min(queueBytes_, state.bars.size() * kBarBytes);
+  state.bars = Seq<Candle>(merged.begin(), merged.end());
+  queueBytes_ += state.bars.size() * kBarBytes;
+  state.fetched = std::max(state.fetched, in.fetched);
+  state.resident = true;
+  state.unknown = false;
+  queues_ = queues_.set(key, std::move(state));
+  noteRow(in.edge);
+  version_++;
+}
+
+void Snapshot::evictQueue(const EdgeKey & k, Resolution r) {
+  const SeriesKey key{k, r};
+  const QueueState * old = queues_.find(key);
+  if (!old || !old->resident) return;
+  QueueState state = *old;
+  state.disk = coverageOf(*old);
+  state.resident = false;
+  queueBytes_ -= std::min(queueBytes_, state.bars.size() * kBarBytes);
+  state.bars = {};
+  queues_ = queues_.set(key, std::move(state));
+  checks_++;  // published so that the memory is freed, but nothing that is shown changes
+}
+
+SummaryBatch Snapshot::takeSummaries() {
+  SummaryBatch out;
+  const auto hasQueueOp = [&](const EdgeKey & k) {
+    for (int r = 0; r <= static_cast<int>(Resolution::Quarter); r++)
+      if (putQueues_.count(SeriesKey{k, static_cast<Resolution>(r)}) || mergeQueues_.count(SeriesKey{k, static_cast<Resolution>(r)})) return true;
+    return false;
+  };
+  for (const EdgeKey & k : dirtyEdges_) {
+    const Quote * q = quotes_.find(k);
+    const auto * previous = previousClose_.find(k);
+    if (!q && !previous && !hasQueueOp(k)) continue;  // nothing of a summary yet: an edge with a listing and books is not kept
+    StoredEdge e;
+    if (const Listing * l = listings_.find(k)) e.listing = *l;
+    e.listing.key = k;
+    if (q) e.quote = *q;
+    if (previous) {
+      e.previous_close_day = previous->first;
+      e.previous_close = previous->second;
+    }
+    out.edges.push_back(std::move(e));
+  }
+  for (const SeriesKey & key : putQueues_) {
+    const QueueState * q = queues_.find(key);
+    if (!q || !q->resident) continue;
+    StoredQueue s;
+    s.edge = key.edge;
+    s.resolution = key.resolution;
+    s.kind = q->kind;
+    s.fetched = q->fetched;
+    s.bars.assign(q->bars.begin(), q->bars.end());
+    out.queues.push_back(std::move(s));
+  }
+  for (auto & [key, bars] : mergeQueues_) {
+    const QueueState * q = queues_.find(key);
+    StoredQueue s;
+    s.edge = key.edge;
+    s.resolution = key.resolution;
+    s.kind = q ? q->kind : QueueKind::Candle;
+    s.fetched = q ? q->fetched : 0;
+    s.merge = true;
+    s.keep = keep(key.edge.dataset, key.resolution);
+    s.bars = std::move(bars);
+    out.queues.push_back(std::move(s));
+  }
+  for (const auto & [key, fetched] : touchQueues_) {
+    if (putQueues_.count(key) || mergeQueues_.count(key)) continue;
+    const QueueState * q = queues_.find(key);
+    if (!q) continue;
+    StoredQueue s;
+    s.edge = key.edge;
+    s.resolution = key.resolution;
+    s.kind = q->kind;
+    s.fetched = fetched;
+    s.merge = true;  // with no bars: only the time moves
+    s.keep = keep(key.edge.dataset, key.resolution);
+    out.queues.push_back(std::move(s));
+  }
+  touchQueues_.clear();
+  dirtyEdges_.clear();
+  putQueues_.clear();
+  mergeQueues_.clear();
+  return out;
 }
 
 void Snapshot::appendBooks(const EdgeKey & k, const std::vector<BookSnapshot> & in) {
@@ -568,15 +996,27 @@ void Snapshot::appendBooks(const EdgeKey & k, const std::vector<BookSnapshot> & 
   version_++;
 }
 
-void Snapshot::appendAnnouncements(const EventKey & k, const std::vector<Announcement> & in) {
-  require(k);
-  if (in.empty())
-    return;
-  if (!appendTo(announcements_, k, in, [](const Announcement & a, const Announcement & b) { return a.headline == b.headline; },
-                sameAnnouncement))
-    return;
-  const auto * set = eventsByInstrument_.find(k.instrument);
-  eventsByInstrument_ = eventsByInstrument_.set(k.instrument, (set ? *set : immer::set<EventKey>{}).insert(k));
+void Snapshot::appendNews(DatasetId dataset, const std::vector<NewsItem> & in) {
+  if (!dataset.valid() || NodeKey{dataset.value}.kind() != NodeKind::Dataset) throw std::invalid_argument("news needs a dataset");
+  for (const NewsItem & item : in)
+    if (item.id.empty()) throw std::invalid_argument("an item of news needs the dataset's id for it");
+  const auto * oldItems = news_.find(dataset);
+  const auto * oldIds = newsIds_.find(dataset);
+  Seq<NewsItem> items = oldItems ? *oldItems : Seq<NewsItem>{};
+  immer::set<std::string> ids = oldIds ? *oldIds : immer::set<std::string>{};
+  size_t added = 0;
+  for (NewsItem item : in) {
+    if (ids.count(item.id)) continue;  // said before: left as it was
+    ids = ids.insert(item.id);
+    item.dataset = dataset;
+    const size_t at = static_cast<size_t>(std::upper_bound(items.begin(), items.end(), item.time, [](Timestamp t, const NewsItem & i) { return t < i.time; }) - items.begin());
+    items = items.insert(at, std::move(item));
+    added++;
+  }
+  if (!added) return;
+  news_ = news_.set(dataset, items);
+  newsIds_ = newsIds_.set(dataset, ids);
+  newsCount_ += added;
   version_++;
 }
 
@@ -822,8 +1262,9 @@ class SnapshotBatch : public Batch {
   DatasetId addDataset(const std::string & code, const std::string & name) override { return s_.addDataset(code, name); }
   void appendCandles(const EdgeKey & k, Resolution r, const std::vector<Candle> & c) override { s_.appendCandles(k, r, c); }
   void setPreviousClose(const EdgeKey & k, int64_t day, double close) override { s_.setPreviousClose(k, day, close); }
+  void setQuote(const EdgeKey & k, const Quote & q) override { s_.setQuote(k, q); }
   void appendBooks(const EdgeKey & k, const std::vector<BookSnapshot> & b) override { s_.appendBooks(k, b); }
-  void appendAnnouncements(const EventKey & k, const std::vector<Announcement> & a) override { s_.appendAnnouncements(k, a); }
+  void appendNews(DatasetId d, const std::vector<NewsItem> & n) override { s_.appendNews(d, n); }
   void appendActions(const EventKey & k, const std::vector<CorporateAction> & a) override { s_.appendActions(k, a); }
   void removeAttribute(NodeRef n, const std::string & p) override { s_.removeAttribute(n, p); }
   void removePortfolio(PortfolioId id) override { s_.removePortfolio(id); }
@@ -847,26 +1288,58 @@ class MemoryStore : public Store {
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
       };
     portfolios_ = std::move(options.portfolios);
-    if (options.facts || portfolios_) {
-      // What was kept is the facts of its nodes (and the user's transactions), which makes no version and no edge. Read before any source
-      // can write. A portfolio is in its own file and never in the cache: one that is found there anyway is not read.
-      Snapshot first;
-      std::vector<StoredFact> kept = options.facts ? options.facts->loadAll() : std::vector<StoredFact>{};
-      std::erase_if(kept, [](const StoredFact & f) { return NodeKey{f.node}.kind() == NodeKind::Portfolio; });
-      if (portfolios_) {
-        for (StoredFact & f : portfolios_->loadAll())
-          if (NodeKey{f.node}.kind() == NodeKind::Portfolio) kept.push_back(std::move(f));
-        first.loadEvents(portfolios_->loadEvents());
-      }
-      first.load(kept);
-      tell(first.takeNotices());
-      current_.store(std::make_shared<const Snapshot>(std::move(first)));
-      if (options.facts) writer_ = std::make_unique<FactWriter>(std::move(options.facts), options.writer);
+    budget_ = options.queue_budget;
+    changed_ = std::move(options.changed);
+    background_ = options.restore == StoreOptions::Restore::InBackground;
+    facts_ = options.facts;
+    if (options.summaries) summary_ = std::make_unique<SummaryWriter>(std::move(options.summaries), options.summary_writer);
+    // The user's own file is small and what the program shows first: read here, before the constructor returns. A portfolio is in its own
+    // file and never in the cache: one that is found there anyway is not read. What was kept of the nodes and the edges (the cache and the
+    // summaries) is read before any source writes, or, in the background, newer than the sources' words are not allowed to stand over.
+    Snapshot first;
+    first.setInventIsins(options.invent_isins);
+    if (portfolios_) {
+      std::vector<StoredFact> mine;
+      for (StoredFact & f : portfolios_->loadAll())
+        if (NodeKey{f.node}.kind() == NodeKind::Portfolio) mine.push_back(std::move(f));
+      first.load(std::move(mine));
+      first.loadEvents(portfolios_->loadEvents());
     }
+    const bool restore = facts_ || summary_;
+    first.setRestoring(restore && background_);
+    tell(first.takeNotices());
+    current_.store(std::make_shared<const Snapshot>(std::move(first)));
+    if (options.facts) writer_ = std::make_unique<FactWriter>(std::move(options.facts), options.writer);
+    if (summary_) reader_ = std::thread([this] { readLoop(); });
+    if (!restore) return;
+    if (background_) {
+      restore_running_ = true;
+      restorer_ = std::thread([this] { restoreFiles(); });
+    } else {
+      restoreFiles();
+    }
+  }
+
+  ~MemoryStore() override {
+    stopping_ = true;
+    if (restorer_.joinable()) restorer_.join();
+    {
+      std::lock_guard lock(want_mutex_);
+      stop_ = true;
+    }
+    read_wake_.notify_all();
+    if (reader_.joinable()) reader_.join();
+  }
+
+  bool restoring() const override { return restore_running_ || late_pending_ > 0; }
+  void waitRestored() override {
+    std::unique_lock lock(restore_mutex_);
+    restored_.wait(lock, [&] { return !restore_running_; });
   }
 
   void flush() override {
     if (writer_) writer_->flush();
+    if (summary_) summary_->flush();
   }
 
   std::shared_ptr<const Snapshot> snapshot() const override { return current_.load(); }
@@ -905,11 +1378,39 @@ class MemoryStore : public Store {
   void setPreviousClose(const EdgeKey & k, int64_t day, double close) override {
     write([&](Snapshot & s) { s.setPreviousClose(k, day, close); });
   }
+  void setQuote(const EdgeKey & k, const Quote & q) override {
+    write([&](Snapshot & s) { s.setQuote(k, q); });
+  }
+  void setRetention(DatasetId d, Resolution r, std::optional<std::chrono::seconds> keep) override {
+    write([&](Snapshot & s) { s.setRetention(d, r, keep); });
+  }
+
+  void want(const std::vector<SeriesKey> & keys) override {
+    if (!summary_) return;
+    const std::shared_ptr<const Snapshot> snapshot = current_.load();  // never waits for a writer
+    bool any = false;
+    {
+      std::lock_guard lock(want_mutex_);
+      pinned_.clear();
+      to_read_.clear();
+      last_want_ = keys;
+      for (const SeriesKey & key : keys) {
+        pinned_.insert(key);
+        if (snapshot->queueResident(key.edge, key.resolution)) {
+          touch(key);
+        } else if (const auto c = snapshot->coverage(key.edge, key.resolution); c && c->count > 0 && !reading_.count(key)) {
+          to_read_.push_back(key);
+          any = true;
+        }
+      }
+    }
+    if (any) read_wake_.notify_all();
+  }
   void appendBooks(const EdgeKey & k, const std::vector<BookSnapshot> & b) override {
     write([&](Snapshot & s) { s.appendBooks(k, b); });
   }
-  void appendAnnouncements(const EventKey & k, const std::vector<Announcement> & a) override {
-    write([&](Snapshot & s) { s.appendAnnouncements(k, a); });
+  void appendNews(DatasetId d, const std::vector<NewsItem> & n) override {
+    write([&](Snapshot & s) { s.appendNews(d, n); });
   }
   void appendActions(const EventKey & k, const std::vector<CorporateAction> & a) override {
     write([&](Snapshot & s) { s.appendActions(k, a); });
@@ -928,6 +1429,231 @@ class MemoryStore : public Store {
   }
 
  private:
+  // The queue as the file has it with what is waiting to be written put over it (read before the file, so that nothing said is older than
+  // what is read).
+  StoredQueue readQueue(const SeriesKey & key, const std::shared_ptr<const Snapshot> & snapshot) {
+    StoredQueue base;
+    base.edge = key.edge;
+    base.resolution = key.resolution;
+    if (const auto c = snapshot->coverage(key.edge, key.resolution)) base.kind = c->kind;
+    std::vector<StoredQueue> waiting = summary_->pending(key.edge, key.resolution);
+    if (auto store = summary_->store(key.edge.dataset))
+      if (auto q = store->readQueue(key.edge, key.resolution)) base = std::move(*q);
+    for (StoredQueue & op : waiting) summary::fold(base, std::move(op));
+    return base;
+  }
+
+  // The thread that reads the queues that are wanted and publishes them into the store: never the thread that draws.
+  void readLoop() {
+    std::unique_lock lock(want_mutex_);
+    for (;;) {
+      read_wake_.wait(lock, [&] { return stop_ || !to_read_.empty() || !late_nodes_.empty(); });
+      if (stop_) return;
+      if (!late_nodes_.empty()) {
+        std::vector<uint64_t> nodes;
+        while (!late_nodes_.empty() && nodes.size() < 500) {
+          nodes.push_back(late_nodes_.front());
+          late_nodes_.pop_front();
+        }
+        lock.unlock();
+        std::vector<StoredFact> facts = facts_->loadNodes(nodes);
+        std::erase_if(facts, [](const StoredFact & f) { return NodeKey{f.node}.kind() == NodeKind::Portfolio; });
+        if (!facts.empty()) {
+          write([&](Snapshot & s) { s.load(std::move(facts)); });
+          if (changed_) changed_();
+        }
+        lock.lock();
+        late_pending_ -= nodes.size();
+        continue;
+      }
+      std::vector<SeriesKey> batch;
+      while (!to_read_.empty() && batch.size() < 16) {
+        batch.push_back(to_read_.front());
+        to_read_.pop_front();
+        reading_.insert(batch.back());
+      }
+      lock.unlock();
+      const std::shared_ptr<const Snapshot> snapshot = current_.load();
+      std::vector<StoredQueue> read;
+      for (const SeriesKey & key : batch) read.push_back(readQueue(key, snapshot));
+      // One publication for the batch: nothing is written back, since it came from there.
+      write([&](Snapshot & s) {
+        for (const StoredQueue & q : read) {
+          s.loadQueue(q);
+          std::lock_guard w(want_mutex_);
+          touch(SeriesKey{q.edge, q.resolution});
+        }
+      });
+      if (changed_) changed_();
+      lock.lock();
+      for (const SeriesKey & key : batch) reading_.erase(key);
+    }
+  }
+
+  // An edge that is new has ends whose facts the restore did not read (it reads those of the edges the disk had): a source made it, and
+  // what the disk knows of its instrument (what a slow loader fetched, a description) is read now, on the reader's thread, and what the
+  // source has said stands. Without summaries every fact was read at the start.
+  void noteNewEdges(const std::vector<EdgeKey> & made) {
+    if (!summary_ || !facts_ || made.empty()) return;
+    bool any = false;
+    {
+      std::lock_guard lock(want_mutex_);
+      for (const EdgeKey & k : made)
+        for (const uint64_t node : {k.base.value, k.quote.value, k.market.value, k.dataset.value})
+          if (node && loaded_nodes_.insert(node).second) {
+            late_nodes_.push_back(node);
+            late_pending_++;
+            any = true;
+          }
+    }
+    if (any) read_wake_.notify_all();
+  }
+
+  // The queue was used now (under `want_mutex_`): the last to be dropped.
+  void touch(const SeriesKey & key) {
+    auto it = stamp_of_.find(key);
+    if (it != stamp_of_.end()) by_stamp_.erase(it->second);
+    stamp_of_[key] = ++clock_stamp_;
+    by_stamp_[clock_stamp_] = key;
+  }
+
+  // Over the budget, the queues in memory that were wanted the longest ago go (never one that is wanted now); the file has them, or the
+  // writer is about to. Under the writer lock, on the copy being made.
+  void evict(Snapshot & next, const SummaryBatch & written) {
+    {
+      std::lock_guard lock(want_mutex_);
+      for (const StoredQueue & q : written.queues) {
+        const SeriesKey key{q.edge, q.resolution};
+        if (!q.merge && !stamp_of_.count(key)) touch(key);
+      }
+      if (next.queueBytes() <= budget_) return;
+      const size_t target = budget_ - budget_ / 10;
+      for (auto it = by_stamp_.begin(); it != by_stamp_.end() && next.queueBytes() > target;) {
+        const SeriesKey key = it->second;
+        if (pinned_.count(key)) {
+          ++it;
+          continue;
+        }
+        next.evictQueue(key.edge, key.resolution);
+        stamp_of_.erase(key);
+        it = by_stamp_.erase(it);
+      }
+    }
+  }
+
+  // What the portfolios hold, by key: restored first.
+  struct Held {
+    std::unordered_set<uint64_t> instruments, currencies, nodes;
+  };
+  static Held heldBy(const Snapshot & snapshot) {
+    Held held;
+    for (PortfolioId id : snapshot.portfolios()) {
+      if (const auto currency = portfolio::currencyOf(snapshot, id)) {
+        held.currencies.insert(currency->value);
+        held.nodes.insert(currency->value);
+      }
+      for (const portfolio::Position & p : portfolio::holdings(snapshot, id).positions) {
+        held.instruments.insert(p.instrument.value);
+        held.currencies.insert(p.quote.value);
+        held.nodes.insert({p.instrument.value, p.quote.value, p.market.value});
+      }
+    }
+    return held;
+  }
+
+  // Reads what an earlier run kept, in chunks, each published as it is read: the facts of the nodes and the edges (with their quotes and
+  // the coverage of their queues). What the portfolios hold comes first (their instruments' facts, listings and quotes, and the currencies
+  // they are valued through), then the rest, each chunk's facts before its edges so that a row is never seen before what it is called.
+  // The facts read are those of the nodes that have an edge; where no summaries are kept there are no edges, so all of them are read.
+  // Runs on a thread of its own, or in the constructor.
+  void restoreFiles() {
+    try {
+      constexpr size_t kChunk = 2000;
+      if (summary_) {
+        const Held held = heldBy(*current_.load());
+        std::vector<StoredEdge> edges;
+        for (const std::string & code : summary_->datasets())
+          if (const auto dataset = datasetKey(code))
+            if (auto store = summary_->store(DatasetId{dataset->value}))
+              for (StoredEdge & e : store->loadEdges()) edges.push_back(std::move(e));
+        const auto isHeld = [&](const StoredEdge & e) { return held.instruments.count(e.listing.key.base.value) || held.currencies.count(e.listing.key.base.value); };
+        const size_t heldEnd = static_cast<size_t>(std::stable_partition(edges.begin(), edges.end(), isHeld) - edges.begin());
+        for (size_t from = 0; from < edges.size() || (from == 0 && !held.nodes.empty());) {
+          if (stopping_) return;
+          const size_t to = from < heldEnd ? heldEnd : std::min(edges.size(), from + kChunk);
+          std::vector<uint64_t> nodes;
+          {
+            std::lock_guard lock(want_mutex_);
+            const auto want = [&](uint64_t node) {
+              if (node && loaded_nodes_.insert(node).second) nodes.push_back(node);
+            };
+            if (from == 0)
+              for (uint64_t node : held.nodes) want(node);
+            for (size_t i = from; i < to; i++) {
+              const EdgeKey & k = edges[i].listing.key;
+              want(k.base.value);
+              want(k.quote.value);
+              want(k.market.value);
+              want(k.dataset.value);
+            }
+          }
+          std::vector<StoredFact> facts = facts_ ? facts_->loadNodes(nodes) : std::vector<StoredFact>{};
+          std::erase_if(facts, [](const StoredFact & f) { return NodeKey{f.node}.kind() == NodeKind::Portfolio; });
+          std::vector<StoredEdge> chunk(std::make_move_iterator(edges.begin() + static_cast<std::ptrdiff_t>(from)),
+                                        std::make_move_iterator(edges.begin() + static_cast<std::ptrdiff_t>(to)));
+          publish([&](Snapshot & s) {
+            s.load(std::move(facts));
+            s.loadEdges(chunk);
+          });
+          if (to == from) break;
+          from = to;
+        }
+      } else if (facts_) {
+        std::vector<StoredFact> all = facts_->loadAll();
+        std::erase_if(all, [](const StoredFact & f) { return NodeKey{f.node}.kind() == NodeKind::Portfolio; });
+        constexpr size_t kFacts = 100'000;
+        for (size_t from = 0; from < all.size();) {
+          if (stopping_) return;
+          const size_t to = std::min(all.size(), from + kFacts);
+          std::vector<StoredFact> chunk(std::make_move_iterator(all.begin() + static_cast<std::ptrdiff_t>(from)),
+                                        std::make_move_iterator(all.begin() + static_cast<std::ptrdiff_t>(to)));
+          publish([&](Snapshot & s) { s.load(std::move(chunk)); });
+          from = to;
+        }
+      }
+    } catch (...) {
+      // Whatever went wrong with a file, the store runs with what it has: the stores say what they could not do themselves.
+    }
+    write([&](Snapshot & s) {
+      s.settleRestored();
+      s.setRestoring(false);
+    });
+    {
+      std::lock_guard lock(restore_mutex_);
+      restore_running_ = false;
+    }
+    restored_.notify_all();
+    if (background_ && changed_) changed_();
+    rewant();
+  }
+
+  // One chunk of the restore, published; the UI is told, and what it wants is looked at again (the edges are there now).
+  template <class F>
+  void publish(F change) {
+    write(change);
+    if (background_ && changed_) changed_();
+    rewant();
+  }
+
+  void rewant() {
+    std::vector<SeriesKey> keys;
+    {
+      std::lock_guard lock(want_mutex_);
+      keys = last_want_;
+    }
+    if (!keys.empty()) want(keys);
+  }
+
   void tell(const std::vector<std::string> & notices) {
     for (const std::string & text : notices)
       if (notice_ && told_.insert(text).second) notice_(text);
@@ -962,6 +1688,12 @@ class MemoryStore : public Store {
       }
       if (portfolios_ && !mine.empty()) portfolios_->apply(mine);
       if (writer_) writer_->post(std::move(facts));
+      noteNewEdges(next.takeNewEdges());
+      SummaryBatch summaries = next.takeSummaries();
+      if (summary_) {
+        evict(next, summaries);
+        summary_->post(std::move(summaries));
+      }
       if (next.revision() != old->revision()) current_.store(std::make_shared<const Snapshot>(std::move(next)));
     };
     if constexpr (std::is_void_v<decltype(change(next))>) {
@@ -981,7 +1713,31 @@ class MemoryStore : public Store {
   std::function<void(const std::string &)> notice_;
   std::set<std::string> told_;          // what notice_ has been told, which it is told once
   std::shared_ptr<FactStore> portfolios_;  // the user's file, if there is one
-  std::unique_ptr<FactWriter> writer_;  // last: its thread ends first, with everything written
+  std::unique_ptr<FactWriter> writer_;  // its thread ends first, with everything written
+  std::unique_ptr<SummaryWriter> summary_;
+  std::shared_ptr<FactStore> facts_;  // read by the restore
+  bool background_ = false;
+  std::atomic<bool> stopping_{false}, restore_running_{false};
+  std::mutex restore_mutex_;
+  std::condition_variable restored_;
+  std::vector<SeriesKey> last_want_;  // under want_mutex_
+  std::unordered_set<uint64_t> loaded_nodes_;  // the nodes whose facts are read, or are about to be (under want_mutex_)
+  std::deque<uint64_t> late_nodes_;            // the ends of edges a source made, to read
+  std::atomic<size_t> late_pending_{0};
+  size_t budget_ = kDefaultQueueBudget;
+  std::function<void()> changed_;
+  // What is wanted and what is read (under `want_mutex_`, which is taken inside the writer lock and never the other way round).
+  std::mutex want_mutex_;
+  std::condition_variable read_wake_;
+  std::set<SeriesKey> pinned_;           // wanted now: not dropped
+  std::deque<SeriesKey> to_read_;        // wanted, not in memory, not being read
+  std::set<SeriesKey> reading_;          // being read
+  std::map<SeriesKey, uint64_t> stamp_of_;  // the queues in memory by when they were last wanted
+  std::map<uint64_t, SeriesKey> by_stamp_;
+  uint64_t clock_stamp_ = 0;
+  bool stop_ = false;
+  std::thread reader_;
+  std::thread restorer_;  // last: it ends first
 };
 
 }  // namespace

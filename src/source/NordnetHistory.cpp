@@ -140,13 +140,27 @@ std::optional<HistoryProvider::Need> NordnetHistory::need(const Snapshot & snaps
   if (!listing || listing->orderBook.empty()) return std::nullopt;
   if (options_.depth == Depth::Full) {
     // More than today's bar: the bars are there already (loaded before, or from elsewhere).
-    return Need{Whole, snapshot.lastCandles(edge, Resolution::Day, 6).candles.size() >= 6};
+    return Need{Whole, snapshot.lastCandles(edge, Resolution::Day, 6).candles.size() >= 6, 0};
   }
   const bool nav = snapshot.kind(edge.base) == InstrumentKind::Fund;
   const int request = requestOf(period, nav);
   // The store has the period's bars already: no request. A fund's day and week are its daily bars.
   const Period shown = nav && request == Quarter && period != Period::Month ? Period::Quarter : period;
-  return Need{request, periodView(snapshot, edge, shown, false).primary};
+  const Covered covered = periodCovered(snapshot, edge, shown);
+  return Need{request, covered.covered, covered.fetched};
+}
+
+// What the summary keeps of what each request gives: the 5-minute bars of the day (one day), the hourly bars of the week (one week), the daily bars
+// of the month and the quarter (three months) and the weekly bars of the year (one year); no queue of any other resolution.
+std::optional<std::chrono::seconds> NordnetHistory::keep(Resolution resolution) const {
+  constexpr int64_t kDay = 86400;
+  switch (resolution) {
+    case Resolution::Min5: return std::chrono::seconds(kDay);
+    case Resolution::Hour1: return std::chrono::seconds(7 * kDay);
+    case Resolution::Day: return std::chrono::seconds(92 * kDay);
+    case Resolution::Week: return std::chrono::seconds(365 * kDay);
+    default: return std::nullopt;
+  }
 }
 
 std::chrono::milliseconds NordnetHistory::lifetime(int request) const {

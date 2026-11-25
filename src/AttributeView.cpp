@@ -1,5 +1,7 @@
 #include "AttributeView.h"
 
+#include "News.h"
+
 #include "Quotes.h"
 #include "model/Dates.h"
 
@@ -8,6 +10,7 @@
 #include <cellui/Utf8.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 
 using namespace cellui;
@@ -62,6 +65,46 @@ std::string barTime(Resolution r, int64_t time) {
 
 }  // namespace
 
+std::vector<std::string> wrapText(const std::string & text, int cols) {
+  std::vector<std::string> lines;
+  if (cols < 1) return {text};
+  std::string line;
+  int width = 0;
+  auto flush = [&] {
+    lines.push_back(std::move(line));
+    line.clear();
+    width = 0;
+  };
+  size_t at = 0;
+  while (at < text.size()) {
+    while (at < text.size() && std::isspace(static_cast<unsigned char>(text[at]))) at++;
+    const size_t start = at;
+    while (at < text.size() && !std::isspace(static_cast<unsigned char>(text[at]))) at++;
+    if (start == at) break;
+    const std::string word = text.substr(start, at - start);
+    const int w = utf8::displayWidth(word);
+    if (width > 0 && width + 1 + w <= cols) {
+      line += ' ' + word;
+      width += 1 + w;
+    } else if (w <= cols) {
+      if (width > 0) flush();
+      line = word;
+      width = w;
+    } else {
+      // Wider than a line: starts on a fresh one and is cut between characters.
+      if (width > 0) flush();
+      for (const std::string & cluster : utf8::clusters(word)) {
+        const int cw = utf8::displayWidth(cluster);
+        if (width > 0 && width + cw > cols) flush();
+        line += cluster;
+        width += cw;
+      }
+    }
+  }
+  if (width > 0 || lines.empty()) flush();
+  return lines;
+}
+
 std::string realText(double v) {
   if (!isDefined(v)) return "-";
   std::string s = fixed(v, 4);  // never printf: its point is the locale's
@@ -101,6 +144,7 @@ std::vector<InfoSection> buildInfo(const Snapshot & snapshot, const EdgeKey & ed
   if (snapshot.known(NodeRef(edge.quote))) add("quote currency", snapshot.symbol(edge.quote));
   out.push_back(std::move(listing));
 
+
   out.push_back({"Instrument", attributeRows(snapshot, NodeRef(edge.base), {predicate::isin, predicate::name, predicate::kind})});
   out.push_back(
       {"Market", attributeRows(snapshot, NodeRef(edge.market),
@@ -118,7 +162,81 @@ std::vector<InfoSection> buildInfo(const Snapshot & snapshot, const EdgeKey & ed
   }
   out.push_back(std::move(series));
 
+  // The summary of the edge, which is not the data (the series above): what the table shows and what is kept between runs.
+  InfoSection summary{"Summary", {}};
+  if (const auto q = snapshot.quote(edge)) {
+    if (isDefined(q->last)) summary.rows.push_back({"last", {realText(q->last), std::nullopt}});
+    if (isDefined(q->bid)) summary.rows.push_back({"bid", {realText(q->bid), std::nullopt}});
+    if (isDefined(q->ask)) summary.rows.push_back({"ask", {realText(q->ask), std::nullopt}});
+    if (q->time != 0) {
+      const int64_t second = q->time - (dayNumberOfInstant(q->time) - kUnixEpochDayNumber) * 86400;
+      summary.rows.push_back({"quote time", {dateText(dayNumberOfInstant(q->time)) + " " + twoDigits(static_cast<int>(second / 3600)) + ":" + twoDigits(static_cast<int>(second % 3600 / 60)) + " UTC", std::nullopt}});
+    }
+  }
+  for (Resolution r : snapshot.queues(edge)) {
+    const auto c = snapshot.coverage(edge, r);
+    if (!c || c->count == 0) continue;
+    std::string text = std::to_string(c->count) + (c->count == 1 ? " bar, " : " bars, ") + barTime(r, c->first_key) + " to " + barTime(r, c->last_key) +
+                       (snapshot.queueResident(edge, r) ? ", in memory" : ", on the disk");
+    if (c->fetched > 0) {
+      const int64_t seconds = c->fetched / 1000, second = seconds - (dayNumberOfInstant(seconds) - kUnixEpochDayNumber) * 86400;
+      text += ", fetched " + dateText(dayNumberOfInstant(seconds)) + " " + twoDigits(static_cast<int>(second / 3600)) + ":" + twoDigits(static_cast<int>(second % 3600 / 60));
+    }
+    summary.rows.push_back({std::string("queue ") + name(r), {std::move(text), std::nullopt}});
+  }
+  if (!summary.rows.empty()) out.push_back(std::move(summary));
+
+
+  // The latest news of the instrument, of its market and of the market's country: a few headlines, newest first.
+  {
+    InfoSection latest{"Latest news", {}};
+    std::vector<NodeRef> nodes = {NodeRef(edge.base), NodeRef(edge.market)};
+    if (const std::string code = snapshot.said(NodeRef(edge.market), predicate::country); !code.empty())
+      if (const auto key = countryKey(code)) nodes.push_back(nodeOf(*key));
+    std::vector<NewsItem> items;
+    for (const NodeRef & node : nodes) {
+      NewsQuery q;
+      q.about = node;
+      q.limit = 5;
+      for (NewsItem & n : snapshot.news(q)) items.push_back(std::move(n));
+    }
+    std::sort(items.begin(), items.end(), [](const NewsItem & a, const NewsItem & b) { return a.time > b.time; });
+    for (const NewsItem & n : items) {
+      if (latest.rows.size() >= 8) break;
+      latest.rows.push_back({NewsTable::timeText(n.time), {n.headline, std::nullopt}});
+    }
+    if (!latest.rows.empty()) out.push_back(std::move(latest));
+  }
+
   // A section with nothing to say is not shown.
+  out.erase(std::remove_if(out.begin(), out.end(), [](const InfoSection & s) { return s.rows.empty(); }), out.end());
+  return out;
+}
+
+std::vector<InfoSection> buildNewsInfo(const Snapshot & snapshot, const NewsItem & item) {
+  std::vector<InfoSection> out;
+  InfoSection about{"News", {}};
+  auto add = [&](const char * predicate, std::string text) {
+    if (!text.empty()) about.rows.push_back({predicate, {std::move(text), std::nullopt}});
+  };
+  add("headline", item.headline);
+  add("time", NewsTable::timeText(item.time) + " UTC");
+  add("dataset", snapshot.name(NodeRef(item.dataset)));
+  add("id", item.id);
+  add("url", item.url);
+  out.push_back(std::move(about));
+  InfoSection attributes{"Attributes", {}};
+  for (const Attribute & a : item.attributes) attributes.rows.push_back({a.predicate, showValue(snapshot, a.predicate, a.value)});
+  out.push_back(std::move(attributes));
+  InfoSection whom{"About", {}};
+  for (const NodeRef & n : item.about) {
+    std::string name = snapshot.name(n);
+    if (name.empty()) name = text(NodeKey{n.id});
+    const char * kind = n.type == NodeType::Instrument ? "instrument" : n.type == NodeType::Market ? "market" : n.type == NodeType::Country ? "country" : "node";
+    whom.rows.push_back({kind, {std::move(name), n}});
+  }
+  out.push_back(std::move(whom));
+  if (!item.body.empty()) out.push_back({"Text", {{"intro", {item.body, std::nullopt}}}});
   out.erase(std::remove_if(out.begin(), out.end(), [](const InfoSection & s) { return s.rows.empty(); }), out.end());
   return out;
 }
@@ -127,24 +245,48 @@ AttributeModal::AttributeModal(Widget & root, Plane & screen, EventLoop & loop, 
                                std::vector<InfoSection> sections)
     : ModalDialog(root, screen, loop), title_(std::move(title)), snapshot_(std::move(snapshot)) {
   for (const InfoSection & section : sections) {
-    if (!lines_.empty()) lines_.push_back({});
-    lines_.push_back({Line::HEADING, section.title, "", false});
+    if (!rows_.empty()) rows_.push_back({});
+    rows_.push_back({Line::HEADING, section.title, "", false});
     for (const InfoRow & row : section.rows) {
-      lines_.push_back({Line::ROW, row.predicate, row.value.text, row.value.link.has_value()});
+      rows_.push_back({Line::ROW, row.predicate, row.value.text, row.value.link.has_value()});
       predicate_width_ = std::max(predicate_width_, utf8::displayWidth(row.predicate));
     }
   }
   predicate_width_ = std::min(predicate_width_, kMaxPredicateWidth);
+  wrapLines(kMaxWidth);
 }
 
 std::vector<std::string> AttributeModal::lines() const {
   std::vector<std::string> out;
-  for (const Line & line : lines_) out.push_back(line.kind == Line::ROW ? line.predicate + "  " + line.text : line.predicate);
+  for (const Line & line : lines_) {
+    if (line.kind != Line::ROW) out.push_back(line.predicate);
+    else if (line.continued) out.push_back(std::string(static_cast<size_t>(predicate_width_ + 2), ' ') + line.text);
+    else out.push_back(line.predicate + "  " + line.text);
+  }
   return out;
+}
+
+void AttributeModal::wrapLines(int value_cols) {
+  if (value_cols == value_cols_) return;
+  value_cols_ = value_cols;
+  lines_.clear();
+  for (const Line & row : rows_) {
+    if (row.kind != Line::ROW) {
+      lines_.push_back(row);
+      continue;
+    }
+    bool first = true;
+    for (std::string & part : wrapText(row.text, value_cols)) {
+      lines_.push_back({Line::ROW, first ? row.predicate : "", std::move(part), row.link, !first});
+      first = false;
+    }
+  }
 }
 
 void AttributeModal::layout(Plane & screen, int rows, int cols) {
   const int width = std::min(kMaxWidth, std::max(20, cols - 4));
+  const int valueX = 1 + predicate_width_ + 2, valueCols = std::max(1, width - 1 - valueX);
+  wrapLines(valueCols);
   // Padding, title, a gap, the lines, a gap, the hint, padding.
   constexpr int kChrome = 6;
   const int height = std::min(static_cast<int>(lines_.size()) + kChrome, std::max(kChrome + 1, rows - 2));
@@ -176,7 +318,6 @@ void AttributeModal::layout(Plane & screen, int rows, int cols) {
   plane_->move(top, left);
   body_.layout(screen, *plane_, top, left, 3, body_rows_, width - 1, bg, fg, quiet, strong);
   Plane & body = body_.plane();
-  const int valueX = 1 + predicate_width_ + 2, valueCols = std::max(0, width - 1 - valueX);
   const TextStyle plain{TextFont::PROPORTIONAL, TextOverflow::ELLIPSIS, kPlainFace, TextAlign::LEFT};
   for (int i = 0; i < body_.drawnRows(); i++) {
     const size_t at = static_cast<size_t>(body_.firstLine() + i);
@@ -187,7 +328,7 @@ void AttributeModal::layout(Plane & screen, int rows, int cols) {
       body.putText(i, 1, inner, line.predicate, TextStyle{TextFont::PROPORTIONAL, TextOverflow::ELLIPSIS, kBoldFace, TextAlign::LEFT});
     } else if (line.kind == Line::ROW) {
       body.setFgColor(quiet);
-      body.putText(i, 1, predicate_width_, line.predicate, plain);
+      if (!line.continued) body.putText(i, 1, predicate_width_, line.predicate, plain);
       body.setFgColor(line.link ? strong : fg);  // where a value refers to a node it will be a link
       body.putText(i, valueX, valueCols, line.text, plain);
     }

@@ -4,6 +4,8 @@
 #include "model/Isin.h"
 #include "source/InstrumentLists.h"
 #include "source/KnownMarkets.h"
+#include "source/NordnetNews.h"
+#include "source/KnownIsins.h"
 #include "source/LeftOut.h"
 #include "source/NordnetHeaders.h"
 
@@ -133,15 +135,31 @@ std::vector<Attribute> attributesOf(const json & row) {
   return out;
 }
 
-// A price in the price block: {"price": 65.03, "decimals": 2}.
+// A price in the price block: {"price": 65.03, "decimals": 2}. A price of 0 is no price: a suspended instrument (order book paused)
+// is listed with zeros, and a 0 is not a quote to show or a bar to keep.
 std::optional<double> price(const json & block, const char * key) {
   auto it = block.find(key);
   if (it == block.end() || !it->is_object()) return std::nullopt;
   auto p = it->find("price");
-  return p != it->end() && p->is_number() ? std::optional<double>(p->get<double>()) : std::nullopt;
+  if (p == it->end() || !p->is_number() || p->get<double>() == 0.0) return std::nullopt;
+  return p->get<double>();
 }
 
 
+
+}  // namespace
+
+namespace {
+
+// The ISIN of a row of Nordnet's indicator lists that gives none: by its symbol, from the ones the program knows (source/KnownIsins.h). A name
+// that is not in this table is not a thing the program knows: empty. Naming the constants is what makes a missing one a compile error.
+std::string missingIsin(const std::string & symbol) {
+  static const std::pair<const char *, const char *> table[] = {
+      {"ZINC", known_isin::kZinc}, {"LEAD", known_isin::kLead}, {"BRIC50D", known_isin::kBricIndia}};
+  for (const auto & [name, isin] : table)
+    if (symbol == name) return isin;
+  return {};
+}
 
 }  // namespace
 
@@ -150,15 +168,21 @@ std::vector<NordnetSource::List> NordnetSource::defaultLists() {
   const std::string indicators = "https://api.prod.nntech.io/instrument-screening/v1/indicator/web/list/";
   const std::string base = "https://www.nordnet.fi/api/2/instrument_search/query/";
   const std::string sorted = "sort_order=asc&sort_attribute=symbol";  // a key that does not move between pages
-  return {{"etflist", base + "etflist?" + sorted, 500},
+  // The indicator lists first: each is one small answer, and what they hold (the gold spot price that the physical gold is estimated from, the
+  // currency pairs that value it in euros) should not wait for the minutes the big lists take. Commodities before the pairs, the pairs
+  // before the indices.
+  return {{"commodities", indicators + "COMMODITIES", 0, std::chrono::milliseconds(0), Shape::Indicators, "Commodities"},
+          {"currencies", indicators + "CURRENCY_GLOBAL", 0, std::chrono::milliseconds(0), Shape::Indicators, "Currencies"},
+          {"indices", indicators + "WORLDMAP", 0, std::chrono::milliseconds(0), Shape::Indicators, "Indices"},
+          {"etflist", base + "etflist?" + sorted, 500},
           {"certificatelist", base + "certificatelist?apply_filters=instrument_type%3DPTC&" + sorted, 1000},
           // Priced once a day (a NAV), at a time that differs by provider and is not known: so, hourly.
           {"fundlist", base + "fundlist?" + sorted, 1000, std::chrono::hours(1)},
           {"stocklist", base + "stocklist?" + sorted, 1000},  // about 12,000 rows: a dozen pages
-          // One answer each, no sparkline (it is only the day's development in per cent).
-          {"indices", indicators + "WORLDMAP", 0, std::chrono::milliseconds(0), Shape::Indicators, "Indices"},
-          {"currencies", indicators + "CURRENCY_GLOBAL", 0, std::chrono::milliseconds(0), Shape::Indicators, "Currencies"},
-          {"commodities", indicators + "COMMODITIES", 0, std::chrono::milliseconds(0), Shape::Indicators, "Commodities"}};
+          // The newswires Nordnet shows by default for the Nordic markets; 50 an answer, the newest first. Last: an item is about the
+          // instruments the lists above have found.
+          {"news", "https://api.prod.nntech.io/news/v1/news/preview/main?includeInstruments=true&limit=50&agencies=GLOBAL_NEWSWIRE%2CFINWIRE_FUNDS%2CINDERES",
+           50, std::chrono::milliseconds(0), Shape::News, ""}};
 }
 
 const char * NordnetSource::knownMarketName(int id) {
@@ -202,15 +226,26 @@ bool NordnetSource::parsePage(const std::string & body, Page & page, std::string
     if (row.is_object() && row.contains("nnx_info") && row["nnx_info"].is_object()) {
       l.slug = text(row["nnx_info"], "display_slug");
       l.bookId = text(row["nnx_info"], "market_data_order_book_id");
+      l.nnxId = text(row["nnx_info"], "nnx_instrument_id");
     }
     if (row.is_object() && row.contains("price_info") && row["price_info"].is_object()) {
       const json & p = row["price_info"];
       auto open = price(p, "open"), high = price(p, "high"), low = price(p, "low"), last = price(p, "last");
+      // A halted instrument has no last price today: its final price is the previous close, which Nordnet shows too (and no change
+      // with it: with no open, high and low there is no bar for today).
+      if (!last) last = price(p, "close");
       const int64_t tick = integer(p, "tick_timestamp") / 1000;  // the answer is in milliseconds; seconds from here on
       // A fund has only its NAV: the bar's close, which is also the last price while the slot is still in progress (the
       // NAV of the day is dated by its tick). Its open, high and low are undefined, and so is a volume the answer lacks.
       const bool fund = kindOfType(l.type) == InstrumentKind::Fund;
       if (fund && last) open = high = low = kUndefined;
+      if (last && tick > 0) {
+        l.hasQuote = true;
+        l.quote.last = *last;
+        l.quote.bid = price(p, "bid").value_or(kUndefined);
+        l.quote.ask = price(p, "ask").value_or(kUndefined);
+        l.quote.time = tick;
+      }
       if ((fund || (open && high && low)) && last && tick > 0) {
         auto volume = p.find("turnover_volume");  // written to the bar when the answer has it; volume weights the bars
         l.hasBar = true;
@@ -258,6 +293,8 @@ bool NordnetSource::parseIndicators(const std::string & body, std::vector<Nordne
       const int64_t tick = integer(*p, "timestamp") / 1000;  // milliseconds in the answer
       auto h = number("high"), l = number("low"), c = number("last");
       if (c && tick > 0) {
+        r.hasQuote = true;
+        r.quote = {*c, number("bid").value_or(kUndefined), number("ask").value_or(kUndefined), tick};
         r.hasBar = true;
         // No open and no volume: undefined, and so are the high and the low where the row has none (the London metals
         // give only the last price). Keyed by the date of the last tick in UTC.
@@ -293,7 +330,7 @@ size_t NordnetSource::loadIndicators(const List & list, Store & store, Http & ht
     const DatasetId dataset = b.addDataset(kNordnetDataset);
     // Indices, currency pairs and commodity prices of these lists are on no
     // market.
-    const MarketId market = b.addMarket(kNoMarket);
+    const MarketId market = b.addMarket(kNoMarket, marketNameOfMic(kNoMarket));
     for (size_t i = 0; i < rows.size(); i++) {
       NordnetIndicator & row = rows[i];
       row.list = list.name;
@@ -305,9 +342,14 @@ size_t NordnetSource::loadIndicators(const List & list, Store & store, Http & ht
         base = currencyNode(b, row.name.substr(0, slash));
         quote = currencyNode(b, row.name.substr(slash + 1));
       } else {
-        // An index or a commodity is its ISIN; where Nordnet has none it gets one of ours, from what it is (Zinc, Lead, ...).
-        const std::string isin = row.isin.empty() ? privateIsin(row.symbol) : row.isin;
-        if (isin.empty()) continue;
+        // An index or a commodity is its ISIN; where Nordnet has none, one of the adapter's (Zinc, Lead, ...: source/KnownIsins.h), and a row
+        // that has none there is left out and said.
+        const std::string isin = row.isin.empty() ? missingIsin(row.symbol) : row.isin;
+        if (isin.empty()) {
+          leftOut.add(row.symbol);
+          refused.push_back(i);
+          continue;
+        }
         std::vector<Attribute> identifying = {{predicate::isin, isin}};
         const InstrumentKind kind = row.type == "INDEX" ? InstrumentKind::Index
                                     : row.type == "COMMODITY" ? InstrumentKind::Commodity
@@ -329,6 +371,7 @@ size_t NordnetSource::loadIndicators(const List & list, Store & store, Http & ht
       if (row.hasBar) {
         const EdgeKey edge{base, quote, market, dataset};
         b.appendCandles(edge, Resolution::Day, {row.bar});
+        if (row.hasQuote) b.setQuote(edge, row.quote);
         b.setListing({edge, row.symbol, "", row.orderBookId, row.type, row.name});
       }
       written++;
@@ -341,6 +384,40 @@ size_t NordnetSource::loadIndicators(const List & list, Store & store, Http & ht
   return written;
 }
 
+size_t NordnetSource::loadNews(const List & list, Store & store, Http & http, SourceListener & listener, bool & stop, bool first) {
+  size_t stored = 0;
+  const int pages = first ? 2 : 1;  // the first time a few hours back, then what is new since the last load
+  const DatasetId dataset = store.addDataset(kNordnetDataset);
+  for (int page = 0; page < pages; page++) {
+    if (listener.cancelled()) return stored;
+    HttpResult r = http.get(list.url + "&offset=" + std::to_string(page * list.pageSize), nordnet::marketDataHeaders());
+    if (!r.ok()) {
+      const bool refused = r.status == 429 || r.status == 403;
+      listener.message("nordnet: " + list.name + ": " +
+                       (r.status == 0 ? (r.error.empty() ? std::string("no answer") : r.error) : "HTTP " + std::to_string(r.status)) +
+                       (refused ? ", stopping" : ""));
+      stop = refused;
+      return stored;
+    }
+    std::vector<nordnet::NewsEntry> entries;
+    std::string error;
+    if (!nordnet::parseNews(r.body, entries, error)) {
+      listener.message("nordnet: " + list.name + ": " + error);
+      return stored;
+    }
+    auto snapshot = store.snapshot();
+    std::vector<NewsItem> items;
+    for (const nordnet::NewsEntry & e : entries) items.push_back(nordnet::toNews(e, *snapshot));
+    const size_t before = store.snapshot()->newsCount();
+    store.appendNews(dataset, items);
+    stored += store.snapshot()->newsCount() - before;  // what was new: an item said before is left as it was
+    if (entries.size() < static_cast<size_t>(list.pageSize)) break;  // the last page
+    if (page + 1 < pages && pause_.count() > 0 && !listener.pause(pause_)) return stored;
+  }
+  if (stored) listener.changed();
+  return stored;
+}
+
 void NordnetSource::load(Store & store, Http & http, SourceListener & listener) {
   std::string counts;  // "etflist 2304, certificatelist 1097": the lists loaded now
   int skipped = 0;
@@ -350,9 +427,17 @@ void NordnetSource::load(Store & store, Http & http, SourceListener & listener) 
     const auto now = std::chrono::steady_clock::now();
     auto last = loaded_.find(list.name);
     if (last != loaded_.end() && now - last->second < list.interval) continue;  // not due: what it gave stays
+    const bool firstLoad = last == loaded_.end();  // never loaded in this session
     loaded_[list.name] = now;
     std::erase_if(listings_, [&](const NordnetListing & l) { return l.list == list.name; });
     std::erase_if(indicators_, [&](const NordnetIndicator & i) { return i.list == list.name; });
+    if (list.shape == List::Shape::News) {
+      if (listener.cancelled()) return;
+      const size_t n = loadNews(list, store, http, listener, stop, firstLoad);
+      if (n) counts += (counts.empty() ? "" : ", ") + list.name + " " + std::to_string(n);
+      if (!stop && pause_.count() > 0 && !listener.pause(pause_)) return;
+      continue;
+    }
     if (list.shape == List::Shape::Indicators) {
       if (listener.cancelled()) return;
       const size_t n = loadIndicators(list, store, http, listener, stop);
@@ -438,10 +523,12 @@ void NordnetSource::load(Store & store, Http & http, SourceListener & listener) 
           }
           // What Nordnet says of the instrument itself: thin edges, of the types it has.
           b.setAttributes(base, l.attributes);
+          if (!l.nnxId.empty()) b.setAttribute(base, {nordnet::kInstrumentId, l.nnxId});  // what the news refers to it by
           // Today's bar makes the edge; a listing with none stays a node nothing selects.
           if (l.hasBar) {
             const EdgeKey edge{base, quote, market, dataset};
             b.appendCandles(edge, Resolution::Day, {l.bar});
+            if (l.hasQuote) b.setQuote(edge, l.quote);
             // What the market says of it: what it calls it, its own id for it and the order book its history is asked for by.
             b.setListing({edge, l.symbol, l.identifier, l.bookId, l.type, l.name});
           }

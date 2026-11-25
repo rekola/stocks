@@ -34,11 +34,18 @@ bool hasHeader(const HttpHeaders & headers, const std::string & name, const std:
   return false;
 }
 
+// The default lists with these names, in this order: a test does not depend on where a list stands among the others.
+std::vector<NordnetSource::List> listsNamed(std::initializer_list<const char *> names) {
+  std::vector<NordnetSource::List> out;
+  for (const char * name : names)
+    for (const NordnetSource::List & list : NordnetSource::defaultLists())
+      if (list.name == name) out.push_back(list);
+  return out;
+}
+
 // The ETFs and the certificates, which the fixtures above answer.
 std::vector<NordnetSource::List> etfAndCertificateLists() {
-  auto lists = NordnetSource::defaultLists();
-  lists.resize(2);
-  return lists;  // loaded at every load, as the lists have no interval
+  return listsNamed({"etflist", "certificatelist"});  // loaded at every load, as the lists have no interval
 }
 
 NordnetSource quick() { return NordnetSource(etfAndCertificateLists(), std::chrono::milliseconds(0)); }
@@ -178,9 +185,7 @@ TEST(a_page_of_a_list_is_one_publication) {
   FakeHttp http;
   http.answer = pages;
   Listener listener;
-  auto lists = NordnetSource::defaultLists();
-  lists.erase(lists.begin(), lists.begin() + 1);
-  lists.resize(1);  // the certificates: one page
+  auto lists = listsNamed({"certificatelist"});  // one page
   NordnetSource source(lists, std::chrono::milliseconds(0));
   const auto before = store->snapshot();
   source.load(*store, http, listener);
@@ -267,8 +272,7 @@ TEST(a_row_of_an_indicator_list_with_a_bad_isin_is_left_out_and_the_next_list_is
     if (url.find("CURRENCY_GLOBAL") != std::string::npos) return ok(fixture("indicators-currencies.json"));
     return ok(fixture("indicators-commodities.json"));
   };
-  auto lists = NordnetSource::defaultLists();
-  lists.erase(lists.begin(), lists.begin() + 4);  // only the three indicator lists
+  auto lists = listsNamed({"indices", "currencies", "commodities"});  // only the three indicator lists
   Listener listener;
   NordnetSource source(lists, std::chrono::milliseconds(0));
   source.load(*store, http, listener);  // does not throw
@@ -290,8 +294,7 @@ TEST(listings_of_one_isin_with_different_names_leave_one_name_and_no_change_on_t
       return ok(pageOfListings(isin, {{11, "SE", "Abroad"}, {4, "DE", "Home"}, {14, "DK", "Elsewhere"}}));
     };
     Listener listener;
-    auto lists = NordnetSource::defaultLists();
-    lists.resize(1);
+    auto lists = listsNamed({"etflist"});
     NordnetSource source(lists, std::chrono::milliseconds(0));
     source.load(*store, http, listener);
     const auto id = store->snapshot()->findInstrumentByIsin(isin);
@@ -473,6 +476,17 @@ TEST(a_listing_without_a_price_is_a_node_and_has_no_edge) {
         *s->findInstrumentByIsin("ZZ0000000016"));
 }
 
+TEST(a_halted_instrument_shows_its_previous_close_and_has_no_bar) {
+  const char * body = R"({"rows":1,"total_hits":1,"results":[
+    {"instrument_info":{"instrument_id":1,"symbol":"LEHTO","isin":"ZZ0000000016","currency":"EUR","name":"Suspended","instrument_type":"ESH"},
+     "market_info":{"market_id":4,"identifier":"LEHTO"},
+     "price_info":{"last":{"price":0},"close":{"price":0.0318},"open":{"price":0},"high":{"price":0},"low":{"price":0},"bid":{"price":0},"ask":{"price":0},"tick_timestamp":1795192200000}}]})";
+  NordnetSource::Page page;
+  std::string error;
+  CHECK(NordnetSource::parsePage(body, page, error));
+  CHECK(page.listings.size() == 1 && page.listings[0].hasQuote && page.listings[0].quote.last == 0.0318 && !page.listings[0].hasBar);
+}
+
 TEST(an_instrument_keeps_the_type_nordnet_gives_it_and_edges_can_be_selected_by_it) {
   auto store = makeMemoryStore();
   FakeHttp http;
@@ -537,16 +551,25 @@ TEST(a_stock_bar_carries_the_volume_when_the_answer_has_it) {
   CHECK(NordnetSource::parsePage(fixture("certificatelist-1.json"), page, error));
   CHECK(page.listings[0].bar.volume == 825020);
   CHECK(NordnetSource::parsePage(fixture("stocklist-1.json"), page, error));
-  CHECK(page.listings.back().hasBar);
+  CHECK(page.listings.front().hasBar);
+  // A halted one (zero prices, a previous close) has its final price as a quote and no bar for today.
+  CHECK(!page.listings.back().hasBar && page.listings.back().hasQuote && page.listings.back().quote.last == 92.1);
 }
 
 TEST(the_default_lists_are_the_etfs_the_certificates_the_funds_and_the_stocks) {
   auto lists = NordnetSource::defaultLists();
-  CHECK(lists.size() == 7);
-  CHECK(lists[2].name == "fundlist" && lists[3].name == "stocklist");
-  CHECK(lists[4].name == "indices" && lists[5].name == "currencies" && lists[6].name == "commodities");
-  CHECK(lists[4].shape == NordnetSource::List::Shape::Indicators && lists[4].market == "Indices");
-  CHECK(lists[3].url.find("/stocklist?") != std::string::npos && lists[3].pageSize == 1000);
+  CHECK(lists.size() == 8);
+  // The three small indicator lists go first, the commodities (the gold spot that physical gold is estimated from) before the pairs
+  // (that value it in euros): none of them waits for the minutes the big lists take.
+  CHECK(lists[0].name == "commodities" && lists[1].name == "currencies" && lists[2].name == "indices");
+  for (size_t i = 0; i < 3; i++) CHECK(lists[i].shape == NordnetSource::List::Shape::Indicators);
+  CHECK(lists[2].market == "Indices");
+  CHECK(lists[3].name == "etflist" && lists[4].name == "certificatelist" && lists[5].name == "fundlist" && lists[6].name == "stocklist");
+  CHECK(lists[6].url.find("/stocklist?") != std::string::npos && lists[6].pageSize == 1000);
+  for (size_t i = 3; i < 7; i++) CHECK(lists[i].shape != NordnetSource::List::Shape::Indicators);
+  // The news is last: its items are about the instruments the lists before it have found.
+  CHECK(lists[7].name == "news" && lists[7].shape == NordnetSource::List::Shape::News &&
+        lists[7].url.find("/news/v1/news/preview/main?includeInstruments=true") != std::string::npos);
 }
 
 TEST(
@@ -660,8 +683,7 @@ TEST(the_indicator_lists_make_indices_in_points_currency_pairs_and_commodities_i
     if (url.find("CURRENCY_GLOBAL") != std::string::npos) return ok(fixture("indicators-currencies.json"));
     return ok(fixture("indicators-commodities.json"));
   };
-  auto lists = NordnetSource::defaultLists();
-  lists.erase(lists.begin(), lists.begin() + 4);  // only the three indicator lists
+  auto lists = listsNamed({"indices", "currencies", "commodities"});  // only the three indicator lists
   Listener listener;
   NordnetSource(lists, std::chrono::milliseconds(0)).load(*store, http, listener);
   CHECK(http.urls.size() == 3 && http.urls[0].find("/instrument-screening/v1/indicator/web/list/WORLDMAP") != std::string::npos);
@@ -680,14 +702,14 @@ TEST(the_indicator_lists_make_indices_in_points_currency_pairs_and_commodities_i
   CHECK(!s->listing(onDax)->orderBook.empty() && s->listing(onDax)->type == "INDEX");  // what its history is asked for by
   CHECK(asText(*s->attribute(dax, "country")) == "DE");
 
-  // One with no ISIN gets one of ours, in the private namespace, from its symbol.
-  const std::string bric = privateIsin("BRIC50D");
-  CHECK(bric.rfind("ZZ", 0) == 0 && isValidIsin(bric));
+  // One with no ISIN has the one source/KnownIsins.h has for its symbol: the real one of the index and of
+  // the commodity (XC) for lead.
+  const std::string bric = "US26075E1047", leadIsin = "XC0005705527";
   CHECK(s->findInstrumentByIsin(bric) && s->kind(*s->findInstrumentByIsin(bric)) == InstrumentKind::Index);
-  CHECK(s->kind(*s->findInstrumentByIsin(privateIsin("LEAD"))) == InstrumentKind::Commodity);
+  CHECK(s->kind(*s->findInstrumentByIsin(leadIsin)) == InstrumentKind::Commodity);
 
   // A metal the London exchange prices has only a last price: a bar with the high and the low undefined.
-  const InstrumentId lead = *s->findInstrumentByIsin(privateIsin("LEAD"));
+  const InstrumentId lead = *s->findInstrumentByIsin(leadIsin);
   CandleSeries leadBar = s->lastCandles(
       {lead, *s->findInstrument("USD"), *s->findMarket("XXXX"), nordnet},
       Resolution::Day, 1);
@@ -787,21 +809,10 @@ TEST(what_a_row_says_reaches_the_instrument_and_a_reload_changes_nothing) {
   CHECK(store->snapshot()->attributes(xaix).size() == said);
 }
 
-TEST(a_private_isin_is_made_from_what_the_thing_is_in_a_namespace_nobody_issues_from) {
-  // The algorithm, on ISINs that exist.
-  for (const char * isin : {"DE0008469008", "US78378X1072", "RU000A0JP7K5", "XC0009655157", "FI0009000681", "US12573F1084"})
+TEST(isins_are_checked_by_their_check_digit) {
+  for (const char * isin : {"DE0008469008", "US78378X1072", "RU000A0JP7K5", "XC0009655157", "FI0009000681", "US12573F1084", "XC0005705584", "XC0005705527"})
     CHECK(isValidIsin(isin));
   CHECK(!isValidIsin("DE0008469009") && !isValidIsin("DE000846900") && !isValidIsin(""));
-  const std::string zinc = privateIsin("ZINC");
-  CHECK(zinc.rfind("ZZ", 0) == 0 && isValidIsin(zinc));  // there is one zinc: no source in it
-  CHECK(privateIsin("LEAD") != zinc);
-  // The exact text is the key: case and punctuation tell things apart.
-  CHECK(privateIsin("zinc") != zinc && privateIsin("Z-I NC") != zinc && privateIsin("GC=F") != privateIsin("GCF"));
-  CHECK(privateIsin("abc") != privateIsin("ABC") && isValidIsin(privateIsin("abc")) && isValidIsin(privateIsin("ABC")));
-  // A long one has one too, and only nothing has none.
-  CHECK(isValidIsin(privateIsin("A TEXT THAT IS MUCH LONGER THAN NINE CHARACTERS")) && privateIsin("").empty());
-  // A fixed hash: the same on every run and platform.
-  CHECK(zinc == "ZZSEZBQVPB31");
 }
 
 TEST(nordnet_types_are_mapped_onto_the_one_vocabulary_and_certificates_are_named) {
@@ -811,4 +822,17 @@ TEST(nordnet_types_are_mapped_onto_the_one_vocabulary_and_certificates_are_named
   CHECK(NordnetSource::kindOfType("ESHMTF") == InstrumentKind::Company && NordnetSource::kindOfType("ESHOTC") == InstrumentKind::Company);
   CHECK(NordnetSource::kindOfType("FUCITS") == InstrumentKind::Fund && NordnetSource::kindOfType("FOTH") == InstrumentKind::Fund);
   CHECK(NordnetSource::kindOfType("") == InstrumentKind::Other && NordnetSource::kindOfType("SOMETHING_NEW") == InstrumentKind::Other);
+}
+
+TEST(search_rows_give_the_instrument_the_id_the_news_refers_to_it_by) {
+  auto store = makeMemoryStore();
+  FakeHttp http;
+  http.answer = pages;
+  Listener listener;
+  quick().load(*store, http, listener);
+  auto s = store->snapshot();
+  const InstrumentId flxk = *s->findInstrumentByIsin("IE00BHZRR030");
+  CHECK(asText(*s->attribute(flxk, "nordnet-instrument")) == "e9cab3b7-681a-4676-9790-6cdcdd9e7527");
+  // And it finds the instrument by that id.
+  CHECK(s->findByAttribute(NodeType::Instrument, "nordnet-instrument", "e9cab3b7-681a-4676-9790-6cdcdd9e7527")->id == flxk.value);
 }

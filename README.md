@@ -19,11 +19,12 @@ session if the first gives nothing (no network, a refusal).
     cmake -B build
     cmake --build build -j
     build/stocks                 # on the display cellui picks
+    build/stocks   # Nordnet (or Yahoo) plus the small loaders: Euribor, €STR and every fund company in data/funds; --source replaces that set
     build/stocks --ui terminal   # in the terminal
     build/stocks --ui window     # in a window, when cellui is built with GTK
     build/stocks --source synthetic   # made-up prices, no network
     build/stocks --market XHEL   # load only that market
-    build/stocks --source suomenpankki   # the daily Euribor rates (1 week to 12 months) from the Bank of Finland, in per cent, no key
+    build/stocks --source spfb   # the daily Euribor rates (1 week to 12 months) from the Bank of Finland, in per cent, no key
     build/stocks --source ecb   # the euro short-term rate (€STR) and its compounded index from the European Central Bank, no key
     build/stocks --source nordnet,funds:NAME   # several sources, at once; funds:NAME is a fund company by its schema, data/funds/NAME.json (shown under All)
 
@@ -33,13 +34,19 @@ its description and key; `q` (`C-x C-c`, `Ctrl+Q`) quits. `i` (`C-x =`) or the �
 heading sorts; clicking a tag or row chooses it; the wheel scrolls. The table
 fills the screen and follows it when it is resized.
 
-**Portfolios.** A portfolio is what you hold: positions in instruments you bought, valued at the prices the store has. There are two
-contexts, **Markets** (the presets above) and **Portfolio**; `Tab` goes to the next (`next-context`) and `Shift+Tab` to the previous
+**Portfolios.** A portfolio is what you hold: positions in instruments you bought, valued at the prices the store has. There are three
+contexts, **Markets** (the presets above), **Portfolio** and **News**; `Tab` goes to the next (`next-context`) and `Shift+Tab` to the previous
 (`previous-context`), in both keymap profiles. The Portfolio context has the portfolios as its tags (by name; one is shown at a time, there is
 no "All") over a table of its positions: symbol, name, quantity, average cost, price, value (in the portfolio's currency, with a star in the
 heading where a position has no price or rate to it, which is then shown in its own currency and left out of the total), weight,
 P&L, P&L % and the change and trace of the period (the period tags apply to both contexts). Each context keeps its own tag, sort and
 scroll position while the program runs.
+
+**News.** The News context lists the news, newest first, whatever it is about: a time (UTC), a kind, the headline, whom it is about (an
+instrument, a market, a country, or nothing) and the dataset that said it. Its tags are presets: all, press releases, analyses, news
+and general (about nothing in particular), each a selection by what the item says, as the presets of the markets are. `i` shows an
+item with its link and what it is about, and the info of a row of Markets lists the latest news of its instrument, market and country.
+An item is its dataset and the dataset's own id: two datasets with the same story show it twice, and nothing is replaced.
 
 **Charts.** A click on a row's trace (or `Enter` with the cursor on it, or `c` for the selected row; the command is `show-chart`) shows the
 trace of the period chosen as a large chart over the dimmed screen, with no window around it: the line in the colour of the period's change, the
@@ -57,17 +64,31 @@ portfolio offers to make one.
 
 | command | what it does | terminal keymap | desktop keymap |
 |---|---|---|---|
-| `next-context`, `previous-context` | Markets, Portfolio | `Tab`, `Shift+Tab` | `Tab`, `Shift+Tab` |
+| `next-context`, `previous-context` | Markets, Portfolio, News | `Tab`, `Shift+Tab` | `Tab`, `Shift+Tab` |
 | `new-portfolio` | a name and a currency | | |
 | `rename-portfolio`, `delete-portfolio` | the portfolio shown; delete confirms | | |
 | `buy`, `sell` | the row's form (the buttons) | | |
 | `undo` | takes back your last change: a trade, a new, renamed or deleted portfolio | `C-x u`, `C-/` | `Ctrl+Z` |
 | `redo` | makes it again | `C-M-_` | `Ctrl+Y` |
 
+**Spot prices of metals.** Two sources give them, each a dataset of its own with its own row for the same instrument (the rows are never merged in the store; what reads a spot picks one, see below). `goldprice` ([goldprice.dev](https://goldprice.dev), no key; it runs by default) asks one request for the prices of gold, silver and copper (it stores euros and dollars) and has daily bars: the last 30 days of gold in dollars without a key, which the month shows as a trace. Its prices come 15 minutes late. `goldapi` ([gold-api.com](https://gold-api.com), no key; it runs by default) lists its
+symbols (gold, silver, platinum, palladium, copper, and Bitcoin and Ethereum) and asks the price of each in euros and in dollars: each is an
+instrument with a price in both currencies on the market of what is priced and not traded, in the Commodities preset (the metals) and in
+All. They are spot prices and cannot be bought. The API takes them from several data providers (another answers when one is down) and cross-checks them, but does not guarantee them: verify a price before a financial decision. A price is for the unit its row's name says: the metals by the troy ounce (`Gold, per troy oz`), copper by the metric tonne (`Copper, per tonne`: the API quotes it per pound and it is converted, so it is the same number as another source's copper of the same ISIN), a coin by the coin.
+
+**Physical metals.** `physical` is a source (it runs beside the default one) that estimates the metals held in hand, off exchange (XOFF),
+from the spot prices the others give (in euros and in dollars, each its own price: the one with the newest bar, and of those of one day the first that `data/physical/items.csv` names, goldprice.dev's before gold-api.com's, so one that stops answering is passed by the other; Nordnet's gold in dollars where neither has any),
+so they are bought and sold like any other row: **Gold bar (1 g fine)**, held by the gram, **Gold coin (1 oz fine)**, held by the troy
+ounce, and a sample, **Platinum bar (1 g fine)**. Their price in each currency is their metal's spot price in it (per troy ounce) times the fine weight of a unit
+and a bid factor, and a holding is valued at that, so the premium paid shows as a loss at first. **The factors in `data/physical/items.csv` are
+guesses, not any dealer's**: edit them to the dealer you use. They are in the `Physical` preset (market `Off exchange`, dataset `Estimate`; silver and scrap gold would go there too: a row of `data/physical/items.csv` each) and in `All`;
+`buy` on the row, and the price in the form is yours to change. A dealer's real list, bid and ask, is planned
+(`plans/quotes.md`).
+
 Your portfolios are your own data: they are kept in `portfolios.sqlite` beside `facts.sqlite` in the data directory (`--portfolios FILE`
 chooses another, `--no-portfolios` keeps them for the session only). It is never the cache's file, which the sources rebuild: a portfolio
 is not written to it and a source cannot write one. A file of another schema is moved aside (`.old-<time>`) and a damaged one to
-`.bad-<time>`, never emptied in place; the status line says so. Undo and redo are for the session. See
+`.bad-<time>`, never emptied in place; the status line says so. Undo and redo are for the session. If an instrument's ISIN ever changes under transactions you typed in (the gold bar and coin did, when `src/source/KnownIsins.h` replaced the hashed ISINs), `tools/rekey_isin.py` moves them; the program itself migrates nothing. See
 [plans/portfolios.md](plans/portfolios.md).
 
 The period: the Change column and the trace beside it always show the same period, and the headings say which
@@ -110,10 +131,18 @@ from their candidate lists, the other countries from the largest companies of a 
 that has ISINs (each found by its ISIN, so the ticker is certainly the same company).
 Asia-Pacific and Latin America are not covered: there is no source of their ISINs yet.
 
+An instrument whose source gives it no ISIN (zinc, lead and the BRIC 50 India index in Nordnet's lists, the coins, the physical metals) has one its
+adapter names from `src/source/KnownIsins.h`: the real ISIN where there is one, else one of ours (`ZZ…`, numbered). The file's head says how
+to add one, and it does not compile with an invalid or repeated ISIN. A row with none there is not kept, and the status line says so.
+
 What the sources say of instruments, markets and datasets (names, icons, a market's country) is kept between runs in a
 SQLite file, `facts.sqlite` in the user's data directory (`--facts FILE` chooses another, `--no-facts` runs without it); your portfolios are in
 `portfolios.sqlite` beside it (`--portfolios FILE`, `--no-portfolios`); see
-[plans/data-model.md](plans/data-model.md).
+[plans/data-model.md](plans/data-model.md). What the tables and the portfolios need of each price (the last price, bid and ask of every edge,
+and the bars behind each sparkline) is kept in a small file for each dataset, `summaries/<dataset>.sqlite` beside them (`--summaries DIR`,
+`--no-summaries`): it is a summary, not the history, which stays in memory ("The summary" in the data model). The program opens at once: the
+facts and the edges are read on a thread of their own while it runs, what your portfolios hold first, so the tables show every price as
+the last run left it, with no network, and each trace appears when its queue has been read from the file.
 
 The data model is planned in [plans/data-model.md](plans/data-model.md), the server, its API and the bars in [plans/server.md](plans/server.md), and the market calendars in [plans/calendars.md](plans/calendars.md).
 

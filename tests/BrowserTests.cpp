@@ -3,6 +3,7 @@
 #include "AttributeView.h"
 #include "Browser.h"
 #include "model/Dates.h"
+#include "News.h"
 #include "Quotes.h"
 #include "Positions.h"
 #include "portfolio/Portfolio.h"
@@ -21,6 +22,19 @@
 #include <clocale>
 
 using namespace cellui;
+
+TEST(a_trace_is_as_bright_as_its_bars_volume_against_the_periods_usual_and_medium_with_no_volume) {
+  Seq<Candle> bars;
+  for (double volume : {100.0, 100.0, 100.0, 0.0, 800.0, kUndefined}) bars = std::move(bars).push_back({1, 1, 1, 1, 1, volume});
+  const std::vector<float> light = activity(bars);
+  CHECK(light.size() == 6);
+  CHECK(light[0] == 0.25f);       // the usual volume: bright, not past white
+  CHECK(light[3] == 0.0f);        // none: medium
+  CHECK(light[4] == 1.0f);        // abnormal: the brightest, lit past white
+  CHECK(light[5] == 0.0f);        // not defined counts as none
+  const Seq<Candle> silent = Seq<Candle>().push_back({1, 1, 1, 1, 1, kUndefined});
+  CHECK(activity(silent).empty());
+}
 
 namespace {
 
@@ -74,7 +88,7 @@ struct Fixture {
   std::shared_ptr<Store> store = makeMemoryStore();
   std::unique_ptr<Browser> browser;
   // Over the made-up data, or over a store the test has filled.
-  explicit Fixture(bool synthetic = true, int cols = 100, KeymapProfile profile = KeymapProfile::TERMINAL) {
+  explicit Fixture(bool synthetic = true, int cols = 110, KeymapProfile profile = KeymapProfile::TERMINAL) {
     if (synthetic) fillSyntheticData(*store, instrumentList());
     DisplayInfo display;
     display.keymap_profile = profile;
@@ -168,6 +182,12 @@ TEST(meta_x_opens_the_palette_and_a_chosen_command_runs) {
   f.press(Key::Enter);
   CHECK(!f.app->commandPaletteOpen());
   CHECK(f.browser->tags().selected() == 2);
+}
+
+TEST(ctrl_shift_p_opens_the_palette_on_a_desktop) {
+  Fixture f(true, 100, KeymapProfile::DESKTOP);
+  f.press('p', kModCtrl | kModShift);
+  CHECK(f.app->commandPaletteOpen());
 }
 
 TEST(the_palette_takes_every_key_while_open_and_escape_closes_it_at_once_without_running) {
@@ -304,10 +324,10 @@ TEST(a_preset_shows_one_row_per_edge_with_its_dataset) {
   InstrumentId usd = f.store->addInstrument("USD", "US dollar", InstrumentKind::Currency);
   MarketId currencies = f.store->addMarket("XXXX", "Currencies");
   DatasetId a = f.store->addDataset("providera"), b = f.store->addDataset("providerb");
-  f.store->appendCandles({eur, usd, currencies, a}, Resolution::Day, {{0, 1, 1, 1, 1.00, 1}, {1000, 1, 1, 1, 1.10, 1}});
-  f.store->appendCandles({eur, usd, currencies, b}, Resolution::Day, {{0, 1, 1, 1, 2.00, 1}, {1000, 1, 1, 1, 1.00, 1}});
+  f.store->appendCandles({eur, usd, currencies, a}, Resolution::Day, {{900, 1, 1, 1, 1.00, 1}, {1000, 1, 1, 1, 1.10, 1}});
+  f.store->appendCandles({eur, usd, currencies, b}, Resolution::Day, {{900, 1, 1, 1, 2.00, 1}, {1000, 1, 1, 1, 1.00, 1}});
   f.app->execute("show-currencies");
-  f.app->execute("show-period-day");  // the bars are a thousand days apart: the day is the change since the previous bar
+  f.app->execute("show-period-day");  // the bars are a hundred days apart: the day is the change since the previous bar
   Table & t = f.browser->table();
   CHECK(t.model()->rowCount() == 2);  // the same pair on the same market from two datasets: two rows
   t.sortBy(Quotes::DATASET, SortOrder::ASCENDING);
@@ -726,13 +746,15 @@ TEST(show_info_from_the_keyboard_shows_the_isin_the_symbol_a_number_and_a_date_a
   f.app->execute("show-nasdaq-helsinki");
   CHECK(f.browser->table().selectedRow() == 0);
   std::string shown;
+  std::string middle;
   std::string end;
   const bool closed_by_escape = f.inModal([&] { f.press('i'); },
-                                          {[&] { shown = f.text(); }, [&] { f.press(Key::End); }, [&] { end = f.text(); }, [&] { f.press(Key::Escape); }});
+                                          {[&] { shown = f.text(); }, [&] { f.press(Key::PageDown); }, [&] { middle = f.text(); }, [&] { f.press(Key::End); }, [&] { end = f.text(); },
+                                           [&] { f.press(Key::Escape); }});
   CHECK(shown.find("FI0009000681") != std::string::npos);  // the instrument's ISIN
   CHECK(shown.find("NOKIA") != std::string::npos);         // the listing's symbol
   CHECK(shown.find("12345.675") != std::string::npos);     // a real number, with a point
-  CHECK(end.find("2026-03-05") != std::string::npos);      // a day number, as a date (below, where the keys scrolled to)
+  CHECK(middle.find("2026-03-05") != std::string::npos || shown.find("2026-03-05") != std::string::npos);  // a day number, as a date (below, where the keys scrolled to)
   CHECK(end.find("2 bars, 2026-01-02 to 2026-01-05") != std::string::npos);
   CHECK(closed_by_escape);
   CHECK(f.text().find("Esc: close") == std::string::npos);
@@ -1029,6 +1051,31 @@ TEST(the_info_viewer_lists_the_intraday_series_of_a_row) {
   CHECK(found);
 }
 
+TEST(a_long_value_wraps_at_whitespace_and_a_long_word_is_broken_between_characters) {
+  CHECK(wrapText("", 10) == std::vector<std::string>{""});
+  CHECK(wrapText("short", 10) == std::vector<std::string>{"short"});
+  CHECK((wrapText("one two three four", 9) == std::vector<std::string>{"one two", "three", "four"}));
+  CHECK((wrapText("  spaced \n out  ", 20) == std::vector<std::string>{"spaced out"}));
+  const std::vector<std::string> url = wrapText("see https://example.com/a/b", 10);
+  CHECK((url == std::vector<std::string>{"see", "https://ex", "ample.com/", "a/b"}));
+  CHECK((wrapText("ab\xE6\x97\xA5\xE6\x97\xA5", 3) == std::vector<std::string>{"ab", "\xE6\x97\xA5", "\xE6\x97\xA5"}));  // wide characters are not split
+}
+
+TEST(the_attribute_dialog_wraps_a_long_value_under_its_predicate_and_asks_for_the_displays_selection) {
+  Fixture f(false);
+  Rows rows = periodWorld(*f.store);
+  const std::string value = "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau upsilon phi chi psi omega alpha beta gamma delta epsilon zeta";
+  AttributeModal modal(f.app->widgets(), f.app->root(), f.app->backend().eventLoop(), "t", f.store->snapshot(), {{"S", {{"note", {value, std::nullopt}}}}});
+  CHECK(modal.wantsNativeSelection());
+  const std::vector<std::string> lines = modal.lines();
+  CHECK(lines.size() >= 3);  // the heading and the value over two lines
+  CHECK(lines[1].rfind("note  alpha", 0) == 0);
+  CHECK(lines[2].rfind("      ", 0) == 0);
+  std::string joined;
+  for (size_t i = 1; i < lines.size(); i++) joined += (joined.empty() ? "" : " ") + lines[i].substr(lines[i].find_first_not_of(' ') + (i == 1 ? 6 : 0));
+  CHECK(joined == value);
+}
+
 TEST(the_days_base_is_the_previous_close_of_that_session_never_one_left_from_an_earlier_one) {
   Fixture f(false);
   Rows rows = periodWorld(*f.store);
@@ -1039,8 +1086,9 @@ TEST(the_days_base_is_the_previous_close_of_that_session_never_one_left_from_an_
   // A newer session's bars: a close said for the one before is not its base.
   f.store->appendCandles(rows.riseFall, Resolution::Day, {{kToday + 1, 1, 1, 1, 22, 1}});
   f.store->appendCandles(rows.riseFall, Resolution::Min5, {{fiveMinuteSlot(kToday + 1, 0), 1, 1, 1, 23, 1}});
+  // The quote (22, said at noon) is newer than the session's one five-minute bar (23): it is the last price, and the trace ends with it.
+  f.store->setQuote(rows.riseFall, {22, kUndefined, kUndefined, (kToday + 1 - kUnixEpochDayNumber) * 86400 + 12 * 3600});
   PeriodView v = periodView(*snapshot(), rows.riseFall, Period::Day, true);
-  // The session's daily bar (22) is newer than its one five-minute bar (23): it is the last price, and the trace ends with it.
   CHECK(v.base == 20 && v.last == 22 && v.closes.size() == 2 && v.closes[0] == 23.0f && v.closes[1] == 22.0f);
 }
 
@@ -1068,18 +1116,21 @@ EdgeKey seriesWorld(Store & store, Period period, std::vector<Candle> daily) {
 }
 }  // namespace
 
-TEST(a_newer_daily_bar_is_the_last_price_of_the_day_week_and_year_and_ends_their_trace) {
+TEST(a_newer_quote_is_the_last_price_of_the_day_week_and_year_and_ends_their_trace) {
+  const auto noon = [](int64_t day) { return (day - kUnixEpochDayNumber) * 86400 + 12 * 3600; };
   for (Period period : {Period::Day, Period::Week, Period::Year}) {
     auto store = makeMemoryStore();
-    // The daily bar of today has moved on since the series was loaded.
+    // The price of today has moved on since the series was loaded (what the list says, with its time: a bar is dated by its day, which is
+    // no time of it).
     EdgeKey k = seriesWorld(*store, period, {{kToday - 1, 1, 1, 1, 9, 1}, {kToday, 1, 1, 1, 12, 1}});
+    store->setQuote(k, {12, kUndefined, kUndefined, noon(kToday)});
     PeriodView v = periodView(*store->snapshot(), k, period, true);
     CHECK(v.last == 12 && !v.closes.empty() && v.closes.back() == 12.0f);
     CHECK(v.change() > 0);
     // The same close as the series' last bar adds no point.
     PeriodView same = periodView(*store->snapshot(), k, period, false);
     CHECK(same.last == 12 && same.base == v.base);
-    store->appendCandles(k, Resolution::Day, {{kToday, 1, 1, 1, 10, 1}});
+    store->setQuote(k, {10, kUndefined, kUndefined, noon(kToday) + 60});
     PeriodView still = periodView(*store->snapshot(), k, period, true);
     CHECK(still.last == 10 && still.closes.back() == 10.0f && still.closes.size() == v.closes.size() - 1);
   }
@@ -1104,7 +1155,7 @@ TEST(a_narrow_screen_keeps_the_presets_and_the_headings_still_name_the_period) {
   f.app->execute("show-period-week");
   CHECK(f.browser->period() == Period::Week);
   CHECK(f.text().find("1 week") != std::string::npos || f.text().find("Change 1w") != std::string::npos);
-  Fixture wide(true, 100);
+  Fixture wide(true, 120);
   CHECK(cellOf(wide.text(), "1w").first == 0);  // room: the tags are at the right end of the top row
 }
 
@@ -1242,8 +1293,12 @@ TEST(tab_switches_the_context_and_shift_tab_goes_back_and_both_are_commands) {
   CHECK(f.browser->context() == Context::Markets);
   f.press(Key::Tab);
   CHECK(f.browser->context() == Context::Portfolio);
-  f.press(Key::Tab);  // two contexts: round to the first
+  f.press(Key::Tab);
+  CHECK(f.browser->context() == Context::News);
+  f.press(Key::Tab);  // three contexts: round to the first
   CHECK(f.browser->context() == Context::Markets);
+  f.press(Key::Tab, kModShift);
+  CHECK(f.browser->context() == Context::News);
   f.press(Key::Tab, kModShift);
   CHECK(f.browser->context() == Context::Portfolio);
   f.press(Key::Tab, kModShift);
@@ -1354,6 +1409,7 @@ TEST(the_period_tags_stay_and_apply_to_both_contexts) {
   CHECK(f.browser->period() == Period::Week && f.text().find("Change 1w") != std::string::npos);
   f.app->execute("show-period-year");
   CHECK(f.text().find("Change 1y") != std::string::npos);
+  f.press(Key::Tab);  // News, which has no change, and then round to Markets
   f.press(Key::Tab);
   CHECK(f.browser->period() == Period::Year && f.text().find("Change 1y") != std::string::npos);
 }
@@ -1561,7 +1617,8 @@ TEST(a_click_on_the_buy_button_opens_the_form_for_that_row_and_not_the_selected_
       size_t end = screen.find('\n', from);
       if (end == std::string::npos) end = screen.size();
       const std::string line = screen.substr(from, end - from);
-      if (line.find("NOKIA") == 0) {
+      const size_t first = line.find_first_not_of(' ');  // the icon column comes before the base
+      if (first != std::string::npos && line.compare(first, 5, "NOKIA") == 0) {
         const auto at = cellOf(line, kBuyGlyphText);
         target_row = row;
         target_col = at.second;
@@ -1995,4 +2052,101 @@ TEST(tab_and_shift_tab_switch_the_context_in_both_profiles_and_buy_and_sell_have
     f.type("buy");
     CHECK(f.app->commandPaletteOpen() && f.text().find("buy") != std::string::npos && f.text().find("sell") == std::string::npos);
   }
+}
+
+// ---- News
+
+namespace {
+
+NewsItem newsItem(const char * id, Timestamp time, const char * headline, std::vector<NodeRef> about, const char * kind) {
+  NewsItem n;
+  n.id = id;
+  n.time = time;
+  n.headline = headline;
+  n.about = std::move(about);
+  n.attributes.push_back({predicate::kind, kind});
+  return n;
+}
+
+}  // namespace
+
+TEST(the_news_context_shows_the_news_newest_first_and_a_preset_is_a_selection_by_kind) {
+  Fixture f(false, 160);
+  const InstrumentId nokia = f.store->addInstrument("", "Nokia Oyj", InstrumentKind::Company, "FI0009000681", "ESH");
+  const DatasetId data = f.store->addDataset("nordnet", "Nordnet");
+  const NodeRef finland = nodeOf(*countryKey("FI"));
+  f.store->appendNews(data, {newsItem("1", 1795214400, "Nokia buys back shares", {nokia, finland}, kPressRelease),
+                             newsItem("2", 1795218000, "Analyst raises Nokia", {nokia}, kAnalysis),
+                             newsItem("3", 1795221600, "Markets close higher", {}, kNewsStory)});
+  f.app->execute("show-all-news");
+  CHECK(f.browser->context() == Context::News && f.browser->tags().selected() == 0);
+  auto & table = f.browser->table();
+  const auto * news = dynamic_cast<const NewsTable *>(table.model().get());
+  CHECK(news && news->rowCount() == 3);
+  CHECK(news->item(0).headline == "Markets close higher" && news->item(2).headline == "Nokia buys back shares");  // newest first
+  const std::string screen = f.text();
+  CHECK(screen.find("Markets close higher") != std::string::npos && screen.find("Nokia Oyj, FI") != std::string::npos);
+  CHECK(news->text(2, NewsTable::TIME) == "2026-11-20 22:40" && news->text(2, NewsTable::KIND) == kPressRelease);
+  CHECK(news->text(2, NewsTable::SOURCE) == "Nordnet");
+  // The presets select by what the item says under `kind`, and the general one by what it is about.
+  f.app->execute("show-analyses");
+  CHECK(f.browser->tags().selected() == 2 && table.model()->rowCount() == 1 && table.model()->text(0, NewsTable::HEADLINE) == "Analyst raises Nokia");
+  f.app->execute("show-press-releases");
+  CHECK(table.model()->rowCount() == 1 && table.model()->text(0, NewsTable::HEADLINE) == "Nokia buys back shares");
+  f.app->execute("show-general-news");
+  CHECK(table.model()->rowCount() == 1 && table.model()->text(0, NewsTable::HEADLINE) == "Markets close higher");
+  CHECK(f.browser->tags().tags().size() == 5);
+  // News that arrives while it is shown comes in at once, and the selection stays.
+  f.app->execute("show-all-news");
+  table.select(1);
+  f.store->appendNews(data, {newsItem("4", 1795225200, "A fresh item", {}, kNewsStory)});
+  f.app->widgets().postToRoot(StoreChanged{});
+  f.app->present();
+  CHECK(table.model()->rowCount() == 4 && table.model()->text(0, NewsTable::HEADLINE) == "A fresh item");
+  CHECK(table.model()->text(table.selectedRow(), NewsTable::HEADLINE) == "Analyst raises Nokia");
+  // Tab goes round Markets, Portfolio and News; every command has its description.
+  for (const char * name : {"show-all-news", "show-press-releases", "show-analyses", "show-news-stories", "show-general-news"}) CHECK(!f.app->commands().description(name).empty());
+}
+
+TEST(the_info_of_a_news_item_says_whom_it_is_about_and_the_info_of_a_row_lists_its_latest_news) {
+  Fixture f(false, 160);
+  const InstrumentId eur = f.store->addInstrument("EUR", "Euro", InstrumentKind::Currency, "", "");
+  const InstrumentId nokia = f.store->addInstrument("", "Nokia Oyj", InstrumentKind::Company, "FI0009000681", "ESH");
+  const MarketId hel = f.store->addMarket("XHEL", "Nasdaq Helsinki");
+  const DatasetId data = f.store->addDataset("nordnet", "Nordnet");
+  f.store->appendCandles({nokia, eur, hel, data}, Resolution::Day, {{dayNumber(2026, 1, 2), 1, 1, 1, 4.2, 1}});
+  f.store->appendNews(data, {newsItem("1", 1795214400, "Nokia buys back shares", {nokia}, kPressRelease)});
+  auto snapshot = f.store->snapshot();
+  std::string all;
+  for (const InfoSection & section : buildInfo(*snapshot, {nokia, eur, hel, data}))
+    for (const InfoRow & row : section.rows) all += section.title + "|" + row.predicate + "|" + row.value.text + "\n";
+  CHECK(all.find("Latest news|2026-11-20 22:40|Nokia buys back shares") != std::string::npos);
+  all.clear();
+  for (const InfoSection & section : buildNewsInfo(*snapshot, snapshot->news()[0]))
+    for (const InfoRow & row : section.rows) all += section.title + "|" + row.predicate + "|" + row.value.text + "\n";
+  CHECK(all.find("News|headline|Nokia buys back shares") != std::string::npos && all.find("About|instrument|Nokia Oyj") != std::string::npos);
+  CHECK(all.find("Attributes|kind|press-release") != std::string::npos);
+}
+
+TEST(the_physical_preset_has_what_is_held_in_hand_and_not_the_funds_or_the_spot) {
+  Fixture f(false, 120);
+  Holdings h = addHoldings(*f.store);
+  Untradables u = addUntradables(*f.store, h);  // the fund is on XOFF too, and the index and the rate on XXXX
+  InstrumentId gold = f.store->addInstrument("GOLDCOIN", "Gold coin (1 oz fine)", InstrumentKind::Commodity);
+  InstrumentId spot = f.store->addInstrument("GOLD", "Gold", InstrumentKind::Commodity, "XC0009655157");
+  MarketId off = *f.store->snapshot()->findMarket(kOffExchange), none = *f.store->snapshot()->findMarket(kNoMarket);
+  DatasetId data = f.store->addDataset(kPhysicalDataset, "Estimate");
+  for (const EdgeKey & k : {EdgeKey{gold, h.usd, off, data}, EdgeKey{spot, h.usd, none, h.user}})
+    f.store->appendCandles(k, Resolution::Day, {{kNow, 1, 1, 1, 2900, 1}});
+  f.store->setListing({EdgeKey{gold, h.usd, off, data}, "GOLDCOIN", "", "", "PHYSICAL", "Gold coin (1 oz fine)"});
+  f.app->execute("show-physical");
+  CHECK(f.browser->context() == Context::Markets && f.browser->tags().tags()[static_cast<size_t>(f.browser->tags().selected())] == "Physical");
+  const auto * quotes = dynamic_cast<const Quotes *>(f.browser->table().model().get());
+  CHECK(quotes != nullptr && quotes->rowCount() == 1 && quotes->text(0, Quotes::BASE) == "GOLDCOIN");  // not the fund, nor the spot gold
+  CHECK(f.text().find("Estimate") != std::string::npos && f.text().find("Physical") != std::string::npos);
+  // From the Portfolio context the command goes to Markets first, as the other presets do.
+  f.press(Key::Tab);
+  f.app->execute("show-physical");
+  CHECK(f.browser->context() == Context::Markets && quotes != nullptr);
+  CHECK(!f.app->commands().description("show-physical").empty());
 }

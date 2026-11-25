@@ -27,7 +27,8 @@ class HistoryProvider {
   // What an edge needs for the period on the screen.
   struct Need {
     int request = 0;      // which request gives it
-    bool stored = false;  // the store has that already (loaded before, or from elsewhere): not asked for until it has expired
+    bool stored = false;  // the store has that already (in memory, or the summary has it on the disk: loaded before, or from elsewhere): not asked for until it has expired
+    TimestampMs fetched = 0;  // when what it has was fetched (milliseconds UTC; 0: not known), so that the loader can tell it has expired
   };
   // Waits the loader's pause between two requests of one load; false if the loader is stopping and the load is to return.
   using Wait = std::function<bool()>;
@@ -39,6 +40,10 @@ class HistoryProvider {
   virtual std::optional<Need> need(const Snapshot &, const EdgeKey &, Period) const { return Need{}; }
   // How long a loaded request stays good before a wanted edge is asked for again; zero (the default): once per session.
   virtual std::chrono::milliseconds lifetime(int /*request*/) const { return std::chrono::milliseconds(0); }
+  // How long a window of bars the summary keeps of each queue of `resolution` for this dataset, measured back from the queue's last bar (not from
+  // the clock): the provider knows what its requests give and the periods that use them. None: no queue of that resolution is kept. Unless it
+  // says otherwise it is the longest period that Period.cpp lists for the resolution.
+  virtual std::optional<std::chrono::seconds> keep(Resolution resolution) const { return defaultKeep(resolution); }
   // Loads the request: writes its bars to the store, and what else it learns of the instrument.
   virtual Outcome load(Store &, Http &, const EdgeKey &, int request, const Wait &) = 0;
   // The wait after a request of its own, if longer than the loader's.

@@ -15,6 +15,12 @@ std::string labelOf(const Snapshot & snapshot, MarketId id) {
   return marketCode(id);
 }
 
+// The price of a row is the last price of its quote; none: 0.
+double priceOf(const Snapshot & snapshot, const EdgeKey & key) {
+  const auto quote = snapshot.quote(key);
+  return quote && isDefined(quote->last) ? quote->last : 0;
+}
+
 // A currency is its code ("EUR" of EUR/USD); anything else what the market calls it.
 std::string baseOf(const Snapshot & snapshot, const EdgeKey & key) {
   // Two facts and no view of the instrument: this is read for every row, and to put them in order.
@@ -39,7 +45,7 @@ std::string quoteOf(const Snapshot & snapshot, const EdgeKey & key) {
 // and costs nothing; a heading sorts by what a person looks for.
 void appendEdges(const Snapshot & snapshot, MarketId market, std::vector<EdgeKey> & out) {
   for (const EdgeKey & key : snapshot.edges(market))
-    if (snapshot.hasCandles(key, Resolution::Day)) out.push_back(key);  // no daily bars: a book alone has no row
+    if (snapshot.listed(key)) out.push_back(key);  // no price and no daily queue: a book alone has no row
 }
 
 void appendRows(const Snapshot & snapshot, MarketId market, Period period, std::vector<QuoteRow> & rows) {
@@ -47,7 +53,6 @@ void appendRows(const Snapshot & snapshot, MarketId market, Period period, std::
   std::vector<EdgeKey> keys;
   appendEdges(snapshot, market, keys);
   for (const EdgeKey & key : keys) {
-    const CandleSeries last = snapshot.lastCandles(key, Resolution::Day, 1);  // the price is the latest daily close
     PeriodView view = periodView(snapshot, key, period, true);
     QuoteRow r;
     r.key = key;
@@ -58,7 +63,7 @@ void appendRows(const Snapshot & snapshot, MarketId market, Period period, std::
     r.quote = quoteOf(snapshot, key);
     r.dataset = snapshot.name(key.dataset);
     r.history = std::move(view.closes);
-    r.price = last.candles.back().close;
+    r.price = priceOf(snapshot, key);
     r.rate = view.rate;
     r.change = view.change();
     rows.push_back(std::move(r));
@@ -164,6 +169,15 @@ Quotes::Quotes(std::shared_ptr<const Snapshot> snapshot, std::vector<EdgeKey> ke
   reset(std::move(snapshot), std::move(keys));
 }
 
+std::string iconSymbolOf(const Snapshot & snapshot, InstrumentId instrument) {
+  if (auto symbol = snapshot.attribute(instrument, predicate::iconSymbol)) return asText(*symbol).value_or("");
+  switch (snapshot.kind(instrument)) {
+    case InstrumentKind::Index: return "📈";
+    case InstrumentKind::Currency: return "💱";
+    default: return {};
+  }
+}
+
 std::string Quotes::iconUrl(int r) const {
   auto url = snapshot_->attribute(edge(r).base, predicate::iconUrl);
   return url ? asText(*url).value_or("") : std::string();
@@ -174,6 +188,8 @@ std::shared_ptr<const cellui::TableIcon> Quotes::icon(int r, int c) const {
   const std::string url = iconUrl(r);
   return url.empty() ? nullptr : icons_->get(url);
 }
+
+std::string Quotes::iconFallback(int r, int c) const { return c == ICON ? iconSymbolOf(*snapshot_, edge(r).base) : std::string(); }
 
 void Quotes::reset(std::shared_ptr<const Snapshot> snapshot, std::vector<EdgeKey> keys) {
   keys_ = std::move(keys);
@@ -218,10 +234,7 @@ const std::string & Quotes::datasetName(DatasetId id) const {
   return it->second;
 }
 
-double Quotes::price(int r) const {
-  CandleSeries last = snapshot_->lastCandles(edge(r), Resolution::Day, 1);  // the price is the latest daily close
-  return last.candles.empty() ? 0 : last.candles.back().close;
-}
+double Quotes::price(int r) const { return priceOf(*snapshot_, edge(r)); }
 
 double Quotes::change(int r) const { return periodView(*snapshot_, edge(r), period_, false).change(); }
 
@@ -252,11 +265,14 @@ std::string Quotes::text(int r, int c) const {
   }
 }
 
-std::span<const float> Quotes::trace(int r, int) const {
+std::span<const float> Quotes::trace(int r, int) const { return traceOf(r).closes; }
+std::span<const float> Quotes::traceLight(int r, int) const { return traceOf(r).light; }
+
+const PeriodView & Quotes::traceOf(int r) const {
   auto it = traces_.find(r);
   if (it == traces_.end()) {
     if (traces_.size() > 1024) traces_.clear();  // far more than a screen draws at once
-    it = traces_.emplace(r, periodView(*snapshot_, edge(r), period_, true).closes).first;
+    it = traces_.emplace(r, periodView(*snapshot_, edge(r), period_, true)).first;
   }
   return it->second;
 }

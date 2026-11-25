@@ -16,6 +16,10 @@
 #include <vector>
 
 // One table row is one edge: what one unit of `base` costs in `quote`, as one dataset reports it on one market.
+// The symbol that stands for an instrument's icon where there is no picture: the one it says itself (iconSymbol), else one of its
+// kind (an index 📈, a currency 💱: quoted in another, it is a currency pair); empty for none.
+std::string iconSymbolOf(const Snapshot & snapshot, InstrumentId instrument);
+
 struct QuoteRow {
   EdgeKey key;
   std::string base, quote, name, market, dataset;
@@ -93,7 +97,10 @@ class Quotes : public cellui::TableModel {
   // The icon URL of a row's base instrument, empty for none.
   std::string iconUrl(int r) const;
   std::shared_ptr<const cellui::TableIcon> icon(int r, int c) const override;
+  // The symbol an instrument says stands for its icon, shown where there is no picture.
+  std::string iconFallback(int r, int c) const override;
   std::span<const float> trace(int r, int) const override;
+  std::span<const float> traceLight(int r, int) const override;
   std::optional<cellui::Color> color(int r, int c) const override;
   // Prices and changes sort by their values, not their rounded text; the others by their text, letters of either case alike.
   // The change is the number as shown: basis points for a rate, per cent for a price. In a preset that mixes rates and prices
@@ -113,7 +120,8 @@ class Quotes : public cellui::TableModel {
   std::vector<EdgeKey> keys_;
   size_t rows_seen_ = 0;  // how many of the store's rows (Snapshot::quoteRowCount()) the rows above are made from
   mutable std::unordered_map<uint64_t, std::string> marketLabels_, datasetNames_;
-  mutable std::unordered_map<int, std::vector<float>> traces_;  // the rows drawn lately, for the span trace() gives
+  const PeriodView & traceOf(int r) const;  // the row's period view with its trace, kept while it is drawn
+  mutable std::unordered_map<int, PeriodView> traces_;  // the rows drawn lately, for the span trace() gives
   mutable std::vector<double> numbers_[2];                      // the sort keys of price and change
   mutable std::vector<std::string> texts_[HISTORY];             // and of the text columns, in lower case
   mutable bool built_[HISTORY + 1] = {};
