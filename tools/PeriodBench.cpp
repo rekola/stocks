@@ -98,12 +98,13 @@ int main(int argc, char ** argv) {
     // A frame.
     t = Clock::now();
     size_t sink = 0;
-    for (int r = 0; r < 50; r++) {
+    const int shown = std::min(50, quotes.rowCount());  // a table shorter than a screen has fewer rows to draw
+    for (int r = 0; r < shown; r++) {
       sink += quotes.text(r, Quotes::CHANGE).size() + quotes.trace(r, Quotes::HISTORY).size() + quotes.color(r, Quotes::CHANGE).has_value() +
               quotes.color(r, Quotes::HISTORY).has_value() + quotes.text(r, Quotes::PRICE).size();
     }
     const double frame = since(t);
-    std::printf("%-7s period %.3f ms, sorted by Change %.1f ms | refresh %.1f ms, sorted by Change %.1f ms | frame of 50 rows %.3f ms (%zu)\n",
-                info(period).id, choose, chooseSorted, refresh, refreshSorted, frame, sink);
+    std::printf("%-7s period %.3f ms, sorted by Change %.1f ms | refresh %.1f ms, sorted by Change %.1f ms | frame of %d rows %.3f ms (%zu)\n",
+                info(period).id, choose, chooseSorted, refresh, refreshSorted, shown, frame, sink);
   }
 }

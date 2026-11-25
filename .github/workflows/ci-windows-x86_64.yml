@@ -28,6 +28,7 @@ jobs:
             mingw-w64-ucrt-x86_64-ninja
             mingw-w64-ucrt-x86_64-libunistring
             mingw-w64-ucrt-x86_64-python
+            mingw-w64-ucrt-x86_64-gdb
             git
 
       - name: Configure
@@ -38,3 +39,11 @@ jobs:
 
       - name: Test
         run: ctest --test-dir build --output-on-failure
+
+      # Where a test crashed, the place it crashed at.
+      - name: Backtrace of a crash
+        if: failure()
+        run: |
+          for t in stocks_period_bench stocks_frame_bench; do
+            echo "== $t"; gdb -batch -ex run -ex bt --args build/$t.exe 30 || true
+          done
