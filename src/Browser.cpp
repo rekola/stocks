@@ -276,7 +276,10 @@ void Browser::showInfo() {
   // The input that got us here does not return until the modal closes, so no frame follows it: ask for the one that shows
   // the new selection and the dialog.
   app_.requestFrame();
+  // The terminal and the window select and copy the dialog's text themselves while it is up, so it gets no clicks.
+  app_.backend().setNativeSelection(modal.wantsNativeSelection());
   modal.showModal();
+  app_.backend().setNativeSelection(false);
   app_.requestFrame();
 }
 

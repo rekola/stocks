@@ -749,6 +749,31 @@ TEST(the_info_viewer_lists_the_intraday_series_of_a_row) {
   CHECK(found);
 }
 
+TEST(a_long_value_wraps_at_whitespace_and_a_long_word_is_broken_between_characters) {
+  CHECK(wrapText("", 10) == std::vector<std::string>{""});
+  CHECK(wrapText("short", 10) == std::vector<std::string>{"short"});
+  CHECK((wrapText("one two three four", 9) == std::vector<std::string>{"one two", "three", "four"}));
+  CHECK((wrapText("  spaced \n out  ", 20) == std::vector<std::string>{"spaced out"}));
+  const std::vector<std::string> url = wrapText("see https://example.com/a/b", 10);
+  CHECK((url == std::vector<std::string>{"see", "https://ex", "ample.com/", "a/b"}));
+  CHECK((wrapText("ab\xE6\x97\xA5\xE6\x97\xA5", 3) == std::vector<std::string>{"ab", "\xE6\x97\xA5", "\xE6\x97\xA5"}));  // wide characters are not split
+}
+
+TEST(the_attribute_dialog_wraps_a_long_value_under_its_predicate_and_asks_for_the_displays_selection) {
+  Fixture f(false);
+  Rows rows = periodWorld(*f.store);
+  const std::string value = "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau upsilon phi chi psi omega alpha beta gamma delta epsilon zeta";
+  AttributeModal modal(f.app->widgets(), f.app->root(), f.app->backend().eventLoop(), "t", f.store->snapshot(), {{"S", {{"note", {value, std::nullopt}}}}});
+  CHECK(modal.wantsNativeSelection());
+  const std::vector<std::string> lines = modal.lines();
+  CHECK(lines.size() >= 3);  // the heading and the value over two lines
+  CHECK(lines[1].rfind("note  alpha", 0) == 0);
+  CHECK(lines[2].rfind("      ", 0) == 0);
+  std::string joined;
+  for (size_t i = 1; i < lines.size(); i++) joined += (joined.empty() ? "" : " ") + lines[i].substr(lines[i].find_first_not_of(' ') + (i == 1 ? 6 : 0));
+  CHECK(joined == value);
+}
+
 TEST(the_days_base_is_the_previous_close_of_that_session_never_one_left_from_an_earlier_one) {
   Fixture f(false);
   Rows rows = periodWorld(*f.store);
