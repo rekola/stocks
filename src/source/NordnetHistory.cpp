@@ -19,7 +19,7 @@ struct Ask {
   const char * period;
   const char * resolution;
 };
-constexpr Ask kAsks[] = {{"MONTH_3", "DAY"}, {"DAY_1", "MIN_5"}, {"WEEK_1", "HOUR_1"}, {"YEAR_1", "WEEK"}};
+constexpr Ask kAsks[] = {{"MONTH_3", "DAY"}, {"DAY_1", "MIN_5"}, {"WEEK_1", "HOUR_1"}, {"YEAR_1", "WEEK"}, {"YEAR_3", "WEEK"}, {"YEAR_10", "WEEK"}};
 
 // Which request feeds a period. A fund is priced once a day, so it has no intraday bars to ask for.
 int requestOf(Period period, bool nav) {
@@ -27,6 +27,8 @@ int requestOf(Period period, bool nav) {
     case Period::Day: return nav ? NordnetHistory::Quarter : NordnetHistory::Day;
     case Period::Week: return nav ? NordnetHistory::Quarter : NordnetHistory::Week;
     case Period::Year: return NordnetHistory::Year;
+    case Period::Year3: return NordnetHistory::Year3;
+    case Period::Year10: return NordnetHistory::Year10;
     default: return NordnetHistory::Quarter;  // the month is part of the quarter
   }
 }
@@ -151,14 +153,14 @@ std::optional<HistoryProvider::Need> NordnetHistory::need(const Snapshot & snaps
 }
 
 // What the summary keeps of what each request gives: the 5-minute bars of the day (one day), the hourly bars of the week (one week), the daily bars
-// of the month and the quarter (three months) and the weekly bars of the year (one year); no queue of any other resolution.
+// of the month and the quarter (three months) and the weekly bars of the year, three years and ten years (the weekly queue keeps ten); no queue of any other resolution.
 std::optional<std::chrono::seconds> NordnetHistory::keep(Resolution resolution) const {
   constexpr int64_t kDay = 86400;
   switch (resolution) {
     case Resolution::Min5: return std::chrono::seconds(kDay);
     case Resolution::Hour1: return std::chrono::seconds(7 * kDay);
     case Resolution::Day: return std::chrono::seconds(92 * kDay);
-    case Resolution::Week: return std::chrono::seconds(365 * kDay);
+    case Resolution::Week: return std::chrono::seconds(3650 * kDay);
     default: return std::nullopt;
   }
 }
@@ -170,6 +172,8 @@ std::chrono::milliseconds NordnetHistory::lifetime(int request) const {
     case Day: return options_.day_lifetime;
     case Week: return options_.week_lifetime;
     case Year: return options_.year_lifetime;
+    case Year3: return options_.year3_lifetime;
+    case Year10: return options_.year10_lifetime;
     default: return std::chrono::milliseconds(0);
   }
 }

@@ -15,6 +15,8 @@ const PeriodInfo kInfo[kPeriodCount] = {
     {"month", "1m", "1 month", 30, {R::Day}, 1, 1},
     {"quarter", "3m", "3 months", 90, {R::Day}, 1, 1},
     {"year", "1y", "1 year", 365, {R::Week, R::Day}, 2, 2},
+    {"year3", "3y", "3 years", 3 * 365, {R::Week}, 1, 1},
+    {"year10", "10y", "10 years", 10 * 365, {R::Week}, 1, 1},
 };
 
 int64_t dayOf(Resolution r, int64_t key) { return isDateResolution(r) ? key : dayNumberOfInstant(instantOfSlot(r, key)); }

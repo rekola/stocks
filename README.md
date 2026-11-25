@@ -93,9 +93,9 @@ is not written to it and a source cannot write one. A file of another schema is 
 [plans/portfolios.md](plans/portfolios.md).
 
 The period: the Change column and the trace beside it always show the same period, and the headings say which
-(`Change 3m`, `3 months`). The tags `1d 1w 1m 3m 1y` at the right end of the top row (where there is room) show it and a click
-chooses it; `]` and `[` (`next-period`, `previous-period`) step through them, `C-c d w m q y` (`Alt+1` to `Alt+5` on the
-desktop keymap) choose one (`show-period-day`, `-week`, `-month`, `-quarter`, `-year`). It is one for every row, kept while the
+(`Change 3m`, `3 months`). The tags `1d 1w 1m 3m 1y 3y 10y` at the right end of the top row (where there is room) show it and a click
+chooses it; `]` and `[` (`next-period`, `previous-period`) step through them, `C-c d w m q y 3 t` (`Alt+1` to `Alt+7` on the
+desktop keymap) choose one (`show-period-day`, `-week`, `-month`, `-quarter`, `-year`, `-year3`, `-year10`). It is one for every row, kept while the
 program runs, and starts at the three months. The change is the last price against the period's first (for the day, the
 previous close); a rate's (a row quoted in per cent: Euribor, €STR) is the difference in basis points, and the colour of both is its sign. A row with no bars for the period shows no number and no trace. The rows on
 screen load what the period needs, and again once it is old (the day after 15 minutes, the week after an hour, the year after

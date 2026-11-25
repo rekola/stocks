@@ -1,12 +1,13 @@
 #pragma once
 
 #include "source/DatasetCodes.h"
+#include "source/YahooHistory.h"
 #include "source/Source.h"
 #include "source/InstrumentLists.h"
 
 #include <chrono>
 
-// Yahoo Finance's chart endpoint: daily candles, dividends and splits for every instrument of its listserse. Unofficial
+// Yahoo Finance's chart endpoint: daily candles, dividends and splits for every instrument of its lists, and (YahooHistory) weekly bars for the longer periods. Unofficial
 // and without a key, so it can change or throttle without notice; for personal use. The dataset is "yahoo".
 class YahooSource : public Source {
  public:
@@ -27,6 +28,7 @@ class YahooSource : public Source {
   std::vector<std::string> datasetCodes() const override { return {kYahooDataset}; }
   std::string description() const override { return "Yahoo Finance: daily candles, dividends and splits (no key)"; }
   void load(Store &, Http &, SourceListener &) override;
+  std::shared_ptr<HistoryProvider> historyProvider() override { return history_; }
 
   // One chart response into the store as `entry`. False, with `error` set, when it holds no data, or when the entry names no
   // instrument or quote (an ISIN with a wrong check digit): it is left out, and nothing of it is written.
@@ -41,4 +43,5 @@ class YahooSource : public Source {
   bool fromFiles_ = false;
   std::string range_;
   std::chrono::milliseconds pause_;
+  std::shared_ptr<YahooHistory> history_ = std::make_shared<YahooHistory>();
 };
