@@ -22,7 +22,7 @@ endif()
 include(FetchContent)
 FetchContent_Declare(cellui
   GIT_REPOSITORY https://github.com/rekola/cellui
-  GIT_TAG main)
+  GIT_TAG claude/gifted-fermat-5aljk9)
 FetchContent_MakeAvailable(cellui)
 
 # immer: persistent (structure-sharing) vectors and maps, header-only, Boost licence. The store is an immutable value
