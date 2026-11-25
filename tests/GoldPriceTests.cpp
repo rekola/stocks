@@ -5,6 +5,7 @@
 #include "source/GoldApiSource.h"
 #include "source/GoldPriceHistory.h"
 #include "source/GoldPriceSource.h"
+#include "model/Period.h"
 #include "source/PhysicalSource.h"
 
 #include <fstream>
@@ -209,4 +210,27 @@ TEST(of_two_sources_of_one_spot_the_newest_bar_wins_and_on_the_same_day_the_row_
   CHECK(std::abs(coin("USD") - 3500.0) < 1e-9);
   // A row naming a dataset the store has not is skipped, and a bad row is said.
   CHECK(!parsePhysicalTable("spot,gold,XAU,A,B\nitem,gold,GOLDCOIN,Coin,1,1,1\n", table, error) && error.find("spot,METAL,SYMBOL") != std::string::npos);
+}
+
+TEST(the_gold_chart_has_a_trace_for_every_period_the_bars_reach_and_a_change_only_for_the_month) {
+  Edge edge;
+  GoldPriceHistory history;
+  FakeHttp http;
+  // The 29 days the free plan gives, ending on the day of the spot bar.
+  http.answer = [](const std::string &) {
+    std::string bars;
+    for (int i = 0; i < 29; i++) {
+      const Date d = dateOfDayNumber(dayNumber(2026, 11, 25) - 1 - i);
+      char day[32];
+      std::snprintf(day, sizeof day, "%04d-%02u-%02uT00:00:00Z", d.year, d.month, d.day);
+      bars += std::string(i ? "," : "") + "{\"bar_start\":\"" + day + "\",\"open\":\"3500\",\"high\":\"3600\",\"low\":\"3400\",\"close\":\"" + std::to_string(3500 + i) + "\"}";
+    }
+    return ok("{\"bars\":[" + bars + "],\"next_cursor\":null}");
+  };
+  CHECK(history.load(*edge.store, http, edge.key, 0, [] { return true; }) == HistoryProvider::Outcome::Ok);
+  const auto s = edge.store->snapshot();
+  const PeriodView month = periodView(*s, edge.key, Period::Month, true), quarter = periodView(*s, edge.key, Period::Quarter, true), year = periodView(*s, edge.key, Period::Year, true);
+  CHECK(month.closes.size() > 20 && isDefined(month.change()));
+  CHECK(quarter.closes.size() > 20 && !isDefined(quarter.change()));
+  CHECK(year.closes.size() > 20 && !isDefined(year.change()));
 }
