@@ -291,6 +291,7 @@ bool NordnetSource::parseIndicators(const std::string & body, std::vector<Nordne
     r.country = text(row, "countryCode");
     if (r.symbol.empty() || r.orderBookId.empty() || r.type.empty()) continue;
     if (auto p = row.find("price"); p != row.end() && p->is_object()) {
+      r.priceSource = text(*p, "priceSource");
       // The prices are bare numbers here, not {"price": ...} as in the search lists.
       auto number = [&](const char * key) -> std::optional<double> {
         auto it = p->find(key);
@@ -338,7 +339,8 @@ size_t NordnetSource::loadIndicators(const List & list, Store & store, Http & ht
   std::vector<size_t> refused;  // the rows left out, which the source does not keep
   // The whole list is one publication.
   store.batch([&](Batch & b) {
-    const DatasetId dataset = b.addDataset(kNordnetDataset);
+    const DatasetId nordnet = b.addDataset(kNordnetDataset);
+    const DatasetId morningstar = b.addDataset(kMorningstarDataset, "Morningstar");
     // Indices, currency pairs and commodity prices of these lists are on no
     // market.
     const MarketId market = b.addMarket(kNoMarket, marketNameOfMic(kNoMarket));
@@ -380,7 +382,8 @@ size_t NordnetSource::loadIndicators(const List & list, Store & store, Http & ht
       }
       if (row.type != "CURRENCY") b.setAttribute(base, {predicate::country, row.country});  // of an index
       if (row.hasBar) {
-        const EdgeKey edge{base, quote, market, dataset};
+        // Whose price it is: the source the row names, where the program has a dataset for it; Nordnet's own otherwise.
+        const EdgeKey edge{base, quote, market, row.priceSource == "MORNINGSTAR" ? morningstar : nordnet};
         b.appendCandles(edge, Resolution::Day, {row.bar});
         if (row.hasQuote) b.setQuote(edge, row.quote);
         b.setListing({edge, row.symbol, "", row.orderBookId, row.type, row.name});

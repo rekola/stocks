@@ -54,6 +54,8 @@ class NordnetHistory : public HistoryProvider {
   explicit NordnetHistory(Options options) : options_(options) {}
 
   std::string dataset() const override;
+  // Nordnet's edges, and the indicators' (Morningstar's prices, which Nordnet passes on): both are asked for by the order book.
+  std::vector<std::string> datasets() const override;
   std::optional<Need> need(const Snapshot &, const EdgeKey &, Period) const override;
   std::chrono::milliseconds lifetime(int request) const override;
   std::optional<std::chrono::seconds> keep(Resolution) const override;

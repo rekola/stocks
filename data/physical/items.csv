@@ -4,7 +4,7 @@
 #   METAL is a name the items below use (gold, platinum). SYMBOL is the listing symbol of that metal's spot price on the market of what is priced and not traded (XXXX): per troy ounce, in its quote
 #   currency. An item is priced in each currency a spot has: where several rows have one, the newest bar wins (a source that has stopped
 #   answering is passed by the next) and, among those of the same day, the first row. XAU is goldprice.dev's and gold-api.com's, in euros
-#   and in dollars (the dataset field says which, where a row is for one dataset), XPT gold-api.com's, GOLD Nordnet's, in dollars only.
+#   and in dollars (the dataset field says which, where a row is for one dataset), XPT gold-api.com's, GOLD Morningstar's (through Nordnet), in dollars only.
 #   spot,METAL,SYMBOL[,DATASET]
 # item,METAL,SYMBOL,NAME,FINE_TROY_OUNCES_PER_UNIT,BID_FACTOR,ASK_FACTOR[,ICON_SYMBOL]
 #   The optional last field is a Unicode symbol shown where there is no picture.
