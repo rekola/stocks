@@ -5,7 +5,7 @@
 //   --ui window  in a window stocks --source NAME   the data source (several,
 //   comma-separated, run at once): auto (the default: nordnet, and yahoo if
 //   nordnet gives nothing),
-//                          nordnet, yahoo, spfb (the Bank of Finland: the Euribor rates), ecb (the €STR), goldprice (goldprice.dev: spot
+//                          nordnet, yahoo, spfb (the Bank of Finland: the Euribor rates), ecb (the €STR), goldprice (gold-api.com: spot
 //                          prices of gold and other metals, in euros and dollars), physical (physical metals held in hand: a gold
 //                          bar by the gram, a gold coin by the ounce, a platinum bar, estimated from the spot prices another
 //                          source gives; it runs beside the default), funds:SCHEMA (a fund company: a
@@ -83,7 +83,7 @@ std::unique_ptr<Source> makeSource(const std::string & name, const ListSpec & li
 }
 
 // What runs when no --source is given: the market data ("auto") and the small loaders that have no options of their own (the rates, the
-// €STR, goldprice.dev's spot prices, the estimate of the physical metals and every fund company schema of data/funds), so they are there without being asked for.
+// €STR, gold-api.com's spot prices, the estimate of the physical metals and every fund company schema of data/funds), so they are there without being asked for.
 std::string defaultSources() {
   std::string names = "auto,spfb,ecb,goldprice,physical";  // physical estimates the metals held in hand from the spot prices the others give
   std::vector<std::string> funds;
