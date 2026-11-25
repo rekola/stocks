@@ -9,7 +9,7 @@
 #include <vector>
 
 // The physical metals, estimated: the spot prices the store already has (whichever source gave them, found by their listing symbols,
-// which data/physical/items.csv names, one price for each currency: goldprice.dev's gold in euros and in dollars, else Nordnet's in dollars)
+// which data/physical/items.csv names, one price for each currency: gold-api.com's gold in euros and in dollars, else Nordnet's in dollars)
 // turned into the price of what is held in hand: a gold bar by the gram, a gold coin by the troy ounce, a platinum bar by the gram, and whatever the file adds (silver, scrap).
 // Nothing publishes such a price, so each item's is the spot price per ounce, times the fine ounces in one unit, times a bid factor from
 // the file (what a dealer pays, which is what a holding is valued at: the premium is lost when it is sold). The items are instruments
