@@ -56,6 +56,34 @@ int main(int argc, char ** argv) {
   t = Clock::now();
   for (int i = 0; i < 20; i++) app->present();
   std::printf("present again: %.2f ms each\n", since(t) / 20);
+  // News: a full screen of headlines, scrolled by the key and by the wheel's steps.
+  {
+    std::vector<NewsItem> items;
+    for (int i = 0; i < 3000; i++) {
+      NewsItem n;
+      n.id = std::to_string(i);
+      n.time = 1'700'000'000 + i * 600;
+      n.headline = "Headline number " + std::to_string(i) + " says something fairly long about the company and its quarter";
+      n.about.push_back(NodeRef(InstrumentId{static_cast<uint32_t>(i % rows)}));
+      n.attributes.push_back({"kind", std::string("news")});
+      items.push_back(n);
+    }
+    store->appendNews(dataset, items);
+    app->execute("show-news-stories");
+    app->present();
+    t = Clock::now();
+    for (int i = 0; i < 40; i++) {
+      app->handle(cellui::BackendEvent::makeInput(cellui::keyInput(cellui::Key::Down, 0, cellui::Input::Kind::PRESS)));
+      app->present();
+    }
+    std::printf("news Down + present: %.2f ms each\n", since(t) / 40);
+    t = Clock::now();
+    for (int i = 0; i < 20; i++) {
+      app->handle(cellui::BackendEvent::makeInput(cellui::keyInput(cellui::Key::PageDown, 0, cellui::Input::Kind::PRESS)));
+      app->present();
+    }
+    std::printf("news PageDown + present: %.2f ms each\n", since(t) / 20);
+  }
   EdgeKey any{};
   for (int round = 0; round < 3; round++) {
     // a source adds a bar to one row, then the UI hears of it
