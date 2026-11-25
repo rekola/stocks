@@ -120,7 +120,7 @@ struct Disk {
     o.portfolios = openSqlitePortfolioStore(dir / "portfolios.sqlite", [](const std::string &) {});
     o.summaries = std::make_shared<CountingStores>(openSqliteSummaries(dir / "summaries", [this](const std::string & t) { say(t); }), counts);
     o.writer.changed_delay = o.writer.rechecked_delay = std::chrono::milliseconds(1);
-    o.summary_writer.delay = std::chrono::milliseconds(1);
+    o.summary_writer.delay = o.summary_writer.queue_delay = std::chrono::milliseconds(1);
     o.clock = [this] { return now; };
     o.queue_budget = budget;
     o.changed = std::move(changed);
@@ -671,9 +671,10 @@ class SlowFacts : public FactStore {
   std::vector<StoredFact> loadAll() override { return inner_->loadAll(); }
   std::vector<StoredFact> loadNodes(const std::vector<uint64_t> & nodes) override {
     std::unique_lock lock(mutex_);
+    const int index = static_cast<int>(calls_.size());  // the calls that pass are the first `allowed_`, whoever made them
     calls_.push_back(nodes);
     changed_.notify_all();
-    changed_.wait(lock, [&] { return static_cast<int>(calls_.size()) <= allowed_; });
+    changed_.wait(lock, [&] { return index < allowed_; });
     lock.unlock();
     return inner_->loadNodes(nodes);
   }
@@ -783,11 +784,15 @@ TEST(the_ui_works_while_the_files_are_read_and_what_the_portfolios_hold_comes_fi
     CHECK(s->listed(big.held) && s->listed(freshEdge) && s->quoteRowCount() == 2);  // the held one, and the new one a source wrote
     CHECK(changes >= 1);
     // The held read was the first, and it asked for Nokia and what it is priced and listed in; the next asks for others.
+    CHECK(slow->waitForCall(3));
     const auto calls = slow->calls();
-    CHECK(calls.size() == 2);
+    CHECK(calls.size() >= 3);  // (the edge a source made meanwhile has its own read, on the reader's thread)
     const auto has = [&](const std::vector<uint64_t> & nodes, uint64_t n) { return std::find(nodes.begin(), nodes.end(), n) != nodes.end(); };
     CHECK(has(calls[0], big.held.base.value) && has(calls[0], big.held.quote.value) && has(calls[0], big.held.market.value));
-    CHECK(!has(calls[0], big.others[10].base.value) && has(calls[1], big.others[10].base.value));
+    CHECK(!has(calls[0], big.others[10].base.value));
+    bool later = false;
+    for (size_t i = 1; i < calls.size(); i++) later = later || has(calls[i], big.others[10].base.value);
+    CHECK(later);
   }
   slow->allow(100);
   store->waitRestored();
@@ -889,4 +894,101 @@ TEST(a_restore_in_the_background_ends_as_one_made_before_the_constructor_returns
   }
   // Queues are on the disk only in both.
   CHECK(!a->queueResident(big.held, Resolution::Day) && !b->queueResident(big.held, Resolution::Day));
+}
+
+// ---- A fetch that brings nothing new, the first refresh after a start, and the facts of an instrument that gets its first edge
+
+TEST(a_fetch_that_brings_the_same_bars_moves_when_the_queue_was_fetched_with_no_version_and_a_small_write) {
+  Disk d;
+  EdgeKey k;
+  {
+    auto store = makeMemoryStore(d.options());
+    Things t(*store);
+    k = t.edge(t.nokia);
+    store->appendCandles(k, Resolution::Day, days(30));
+    store->flush();
+  }
+  const TimestampMs first = d.now;
+  auto store = makeMemoryStore(d.options());
+  // The queue is in memory (a fetch of many bars cannot be told from the file's until it is: only the last bar has a digest).
+  store->want({SeriesKey{k, Resolution::Day}});
+  CHECK(waitFor([&] { return store->snapshot()->queueResident(k, Resolution::Day); }));
+  d.counts.reset();
+  // Within the recheck interval (an hour): said again and the same changes nothing (the bars are new to the data, which a start does not
+  // keep, so that one has a version; the summary has none and writes none).
+  d.now = first + 600'000;
+  store->appendCandles(k, Resolution::Day, days(30));
+  store->flush();
+  CHECK(store->snapshot()->coverage(k, Resolution::Day)->fetched == first && d.counts.applies == 0);
+  const uint64_t version = store->snapshot()->version();
+  // Later: a fetch that went through is when it was fetched, with no version, and it is kept (one small write, and the bars are not rewritten).
+  d.now = first + 7'200'000;
+  store->appendCandles(k, Resolution::Day, days(30));
+  store->flush();
+  CHECK(store->snapshot()->version() == version);
+  CHECK(store->snapshot()->coverage(k, Resolution::Day)->fetched == d.now);
+  CHECK(d.counts.applies == 1);
+  {
+    auto again = makeMemoryStore(d.options());
+    CHECK(again->snapshot()->coverage(k, Resolution::Day)->fetched == d.now && again->snapshot()->coverage(k, Resolution::Day)->count == 30);
+    again->want({SeriesKey{k, Resolution::Day}});
+    CHECK(waitFor([&] { return again->snapshot()->queueResident(k, Resolution::Day); }));
+    CHECK(again->snapshot()->queue(k, Resolution::Day).size() == 30);
+  }
+}
+
+TEST(the_first_refresh_after_a_start_writes_no_queue_whose_last_bar_it_says_again_unchanged) {
+  Disk d;
+  std::vector<EdgeKey> edges;
+  {
+    auto store = makeMemoryStore(d.options());
+    Things t(*store);
+    for (int i = 0; i < 20; i++) {
+      const InstrumentId base = store->addInstrument("", "Co " + std::to_string(i), InstrumentKind::Company, testIsin(200 + i), "STOCK");
+      edges.push_back(EdgeKey{base, t.eur, t.hel, t.ds});
+      store->appendCandles(edges.back(), Resolution::Day, days(40));
+    }
+    store->flush();
+  }
+  auto store = makeMemoryStore(d.options());
+  d.counts.reset();
+  // The list says today's bar of each, as it was: nothing is written. Of two, it has moved, and only those are.
+  for (size_t i = 0; i < edges.size(); i++) {
+    Candle today = days(40).back();
+    if (i < 2) today.close += 1;
+    store->appendCandles(edges[i], Resolution::Day, {today});
+  }
+  store->flush();
+  CHECK(d.counts.queues_put == 2);
+  // And it is merged, not lost: the two read back with the new close.
+  store->want({SeriesKey{edges[0], Resolution::Day}, SeriesKey{edges[5], Resolution::Day}});
+  CHECK(waitFor([&] { return store->snapshot()->queueResident(edges[0], Resolution::Day) && store->snapshot()->queueResident(edges[5], Resolution::Day); }));
+  CHECK(store->snapshot()->queue(edges[0], Resolution::Day).back().close == days(40).back().close + 1 && store->snapshot()->queue(edges[0], Resolution::Day).size() == 40);
+  CHECK(store->snapshot()->queue(edges[5], Resolution::Day).back().close == days(40).back().close);
+}
+
+TEST(an_instrument_that_gets_its_first_edge_has_the_facts_the_disk_kept_of_it_read_and_what_the_source_said_stands) {
+  Disk d;
+  const InstrumentId orphan{instrumentKey(testIsin(555))->value};
+  {
+    auto store = makeMemoryStore(d.options());
+    Things t(*store);
+    store->resolveInstrument({{predicate::isin, testIsin(555)}}, {{predicate::name, "Old name"}, {"description", "Fetched slowly in an earlier run"}, {predicate::type, "STOCK"}});
+    store->appendCandles(t.edge(t.nokia), Resolution::Day, days(5));  // one edge, so that summaries exist
+    store->flush();
+  }
+  d.now += 3'600'000;
+  auto store = makeMemoryStore(d.options());
+  // No edge, so not restored: nothing selects it.
+  CHECK(!store->snapshot()->known(NodeRef(orphan)));
+  // A source gives it an edge and says its name: what was kept of it is read, and the name said stands.
+  Things t(*store);
+  store->setAttribute(NodeRef(orphan), {predicate::name, "New name"});
+  store->appendCandles(EdgeKey{orphan, t.eur, t.hel, t.ds}, Resolution::Day, days(5));
+  CHECK(waitFor([&] { return store->snapshot()->attribute(NodeRef(orphan), "description").has_value(); }));
+  const auto s = store->snapshot();
+  CHECK(std::get<std::string>(*s->attribute(NodeRef(orphan), "description")) == "Fetched slowly in an earlier run");
+  CHECK(s->name(NodeRef(orphan)) == "New name" && s->said(NodeRef(orphan), predicate::type) == "STOCK");
+  CHECK(s->fact(NodeRef(orphan), "description")->updated == 1'800'000'000'000);  // as the disk had it
+  CHECK(waitFor([&] { return !store->restoring(); }));
 }

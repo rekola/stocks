@@ -244,7 +244,8 @@ does not fit 32 bits, or with no close, is not in a queue (it stays in the data)
   instead. None throws: one that cannot read or write says so through its log and carries on. `SummaryRecords.h` has the two records and
   the rules for a queue's bars (`put`, `trim`, `fold`). `SummaryWriter` takes batches from the store and gives them to the stores on a thread
   of its own, so a write never waits for the disk: what is waiting is one row per edge and one blob per (edge, resolution), the last said, and
-  it goes after `delay`; the destructor and `flush()` write everything waiting. `SqliteSummaryStore` (SQLiteCpp, behind
+  the edges go after `delay` (200 ms: a quote is small) and the queues after `queue_delay` (a minute: a list that says every daily queue again every few
+  minutes would write tens of megabytes each time, so what is said meanwhile is one write); the destructor and `flush()` write everything waiting. `SqliteSummaryStore` (SQLiteCpp, behind
   `openSqliteSummaryStore()`, in no header) is the SQLite one.
 - **A queue put or merged.** A queue the store holds in memory is *put*, replacing the one in the file. One it does not hold (it is on the
   disk only, not read yet) cannot be replaced without reading it, so a source's bars for it are *merged*: the writer folds them into what is
@@ -253,8 +254,8 @@ does not fit 32 bits, or with no close, is not in a queue (it stays in the data)
 - **The files**: one per dataset, `summaries/<dataset code>.sqlite` in the user data directory beside `facts.sqlite` (`--summaries DIR`
   chooses another directory, `--no-summaries` runs without). Tables `edges` (one row per edge: its base, quote and market as node keys; symbol,
   identifier, order book, type and name of the listing; last, bid, ask and quote time, NULL where not said; the close before the session and the
-  day it was said for) and `queues` (one row per edge and resolution: kind, when it was fetched, count, keys of the first and last bar, and
-  the blob: a version byte, a kind byte and the records). WAL mode, the schema in `PRAGMA user_version`; a file of another schema is emptied
+  day it was said for) and `queues` (one row per edge and resolution: kind, when it was fetched, count, keys of the first and last bar, a digest of the last bar's record, and
+  the blob: a version byte, a kind byte and the records). WAL mode, the schema in `PRAGMA user_version` (2); a file of another schema is emptied
   and started over, a damaged one moved aside (`.bad-<time>`), with the same messages as the facts store. Writes use one connection and reads
   another, so a read never waits for a batch to be written.
 - **Writes derive it.** `appendCandles` writes the bars to the data, as given, and updates the queue of their resolution: a bar at a
@@ -280,6 +281,12 @@ does not fit 32 bits, or with no close, is not in a queue (it stays in the data)
   disk by the writer, and when the queue is read what was said wins. The loader asks the summary before the network: a queue that is
   in the file, whose `fetched` is inside the provider's `lifetime` and which covers the period costs no request (`periodCovered()`, which reads
   coverage); the answer, which is data, feeds the queue as `appendCandles` derives it.
+- **When it was fetched.** `fetched` is when a fetch last went through for the queue: it moves when bars change it and, to within the recheck interval
+  (an hour), when a fetch brings the same bars, with no version and a write of that time alone, as a fact said again is. A queue is therefore not
+  asked for again at every start on a day nothing moves.
+- **The first refresh after a start.** The edges' queues are on the disk only, so bars said for them cannot be compared with what is there; the file keeps
+  a digest of each queue's last bar (`QueueCoverage::last_hash`), and the last bar said again unchanged (what a list says every few minutes) is
+  recognised by its key and digest and writes nothing. A fetch of many bars is merged; one for a queue in memory is compared with it.
 - **Eviction.** Above `StoreOptions::queue_budget` (32 MiB by default: 48 bytes a bar, some 700,000 bars, where a screen of rows with a
   margin is a few thousand), the queues in memory that were wanted the longest ago are dropped, down to nine tenths of the budget; the
   quote of an edge always stays, the file has the queue, and what is wanted now (the rows on screen and the margin, which are the rows
@@ -312,6 +319,8 @@ does not fit 32 bits, or with no close, is not in a queue (it stays in the data)
     said is kept and the disk adds the facts it did not say; a quote with a later time stands; a bar said for a queue that is on the disk
     is merged into it when it is read). A queue a source writes before the file's own is known is held as pending, and the queues the files
     turn out to have none of are settled when the last chunk is in.
+  - An instrument that gets its first edge from a source has the facts the disk kept of it read then, on the reader's thread, and what the source has
+    said stands (`Store::restoring()` is true until they are in, and the details loader waits for it, so that what an earlier run fetched is not fetched again).
   - Restoring makes no node that has no edge: the facts read are those of the nodes that an edge ends in (its instrument, quote, market and
     dataset) and of what the portfolios hold, found by key (`FactStore::loadNodes`); an instrument with facts and no edge is left on
     the disk, nothing selects it and a source says it again. Where no summaries are kept there are no edges, and all the facts are read. A

@@ -46,7 +46,8 @@ void SummaryWriter::post(SummaryBatch batch) {
       if (it == queues_.end()) queues_.emplace(key, std::move(q));
       else summary::fold(it->second, std::move(q));
     }
-    due_ = std::min(due_, Clock::now() + options_.delay);
+    if (!batch.edges.empty() || !edges_.empty()) due_edges_ = std::min(due_edges_, Clock::now() + options_.delay);
+    if (!queues_.empty()) due_queues_ = std::min(due_queues_, Clock::now() + options_.queue_delay);
   }
   wake_.notify_all();
 }
@@ -85,15 +86,28 @@ void SummaryWriter::run() {
       wake_.wait(lock, [&] { return stop_ || posted_ != done_; });
       continue;
     }
-    if (!stop_ && !flushing_ && Clock::now() < due_) {
-      wake_.wait_until(lock, due_);
+    const auto now = Clock::now();
+    const bool everything = stop_ || flushing_;
+    const bool edges = !edges_.empty() && (everything || now >= due_edges_);
+    const bool queues = !queues_.empty() && (everything || now >= due_queues_);
+    if (!edges && !queues) {
+      Clock::time_point next = Clock::time_point::max();
+      if (!edges_.empty()) next = std::min(next, due_edges_);
+      if (!queues_.empty()) next = std::min(next, due_queues_);
+      wake_.wait_until(lock, next);
       continue;
     }
-    writing_edges_ = std::move(edges_);
-    writing_queues_ = std::move(queues_);
-    edges_.clear();
-    queues_.clear();
-    due_ = Clock::time_point::max();
+    if (edges) {
+      writing_edges_ = std::move(edges_);
+      edges_.clear();
+      due_edges_ = Clock::time_point::max();
+    }
+    if (queues) {
+      writing_queues_ = std::move(queues_);
+      queues_.clear();
+      due_queues_ = Clock::time_point::max();
+    }
+    const bool all = edges_.empty() && queues_.empty();
     const uint64_t taken = posted_;
     lock.unlock();
     // One call to the store of each dataset.
@@ -113,8 +127,10 @@ void SummaryWriter::run() {
     failed_ += failures;
     writing_edges_.clear();
     writing_queues_.clear();
-    done_ = taken;
-    if (done_ == posted_) flushing_ = false;
+    if (all) {
+      done_ = taken;
+      if (done_ == posted_) flushing_ = false;
+    }
     written_.notify_all();
   }
 }

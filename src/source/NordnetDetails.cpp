@@ -155,6 +155,8 @@ bool NordnetDetails::loadBatch(Store & store, Http & http, SourceListener & list
     std::string orderBook;
     bool fund;
   };
+  // What an earlier run fetched (a description) is on the disk and not yet read, while the store restores: asked for again if this went on.
+  if (store.restoring()) return true;
   std::vector<Target> targets;
   {
     auto snapshot = store.snapshot();

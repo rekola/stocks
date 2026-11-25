@@ -14,13 +14,15 @@
 // Takes batches of summaries from the store's writers and hands them to the stores of their datasets on a thread of its own, so that a
 // write to the store never waits for the disk. Batches are put together: what is waiting is one row per edge and one blob per (edge,
 // resolution), the last said (a queue that is merged into what the file has is folded into one that is waiting for the same queue), and
-// it goes after `delay`, in one call to each dataset's store. The destructor and `flush()` write everything waiting.
+// the edges go after `delay` and the queues after `queue_delay`, in one call to each dataset's store. The destructor and `flush()` write everything waiting.
 //
 // A store is opened on first use (`store()`), by the thread that asks, and kept: the one that reads a queue gets the one that writes it.
 class SummaryWriter {
  public:
   struct Options {
-    std::chrono::milliseconds delay{200};
+    std::chrono::milliseconds delay{200};            // the edges: a quote is small, and goes quickly
+    std::chrono::milliseconds queue_delay{60'000};   // the queues: a few kilobytes each, and a list that says all of them again every few minutes would
+                                                     // write tens of megabytes each time, so they wait, and what is said again meanwhile is one write
   };
   explicit SummaryWriter(std::shared_ptr<SummaryStores> stores) : SummaryWriter(std::move(stores), Options{}) {}
   SummaryWriter(std::shared_ptr<SummaryStores> stores, Options);
@@ -56,7 +58,7 @@ class SummaryWriter {
   std::map<SeriesKey, StoredQueue> queues_;
   std::map<EdgeKey, StoredEdge> writing_edges_;  // taken, not yet applied
   std::map<SeriesKey, StoredQueue> writing_queues_;
-  Clock::time_point due_ = Clock::time_point::max();
+  Clock::time_point due_edges_ = Clock::time_point::max(), due_queues_ = Clock::time_point::max();
   uint64_t posted_ = 0, done_ = 0, failed_ = 0;
   bool flushing_ = false, stop_ = false;
   std::mutex stores_mutex_;

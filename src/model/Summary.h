@@ -41,6 +41,7 @@ struct QueueCoverage {
   uint32_t count = 0;        // the number of bars
   int64_t first_key = 0;     // the keys of its first and last bar (slot numbers, or day numbers for a date resolution)
   int64_t last_key = 0;
+  uint64_t last_hash = 0;    // of the last bar's stored record: a bar said again is the same one if its key and hash are, without reading the queue
 };
 
 // What a snapshot holds of one queue. A queue is in memory (`resident`: `bars` is the whole of it) or only on the disk, where `disk` says

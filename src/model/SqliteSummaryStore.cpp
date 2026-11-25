@@ -16,7 +16,7 @@ namespace {
 
 namespace fs = std::filesystem;
 
-constexpr int kSummariesVersion = 1;
+constexpr int kSummariesVersion = 2;  // 2: a digest of each queue's last bar (`last_hash`); 1: the first
 // SQLite's result codes for a damaged database and for a file that is none (as the facts store has them).
 constexpr int kCorrupt = 11, kNotADatabase = 26;
 
@@ -62,7 +62,7 @@ class SqliteSummaryStore : public SummaryStore {
       SQLite::Statement q(db,
                           "SELECT e.id, e.base, e.quote, e.market, e.symbol, e.identifier, e.order_book, e.type, e.name, "
                           "e.last, e.bid, e.ask, e.quote_time, e.previous_close, e.previous_close_day, "
-                          "q.resolution, q.kind, q.fetched, q.count, q.first_key, q.last_key "
+                          "q.resolution, q.kind, q.fetched, q.count, q.first_key, q.last_key, q.last_hash "
                           "FROM edges e LEFT JOIN queues q ON q.edge = e.id ORDER BY e.id, q.resolution");
       int64_t current = -1;
       while (q.executeStep()) {
@@ -94,6 +94,7 @@ class SqliteSummaryStore : public SummaryStore {
           c.count = static_cast<uint32_t>(q.getColumn(18).getInt64());
           c.first_key = q.getColumn(19).getInt64();
           c.last_key = q.getColumn(20).getInt64();
+          c.last_hash = static_cast<uint64_t>(q.getColumn(21).getInt64());
           out.back().queues.emplace_back(static_cast<Resolution>(resolution), c);
         }
       }
@@ -213,6 +214,17 @@ class SqliteSummaryStore : public SummaryStore {
   }
 
   void putQueue(const StoredQueue & in) {
+    if (in.merge && in.bars.empty()) {
+      // Said again and the same: only the time it was fetched moves.
+      SQLite::Statement touch(*db_, "UPDATE queues SET fetched = ? WHERE resolution = ? AND edge = (SELECT id FROM edges WHERE base = ? AND quote = ? AND market = ?)");
+      touch.bind(1, static_cast<int64_t>(in.fetched));
+      touch.bind(2, static_cast<int>(in.resolution));
+      touch.bind(3, asInt(in.edge.base.value));
+      touch.bind(4, asInt(in.edge.quote.value));
+      touch.bind(5, asInt(in.edge.market.value));
+      touch.exec();
+      return;
+    }
     const int64_t edge = edgeId(in.edge);
     StoredQueue q = in;
     if (in.merge) {
@@ -246,9 +258,9 @@ class SqliteSummaryStore : public SummaryStore {
     }
     const std::string blob = summary::pack(q.kind, q.bars);
     SQLite::Statement put(*db_,
-                          "INSERT INTO queues (edge, resolution, kind, fetched, count, first_key, last_key, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+                          "INSERT INTO queues (edge, resolution, kind, fetched, count, first_key, last_key, last_hash, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
                           "ON CONFLICT (edge, resolution) DO UPDATE SET kind = excluded.kind, fetched = excluded.fetched, count = excluded.count, "
-                          "first_key = excluded.first_key, last_key = excluded.last_key, data = excluded.data");
+                          "first_key = excluded.first_key, last_key = excluded.last_key, last_hash = excluded.last_hash, data = excluded.data");
     put.bind(1, edge);
     put.bind(2, static_cast<int>(in.resolution));
     put.bind(3, static_cast<int>(q.kind));
@@ -256,7 +268,8 @@ class SqliteSummaryStore : public SummaryStore {
     put.bind(5, static_cast<int64_t>(q.bars.size()));
     put.bind(6, q.bars.front().time);
     put.bind(7, q.bars.back().time);
-    put.bind(8, blob.data(), static_cast<int>(blob.size()));
+    put.bind(8, static_cast<int64_t>(summary::hashOf(q.kind, summary::normalized(q.kind, q.bars.back()))));
+    put.bind(9, blob.data(), static_cast<int>(blob.size()));
     put.exec();
   }
 
@@ -297,7 +310,7 @@ class SqliteSummaryStore : public SummaryStore {
     db_->exec(
         "CREATE TABLE IF NOT EXISTS queues ("
         "edge INTEGER NOT NULL, resolution INTEGER NOT NULL, kind INTEGER NOT NULL, fetched INTEGER NOT NULL, count INTEGER NOT NULL, "
-        "first_key INTEGER NOT NULL, last_key INTEGER NOT NULL, data BLOB NOT NULL, "
+        "first_key INTEGER NOT NULL, last_key INTEGER NOT NULL, last_hash INTEGER NOT NULL, data BLOB NOT NULL, "
         "PRIMARY KEY (edge, resolution)) WITHOUT ROWID");
   }
 

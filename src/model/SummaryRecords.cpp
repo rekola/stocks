@@ -93,6 +93,13 @@ Candle normalized(QueueKind kind, const Candle & c) {
   return candleOf(candleRecord(c));
 }
 
+uint64_t hashOf(QueueKind kind, const Candle & c) {
+  const std::string blob = pack(kind, {c});  // the version, the kind and one record
+  uint64_t h = 1469598103934665603ull;       // FNV-1a
+  for (size_t i = 2; i < blob.size(); i++) h = (h ^ static_cast<unsigned char>(blob[i])) * 1099511628211ull;
+  return h;
+}
+
 bool sameBar(const Candle & a, const Candle & b) {
   const auto same = [](double x, double y) { return x == y || (!isDefined(x) && !isDefined(y)); };
   return a.time == b.time && same(a.open, b.open) && same(a.high, b.high) && same(a.low, b.low) && same(a.close, b.close) && same(a.volume, b.volume);

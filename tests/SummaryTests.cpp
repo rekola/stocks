@@ -423,7 +423,7 @@ class OneStore : public SummaryStores {
 
 TEST(the_writer_puts_what_is_waiting_together_one_row_per_edge_and_one_blob_per_queue_the_last_said) {
   auto slow = std::make_shared<SlowStore>();
-  SummaryWriter writer(std::make_shared<OneStore>(slow), SummaryWriter::Options{std::chrono::milliseconds(50)});
+  SummaryWriter writer(std::make_shared<OneStore>(slow), SummaryWriter::Options{std::chrono::milliseconds(50), std::chrono::milliseconds(50)});
   const EdgeKey a = edgeOf(1);
   for (int i = 0; i < 5; i++) {
     SummaryBatch batch;
@@ -441,7 +441,7 @@ TEST(the_writer_puts_what_is_waiting_together_one_row_per_edge_and_one_blob_per_
 
 TEST(a_merge_waiting_is_folded_into_the_queue_waiting_for_the_same_key_and_a_put_replaces_all) {
   auto slow = std::make_shared<SlowStore>();
-  SummaryWriter writer(std::make_shared<OneStore>(slow), SummaryWriter::Options{std::chrono::milliseconds(200)});
+  SummaryWriter writer(std::make_shared<OneStore>(slow), SummaryWriter::Options{std::chrono::milliseconds(200), std::chrono::milliseconds(200)});
   const EdgeKey a = edgeOf(1), b = edgeOf(2);
   const auto post = [&](StoredQueue q) {
     SummaryBatch batch;
@@ -466,7 +466,7 @@ TEST(a_merge_waiting_is_folded_into_the_queue_waiting_for_the_same_key_and_a_put
 TEST(the_writer_never_makes_the_poster_wait_for_the_store_and_what_is_being_written_is_still_pending) {
   auto slow = std::make_shared<SlowStore>();
   slow->delay = std::chrono::milliseconds(300);
-  SummaryWriter writer(std::make_shared<OneStore>(slow), SummaryWriter::Options{std::chrono::milliseconds(1)});
+  SummaryWriter writer(std::make_shared<OneStore>(slow), SummaryWriter::Options{std::chrono::milliseconds(1), std::chrono::milliseconds(1)});
   const EdgeKey a = edgeOf(1);
   SummaryBatch batch;
   batch.queues.push_back(storedQueue(a, Resolution::Day, {bar(1, 1, 1, 1, 1, 1)}));
@@ -486,7 +486,7 @@ TEST(the_writer_never_makes_the_poster_wait_for_the_store_and_what_is_being_writ
 TEST(the_writer_writes_what_waits_when_it_is_destroyed_and_a_store_that_cannot_be_opened_loses_nothing_else) {
   auto slow = std::make_shared<SlowStore>();
   {
-    SummaryWriter writer(std::make_shared<OneStore>(slow), SummaryWriter::Options{std::chrono::hours(1)});
+    SummaryWriter writer(std::make_shared<OneStore>(slow), SummaryWriter::Options{std::chrono::hours(1), std::chrono::hours(1)});
     SummaryBatch batch;
     batch.edges.push_back(storedEdge(edgeOf(1), 1));
     writer.post(batch);
@@ -498,4 +498,35 @@ TEST(the_writer_writes_what_waits_when_it_is_destroyed_and_a_store_that_cannot_b
   none.post(batch);
   none.flush();
   CHECK(none.failed() == 0);
+}
+
+TEST(the_writer_puts_the_edges_quickly_and_the_queues_at_most_once_in_their_delay) {
+  auto slow = std::make_shared<SlowStore>();
+  SummaryWriter writer(std::make_shared<OneStore>(slow), SummaryWriter::Options{std::chrono::milliseconds(10), std::chrono::milliseconds(400)});
+  const EdgeKey a = edgeOf(1);
+  const auto start = std::chrono::steady_clock::now();
+  const auto post = [&](double last, double close) {
+    SummaryBatch batch;
+    batch.edges.push_back(storedEdge(a, last));
+    batch.queues.push_back(storedQueue(a, Resolution::Day, {bar(1, 1, 1, 1, close, 1)}));
+    writer.post(std::move(batch));
+  };
+  post(1, 1);
+  std::this_thread::sleep_for(std::chrono::milliseconds(150));
+  {
+    std::lock_guard lock(slow->mutex);
+    CHECK(slow->batches.size() == 1 && slow->batches[0].edges.size() == 1 && slow->batches[0].queues.empty());  // the quote went, the queue waits
+  }
+  post(2, 2);
+  post(3, 3);  // said again meanwhile: one write
+  CHECK(!writer.pending(a, Resolution::Day).empty());
+  writer.flush();
+  CHECK(std::chrono::steady_clock::now() - start < std::chrono::milliseconds(380));  // a flush does not wait for the delay
+  size_t queues = 0;
+  for (const SummaryBatch & b : slow->batches)
+    for (const StoredQueue & q : b.queues) {
+      queues++;
+      CHECK(q.bars[0].close == 3);
+    }
+  CHECK(queues == 1);
 }

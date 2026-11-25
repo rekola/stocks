@@ -579,6 +579,7 @@ void Snapshot::indexSymbol(const EdgeKey & k) {
 void Snapshot::addEdge(const EdgeKey & k) {
   if (hasData(k)) return;
   const auto * set = edgesByMarket_.find(k.market);
+  newEdges_.push_back(k);
   edgesByMarket_ = edgesByMarket_.set(k.market, (set ? *set : immer::set<EdgeKey>{}).insert(k));
   const auto * of = edgesByBase_.find(k.base);
   edgesByBase_ = edgesByBase_.set(k.base, (of ? *of : immer::set<EdgeKey>{}).insert(k));
@@ -660,6 +661,7 @@ QueueCoverage coverageOf(const QueueState & q) {
     if (!q.bars.empty()) {
       c.first_key = q.bars.front().time;
       c.last_key = q.bars.back().time;
+      c.last_hash = summary::hashOf(q.kind, q.bars.back());
     }
     return c;
   }
@@ -669,6 +671,7 @@ QueueCoverage coverageOf(const QueueState & q) {
   if (!q.bars.empty()) {
     // Said since, and not known to be among the file's: an upper bound on the count.
     c.first_key = c.count ? std::min(c.first_key, q.bars.front().time) : q.bars.front().time;
+    if (!c.count || q.bars.back().time >= c.last_key) c.last_hash = summary::hashOf(q.kind, q.bars.back());
     c.last_key = c.count ? std::max(c.last_key, q.bars.back().time) : q.bars.back().time;
     c.count += static_cast<uint32_t>(q.bars.size());
   }
@@ -791,6 +794,10 @@ bool Snapshot::deriveSummary(const EdgeKey & k, Resolution r, const std::vector<
     Seq<Candle> bars = state.bars;
     for (const Candle & c : said) {
       if (summary::instantOf(r, c.time) < last - window) continue;  // older than the window: no bar of it
+      // The file's last bar said again: told by its digest, so that a restart does not write the queue of every edge at its first refresh.
+      if (!state.resident && !state.unknown && state.disk.count && c.time == state.disk.last_key && summary::hashOf(state.kind, c) == state.disk.last_hash &&
+          std::none_of(state.bars.begin(), state.bars.end(), [&](const Candle & p) { return p.time == c.time; }))
+        continue;
       bool one = false;
       bars = upsert(bars, c, [](const Candle &, const Candle &) { return true; }, summary::sameBar, one);
       if (one) {
@@ -812,7 +819,16 @@ bool Snapshot::deriveSummary(const EdgeKey & k, Resolution r, const std::vector<
         auto & waiting = mergeQueues_[key];
         for (const Candle & c : put) summary::put(waiting, c);
       }
+      touchQueues_.erase(key);
       changed = true;
+    } else if (old && !said.empty() && (recheck_.count() <= 0 || now_ - std::max(old->fetched, old->disk.fetched) >= recheck_.count())) {
+      // Said again and the same, a fetch that went through: it was fetched now. As a fact said again is, to within the recheck interval, and
+      // with no version: nothing that is shown changes.
+      QueueState touched = *old;
+      touched.fetched = now_;
+      queues_ = queues_.set(key, std::move(touched));
+      touchQueues_[key] = now_;
+      checks_++;
     }
   }
   if (changed) noteRow(k);
@@ -951,6 +967,20 @@ SummaryBatch Snapshot::takeSummaries() {
     s.bars = std::move(bars);
     out.queues.push_back(std::move(s));
   }
+  for (const auto & [key, fetched] : touchQueues_) {
+    if (putQueues_.count(key) || mergeQueues_.count(key)) continue;
+    const QueueState * q = queues_.find(key);
+    if (!q) continue;
+    StoredQueue s;
+    s.edge = key.edge;
+    s.resolution = key.resolution;
+    s.kind = q->kind;
+    s.fetched = fetched;
+    s.merge = true;  // with no bars: only the time moves
+    s.keep = keep(key.edge.dataset, key.resolution);
+    out.queues.push_back(std::move(s));
+  }
+  touchQueues_.clear();
   dirtyEdges_.clear();
   putQueues_.clear();
   mergeQueues_.clear();
@@ -1301,7 +1331,7 @@ class MemoryStore : public Store {
     if (reader_.joinable()) reader_.join();
   }
 
-  bool restoring() const override { return restore_running_; }
+  bool restoring() const override { return restore_running_ || late_pending_ > 0; }
   void waitRestored() override {
     std::unique_lock lock(restore_mutex_);
     restored_.wait(lock, [&] { return !restore_running_; });
@@ -1417,8 +1447,25 @@ class MemoryStore : public Store {
   void readLoop() {
     std::unique_lock lock(want_mutex_);
     for (;;) {
-      read_wake_.wait(lock, [&] { return stop_ || !to_read_.empty(); });
+      read_wake_.wait(lock, [&] { return stop_ || !to_read_.empty() || !late_nodes_.empty(); });
       if (stop_) return;
+      if (!late_nodes_.empty()) {
+        std::vector<uint64_t> nodes;
+        while (!late_nodes_.empty() && nodes.size() < 500) {
+          nodes.push_back(late_nodes_.front());
+          late_nodes_.pop_front();
+        }
+        lock.unlock();
+        std::vector<StoredFact> facts = facts_->loadNodes(nodes);
+        std::erase_if(facts, [](const StoredFact & f) { return NodeKey{f.node}.kind() == NodeKind::Portfolio; });
+        if (!facts.empty()) {
+          write([&](Snapshot & s) { s.load(std::move(facts)); });
+          if (changed_) changed_();
+        }
+        lock.lock();
+        late_pending_ -= nodes.size();
+        continue;
+      }
       std::vector<SeriesKey> batch;
       while (!to_read_.empty() && batch.size() < 16) {
         batch.push_back(to_read_.front());
@@ -1441,6 +1488,25 @@ class MemoryStore : public Store {
       lock.lock();
       for (const SeriesKey & key : batch) reading_.erase(key);
     }
+  }
+
+  // An edge that is new has ends whose facts the restore did not read (it reads those of the edges the disk had): a source made it, and
+  // what the disk knows of its instrument (what a slow loader fetched, a description) is read now, on the reader's thread, and what the
+  // source has said stands. Without summaries every fact was read at the start.
+  void noteNewEdges(const std::vector<EdgeKey> & made) {
+    if (!summary_ || !facts_ || made.empty()) return;
+    bool any = false;
+    {
+      std::lock_guard lock(want_mutex_);
+      for (const EdgeKey & k : made)
+        for (const uint64_t node : {k.base.value, k.quote.value, k.market.value, k.dataset.value})
+          if (node && loaded_nodes_.insert(node).second) {
+            late_nodes_.push_back(node);
+            late_pending_++;
+            any = true;
+          }
+    }
+    if (any) read_wake_.notify_all();
   }
 
   // The queue was used now (under `want_mutex_`): the last to be dropped.
@@ -1512,22 +1578,24 @@ class MemoryStore : public Store {
               for (StoredEdge & e : store->loadEdges()) edges.push_back(std::move(e));
         const auto isHeld = [&](const StoredEdge & e) { return held.instruments.count(e.listing.key.base.value) || held.currencies.count(e.listing.key.base.value); };
         const size_t heldEnd = static_cast<size_t>(std::stable_partition(edges.begin(), edges.end(), isHeld) - edges.begin());
-        std::unordered_set<uint64_t> loaded;  // the nodes whose facts are read
         for (size_t from = 0; from < edges.size() || (from == 0 && !held.nodes.empty());) {
           if (stopping_) return;
           const size_t to = from < heldEnd ? heldEnd : std::min(edges.size(), from + kChunk);
           std::vector<uint64_t> nodes;
-          const auto want = [&](uint64_t node) {
-            if (node && loaded.insert(node).second) nodes.push_back(node);
-          };
-          if (from == 0)
-            for (uint64_t node : held.nodes) want(node);
-          for (size_t i = from; i < to; i++) {
-            const EdgeKey & k = edges[i].listing.key;
-            want(k.base.value);
-            want(k.quote.value);
-            want(k.market.value);
-            want(k.dataset.value);
+          {
+            std::lock_guard lock(want_mutex_);
+            const auto want = [&](uint64_t node) {
+              if (node && loaded_nodes_.insert(node).second) nodes.push_back(node);
+            };
+            if (from == 0)
+              for (uint64_t node : held.nodes) want(node);
+            for (size_t i = from; i < to; i++) {
+              const EdgeKey & k = edges[i].listing.key;
+              want(k.base.value);
+              want(k.quote.value);
+              want(k.market.value);
+              want(k.dataset.value);
+            }
           }
           std::vector<StoredFact> facts = facts_ ? facts_->loadNodes(nodes) : std::vector<StoredFact>{};
           std::erase_if(facts, [](const StoredFact & f) { return NodeKey{f.node}.kind() == NodeKind::Portfolio; });
@@ -1620,6 +1688,7 @@ class MemoryStore : public Store {
       }
       if (portfolios_ && !mine.empty()) portfolios_->apply(mine);
       if (writer_) writer_->post(std::move(facts));
+      noteNewEdges(next.takeNewEdges());
       SummaryBatch summaries = next.takeSummaries();
       if (summary_) {
         evict(next, summaries);
@@ -1652,6 +1721,9 @@ class MemoryStore : public Store {
   std::mutex restore_mutex_;
   std::condition_variable restored_;
   std::vector<SeriesKey> last_want_;  // under want_mutex_
+  std::unordered_set<uint64_t> loaded_nodes_;  // the nodes whose facts are read, or are about to be (under want_mutex_)
+  std::deque<uint64_t> late_nodes_;            // the ends of edges a source made, to read
+  std::atomic<size_t> late_pending_{0};
   size_t budget_ = kDefaultQueueBudget;
   std::function<void()> changed_;
   // What is wanted and what is read (under `want_mutex_`, which is taken inside the writer lock and never the other way round).

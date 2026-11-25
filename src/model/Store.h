@@ -201,6 +201,8 @@ class Snapshot {
   void settleRestored();
   // What the writes since the last call ask of the summary files.
   SummaryBatch takeSummaries();
+  // The edges that were made since the last call (what a store reads the facts of their nodes for, if it has not yet).
+  std::vector<EdgeKey> takeNewEdges() { return std::exchange(newEdges_, {}); }
   uint64_t revision() const { return version_ + checks_; }
   FactBatch takeFacts() { return std::exchange(outbox_, FactBatch{}); }
   // What the writes since the last call refused to say, in words: an ISIN that
@@ -241,6 +243,8 @@ class Snapshot {
   std::set<EdgeKey> dirtyEdges_;
   std::set<SeriesKey> putQueues_;
   std::map<SeriesKey, std::vector<Candle>> mergeQueues_;
+  std::map<SeriesKey, TimestampMs> touchQueues_;  // said again and the same: only when it was fetched moves
+  std::vector<EdgeKey> newEdges_;                  // the edges made since the last `takeNewEdges`
   immer::map<EdgeKey, std::pair<int64_t, double>> previousClose_;  // the session's day number and the close before it
   immer::map<EdgeKey, Seq<BookSnapshot>> books_;
   immer::map<MarketId, immer::set<EdgeKey>> edgesByMarket_;

@@ -9,6 +9,7 @@
 //
 // The same file is built against the code before the summaries (STOCKS_RESTORE_BENCH_BASELINE: facts only, read in the constructor).
 #include "model/Isin.h"
+#include "model/Period.h"
 #include "model/NodeKey.h"
 #include "model/SqliteFactStore.h"
 #include "model/Store.h"
@@ -16,6 +17,8 @@
 #include "model/SqliteSummaryStore.h"
 #endif
 
+#include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -41,6 +44,41 @@ static size_t residentKiB() {
   if (std::fscanf(f, "%ld %ld", &size, &resident) != 2) resident = 0;
   std::fclose(f);
   return static_cast<size_t>(resident) * 4;
+}
+
+// A stand-in for the UI thread: every 16 ms it takes the snapshot and reads what a frame of 50 rows reads (the quote, the listing and the period of
+// each), and writes down how late it woke and how long the frame took. With STOCKS_BENCH_UI set, this is what the restore costs the UI.
+struct Frames {
+  std::vector<double> late, work;
+  void report(const char * what) {
+    if (late.empty()) return;
+    std::sort(late.begin(), late.end());
+    std::sort(work.begin(), work.end());
+    const auto at = [](const std::vector<double> & v, double q) { return v[static_cast<size_t>(q * static_cast<double>(v.size() - 1))]; };
+    std::printf("  UI %-8s %zu frames: woke late p50 %.2f p99 %.2f max %.2f ms; frame took p50 %.3f p99 %.3f max %.3f ms\n", what, late.size(), at(late, .5), at(late, .99),
+                late.back(), at(work, .5), at(work, .99), work.back());
+  }
+};
+
+static void ui(Store & store, std::atomic<bool> & stop, Frames & out) {
+  auto next = Clock::now();
+  while (!stop) {
+    next += std::chrono::milliseconds(16);
+    std::this_thread::sleep_until(next);
+    out.late.push_back(std::max(0.0, std::chrono::duration<double, std::milli>(Clock::now() - next).count()));
+    const auto t = Clock::now();
+    const auto s = store.snapshot();
+    const std::vector<EdgeKey> rows = s->quoteRowsSince(0);
+    double sum = 0;
+    for (size_t i = 0; i < std::min<size_t>(50, rows.size()); i++) {
+      const auto q = s->quote(rows[i]);
+      sum += q ? q->last : 0;
+      sum += static_cast<double>(s->listing(rows[i]).has_value());
+      sum += periodView(*s, rows[i], Period::Quarter, true).closes.size();
+    }
+    if (sum < -1) std::printf("?");
+    out.work.push_back(since(t));
+  }
 }
 
 int main(int argc, char ** argv) {
@@ -124,8 +162,13 @@ int main(int argc, char ** argv) {
   if (!std::getenv("STOCKS_BENCH_NO_SUMMARIES")) o.summaries = openSqliteSummaries(summaries);  // with none, the facts alone are read, all of them
   o.restore = StoreOptions::Restore::InBackground;
 #endif
+  const bool watch = std::getenv("STOCKS_BENCH_UI") != nullptr;
   const auto start = Clock::now();
   auto store = makeMemoryStore(std::move(o));
+  std::atomic<bool> stopUi{false};
+  Frames during, idle;
+  std::thread uiThread;
+  if (watch) uiThread = std::thread([&] { ui(*store, stopUi, during); });
   const double made = since(start);
   double first = -1;
 #ifndef STOCKS_RESTORE_BENCH_BASELINE
@@ -137,6 +180,17 @@ int main(int argc, char ** argv) {
   if (first < 0 && store->snapshot()->quoteRowCount() > 0) first = since(start);
 #endif
   const double restored = since(start);
+  if (watch) {
+    stopUi = true;
+    uiThread.join();
+    stopUi = false;
+    uiThread = std::thread([&] { ui(*store, stopUi, idle); });
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+    stopUi = true;
+    uiThread.join();
+    during.report("restoring");
+    idle.report("idle");
+  }
   const auto s = store->snapshot();
   const auto parts = Clock::now();
   const size_t read = openSqliteFactStore(factsFile)->loadAll().size();  // for reference: what reading the facts alone costs

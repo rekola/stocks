@@ -30,6 +30,8 @@ inline constexpr uint32_t kMaxVolume = 0xFFFFFFFFu;
 bool fits(const Candle &);
 // The bar as it is read back from its record: the one the memory holds, so that two bars are the same where their records are.
 Candle normalized(QueueKind, const Candle &);
+// A digest of the bar's stored record (not of the bar: two bars the record cannot tell apart have the same one).
+uint64_t hashOf(QueueKind, const Candle &);
 // Whether two bars are the same bar (undefined numbers are the same).
 bool sameBar(const Candle &, const Candle &);
 
