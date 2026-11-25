@@ -325,7 +325,7 @@ size_t NordnetSource::loadIndicators(const List & list, Store & store, Http & ht
     const DatasetId dataset = b.addDataset(kNordnetDataset);
     // Indices, currency pairs and commodity prices of these lists are on no
     // market.
-    const MarketId market = b.addMarket(kNoMarket);
+    const MarketId market = b.addMarket(kNoMarket, marketNameOfMic(kNoMarket));
     for (size_t i = 0; i < rows.size(); i++) {
       NordnetIndicator & row = rows[i];
       row.list = list.name;

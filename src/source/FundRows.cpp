@@ -3,6 +3,7 @@
 #include "model/Dates.h"
 #include "model/Isin.h"
 #include "source/InstrumentLists.h"
+#include "source/KnownMarkets.h"
 
 #include <cellui/NumberParse.h>
 
@@ -145,7 +146,7 @@ std::optional<EdgeKey> writeFund(Batch &store, const std::string &datasetName,
                                  const std::vector<Candle> &bars) {
   if (bars.empty() || !isValidIsin(f.isin)) return std::nullopt;
   const DatasetId dataset = store.addDataset(datasetName);
-  const MarketId market = store.addMarket(kOffExchange);
+  const MarketId market = store.addMarket(kOffExchange, marketNameOfMic(kOffExchange));
   const InstrumentId base = addInstrumentUnlessSaid(store, "", f.name, InstrumentKind::Fund, f.isin, "FUND");
   const InstrumentId quote = currencyNode(store, "EUR");
   // A part that cannot be named (the ISIN's check digit was right, but the store refused something else): nothing is written.
