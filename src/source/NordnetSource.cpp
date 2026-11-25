@@ -328,6 +328,11 @@ size_t NordnetSource::loadIndicators(const List & list, Store & store, Http & ht
     listener.message("nordnet: " + list.name + ": " + error);
     return 0;
   }
+  // A currency pair is kept once: the lists of the countries repeat each other's pairs, and the one that came first has it.
+  std::set<std::string> pairs;
+  for (const NordnetIndicator & i : indicators_)
+    if (i.type == "CURRENCY") pairs.insert(i.name);
+  std::erase_if(rows, [&](const NordnetIndicator & row) { return row.type == "CURRENCY" && !pairs.insert(row.name).second; });
   size_t written = 0;
   LeftOut leftOut;
   std::vector<size_t> refused;  // the rows left out, which the source does not keep

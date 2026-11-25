@@ -298,6 +298,18 @@ TEST(a_national_currency_list_is_loaded_like_the_global_one) {
   CHECK(store->snapshot()->findInstrument("EUR").has_value() && store->snapshot()->findInstrument("JPY").has_value());
 }
 
+TEST(a_currency_pair_in_two_lists_is_kept_once) {
+  auto store = makeMemoryStore();
+  FakeHttp http;
+  http.answer = [](const std::string &) { return ok(fixture("indicators-currencies.json")); };  // the same two pairs from each list
+  auto lists = listsNamed({"currencies", "currencies-no", "currencies-se"});
+  Listener listener;
+  NordnetSource source(lists, std::chrono::milliseconds(0));
+  source.load(*store, http, listener);
+  CHECK(http.urls.size() == 3);
+  CHECK(source.indicators().size() == 2 && source.indicators()[0].list == "currencies");
+}
+
 TEST(listings_of_one_isin_with_different_names_leave_one_name_and_no_change_on_the_next_pass) {
   // Xetra (DE), Stockholm (SE) and Copenhagen (DK): the home listing of a DE ISIN is the first, of an IE one there is none.
   for (const std::string isin : {"DE0007164600", "IE00BHZRR030"}) {
