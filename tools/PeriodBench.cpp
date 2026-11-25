@@ -32,7 +32,7 @@ int main(int argc, char ** argv) {
   const bool full = argc > 2 && std::string(argv[2]) == "full";
   auto store = makeMemoryStore();
   const InstrumentId usd = store->addInstrument("USD", "US dollar", InstrumentKind::Currency);
-  const MarketId market = store->addMarket("Nasdaq Helsinki");
+  const MarketId market = store->addMarket("XHEL", "Nasdaq Helsinki");
   const DatasetId dataset = store->addDataset("nordnet");
   const int64_t today = dayNumber(2026, 12, 1), dayStart = (today - kUnixEpochDayNumber) * 86400 + 7 * 3600;
   std::mt19937 rng(1);

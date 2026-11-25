@@ -116,6 +116,15 @@ enable_testing()
 add_test(NAME stocks_rejects_an_unknown_ui COMMAND stocks --ui nonesuch)
 set_tests_properties(stocks_rejects_an_unknown_ui PROPERTIES PASS_REGULAR_EXPRESSION "unknown --ui")
 
+# The benchmarks are built with everything else (above), and run here at a tiny size, so that a change to the store's interface
+# breaks a test and not a benchmark nobody runs. Their numbers mean nothing at this size; a crash or a missing line fails.
+add_test(NAME stocks_period_bench_smoke COMMAND stocks_period_bench 30)
+set_tests_properties(stocks_period_bench_smoke PROPERTIES PASS_REGULAR_EXPRESSION "30 rows, 60 daily bars each.*build.*reference.*year +period" TIMEOUT 60)
+add_test(NAME stocks_period_bench_full_smoke COMMAND stocks_period_bench 30 full)
+set_tests_properties(stocks_period_bench_full_smoke PROPERTIES PASS_REGULAR_EXPRESSION "30 rows, 60 daily \\+ 100 5m.*year +period" TIMEOUT 60)
+add_test(NAME stocks_frame_bench_smoke COMMAND stocks_frame_bench 30)
+set_tests_properties(stocks_frame_bench_smoke PROPERTIES PASS_REGULAR_EXPRESSION "PageDown.*present again.*store change" TIMEOUT 60)
+
 # The one-off script that moves a portfolio file's transactions from one ISIN to another (tools/rekey_isin.py).
 find_package(Python3 COMPONENTS Interpreter QUIET)
 if(Python3_Interpreter_FOUND)
