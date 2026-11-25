@@ -75,6 +75,7 @@ TEST(a_market_is_named_by_its_nordnet_id_where_that_is_known) {
   CHECK(std::string(NordnetSource::knownMarketName(49)) == "Euronext Growth Oslo");
   CHECK(std::string(NordnetSource::knownMarketName(61)) == "Nordic MTF");  // Nordic Growth Market's multilateral facility
   CHECK(NordnetSource::knownMarketName(58) == nullptr);  // not known
+  CHECK(std::string(NordnetSource::knownMarketMic(78)) == kOffExchange);  // the funds: priced by their provider, on no venue
   CHECK(std::string(NordnetSource::knownMarketMic(24)) == "XHEL" &&
         NordnetSource::knownMarketMic(53) == std::string("FNSE") &&
         std::string(NordnetSource::knownMarketMic(61)) == "NMTF" && NordnetSource::knownMarketMic(58) == nullptr);
@@ -308,6 +309,23 @@ TEST(a_currency_pair_in_two_lists_is_kept_once) {
   source.load(*store, http, listener);
   CHECK(http.urls.size() == 3);
   CHECK(source.indicators().size() == 2 && source.indicators()[0].list == "currencies");
+}
+
+TEST(the_funds_of_nordnets_list_are_on_the_off_exchange_market_and_are_funds) {
+  NordnetSource::Page page;
+  std::string error;
+  CHECK(NordnetSource::parsePage(fixture("fundlist-1.json"), page, error) && !page.listings.empty());
+  auto store = makeMemoryStore();
+  FakeHttp http;
+  http.answer = [](const std::string &) { return ok(fixture("fundlist-1.json")); };
+  auto lists = listsNamed({"fundlist"});
+  Listener listener;
+  NordnetSource(lists, std::chrono::milliseconds(0)).load(*store, http, listener);
+  auto s = store->snapshot();
+  const auto xoff = s->findMarket(kOffExchange);
+  CHECK(xoff && !s->edges(*xoff).empty());  // none left out for want of a market
+  const auto fund = s->findInstrumentByIsin(page.listings[0].isin);
+  CHECK(fund && s->kind(*fund) == InstrumentKind::Fund);
 }
 
 TEST(listings_of_one_isin_with_different_names_leave_one_name_and_no_change_on_the_next_pass) {

@@ -37,8 +37,8 @@ constexpr KnownMarket kMarkets[] = {
     {0, "NYSE Arca", "ARCX"},
     {0, "No market", "XXXX"}, // indices, spot prices and currency pairs: what
                               // is quoted on no venue
-    {0, "Off exchange",
-     "XOFF"}, // what is priced by its provider and traded on no venue: funds
+    {78, "Off exchange",
+     "XOFF"}, // what is priced by its provider and traded on no venue: funds (Nordnet's fund list says them all on its market 78)
 };
 
 }  // namespace
