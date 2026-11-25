@@ -196,6 +196,8 @@ PeriodView periodView(const Snapshot & snapshot, const EdgeKey & edge, Period pe
     if (bars.empty()) continue;
     finish(r, bars, quote, v, withTrace);
     v.base = kUndefined;
+    // The trace is as wide as the days it has, of the days the period has: a month of bars in a year is a twelfth of its chart.
+    v.span = std::clamp(static_cast<double>(lastDayOf(quote, dayOf(r, bars.back().time)) - dayOf(r, bars[0].time) + 1) / static_cast<double>(in.days), 0.0, 1.0);
     return v;
   }
   return v;
