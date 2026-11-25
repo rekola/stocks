@@ -34,6 +34,7 @@ struct NordnetListing {
 // price block: the last price with its time, and the high and low where there are any, with no open and no volume.
 struct NordnetIndicator {
   std::string instrumentId, isin, name, orderBookId, symbol, type, country;
+  std::string priceSource;  // whose price it is (the price block's `priceSource`: MORNINGSTAR), which says the dataset it is written to
   std::string list;
   bool hasBar = false;
   Candle bar;
@@ -73,7 +74,7 @@ class NordnetSource : public Source {
       : lists_(std::move(lists)), pause_(pause), refresh_(refresh) {}
 
   std::string name() const override { return "nordnet"; }
-  std::vector<std::string> datasetCodes() const override { return {kNordnetDataset}; }
+  std::vector<std::string> datasetCodes() const override { return {kNordnetDataset, kMorningstarDataset}; }
   std::string description() const override { return "Nordnet: instrument discovery (ETFs, certificates, funds, stocks), no key"; }
   void load(Store &, Http &, SourceListener &) override;
   std::chrono::milliseconds refreshInterval() const override { return refresh_; }

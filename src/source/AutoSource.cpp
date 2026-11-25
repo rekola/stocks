@@ -23,6 +23,7 @@ class ChosenHistory : public HistoryProvider {
   ChosenHistory(std::shared_ptr<HistoryProvider> primary, std::shared_ptr<HistoryProvider> fallback, std::shared_ptr<const std::atomic<bool>> failed)
       : primary_(std::move(primary)), fallback_(std::move(fallback)), failed_(std::move(failed)) {}
   std::string dataset() const override { return in_use() ? in_use()->dataset() : std::string(); }
+  std::vector<std::string> datasets() const override { return in_use() ? in_use()->datasets() : std::vector<std::string>{std::string()}; }
   std::optional<Need> need(const Snapshot & snapshot, const EdgeKey & edge, Period period) const override {
     return in_use() ? in_use()->need(snapshot, edge, period) : std::nullopt;
   }

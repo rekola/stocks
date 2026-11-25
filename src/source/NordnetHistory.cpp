@@ -136,6 +136,7 @@ bool NordnetHistory::parse(const std::string & body, bool nav, Series & out, std
 }
 
 std::string NordnetHistory::dataset() const { return kNordnetDataset; }
+std::vector<std::string> NordnetHistory::datasets() const { return {kNordnetDataset, kMorningstarDataset}; }
 
 std::optional<HistoryProvider::Need> NordnetHistory::need(const Snapshot & snapshot, const EdgeKey & edge, Period period) const {
   auto listing = snapshot.listing(edge);

@@ -310,6 +310,24 @@ TEST(a_currency_pair_in_two_lists_is_kept_once) {
   CHECK(source.indicators().size() == 2 && source.indicators()[0].list == "currencies");
 }
 
+TEST(an_indicator_row_with_another_price_source_is_nordnets_own) {
+  using nlohmann::json;
+  json rows = json::parse(fixture("indicators-currencies.json"));
+  rows[1]["price"]["priceSource"] = "SOMEONE";
+  auto store = makeMemoryStore();
+  FakeHttp http;
+  http.answer = [&](const std::string &) { return ok(rows.dump()); };
+  auto lists = listsNamed({"currencies"});
+  Listener listener;
+  NordnetSource source(lists, std::chrono::milliseconds(0));
+  source.load(*store, http, listener);
+  auto s = store->snapshot();
+  const MarketId none = *s->findMarket("XXXX");
+  CHECK(s->listing({*s->findInstrument("EUR"), *s->findInstrument("USD"), none, *s->findDataset(kMorningstarDataset)}));
+  CHECK(s->listing({*s->findInstrument("USD"), *s->findInstrument("JPY"), none, *s->findDataset("nordnet")}));
+  CHECK(source.historyProvider()->datasets() == (std::vector<std::string>{"nordnet", kMorningstarDataset}));
+}
+
 TEST(listings_of_one_isin_with_different_names_leave_one_name_and_no_change_on_the_next_pass) {
   // Xetra (DE), Stockholm (SE) and Copenhagen (DK): the home listing of a DE ISIN is the first, of an IE one there is none.
   for (const std::string isin : {"DE0007164600", "IE00BHZRR030"}) {
@@ -719,7 +737,9 @@ TEST(the_indicator_lists_make_indices_in_points_currency_pairs_and_commodities_i
   CHECK(http.urls.size() == 3 && http.urls[0].find("/instrument-screening/v1/indicator/web/list/WORLDMAP") != std::string::npos);
   CHECK(http.urls[0].find("spark") == std::string::npos);  // no sparkline
   auto s = store->snapshot();
-  DatasetId nordnet = *s->findDataset("nordnet");
+  // Every row of these lists names Morningstar as its price source: its edges are Morningstar's, not Nordnet's.
+  DatasetId nordnet = *s->findDataset(kMorningstarDataset);
+  CHECK(s->name(nordnet) == "Morningstar");
 
   // An index: its ISIN, in points, on no market.
   InstrumentId dax = *s->findInstrumentByIsin("DE0008469008");
