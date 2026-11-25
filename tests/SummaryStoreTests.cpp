@@ -311,11 +311,11 @@ TEST(the_change_over_a_period_is_the_last_price_against_the_first_bar_of_its_que
   store->setQuote(k, {210, 209, 211, midnight(kLast) + 50000});
   const PeriodView moved = periodView(*store->snapshot(), k, Period::Quarter, true);
   CHECK(moved.base == quarter.base && moved.last == 210 && moved.closes.size() == 91 && moved.closes.back() == 210.0f);
-  // One bar is not a quarter: no number rather than a wrong one.
+  // One bar is not a quarter: no number rather than a wrong one, and the trace is the bar there is.
   const EdgeKey fresh = t.edge(t.elisa);
   store->appendCandles(fresh, Resolution::Day, {bar(kLast, 5)});
   const PeriodView one = periodView(*store->snapshot(), fresh, Period::Quarter, true);
-  CHECK(!one.primary && !isDefined(one.change()) && one.closes.empty());
+  CHECK(!one.primary && !isDefined(one.change()) && !one.closes.empty());
 }
 
 TEST(a_fund_and_an_index_keep_value_queues_and_a_company_keeps_bars) {

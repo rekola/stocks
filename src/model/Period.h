@@ -27,7 +27,7 @@
 // Change and the line agree. The base is never moved. The bars are the edge's queues (Summary.h), not its data, and a queue that is not in
 // memory has none: the row shows its price and no trace until it is read. A fund's NAV is a bar of one value and works the same way.
 //
-// A period is shown only from bars that cover it: the first bar must be within a third of the period of its start (so the 60
+// The change of a period is shown only from bars that cover it (the trace is whatever bars there are): the first bar must be within a third of the period of its start (so the 60
 // daily bars the made-up data has are a quarter, one daily bar is not a week). Else the row has no number for the period,
 // never a wrong one.
 enum class Period : uint8_t { Day, Week, Month, Quarter, Year };
