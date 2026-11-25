@@ -25,3 +25,14 @@ jobs:
 
       - name: Test
         run: ctest --test-dir build --output-on-failure
+
+      # The benchmarks and their smoke tests again with the standard library's range checks on, as the MSYS2 libstdc++ has
+      # them: an out-of-range read that happens to hit valid memory elsewhere aborts here, where it is quick to see.
+      - name: Configure (range checks)
+        run: cmake -B build-checked -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS="-D_GLIBCXX_ASSERTIONS"
+
+      - name: Build the benchmarks (range checks)
+        run: cmake --build build-checked -j"$(nproc)" --target stocks_period_bench stocks_frame_bench
+
+      - name: Test the benchmarks (range checks)
+        run: ctest --test-dir build-checked --output-on-failure -R bench
