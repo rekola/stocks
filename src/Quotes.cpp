@@ -267,6 +267,7 @@ std::string Quotes::text(int r, int c) const {
 
 std::span<const float> Quotes::trace(int r, int) const { return traceOf(r).closes; }
 std::span<const float> Quotes::traceLight(int r, int) const { return traceOf(r).light; }
+double Quotes::traceSpan(int r, int) const { return traceOf(r).span; }
 
 const PeriodView & Quotes::traceOf(int r) const {
   auto it = traces_.find(r);
