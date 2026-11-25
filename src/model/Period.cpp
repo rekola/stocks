@@ -187,7 +187,7 @@ PeriodView periodView(const Snapshot & snapshot, const EdgeKey & edge, Period pe
     if (queue.empty()) continue;
     const Seq<Candle> bars = from(queue, keyOf(r, dayOf(r, queue.back().time) - in.days + 1));
     if (bars.empty()) continue;
-    finish(bars, quote, v, withTrace);
+    finish(r, bars, quote, v, withTrace);
     v.base = kUndefined;
     return v;
   }
