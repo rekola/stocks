@@ -284,7 +284,7 @@ TEST(a_row_of_an_indicator_list_with_a_bad_isin_is_left_out_and_the_next_list_is
   for (const NordnetIndicator & i : source.indicators()) CHECK(i.isin != bad);
 }
 
-TEST(the_norwegian_currency_list_is_asked_with_its_sparkline_and_its_pairs_are_edges) {
+TEST(a_national_currency_list_is_loaded_like_the_global_one) {
   auto store = makeMemoryStore();
   FakeHttp http;
   http.answer = [](const std::string &) { return ok(fixture("indicators-currencies.json")); };
@@ -292,7 +292,8 @@ TEST(the_norwegian_currency_list_is_asked_with_its_sparkline_and_its_pairs_are_e
   Listener listener;
   NordnetSource source(lists, std::chrono::milliseconds(0));
   source.load(*store, http, listener);
-  CHECK(http.urls.size() == 1 && http.urls[0].find("/list/NO_CURRENCY?spark=true") != std::string::npos);
+  CHECK(http.urls.size() == 1 && http.urls[0].find("/list/NO_CURRENCY") != std::string::npos);
+  CHECK(http.urls[0].find("spark") == std::string::npos);
   CHECK(source.indicators().size() == 2 && source.indicators()[0].list == "currencies-no");
   CHECK(store->snapshot()->findInstrument("EUR").has_value() && store->snapshot()->findInstrument("JPY").has_value());
 }
@@ -571,20 +572,22 @@ TEST(a_stock_bar_carries_the_volume_when_the_answer_has_it) {
 
 TEST(the_default_lists_are_the_etfs_the_certificates_the_funds_and_the_stocks) {
   auto lists = NordnetSource::defaultLists();
-  CHECK(lists.size() == 9);
+  CHECK(lists.size() == 13);
   // The three small indicator lists go first, the commodities (the gold spot that physical gold is estimated from) before the pairs
   // (that value it in euros): none of them waits for the minutes the big lists take.
   CHECK(lists[0].name == "commodities" && lists[1].name == "currencies" && lists[2].name == "currencies-no" &&
-        lists[3].name == "indices");
-  CHECK(lists[2].url.find("/list/NO_CURRENCY?spark=true") != std::string::npos);
-  for (size_t i = 0; i < 4; i++) CHECK(lists[i].shape == NordnetSource::List::Shape::Indicators);
-  CHECK(lists[3].market == "Indices");
-  CHECK(lists[4].name == "etflist" && lists[5].name == "certificatelist" && lists[6].name == "fundlist" && lists[7].name == "stocklist");
-  CHECK(lists[7].url.find("/stocklist?") != std::string::npos && lists[7].pageSize == 1000);
-  for (size_t i = 4; i < 8; i++) CHECK(lists[i].shape != NordnetSource::List::Shape::Indicators);
+        lists[3].name == "currencies-se" && lists[4].name == "currencies-fi" && lists[5].name == "currencies-dk" &&
+        lists[6].name == "currencies-de" && lists[7].name == "indices");
+  for (size_t i = 2; i < 7; i++) CHECK(lists[i].url.find("_CURRENCY") != std::string::npos);
+  for (const auto & l : lists) CHECK(l.url.find("spark") == std::string::npos);  // no list asks for a sparkline
+  for (size_t i = 0; i < 8; i++) CHECK(lists[i].shape == NordnetSource::List::Shape::Indicators);
+  CHECK(lists[7].market == "Indices");
+  CHECK(lists[8].name == "etflist" && lists[9].name == "certificatelist" && lists[10].name == "fundlist" && lists[11].name == "stocklist");
+  CHECK(lists[11].url.find("/stocklist?") != std::string::npos && lists[11].pageSize == 1000);
+  for (size_t i = 8; i < 12; i++) CHECK(lists[i].shape != NordnetSource::List::Shape::Indicators);
   // The news is last: its items are about the instruments the lists before it have found.
-  CHECK(lists[8].name == "news" && lists[8].shape == NordnetSource::List::Shape::News &&
-        lists[8].url.find("/news/v1/news/preview/main?includeInstruments=true") != std::string::npos);
+  CHECK(lists[12].name == "news" && lists[12].shape == NordnetSource::List::Shape::News &&
+        lists[12].url.find("/news/v1/news/preview/main?includeInstruments=true") != std::string::npos);
 }
 
 TEST(
