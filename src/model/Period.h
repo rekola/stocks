@@ -17,6 +17,8 @@
 //   month    the last 30 days: daily bars.
 //   quarter  the last 90 days (three months): daily bars.
 //   year     the last 365 days: weekly bars, or daily ones that reach back that far.
+//   3 years  the last 1095 days: weekly bars.
+//   10 years the last 3650 days: weekly bars.
 //
 // A rate (a row quoted in per cent, `isRate`) is not a price: its change is the difference between the last value and the base, in
 // basis points (a base of 0, or a negative one, is as good as any), where a price's is the percentage change. The base, the last
@@ -30,9 +32,9 @@
 // The change of a period is shown only from bars that cover it (the trace is whatever bars there are): the first bar must be within a third of the period of its start (so the 60
 // daily bars the made-up data has are a quarter, one daily bar is not a week). Else the row has no number for the period,
 // never a wrong one.
-enum class Period : uint8_t { Day, Week, Month, Quarter, Year };
+enum class Period : uint8_t { Day, Week, Month, Quarter, Year, Year3, Year10 };
 
-inline constexpr size_t kPeriodCount = 5;
+inline constexpr size_t kPeriodCount = 7;
 // What the table shows until a period is chosen: the three months, the table as it was before there were periods.
 inline constexpr Period kDefaultPeriod = Period::Quarter;
 

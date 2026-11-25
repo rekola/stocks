@@ -17,6 +17,8 @@
 //   quarter  MONTH_3 at DAY: about 60 to 90 bars (3-10 KB)
 //   year     YEAR_1 at WEEK: about 53 weekly bars (5-8 KB); the daily bars of a year would be five times that for a trace
 //            that has 22 cells
+//   3 years  YEAR_3 at WEEK: about 156 weekly bars
+//   10 years YEAR_10 at WEEK: about 520 weekly bars
 //
 // A fund has a NAV once a day and no intraday bars, so its day and week are the quarter's request. The whole history is for a server
 // that backfills once and keeps it (Full): the whole period, and where Nordnet answers with a coarser resolution for it (a commodity's
@@ -41,10 +43,12 @@ class NordnetHistory : public HistoryProvider {
     std::chrono::milliseconds day_lifetime{15 * 60 * 1000};        // DAY_1 at MIN_5
     std::chrono::milliseconds week_lifetime{60 * 60 * 1000};       // WEEK_1 at HOUR_1
     std::chrono::milliseconds year_lifetime{24 * 60 * 60 * 1000};  // YEAR_1 at WEEK
-    std::chrono::milliseconds quarter_lifetime{0};                 // MONTH_3 at DAY: discovery keeps today's bar
+    std::chrono::milliseconds year3_lifetime{24 * 60 * 60 * 1000};   // YEAR_3 at WEEK
+    std::chrono::milliseconds year10_lifetime{24 * 60 * 60 * 1000};  // YEAR_10 at WEEK
+    std::chrono::milliseconds quarter_lifetime{0};                // MONTH_3 at DAY: discovery keeps today's bar
   };
   // The requests, as the loader names them.
-  enum Request : int { Quarter = 0, Day = 1, Week = 2, Year = 3, Whole = 4 };
+  enum Request : int { Quarter = 0, Day = 1, Week = 2, Year = 3, Year3 = 4, Year10 = 5, Whole = 6 };
 
   NordnetHistory() = default;
   explicit NordnetHistory(Options options) : options_(options) {}

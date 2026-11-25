@@ -918,7 +918,7 @@ TEST(the_viewer_is_drawn_by_the_loop_without_another_input) {
 }
 
 TEST(the_period_command_changes_the_change_column_and_the_trace_and_the_headings_say_which) {
-  Fixture f(false);
+  Fixture f(false, 130);  // wide enough for the seven period tags
   Rows rows = periodWorld(*f.store);
   f.app->execute("show-currencies");
   Table & t = f.browser->table();
@@ -943,7 +943,7 @@ TEST(the_period_command_changes_the_change_column_and_the_trace_and_the_headings
   CHECK(f.browser->period() == Period::Week && f.text().find("Change 1w") != std::string::npos);
   f.app->execute("previous-period");
   f.app->execute("previous-period");
-  CHECK(f.browser->period() == Period::Year);  // round the end of the list
+  CHECK(f.browser->period() == Period::Year10);  // round the end of the list
   f.app->execute("next-period");
   CHECK(f.browser->period() == Period::Day);
   f.app->execute("show-period-month");
@@ -951,7 +951,7 @@ TEST(the_period_command_changes_the_change_column_and_the_trace_and_the_headings
 }
 
 TEST(a_key_cycles_the_period_and_a_click_on_a_tag_chooses_it) {
-  Fixture f(false);
+  Fixture f(false, 130);
   periodWorld(*f.store);
   f.app->execute("show-currencies");
   f.press(']');

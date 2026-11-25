@@ -710,7 +710,7 @@ void Browser::defineCommands() {
     const PeriodInfo & p = info(static_cast<Period>(i));
     commands.define(std::string("show-period-") + p.id, std::string("Show the change and the trace over ") + p.trace, [this, i] { showPeriod(static_cast<Period>(i)); });
   }
-  commands.define("next-period", "Show the next period in the change and the trace (1d, 1w, 1m, 3m, 1y, then round)",
+  commands.define("next-period", "Show the next period in the change and the trace (1d, 1w, 1m, 3m, 1y, 3y, 10y, then round)",
                   [this] { showPeriod(nextPeriod(period_)); });
   commands.define("previous-period", "Show the previous period in the change and the trace", [this] { showPeriod(previousPeriod(period_)); });
   commands.define("focus-tags", "Move the keyboard to the preset tags", [this] { app_.input().setFocus(&tags_); });
@@ -738,11 +738,11 @@ void Browser::bindKeys() {
   keymap.bind("c", "show-chart");
   keymap.bind(KeymapProfile::TERMINAL, "C-x =", "show-info");  // where the point is, as in Emacs
   keymap.bind(KeymapProfile::TERMINAL, "C-x C-c", "quit");
-  // The period: ] and [ step through them; a direct choice is C-c and a letter (d w m q y: day, week, month, quarter, year) in the
+  // The period: ] and [ step through them; a direct choice is C-c and a letter (d w m q y 3 t: day, week, month, quarter, year, three years, ten) in the
   // terminal (C-c and a letter is what Emacs leaves to the user), Alt and a digit on the desktop.
   keymap.bind("]", "next-period");
   keymap.bind("[", "previous-period");
-  constexpr const char * kLetters = "dwmqy";
+  constexpr const char * kLetters = "dwmqy3t";  // 3: three years, t: ten
   for (size_t i = 0; i < kPeriodCount; i++) {
     const std::string command = std::string("show-period-") + info(static_cast<Period>(i)).id;
     keymap.bind(KeymapProfile::TERMINAL, std::string("C-c ") + kLetters[i], command);
