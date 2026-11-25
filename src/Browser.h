@@ -101,6 +101,11 @@ class Browser {
   void showLink();
   // The attribute viewer for the selected row, from the store's snapshot now.
   void showInfo();
+  // The selected row's trace of the period shown as a large chart over the dimmed screen: the line, its values and dates, and a cursor
+  // to read it with. A click on a trace cell opens it for that row, and so does Enter on one.
+  void showChart();
+  // The chart of `row`, if `column` is a trace column.
+  void openChartAt(int row, int column);
   void defineCommands();
   void bindKeys();
 
@@ -167,5 +172,5 @@ class Browser {
   std::chrono::steady_clock::time_point last_refresh_{};
   std::optional<int> action_row_;  // the row a button was clicked on, while its command runs: not the selected one
   bool pending_ = false;        // the store changed and the table does not show it yet
-  cellui::Connection period_tag_, button_, resized_, display_, tag_, message_, frame_, changed_, said_, loaded_;
+  cellui::Connection period_tag_, button_, chart_click_, chart_enter_, resized_, display_, tag_, message_, frame_, changed_, said_, loaded_;
 };

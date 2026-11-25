@@ -21,9 +21,17 @@ int64_t dayOf(Resolution r, int64_t key) { return isDateResolution(r) ? key : da
 // The first key of a bar that is on `day` or later.
 int64_t keyOf(Resolution r, int64_t day) { return isDateResolution(r) ? day : slotOfInstant(r, (day - kUnixEpochDayNumber) * 86400); }
 
-void trace(const Seq<Candle> & bars, PeriodView & v) {
+// A bar's start as UTC seconds: a date is its midnight.
+Timestamp instantOf(Resolution r, int64_t key) { return isDateResolution(r) ? (key - kUnixEpochDayNumber) * 86400 : instantOfSlot(r, key); }
+
+void trace(Resolution r, const Seq<Candle> & bars, PeriodView & v) {
   v.closes.reserve(bars.size());
-  for (const Candle & c : bars) v.closes.push_back(static_cast<float>(c.close));
+  v.times.reserve(bars.size() + 1);
+  for (const Candle & c : bars) {
+    v.closes.push_back(static_cast<float>(c.close));
+    v.times.push_back(instantOf(r, c.time));
+  }
+  v.dated = isDateResolution(r);
   v.light = activity(bars);
 }
 
@@ -33,15 +41,16 @@ Seq<Candle> from(const Seq<Candle> & bars, int64_t key) {
   return bars.drop(static_cast<size_t>(at - bars.begin()));
 }
 
-// Fills in the last price and the trace of a period from its bars. The last price is the quote's, the one the Price column shows (the store
+// Fills in the last price and the trace of a period from its bars (of resolution `r`). The last price is the quote's, the one the Price column shows (the store
 // sets it from any bar newer than it, so it is never older than the bars), and the trace ends with it as one more point when it differs from
 // the last bar's close, so the Price, the Change and the line agree. With no quote it is the last bar's close.
-void finish(const Seq<Candle> & bars, const std::optional<Quote> & quote, PeriodView & v, bool withTrace) {
+void finish(Resolution r, const Seq<Candle> & bars, const std::optional<Quote> & quote, PeriodView & v, bool withTrace) {
   v.last = quote && isDefined(quote->last) ? quote->last : bars.back().close;
   if (!withTrace) return;
-  trace(bars, v);
+  trace(r, bars, v);
   if (v.last != bars.back().close) {
     v.closes.push_back(static_cast<float>(v.last));
+    v.times.push_back(quote && quote->time != 0 ? quote->time : v.times.back());  // at the quote's time, else with the last bar
     if (!v.light.empty()) v.light.push_back(v.light.back());  // the latest price is the last bar's, as it goes on
   }
 }
@@ -136,7 +145,7 @@ PeriodView periodView(const Snapshot & snapshot, const EdgeKey & edge, Period pe
       if (!days.empty() && session < days.back().time) continue;  // older than the daily bars: a session gone by
       const Seq<Candle> bars = from(queue, keyOf(r, session));
       v.primary = true;
-      finish(bars, quote, v, withTrace);
+      finish(r, bars, quote, v, withTrace);
       if (auto previous = snapshot.previousClose(edge, session)) v.base = *previous;
       else
         for (size_t i = days.size(); i-- > 0;)
@@ -167,7 +176,7 @@ PeriodView periodView(const Snapshot & snapshot, const EdgeKey & edge, Period pe
     if (bars.empty() || dayOf(r, bars[0].time) > start + in.days / 3) continue;  // does not reach back far enough
     v.primary = f < in.primary;
     v.base = bars[0].close;
-    finish(bars, quote, v, withTrace);
+    finish(r, bars, quote, v, withTrace);
     return v;
   }
   return v;

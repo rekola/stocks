@@ -71,6 +71,8 @@ struct PeriodView {
   double base = kUndefined;       // the price the change is measured from
   double last = kUndefined;       // the last price of the period
   std::vector<float> closes;      // the trace: the period's closes, oldest first (only when asked for)
+  std::vector<Timestamp> times;   // when each close is, as UTC seconds (a daily or longer bar: midnight of its date), one for each of `closes`
+  bool dated = false;             // the bars are days or longer, so the times say a date and no time of day
   std::vector<float> light;       // how bright the trace is at each close, 0 to 1: the volume of its bar against the period's usual (see activity())
   bool hasChange() const { return isDefined(base) && isDefined(last) && (rate || base != 0); }
   // For a rate in basis points, else in percent; undefined where there is no number.
