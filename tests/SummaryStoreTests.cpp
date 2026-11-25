@@ -291,6 +291,24 @@ TEST(a_sundays_day_queue_is_fridays_session_and_the_trace_ends_with_the_last_pri
   CHECK(later.last == 12.5 && later.closes.size() == 4 && later.closes.back() == 12.5f);
 }
 
+TEST(a_queue_that_stops_before_the_present_still_has_the_change_of_the_period_counted_back_from_the_price) {
+  auto store = makeMemoryStore();
+  Things t(*store);
+  const EdgeKey k = t.edge(t.nokia);
+  // Daily bars from 30 days before the last day to 12 days before it: the source is behind, and the slot a month back is there.
+  std::vector<Candle> bars;
+  for (int64_t d = kLast - 30; d <= kLast - 12; d++) bars.push_back(bar(d, 100 + static_cast<double>(d - (kLast - 30))));
+  store->appendCandles(k, Resolution::Day, bars);
+  // The price is of the last day, 12 days after the last bar.
+  store->setQuote(k, {130, kUndefined, kUndefined, midnight(kLast) + 100});
+  const auto snapshot = store->snapshot();
+  const PeriodView month = periodView(*snapshot, k, Period::Month, true);
+  // The month is the 30 days back from the day of the price, and its first day (kLast - 29) is there: the change is from that bar's close, though the
+  // queue has nothing for the last 12 days.
+  CHECK(month.primary && isDefined(month.change()) && month.base == 101.0);
+  CHECK(periodCovered(*snapshot, k, Period::Month).covered);
+}
+
 TEST(the_change_over_a_period_is_the_last_price_against_the_first_bar_of_its_queue) {
   auto store = makeMemoryStore();
   Things t(*store);
