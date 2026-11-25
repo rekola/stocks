@@ -97,6 +97,14 @@ TEST(every_symbol_is_priced_in_euros_and_in_dollars_as_edges_of_the_dataset) {
   CHECK(std::abs(inEuros.candles[0].close - 3240) < 1e-6 && std::abs(inDollars.candles[0].close - 3600) < 1e-9);
   CHECK(inEuros.candles[0].time == dayNumber(2026, 11, 24) && !isDefined(inEuros.candles[0].open) && !isDefined(inEuros.candles[0].volume));
   CHECK(s->symbol(EdgeKey{gold, eur, none, data}) == "XAU" && s->name(NodeRef(gold)) == "Gold");
+  // What a price is for is in the name the row shows: the metals by the troy ounce, copper by the pound, a coin by the coin.
+  for (auto [symbol, shown] : {std::pair{"XAU", "Gold, per troy oz"}, {"XAG", "Silver, per troy oz"}, {"XPT", "Platinum, per troy oz"},
+                               {"XPD", "Palladium, per troy oz"}, {"HG", "Copper, per tonne"}, {"BTC", "Bitcoin, per coin"}, {"ETH", "Ethereum, per coin"}})
+    for (const InstrumentId currency : {eur, usd}) CHECK(s->listing({*s->findInstrument(symbol), currency, none, data})->name == shown);
+  // Copper is quoted per pound by the API and is kept per metric tonne, the unit of the instrument (another source's copper has the same ISIN).
+  CHECK(std::abs(s->lastCandles({*s->findInstrument("HG"), usd, none, data}, Resolution::Day, 1).candles.back().close - 5 * 1000 / 0.45359237) < 1e-6);
+  CHECK(std::abs(s->lastCandles({*s->findInstrument("HG"), eur, none, data}, Resolution::Day, 1).candles.back().close - 4.5 * 1000 / 0.45359237) < 1e-6);
+  CHECK(std::abs(s->lastCandles({*s->findInstrument("XAG"), usd, none, data}, Resolution::Day, 1).candles.back().close - 45) < 1e-9);  // the others as they come
   // The metals are commodities (so in the Commodities preset), the coins are of no kind.
   for (const char * metal : {"XAU", "XAG", "XPT", "XPD", "HG"}) CHECK(s->kind(*s->findInstrument(metal)) == InstrumentKind::Commodity);
   for (const char * coin : {"BTC", "ETH"}) CHECK(s->kind(*s->findInstrument(coin)) == InstrumentKind::Other);
