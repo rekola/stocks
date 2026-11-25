@@ -231,6 +231,9 @@ bool NordnetSource::parsePage(const std::string & body, Page & page, std::string
     if (row.is_object() && row.contains("price_info") && row["price_info"].is_object()) {
       const json & p = row["price_info"];
       auto open = price(p, "open"), high = price(p, "high"), low = price(p, "low"), last = price(p, "last");
+      // A halted instrument has no last price today: its final price is the previous close, which Nordnet shows too (and no change
+      // with it: with no open, high and low there is no bar for today).
+      if (!last) last = price(p, "close");
       const int64_t tick = integer(p, "tick_timestamp") / 1000;  // the answer is in milliseconds; seconds from here on
       // A fund has only its NAV: the bar's close, which is also the last price while the slot is still in progress (the
       // NAV of the day is dated by its tick). Its open, high and low are undefined, and so is a volume the answer lacks.
