@@ -170,9 +170,15 @@ std::vector<NordnetSource::List> NordnetSource::defaultLists() {
   const std::string sorted = "sort_order=asc&sort_attribute=symbol";  // a key that does not move between pages
   // The indicator lists first: each is one small answer, and what they hold (the gold spot price that the physical gold is estimated from, the
   // currency pairs that value it in euros) should not wait for the minutes the big lists take. Commodities before the pairs, the pairs
-  // before the indices.
+  // before the indices. The national currency lists (pairs of each country's own currency) come after the global one. None is asked with
+  // a sparkline: its rows carry percentages of development with no times, which are not bars.
   return {{"commodities", indicators + "COMMODITIES", 0, std::chrono::milliseconds(0), Shape::Indicators, "Commodities"},
           {"currencies", indicators + "CURRENCY_GLOBAL", 0, std::chrono::milliseconds(0), Shape::Indicators, "Currencies"},
+          {"currencies-no", indicators + "NO_CURRENCY", 0, std::chrono::milliseconds(0), Shape::Indicators, "Currencies"},
+          {"currencies-se", indicators + "SE_CURRENCY", 0, std::chrono::milliseconds(0), Shape::Indicators, "Currencies"},
+          {"currencies-fi", indicators + "FI_CURRENCY", 0, std::chrono::milliseconds(0), Shape::Indicators, "Currencies"},
+          {"currencies-dk", indicators + "DK_CURRENCY", 0, std::chrono::milliseconds(0), Shape::Indicators, "Currencies"},
+          {"currencies-de", indicators + "DE_CURRENCY", 0, std::chrono::milliseconds(0), Shape::Indicators, "Currencies"},
           {"indices", indicators + "WORLDMAP", 0, std::chrono::milliseconds(0), Shape::Indicators, "Indices"},
           {"etflist", base + "etflist?" + sorted, 500},
           {"certificatelist", base + "certificatelist?apply_filters=instrument_type%3DPTC&" + sorted, 1000},
@@ -322,6 +328,11 @@ size_t NordnetSource::loadIndicators(const List & list, Store & store, Http & ht
     listener.message("nordnet: " + list.name + ": " + error);
     return 0;
   }
+  // A currency pair is kept once: the lists of the countries repeat each other's pairs, and the one that came first has it.
+  std::set<std::string> pairs;
+  for (const NordnetIndicator & i : indicators_)
+    if (i.type == "CURRENCY") pairs.insert(i.name);
+  std::erase_if(rows, [&](const NordnetIndicator & row) { return row.type == "CURRENCY" && !pairs.insert(row.name).second; });
   size_t written = 0;
   LeftOut leftOut;
   std::vector<size_t> refused;  // the rows left out, which the source does not keep
