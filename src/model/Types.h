@@ -291,6 +291,7 @@ struct SeriesKey {
   EdgeKey edge;
   Resolution resolution = Resolution::Day;
   friend bool operator==(const SeriesKey &, const SeriesKey &) = default;
+  friend bool operator<(const SeriesKey & a, const SeriesKey & b) { return std::tie(a.edge, a.resolution) < std::tie(b.edge, b.resolution); }
 };
 
 // Prices are doubles: enough for display and models; nothing here settles.

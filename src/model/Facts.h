@@ -4,6 +4,7 @@
 
 #include <functional>
 #include <memory>
+#include <set>
 #include <utility>
 #include <string>
 #include <vector>
@@ -54,6 +55,15 @@ class FactStore {
   virtual ~FactStore() = default;
   // Everything there is, in no particular order, read once at start-up.
   virtual std::vector<StoredFact> loadAll() = 0;
+  // The facts of these nodes only (their keys), in no particular order: what a restore that goes by the edges wants of each chunk. A node
+  // with none says nothing. The default reads everything and keeps those; a store that can look a node up does.
+  virtual std::vector<StoredFact> loadNodes(const std::vector<uint64_t> & nodes) {
+    std::vector<StoredFact> out;
+    const std::set<uint64_t> wanted(nodes.begin(), nodes.end());
+    for (StoredFact & f : loadAll())
+      if (wanted.count(f.node)) out.push_back(std::move(f));
+    return out;
+  }
   // The events that are kept, in no particular order (only the portfolio file has any).
   virtual std::vector<StoredEvent> loadEvents() { return {}; }
   // Applies a batch as one unit: the facts put in place of those with the same (node, predicate).

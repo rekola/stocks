@@ -20,7 +20,6 @@ const PeriodInfo kInfo[kPeriodCount] = {
 int64_t dayOf(Resolution r, int64_t key) { return isDateResolution(r) ? key : dayNumberOfInstant(instantOfSlot(r, key)); }
 // The first key of a bar that is on `day` or later.
 int64_t keyOf(Resolution r, int64_t day) { return isDateResolution(r) ? day : slotOfInstant(r, (day - kUnixEpochDayNumber) * 86400); }
-constexpr int64_t kEnd = std::numeric_limits<int64_t>::max();
 
 void trace(const Seq<Candle> & bars, PeriodView & v) {
   v.closes.reserve(bars.size());
@@ -28,12 +27,17 @@ void trace(const Seq<Candle> & bars, PeriodView & v) {
   v.light = activity(bars);
 }
 
-// Fills in the last price and the trace of a period from its series `bars`. The series is loaded now and then, the daily bar is
-// replaced every few minutes: where the daily bar is as new as the series (its date `since` or later) its close is the latest
-// price, the one the Price column shows, and the trace ends with it so the line ends where the change does.
-void finish(const Seq<Candle> & bars, const std::optional<Candle> & daily, int64_t since, PeriodView & v, bool withTrace) {
-  v.last = bars.back().close;
-  if (daily && daily->time >= since && isDefined(daily->close)) v.last = daily->close;
+// The bars of a queue from the first one at or after `key`.
+Seq<Candle> from(const Seq<Candle> & bars, int64_t key) {
+  const auto at = std::lower_bound(bars.begin(), bars.end(), key, [](const Candle & c, int64_t k) { return c.time < k; });
+  return bars.drop(static_cast<size_t>(at - bars.begin()));
+}
+
+// Fills in the last price and the trace of a period from its bars. The last price is the quote's, the one the Price column shows (the store
+// sets it from any bar newer than it, so it is never older than the bars), and the trace ends with it as one more point when it differs from
+// the last bar's close, so the Price, the Change and the line agree. With no quote it is the last bar's close.
+void finish(const Seq<Candle> & bars, const std::optional<Quote> & quote, PeriodView & v, bool withTrace) {
+  v.last = quote && isDefined(quote->last) ? quote->last : bars.back().close;
   if (!withTrace) return;
   trace(bars, v);
   if (v.last != bars.back().close) {
@@ -61,6 +65,50 @@ std::vector<float> activity(const Seq<Candle> & bars) {
 }
 
 const PeriodInfo & info(Period p) { return kInfo[static_cast<size_t>(p)]; }
+
+std::optional<std::chrono::seconds> defaultKeep(Resolution r) {
+  int64_t days = 0;
+  for (const PeriodInfo & in : kInfo)
+    for (size_t f = 0; f < in.feedCount; f++)
+      if (in.feeds[f] == r) days = std::max(days, in.days);
+  if (days == 0) return std::nullopt;
+  return std::chrono::seconds(days * 86400);
+}
+
+std::vector<Resolution> readsOf(Period p) {
+  const PeriodInfo & in = info(p);
+  std::vector<Resolution> out(in.feeds.begin(), in.feeds.begin() + static_cast<std::ptrdiff_t>(in.feedCount));
+  if (p == Period::Day) out.push_back(Resolution::Day);  // the change of the day is measured from a daily bar where there is no close before the session
+  return out;
+}
+
+Covered periodCovered(const Snapshot & snapshot, const EdgeKey & edge, Period period) {
+  const PeriodInfo & in = info(period);
+  Covered out;
+  if (period == Period::Day) {
+    const auto days = snapshot.coverage(edge, Resolution::Day);
+    for (size_t f = 0; f < in.feedCount; f++) {
+      const auto c = snapshot.coverage(edge, in.feeds[f]);
+      if (!c) continue;
+      if (days && dayOf(in.feeds[f], c->last_key) < days->last_key) continue;  // older than the daily bars: a session gone by
+      out.covered = true;
+      out.fetched = c->fetched;
+      return out;
+    }
+    return out;
+  }
+  for (size_t f = 0; f < in.feedCount; f++) {
+    const Resolution r = in.feeds[f];
+    const auto c = snapshot.coverage(edge, r);
+    if (!c) continue;
+    const int64_t end = dayOf(r, c->last_key), start = end - in.days + 1;
+    if (dayOf(r, c->first_key) > start + in.days / 3) continue;  // does not reach back far enough
+    out.covered = f < in.primary;
+    out.fetched = c->fetched;
+    return out;
+  }
+  return out;
+}
 Period nextPeriod(Period p) { return static_cast<Period>((static_cast<size_t>(p) + 1) % kPeriodCount); }
 Period previousPeriod(Period p) { return static_cast<Period>((static_cast<size_t>(p) + kPeriodCount - 1) % kPeriodCount); }
 
@@ -77,18 +125,18 @@ PeriodView periodView(const Snapshot & snapshot, const EdgeKey & edge, Period pe
   const PeriodInfo & in = info(period);
   PeriodView v;
   v.rate = isRate(snapshot, edge);
+  const std::optional<Quote> quote = snapshot.quote(edge);
   if (period == Period::Day) {
-    const CandleSeries daily = snapshot.lastCandles(edge, Resolution::Day, 2);
-    const Seq<Candle> & days = daily.candles;
+    const Seq<Candle> days = snapshot.queue(edge, Resolution::Day);
     for (size_t f = 0; f < in.feedCount; f++) {
       const Resolution r = in.feeds[f];
-      const CandleSeries newest = snapshot.lastCandles(edge, r, 1);
-      if (newest.candles.empty()) continue;
-      const int64_t session = dayOf(r, newest.candles.back().time);
+      const Seq<Candle> queue = snapshot.queue(edge, r);
+      if (queue.empty()) continue;
+      const int64_t session = dayOf(r, queue.back().time);
       if (!days.empty() && session < days.back().time) continue;  // older than the daily bars: a session gone by
-      const Seq<Candle> bars = snapshot.candles(edge, r, {keyOf(r, session), kEnd}).candles;
+      const Seq<Candle> bars = from(queue, keyOf(r, session));
       v.primary = true;
-      finish(bars, days.empty() ? std::nullopt : std::optional<Candle>(days.back()), session, v, withTrace);
+      finish(bars, quote, v, withTrace);
       if (auto previous = snapshot.previousClose(edge, session)) v.base = *previous;
       else
         for (size_t i = days.size(); i-- > 0;)
@@ -98,30 +146,28 @@ PeriodView periodView(const Snapshot & snapshot, const EdgeKey & edge, Period pe
           }
       return v;
     }
-    // No intraday bars: the change since the previous daily bar, and no trace.
-    if (days.size() == 2) {
-      v.last = days[1].close;
-      v.base = days[0].close;
+    // No intraday bars: the change since the daily bar before the day of the price, and no trace.
+    if (!days.empty()) {
+      const int64_t today = quote && quote->time != 0 ? dayNumberOfInstant(quote->time) : days.back().time;
+      for (size_t i = days.size(); i-- > 0;)
+        if (days[i].time < today) {
+          v.base = days[i].close;
+          v.last = quote && isDefined(quote->last) ? quote->last : days.back().close;
+          break;
+        }
     }
     return v;
   }
-  // The latest daily bar, read once (and not for the periods that are daily bars themselves).
-  std::optional<Candle> daily;
-  if (period == Period::Week || period == Period::Year) {
-    const CandleSeries newestDay = snapshot.lastCandles(edge, Resolution::Day, 1);
-    if (!newestDay.candles.empty()) daily = newestDay.candles.back();
-  }
   for (size_t f = 0; f < in.feedCount; f++) {
     const Resolution r = in.feeds[f];
-    const CandleSeries newest = snapshot.lastCandles(edge, r, 1);
-    if (newest.candles.empty()) continue;
-    const int64_t end = dayOf(r, newest.candles.back().time), start = end - in.days + 1;
-    const Seq<Candle> bars = snapshot.candles(edge, r, {keyOf(r, start), kEnd}).candles;
+    const Seq<Candle> queue = snapshot.queue(edge, r);
+    if (queue.empty()) continue;
+    const int64_t end = dayOf(r, queue.back().time), start = end - in.days + 1;
+    const Seq<Candle> bars = from(queue, keyOf(r, start));
     if (bars.empty() || dayOf(r, bars[0].time) > start + in.days / 3) continue;  // does not reach back far enough
     v.primary = f < in.primary;
     v.base = bars[0].close;
-    // A daily stand-in is the daily bars already: nothing newer to take.
-    finish(bars, r == Resolution::Day ? std::nullopt : daily, end, v, withTrace);
+    finish(bars, quote, v, withTrace);
     return v;
   }
   return v;

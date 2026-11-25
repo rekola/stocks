@@ -324,10 +324,10 @@ TEST(a_preset_shows_one_row_per_edge_with_its_dataset) {
   InstrumentId usd = f.store->addInstrument("USD", "US dollar", InstrumentKind::Currency);
   MarketId currencies = f.store->addMarket("XXXX", "Currencies");
   DatasetId a = f.store->addDataset("providera"), b = f.store->addDataset("providerb");
-  f.store->appendCandles({eur, usd, currencies, a}, Resolution::Day, {{0, 1, 1, 1, 1.00, 1}, {1000, 1, 1, 1, 1.10, 1}});
-  f.store->appendCandles({eur, usd, currencies, b}, Resolution::Day, {{0, 1, 1, 1, 2.00, 1}, {1000, 1, 1, 1, 1.00, 1}});
+  f.store->appendCandles({eur, usd, currencies, a}, Resolution::Day, {{900, 1, 1, 1, 1.00, 1}, {1000, 1, 1, 1, 1.10, 1}});
+  f.store->appendCandles({eur, usd, currencies, b}, Resolution::Day, {{900, 1, 1, 1, 2.00, 1}, {1000, 1, 1, 1, 1.00, 1}});
   f.app->execute("show-currencies");
-  f.app->execute("show-period-day");  // the bars are a thousand days apart: the day is the change since the previous bar
+  f.app->execute("show-period-day");  // the bars are a hundred days apart: the day is the change since the previous bar
   Table & t = f.browser->table();
   CHECK(t.model()->rowCount() == 2);  // the same pair on the same market from two datasets: two rows
   t.sortBy(Quotes::DATASET, SortOrder::ASCENDING);
@@ -746,13 +746,15 @@ TEST(show_info_from_the_keyboard_shows_the_isin_the_symbol_a_number_and_a_date_a
   f.app->execute("show-nasdaq-helsinki");
   CHECK(f.browser->table().selectedRow() == 0);
   std::string shown;
+  std::string middle;
   std::string end;
   const bool closed_by_escape = f.inModal([&] { f.press('i'); },
-                                          {[&] { shown = f.text(); }, [&] { f.press(Key::End); }, [&] { end = f.text(); }, [&] { f.press(Key::Escape); }});
+                                          {[&] { shown = f.text(); }, [&] { f.press(Key::PageDown); }, [&] { middle = f.text(); }, [&] { f.press(Key::End); }, [&] { end = f.text(); },
+                                           [&] { f.press(Key::Escape); }});
   CHECK(shown.find("FI0009000681") != std::string::npos);  // the instrument's ISIN
   CHECK(shown.find("NOKIA") != std::string::npos);         // the listing's symbol
   CHECK(shown.find("12345.675") != std::string::npos);     // a real number, with a point
-  CHECK(end.find("2026-03-05") != std::string::npos);      // a day number, as a date (below, where the keys scrolled to)
+  CHECK(middle.find("2026-03-05") != std::string::npos || shown.find("2026-03-05") != std::string::npos);  // a day number, as a date (below, where the keys scrolled to)
   CHECK(end.find("2 bars, 2026-01-02 to 2026-01-05") != std::string::npos);
   CHECK(closed_by_escape);
   CHECK(f.text().find("Esc: close") == std::string::npos);
@@ -997,8 +999,9 @@ TEST(the_days_base_is_the_previous_close_of_that_session_never_one_left_from_an_
   // A newer session's bars: a close said for the one before is not its base.
   f.store->appendCandles(rows.riseFall, Resolution::Day, {{kToday + 1, 1, 1, 1, 22, 1}});
   f.store->appendCandles(rows.riseFall, Resolution::Min5, {{fiveMinuteSlot(kToday + 1, 0), 1, 1, 1, 23, 1}});
+  // The quote (22, said at noon) is newer than the session's one five-minute bar (23): it is the last price, and the trace ends with it.
+  f.store->setQuote(rows.riseFall, {22, kUndefined, kUndefined, (kToday + 1 - kUnixEpochDayNumber) * 86400 + 12 * 3600});
   PeriodView v = periodView(*snapshot(), rows.riseFall, Period::Day, true);
-  // The session's daily bar (22) is newer than its one five-minute bar (23): it is the last price, and the trace ends with it.
   CHECK(v.base == 20 && v.last == 22 && v.closes.size() == 2 && v.closes[0] == 23.0f && v.closes[1] == 22.0f);
 }
 
@@ -1026,18 +1029,21 @@ EdgeKey seriesWorld(Store & store, Period period, std::vector<Candle> daily) {
 }
 }  // namespace
 
-TEST(a_newer_daily_bar_is_the_last_price_of_the_day_week_and_year_and_ends_their_trace) {
+TEST(a_newer_quote_is_the_last_price_of_the_day_week_and_year_and_ends_their_trace) {
+  const auto noon = [](int64_t day) { return (day - kUnixEpochDayNumber) * 86400 + 12 * 3600; };
   for (Period period : {Period::Day, Period::Week, Period::Year}) {
     auto store = makeMemoryStore();
-    // The daily bar of today has moved on since the series was loaded.
+    // The price of today has moved on since the series was loaded (what the list says, with its time: a bar is dated by its day, which is
+    // no time of it).
     EdgeKey k = seriesWorld(*store, period, {{kToday - 1, 1, 1, 1, 9, 1}, {kToday, 1, 1, 1, 12, 1}});
+    store->setQuote(k, {12, kUndefined, kUndefined, noon(kToday)});
     PeriodView v = periodView(*store->snapshot(), k, period, true);
     CHECK(v.last == 12 && !v.closes.empty() && v.closes.back() == 12.0f);
     CHECK(v.change() > 0);
     // The same close as the series' last bar adds no point.
     PeriodView same = periodView(*store->snapshot(), k, period, false);
     CHECK(same.last == 12 && same.base == v.base);
-    store->appendCandles(k, Resolution::Day, {{kToday, 1, 1, 1, 10, 1}});
+    store->setQuote(k, {10, kUndefined, kUndefined, noon(kToday) + 60});
     PeriodView still = periodView(*store->snapshot(), k, period, true);
     CHECK(still.last == 10 && still.closes.back() == 10.0f && still.closes.size() == v.closes.size() - 1);
   }

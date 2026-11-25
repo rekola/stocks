@@ -17,6 +17,8 @@
 //                          user's data directory); --no-facts runs without it
 //   stocks --portfolios FILE  where the user's own portfolios are kept (default: portfolios.sqlite beside the facts file);
 //                          --no-portfolios keeps them for the session only
+//   stocks --summaries DIR  where the summaries of the edges (the last price, bid and ask and the queues behind the sparklines) are kept
+//                          between runs, one file for each dataset (default: summaries/ beside the facts file); --no-summaries runs without
 //   stocks --market MIC    of those lists, load only that market, e.g. XHEL;
 //   XXXX is the indices, spot prices and currency pairs (repeatable)
 // Keys: arrows, PgUp/PgDn, Home/End move; Tab moves between the tags and the
@@ -28,6 +30,7 @@
 #include "history/HistoryLoader.h"
 #include "icons/IconLoader.h"
 #include "model/SqliteFactStore.h"
+#include "model/SqliteSummaryStore.h"
 #include "source/AutoSource.h"
 #include "source/SourceRunner.h"
 #include "source/NordnetSource.h"
@@ -118,6 +121,8 @@ int main(int argc, char ** argv) {
   bool keep_facts = true;
   std::string portfolios_file;
   bool keep_portfolios = true;
+  std::string summaries_directory;
+  bool keep_summaries = true;
   const auto & args = app->arguments();
   for (size_t i = 0; i < args.size(); i++) {
     if (args[i] == "--source" && i + 1 < args.size()) source_name = args[++i];
@@ -130,6 +135,9 @@ int main(int argc, char ** argv) {
     else if (args[i] == "--portfolios" && i + 1 < args.size()) portfolios_file = args[++i];
     else if (args[i].rfind("--portfolios=", 0) == 0) portfolios_file = args[i].substr(13);
     else if (args[i] == "--no-portfolios") keep_portfolios = false;
+    else if (args[i] == "--summaries" && i + 1 < args.size()) summaries_directory = args[++i];
+    else if (args[i].rfind("--summaries=", 0) == 0) summaries_directory = args[i].substr(12);
+    else if (args[i] == "--no-summaries") keep_summaries = false;
     else if (args[i] == "--lists" && i + 1 < args.size()) list_directory = args[++i];
     else if (args[i].rfind("--lists=", 0) == 0) list_directory = args[i].substr(8);
     else {
@@ -139,7 +147,7 @@ int main(int argc, char ** argv) {
               " [--ui auto|terminal|window] [--theme original|dark|light] "
               "[--source " +
               kSourceNames +
-              "] [--facts FILE | --no-facts] [--portfolios FILE | --no-portfolios] [--lists DIR] [--market MIC]...");
+              "] [--facts FILE | --no-facts] [--portfolios FILE | --no-portfolios] [--summaries DIR | --no-summaries] [--lists DIR] [--market MIC]...");
     }
   }
   // One source, for now: the instrument lists are the yahoo source's own (and the synthetic one follows them); each reads
@@ -173,10 +181,23 @@ int main(int argc, char ** argv) {
     }
   };
   auto fact_messages = std::make_shared<FactMessages>();
+  // What the store's own thread says when it has read queues into the store (a trace to draw): to the UI thread, once there is one.
+  struct Changed {
+    std::mutex mutex;
+    std::function<void()> post;
+    void say() {
+      std::lock_guard lock(mutex);
+      if (post) post();
+    }
+  };
+  auto store_changed = std::make_shared<Changed>();
   StoreOptions store_options;
   // The adapters give the ISINs of what their source gives none for (source/KnownIsins.h): an instrument that comes with none is not kept, and says so.
   store_options.invent_isins = false;
   // What the store refuses (a MIC that two markets would have) is said once, on the status line.
+  store_options.changed = [store_changed] { store_changed->say(); };
+  // The screen is up at once: the facts, the edges and their prices are read on a thread of the store's own, the portfolios' first.
+  store_options.restore = StoreOptions::Restore::InBackground;
   store_options.notice = [fact_messages](const std::string & text) { fact_messages->say("facts: " + text); };
   if (keep_facts) {
     const std::filesystem::path file = facts_file.empty() ? defaultFactsFile() : std::filesystem::path(facts_file);
@@ -188,6 +209,11 @@ int main(int argc, char ** argv) {
     if (!file.empty())
       store_options.portfolios = openSqlitePortfolioStore(file, [fact_messages](const std::string & text) { fact_messages->say("portfolios: " + text); });
   }
+  // The summaries of the edges (the quote and the queues behind the sparklines), a file for each dataset in a directory of their own.
+  if (keep_summaries) {
+    const std::filesystem::path directory = summaries_directory.empty() ? defaultSummariesDirectory() : std::filesystem::path(summaries_directory);
+    if (!directory.empty()) store_options.summaries = openSqliteSummaries(directory, [fact_messages](const std::string & text) { fact_messages->say("summaries: " + text); });
+  }
   std::shared_ptr<Store> store = makeMemoryStore(std::move(store_options));
   // The loader and the sources run on threads of their own and tell the UI thread what happened.
   cellui::ThreadInbox inbox(app->backend().eventLoop(), app->widgets());
@@ -197,14 +223,23 @@ int main(int argc, char ** argv) {
     for (std::string & text : fact_messages->early) fact_messages->post(std::move(text));
     fact_messages->early.clear();
   }
+  {
+    std::lock_guard lock(store_changed->mutex);
+    store_changed->post = [&inbox] { inbox.post(StoreChanged{}); };
+  }
   // Declared after the inbox, so gone before it: nothing says anything to a display that is gone.
   struct StopPosting {
     FactMessages & messages;
+    Changed & changed;
     ~StopPosting() {
-      std::lock_guard lock(messages.mutex);
-      messages.post = nullptr;
+      {
+        std::lock_guard lock(messages.mutex);
+        messages.post = nullptr;
+      }
+      std::lock_guard lock(changed.mutex);
+      changed.post = nullptr;
     }
-  } stop_posting{*fact_messages};
+  } stop_posting{*fact_messages, *store_changed};
   auto icons = std::make_shared<IconLoader>(makeHttp(), IconLoader::Options{.cache_dir = defaultIconCacheDir()}, [&inbox] { inbox.post(IconsLoaded{}); });
   auto history = std::make_shared<HistoryLoader>(
       store, makeHttp(), HistoryLoader::Options{}, [&inbox] { inbox.post(StoreChanged{}); },

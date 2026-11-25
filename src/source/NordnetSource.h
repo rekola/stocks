@@ -22,6 +22,9 @@ struct NordnetListing {
   // has not traded (no last price or no tick time). A daily bar is keyed by its date (a day number), not by an instant.
   bool hasBar = false;
   Candle bar;
+  // The price block's last price, bid and ask with its tick time: the edge's quote. Absent where there is no last price or tick time.
+  bool hasQuote = false;
+  Quote quote;
   // What else the row says about the instrument, as triples (the subject is the instrument, once it is made).
   std::vector<Attribute> attributes;
 };
@@ -34,6 +37,8 @@ struct NordnetIndicator {
   std::string list;
   bool hasBar = false;
   Candle bar;
+  bool hasQuote = false;
+  Quote quote;
 };
 
 // Nordnet's unofficial search endpoints: no key and no login (a cookie is not needed). Discovery loads every instrument

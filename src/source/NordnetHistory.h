@@ -52,6 +52,7 @@ class NordnetHistory : public HistoryProvider {
   std::string dataset() const override;
   std::optional<Need> need(const Snapshot &, const EdgeKey &, Period) const override;
   std::chrono::milliseconds lifetime(int request) const override;
+  std::optional<std::chrono::seconds> keep(Resolution) const override;
   Outcome load(Store &, Http &, const EdgeKey &, int request, const Wait &) override;
 
   // One answer of the price time series, as the bars it holds.

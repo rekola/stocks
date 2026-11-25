@@ -49,6 +49,8 @@ class HistoryLoader {
   struct Options {
     std::chrono::milliseconds pause{500};            // between two requests
     std::chrono::milliseconds offline_pause{60000};  // after no answer
+    // The time a queue's `fetched` is measured against; the wall clock by default.
+    std::function<TimestampMs()> clock;
   };
   // `changed` runs on the loader's thread after bars were written; a program hands it to the UI thread. `message` says
   // what went wrong (a refusal).
@@ -79,6 +81,8 @@ class HistoryLoader {
   bool load(const Ask & ask, bool & network);
   // Whether a request loaded at `loaded` is too old to stand (under the lock).
   bool expired(const Ask &, std::chrono::steady_clock::time_point loaded) const;
+  // Whether what the summary has for a request, fetched at `fetched`, is older than the provider says it stays good (under the lock).
+  bool stale(const Ask &, TimestampMs fetched) const;
   std::shared_ptr<HistoryProvider> providerOf(const std::string & dataset) const;  // under the lock
 
   std::shared_ptr<Store> store_;

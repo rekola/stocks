@@ -132,7 +132,11 @@ to add one, and it does not compile with an invalid or repeated ISIN. A row with
 What the sources say of instruments, markets and datasets (names, icons, a market's country) is kept between runs in a
 SQLite file, `facts.sqlite` in the user's data directory (`--facts FILE` chooses another, `--no-facts` runs without it); your portfolios are in
 `portfolios.sqlite` beside it (`--portfolios FILE`, `--no-portfolios`); see
-[plans/data-model.md](plans/data-model.md).
+[plans/data-model.md](plans/data-model.md). What the tables and the portfolios need of each price (the last price, bid and ask of every edge,
+and the bars behind each sparkline) is kept in a small file for each dataset, `summaries/<dataset>.sqlite` beside them (`--summaries DIR`,
+`--no-summaries`): it is a summary, not the history, which stays in memory ("The summary" in the data model). The program opens at once: the
+facts and the edges are read on a thread of their own while it runs, what your portfolios hold first, so the tables show every price as
+the last run left it, with no network, and each trace appears when its queue has been read from the file.
 
 The data model is planned in [plans/data-model.md](plans/data-model.md), the server, its API and the bars in [plans/server.md](plans/server.md), and the market calendars in [plans/calendars.md](plans/calendars.md).
 

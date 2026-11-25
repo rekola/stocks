@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <exception>
+#include <mutex>
 
 namespace {
 
@@ -70,33 +71,34 @@ class SqliteFactStore : public FactStore {
   std::vector<StoredFact> loadAll() override {
     std::vector<StoredFact> out;
     if (!db_) return out;
+    std::lock_guard lock(mutex_);
     try {
       SQLite::Statement q(*db_, "SELECT node_key, predicate, value, tag, updated FROM facts");
       while (q.executeStep()) {
         StoredFact f;
-        f.node = static_cast<uint64_t>(q.getColumn(0).getInt64());
-        if (f.node == 0) continue;
-        f.predicate = q.getColumn(1).getString();
-        const SQLite::Column value = q.getColumn(2);
-        if (value.isNull())
-          f.value = std::monostate{};
-        else if (value.isText())
-          f.value = value.getString();
-        else if (value.isFloat())
-          f.value = value.getDouble();
-        else if (value.isInteger()) {
-          const int tag = q.getColumn(3).getInt();
-          if (tag == kBoolean)
-            f.value = value.getInt64() != 0;
-          else if (tag == kNode) {
-            if (value.getInt64() <= 0) continue;  // no key
-            f.value = NodeKey{static_cast<uint64_t>(value.getInt64())};
-          } else
-            f.value = value.getInt64();
-        } else
-          continue;  // a blob: not ours
-        f.updated = q.getColumn(4).getInt64();
-        out.push_back(std::move(f));
+        if (read(q, f)) out.push_back(std::move(f));
+      }
+    } catch (const std::exception & e) {
+      say(std::string("cannot read ") + file_.string() + ": " + e.what());
+      out.clear();
+    }
+    return out;
+  }
+
+  // One look-up of the primary key for each node: a restore by chunks reads only what it is about to show.
+  std::vector<StoredFact> loadNodes(const std::vector<uint64_t> & nodes) override {
+    std::vector<StoredFact> out;
+    if (!db_) return out;
+    std::lock_guard lock(mutex_);
+    try {
+      SQLite::Statement q(*db_, "SELECT node_key, predicate, value, tag, updated FROM facts WHERE node_key = ?");
+      for (const uint64_t node : nodes) {
+        q.bind(1, static_cast<int64_t>(node));
+        while (q.executeStep()) {
+          StoredFact f;
+          if (read(q, f)) out.push_back(std::move(f));
+        }
+        q.reset();
       }
     } catch (const std::exception & e) {
       say(std::string("cannot read ") + file_.string() + ": " + e.what());
@@ -108,6 +110,7 @@ class SqliteFactStore : public FactStore {
   std::vector<StoredEvent> loadEvents() override {
     std::vector<StoredEvent> out;
     if (!db_ || kind_ != Kind::Portfolios) return out;
+    std::lock_guard lock(mutex_);
     try {
       SQLite::Statement q(*db_, "SELECT portfolio, dataset, id, time, body FROM events");
       while (q.executeStep()) {
@@ -128,6 +131,7 @@ class SqliteFactStore : public FactStore {
 
   void apply(const FactBatch & batch) override {
     if (!db_ || batch.empty()) return;
+    std::lock_guard lock(mutex_);
     try {
       SQLite::Transaction transaction(*db_);
       if (kind_ == Kind::Portfolios) applyUsers(batch);
@@ -167,6 +171,33 @@ class SqliteFactStore : public FactStore {
   }
 
  private:
+  // One row of `facts` (node_key, predicate, value, tag, updated) as a fact; false for one that is not ours.
+  static bool read(SQLite::Statement & q, StoredFact & f) {
+    f.node = static_cast<uint64_t>(q.getColumn(0).getInt64());
+    if (f.node == 0) return false;
+    f.predicate = q.getColumn(1).getString();
+    const SQLite::Column value = q.getColumn(2);
+    if (value.isNull())
+      f.value = std::monostate{};
+    else if (value.isText())
+      f.value = value.getString();
+    else if (value.isFloat())
+      f.value = value.getDouble();
+    else if (value.isInteger()) {
+      const int tag = q.getColumn(3).getInt();
+      if (tag == kBoolean)
+        f.value = value.getInt64() != 0;
+      else if (tag == kNode) {
+        if (value.getInt64() <= 0) return false;  // no key
+        f.value = NodeKey{static_cast<uint64_t>(value.getInt64())};
+      } else
+        f.value = value.getInt64();
+    } else
+      return false;  // a blob: not ours
+    f.updated = q.getColumn(4).getInt64();
+    return true;
+  }
+
   int schemaVersion() const { return kind_ == Kind::Portfolios ? kPortfoliosVersion : kFactsVersion; }
   const char * kept() const { return kind_ == Kind::Portfolios ? "portfolios" : "facts"; }
 
@@ -306,6 +337,7 @@ class SqliteFactStore : public FactStore {
   fs::path file_;
   FactLog log_;
   std::unique_ptr<SQLite::Database> db_;
+  std::mutex mutex_;  // the connection is used by the writer thread and by a restore
 };
 
 }  // namespace
