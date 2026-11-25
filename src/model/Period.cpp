@@ -179,5 +179,17 @@ PeriodView periodView(const Snapshot & snapshot, const EdgeKey & edge, Period pe
     finish(r, bars, quote, v, withTrace);
     return v;
   }
+  // No feed reaches back far enough: the trace is what there is (a new instrument, a source with a short history), and there is no change, since it
+  // would be over a shorter time than the heading says.
+  for (size_t f = 0; f < in.feedCount; f++) {
+    const Resolution r = in.feeds[f];
+    const Seq<Candle> queue = snapshot.queue(edge, r);
+    if (queue.empty()) continue;
+    const Seq<Candle> bars = from(queue, keyOf(r, dayOf(r, queue.back().time) - in.days + 1));
+    if (bars.empty()) continue;
+    finish(bars, quote, v, withTrace);
+    v.base = kUndefined;
+    return v;
+  }
   return v;
 }

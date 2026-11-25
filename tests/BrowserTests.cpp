@@ -985,7 +985,7 @@ TEST(the_change_and_the_trace_are_one_colour_that_follows_the_sign_of_the_period
   CHECK(up != down);
 }
 
-TEST(a_period_without_bars_shows_no_number_no_trace_and_no_colour) {
+TEST(a_period_the_bars_do_not_cover_shows_no_number_and_no_colour_but_the_trace_there_is) {
   Fixture f(false);
   Rows rows = periodWorld(*f.store);
   f.app->execute("show-currencies");
@@ -997,16 +997,15 @@ TEST(a_period_without_bars_shows_no_number_no_trace_and_no_colour) {
   for (const char * command : {"show-period-day", "show-period-week", "show-period-month", "show-period-quarter", "show-period-year"}) {
     f.app->execute(command);
     CHECK(t.model()->text(r, Quotes::CHANGE).empty());  // not "+0.00%"
-    CHECK(t.model()->trace(r, Quotes::HISTORY).empty());
-    CHECK(!t.model()->color(r, Quotes::CHANGE) && !t.model()->color(r, Quotes::HISTORY));
+    CHECK(!t.model()->color(r, Quotes::CHANGE) && !t.model()->color(r, Quotes::HISTORY));  // the trace may be there (what bars there are), with no colour
     CHECK(t.model()->text(r, Quotes::PRICE) == "5.00");  // the price is there
   }
-  // Three months of bars are not a year: the first row has no change for the year either.
+  // Three months of bars are not a year: the first row has no change for the year either, and its trace is the three months it has.
   f.app->execute("show-period-year");
   int first = -1;
   for (int i = 0; i < quotes.rowCount(); i++)
     if (quotes.edge(i) == rows.riseFall) first = i;
-  CHECK(t.model()->text(first, Quotes::CHANGE).empty() && t.model()->trace(first, Quotes::HISTORY).empty());
+  CHECK(t.model()->text(first, Quotes::CHANGE).empty() && !t.model()->trace(first, Quotes::HISTORY).empty());
 }
 
 TEST(sorting_by_change_sorts_by_the_periods_change_and_a_store_change_or_a_scroll_keeps_the_period) {
