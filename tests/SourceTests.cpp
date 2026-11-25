@@ -14,6 +14,7 @@
 #include "source/InstrumentLists.h"
 #include "source/NordnetSource.h"
 #include "source/SourceRunner.h"
+#include "source/YahooHistory.h"
 #include "source/YahooSource.h"
 
 #include <algorithm>
@@ -904,4 +905,46 @@ TEST(a_source_is_named_by_the_dataset_it_writes) {
     CHECK(codes.size() == 1 && lower(codes[0]) == source->name());
     if (codes.size() != 1 || lower(codes[0]) != source->name()) std::fprintf(stderr, "  source %s writes %s\n", source->name().c_str(), codes.empty() ? "none" : codes[0].c_str());
   }
+}
+
+TEST(yahoo_history_loads_ten_years_of_weekly_bars_for_the_long_periods_only) {
+  auto store = makeMemoryStore();
+  FakeHttp http;
+  http.answer = [](const std::string &) { return ok(fixture("nokia.json")); };
+  Listener listener;
+  YahooSource yahoo(testList(), "1y", std::chrono::milliseconds(0));
+  yahoo.load(*store, http, listener);
+  const auto snapshot = store->snapshot();
+  const EdgeKey edge = snapshot->edges(*snapshot->findMarket("XHEL")).at(0);
+
+  auto history = yahoo.historyProvider();
+  CHECK(history != nullptr);
+  CHECK(history->dataset() == kYahooDataset);
+  CHECK(!history->need(*snapshot, edge, Period::Year));  // the list's daily bars are those
+  const auto need = history->need(*snapshot, edge, Period::Year10);
+  CHECK(need && !need->stored);
+  CHECK(history->need(*snapshot, edge, Period::Year3));
+
+  std::string body = R"({"chart":{"result":[{"meta":{"gmtoffset":0},"timestamp":[)";
+  std::string closes;
+  const int weeks = 520;
+  for (int i = 0; i < weeks; i++) {
+    body += (i ? "," : "") + std::to_string(1700000000 - 604800LL * (weeks - 1 - i));
+    closes += (i ? "," : "") + std::to_string(10 + i % 7);
+  }
+  body += R"(],"indicators":{"quote":[{"open":[)" + closes + R"(],"high":[)" + closes + R"(],"low":[)" + closes + R"(],"close":[)" + closes +
+          R"(],"volume":[)" + closes + "]}]}}]}}";
+  http.urls.clear();
+  http.answer = [&](const std::string &) { return ok(body); };
+  CHECK(history->load(*store, http, edge, need->request, [] { return true; }) == HistoryProvider::Outcome::Ok);
+  CHECK(http.urls.size() == 1 && http.urls[0].find("range=10y&interval=1wk") != std::string::npos);
+  CHECK(store->snapshot()->candles(edge, Resolution::Week).candles.size() == static_cast<size_t>(weeks));
+  CHECK(history->need(*store->snapshot(), edge, Period::Year10)->stored);
+  CHECK(history->need(*store->snapshot(), edge, Period::Year3)->stored);
+  CHECK(periodView(*store->snapshot(), edge, Period::Year3, true).closes.size() > 100);
+
+  http.answer = [](const std::string &) { return failed(429); };
+  CHECK(history->load(*store, http, edge, 0, [] { return true; }) == HistoryProvider::Outcome::Refused);
+  http.answer = [](const std::string &) { return failed(404); };
+  CHECK(history->load(*store, http, edge, 0, [] { return true; }) == HistoryProvider::Outcome::Missing);
 }
