@@ -65,7 +65,8 @@ On an edge key (a price of something):
 - **Order book snapshots**: the bids and asks standing at a moment (price and
   size per level), time-ordered. Kept apart from candles because they are a
   different kind of fact, but under the same key. Quotes carry information even
-  when nothing traded.
+  when nothing traded. The best bid and ask alone, for the many edges with no depth, and bars of them
+  that join the candles by time, are planned in [quotes.md](quotes.md).
 
 **News** is one more kind of fact, kept per dataset and about any nodes. An item is its dataset
 and the dataset's own id for it (what it is, so saying it again changes nothing and the store never

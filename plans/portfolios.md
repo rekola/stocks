@@ -203,6 +203,8 @@ Not built, and not needed for any step below, but the model leaves room for it (
 
 ## Later, not planned in detail
 
+Physical gold (a generic bar in grams and a generic coin in ounces, held on XOFF and valued at a dealer's bid, or an estimate from spot) is planned in [quotes.md](quotes.md).
+
 Realized P&L and dividends (from the corporate actions the store already holds), FIFO lots, CSV import of a broker's export, a view over
 every portfolio added up in one currency, allocation by kind and country, a benchmark to compare the portfolio with, a transactions view.
 
