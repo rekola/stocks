@@ -551,7 +551,9 @@ TEST(a_stock_bar_carries_the_volume_when_the_answer_has_it) {
   CHECK(NordnetSource::parsePage(fixture("certificatelist-1.json"), page, error));
   CHECK(page.listings[0].bar.volume == 825020);
   CHECK(NordnetSource::parsePage(fixture("stocklist-1.json"), page, error));
-  CHECK(page.listings.back().hasBar);
+  CHECK(page.listings.front().hasBar);
+  // A halted one (zero prices, a previous close) has its final price as a quote and no bar for today.
+  CHECK(!page.listings.back().hasBar && page.listings.back().hasQuote && page.listings.back().quote.last == 92.1);
 }
 
 TEST(the_default_lists_are_the_etfs_the_certificates_the_funds_and_the_stocks) {
