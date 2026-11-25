@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-// goldprice.dev (https://api.gold-api.com): the spot prices of metals and a few coins, no key. One request lists the symbols
+// gold-api.com (https://api.gold-api.com): the spot prices of metals and a few coins, no key. One request lists the symbols
 // (`/symbols`: Gold XAU, Silver XAG, Platinum XPT, Palladium XPD, Copper HG, Bitcoin BTC, Ethereum ETH ...), and one request a price
 // for a symbol in a currency (`/price/XAU/EUR`: the price, the currency, the time it was updated). Every symbol is asked for in each
 // of the currencies (EUR and USD), so a price in euros is the API's own and not a conversion of ours.
@@ -18,8 +18,10 @@
 // A price is for the unit its row names ("Gold, per troy oz", "Copper, per tonne", a coin per coin): the unit goes with the ISIN (every source
 // that has the instrument gives it in that one), and the API says none, so it is the adapter's (the table in GoldPriceSource.cpp), which also
 // converts what the API quotes otherwise (copper, per pound, is multiplied to be per metric tonne). The physical estimate (PhysicalSource) uses gold and platinum per troy ounce.
-// A price is the median of the markets the API takes it from (its manual says so, not which): a spot price of no market, so it differs a little from any
-// one source's, and for a symbol with few markets, copper perhaps, it is a median of few.
+// The API says of its prices only that they come from several data providers, the next one taking over when one is down, and that it checks them
+// against each other; not which provider answered, nor how a price is made of them (no median or mean is claimed). So a price is the API's own: it
+// may differ a little from any one market's or source's, and which provider gave it can change between two loads. The API itself says it cannot
+// guarantee the data and that prices are to be verified before a financial decision.
 // The metals are commodities, so they are in the Commodities preset; the coins are of no kind. The physical metals estimate (PhysicalSource)
 // reads the gold here, in both currencies.
 //
@@ -33,7 +35,7 @@ class GoldPriceSource : public Source {
 
   std::string name() const override { return "goldprice"; }
   std::vector<std::string> datasetCodes() const override { return {kGoldPriceDataset}; }
-  std::string description() const override { return "goldprice.dev: spot prices of gold, silver, platinum, palladium, copper and two coins, in euros and dollars (no key)"; }
+  std::string description() const override { return "gold-api.com: spot prices of gold, silver, platinum, palladium, copper and two coins, in euros and dollars (no key)"; }
   void load(Store &, Http &, SourceListener &) override;
   std::chrono::milliseconds refreshInterval() const override { return refresh_; }
 

@@ -200,9 +200,9 @@ TEST(a_failed_symbols_request_uses_the_list_from_before_and_with_none_says_so) {
   CHECK(source.refreshInterval() == std::chrono::minutes(2) && source.datasetCodes() == std::vector<std::string>{kGoldPriceDataset} && source.name() == "goldprice");
 }
 
-TEST(the_gold_estimate_is_made_in_euros_and_in_dollars_from_goldprice_dev_and_beats_the_other_spot) {
+TEST(the_gold_estimate_is_made_in_euros_and_in_dollars_from_gold_api_com_and_beats_the_other_spot) {
   auto store = makeMemoryStore();
-  // Nordnet's gold, in dollars only, a little different; and goldprice.dev's, in both.
+  // Nordnet's gold, in dollars only, a little different; and gold-api.com's, in both.
   InstrumentId usd = store->addInstrument("USD", "US dollar", InstrumentKind::Currency), eur = store->addInstrument("EUR", "Euro", InstrumentKind::Currency);
   InstrumentId kulta = store->addInstrument("GOLD", "Kulta", InstrumentKind::Commodity, "XC0009655157");
   MarketId none = store->addMarket(kNoMarket, "No market");
@@ -217,7 +217,7 @@ TEST(the_gold_estimate_is_made_in_euros_and_in_dollars_from_goldprice_dev_and_be
   std::string error;
   CHECK(parsePhysicalTable("spot,gold,XAU\nspot,gold,GOLD\nitem,gold,GOLDBAR,Gold bar (1 g fine),0.0321507466,0.97,1.04\nitem,gold,GOLDCOIN,Gold coin (1 oz fine),1,0.98,1.08\n", table, error));
   PhysicalSource estimate(table);
-  // Before goldprice.dev has answered: Nordnet's dollars only.
+  // Before gold-api.com has answered: Nordnet's dollars only.
   estimate.load(*store, http, said);
   auto s = store->snapshot();
   const MarketId off = *s->findMarket(kOffExchange);
@@ -232,7 +232,7 @@ TEST(the_gold_estimate_is_made_in_euros_and_in_dollars_from_goldprice_dev_and_be
   const InstrumentId coin = *s->findInstrument("GOLDCOIN"), bar = *s->findInstrument("GOLDBAR");
   const double inEuros = s->lastCandles({coin, eur, off, estimateData}, Resolution::Day, 1).candles.back().close;
   const double inDollars = s->lastCandles({coin, usd, off, estimateData}, Resolution::Day, 1).candles.back().close;
-  CHECK(std::abs(inEuros - 3240 * 0.98) < 1e-6);     // goldprice.dev's euros
+  CHECK(std::abs(inEuros - 3240 * 0.98) < 1e-6);     // gold-api.com's euros
   CHECK(std::abs(inDollars - 3600 * 0.98) < 1e-6);   // and its dollars, not Nordnet's 3500
   CHECK(std::abs(s->lastCandles({bar, eur, off, estimateData}, Resolution::Day, 1).candles.back().close - 3240 * 0.0321507466 * 0.97) < 1e-6);
   // A portfolio in euros holds the bar and values it in euros directly, with no pair needed.

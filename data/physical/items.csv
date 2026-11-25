@@ -3,7 +3,7 @@
 # spot,METAL,SYMBOL
 #   METAL is a name the items below use (gold, platinum). SYMBOL is the listing symbol of that metal's spot price on the market of what is priced and not traded (XXXX): per troy ounce, in its quote
 #   currency. An item is priced in each currency a spot has; where several rows have a price in one currency, the first row wins. XAU and XPT
-#   are goldprice.dev's, in euros and in dollars; GOLD is Nordnet's, in dollars only.
+#   are gold-api.com's, in euros and in dollars; GOLD is Nordnet's, in dollars only.
 # item,METAL,SYMBOL,NAME,FINE_TROY_OUNCES_PER_UNIT,BID_FACTOR,ASK_FACTOR[,ICON_SYMBOL]
 #   The optional last field is a Unicode symbol shown where there is no picture.
 #   An item held in `unit`s of the fine weight given: its price is the spot price times the fine ounces in one unit times a factor.
