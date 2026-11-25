@@ -41,6 +41,12 @@ heading where a position has no price or rate to it, which is then shown in its 
 P&L, P&L % and the change and trace of the period (the period tags apply to both contexts). Each context keeps its own tag, sort and
 scroll position while the program runs.
 
+**Charts.** A click on a row's trace (or `Enter` with the cursor on it, or `c` for the selected row; the command is `show-chart`) shows the
+trace of the period chosen as a large chart over the dimmed screen, with no window around it: the line in the colour of the period's change, the
+values on the left, the first and last date under it, and a cursor with a reading of the date and the value under it. `Left` and `Right` move
+the cursor (`Page Up`/`Page Down` by a tenth, `Home`/`End` to the ends), and so does the pointer; `Esc`, `Enter`, `q` or a click away from the
+chart close it. The chart is cellui's `ChartModal`, drawn by the same line chart as the table's traces.
+
 At the end of each row are the info button 🛈 and, on a row that can be bought, **buy ⊕ and sell ⊖**: a click with the mouse, or move the
 cursor onto one with Left and Right (`Enter` presses it). Only a row on a real market or a fund priced by its company has them: an index, a spot
 price, a currency pair and an interest rate (Euribor, the €STR) have the info button alone, and `buy` and `sell` run from the palette

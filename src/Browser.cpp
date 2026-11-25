@@ -3,8 +3,10 @@
 #include "AttributeView.h"
 #include "Quotes.h"
 #include "RowActions.h"
+#include "model/Dates.h"
 #include "source/Source.h"
 
+#include <cellui/ChartModal.h>
 #include <cellui/Layout.h>
 
 #include <algorithm>
@@ -118,6 +120,9 @@ Browser::Browser(Application & app, std::shared_ptr<Store> store, std::shared_pt
     app_.execute(kRowActions[button].command);
     action_row_.reset();
   });
+  // A click on a trace cell, or Enter on one, opens its chart.
+  chart_click_ = table_.cell_clicked.connect([this](int row, int column) { openChartAt(row, column); });
+  chart_enter_ = table_.cell_activated.connect([this](int row, int column) { openChartAt(row, column); });
   period_tag_ = periods_.chosen.connect([this](int i) {
     if (i >= 0) showPeriod(static_cast<Period>(i));
   });
@@ -355,6 +360,69 @@ void Browser::showHelp() {
                 app_.bindingFor("quit") + ": quit");
 }
 
+namespace {
+
+// When a bar is, for the chart's axis: a date for a daily or longer bar, else the date and the time in UTC (no market calendars yet).
+std::string timeLabel(Timestamp at, bool dated) {
+  const int64_t day = dayNumberOfInstant(at);
+  const Date d = dateOfDayNumber(day);
+  char buf[32];
+  if (dated) {
+    std::snprintf(buf, sizeof buf, "%04d-%02u-%02u", d.year, d.month, d.day);
+  } else {
+    const int64_t second = at - (day - kUnixEpochDayNumber) * 86400;
+    std::snprintf(buf, sizeof buf, "%02u-%02u %02d:%02d", d.month, d.day, static_cast<int>(second / 3600), static_cast<int>(second % 3600 / 60));
+  }
+  return buf;
+}
+
+}  // namespace
+
+void Browser::showChart() {
+  const int row = action_row_.value_or(table_.selectedRow());
+  auto quotes = std::dynamic_pointer_cast<Quotes>(table_.model());
+  auto positions = std::dynamic_pointer_cast<Positions>(table_.model());
+  if ((!quotes && !positions) || row < 0) {
+    status_.setMessage("No row selected");
+    return;
+  }
+  const std::optional<EdgeKey> found = quotes ? std::optional<EdgeKey>(quotes->edge(row)) : positions->priceEdge(row);
+  if (!found) {
+    status_.setMessage("No price for this position, so nothing to chart");
+    return;
+  }
+  auto snapshot = store_->snapshot();
+  const PeriodView view = periodView(*snapshot, *found, period_, true);
+  if (view.closes.size() < 2) {
+    status_.setMessage("No history over this period to chart");
+    return;
+  }
+  std::string label = snapshot->symbol(*found);
+  if (label.empty()) label = snapshot->name(found->base);
+  const bool rate = view.rate;
+  cellui::ChartData data;
+  data.title = label + "  " + info(period_).trace;
+  data.values = view.closes;
+  for (const Timestamp at : view.times) data.labels.push_back(timeLabel(at, view.dated));
+  data.format = [rate](float v) { return rate ? fixed(v, 3) + "%" : fixed(v, 2); };
+  // The line is the colour of the period's change, as the table's trace is.
+  if (const std::optional<bool> up = trendUp(view.change())) data.color = *up ? cellui::Color(0x3f, 0xb9, 0x50) : cellui::Color(0xf8, 0x51, 0x49);
+  cellui::ChartModal chart(app_.widgets(), app_.root(), app_.backend().eventLoop(), app_.charts(), std::move(data));
+  // The input that got us here does not return until the chart is closed, so no frame follows it: ask for the one that shows the
+  // new selection and the chart.
+  app_.requestFrame();
+  chart.showModal();
+  app_.requestFrame();
+}
+
+void Browser::openChartAt(int row, int column) {
+  const auto & columns = table_.columns();
+  if (column < 0 || column >= static_cast<int>(columns.size()) || !columns[static_cast<size_t>(column)].trace) return;
+  action_row_ = row;
+  showChart();
+  action_row_.reset();
+}
+
 void Browser::showInfo() {
   const int row = action_row_.value_or(table_.selectedRow());
   auto quotes = std::dynamic_pointer_cast<Quotes>(table_.model());
@@ -529,6 +597,7 @@ void Browser::defineCommands() {
   commands.define("focus-tags", "Move the keyboard to the preset tags", [this] { app_.input().setFocus(&tags_); });
   commands.define("focus-table", "Move the keyboard to the table", [this] { app_.input().setFocus(&table_); });
   commands.define("show-info", "Show everything known about the selected row", [this] { showInfo(); });
+  commands.define("show-chart", "Show the selected row's trace of the period as a large chart", [this] { showChart(); });
   commands.define("buy", "Buy the selected row in a portfolio: quantity, price, date, fee and a note", [this] { trade(portfolio::Side::Buy); });
   commands.define("sell", "Sell the selected row from a portfolio: quantity, price, date, fee and a note", [this] { trade(portfolio::Side::Sell); });
   commands.define("new-portfolio", "Make a portfolio: a name and the currency its value is shown in", [this] { makePortfolio("New portfolio"); });
@@ -547,6 +616,7 @@ void Browser::bindKeys() {
   keymap.bind(KeymapProfile::TERMINAL, "S-Tab", "previous-context");
   keymap.bind(KeymapProfile::DESKTOP, "Shift+Tab", "previous-context");
   keymap.bind("i", "show-info");
+  keymap.bind("c", "show-chart");
   keymap.bind(KeymapProfile::TERMINAL, "C-x =", "show-info");  // where the point is, as in Emacs
   keymap.bind(KeymapProfile::TERMINAL, "C-x C-c", "quit");
   // The period: ] and [ step through them; a direct choice is C-c and a letter (d w m q y: day, week, month, quarter, year) in the

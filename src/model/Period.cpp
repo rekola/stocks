@@ -20,20 +20,33 @@ int64_t dayOf(Resolution r, int64_t key) { return isDateResolution(r) ? key : da
 int64_t keyOf(Resolution r, int64_t day) { return isDateResolution(r) ? day : slotOfInstant(r, (day - kUnixEpochDayNumber) * 86400); }
 constexpr int64_t kEnd = std::numeric_limits<int64_t>::max();
 
-void trace(const Seq<Candle> & bars, PeriodView & v) {
+// A bar's start as UTC seconds: a date is its midnight.
+Timestamp instantOf(Resolution r, int64_t key) { return isDateResolution(r) ? (key - kUnixEpochDayNumber) * 86400 : instantOfSlot(r, key); }
+
+void trace(Resolution r, const Seq<Candle> & bars, PeriodView & v) {
   v.closes.reserve(bars.size());
-  for (const Candle & c : bars) v.closes.push_back(static_cast<float>(c.close));
+  v.times.reserve(bars.size() + 1);
+  for (const Candle & c : bars) {
+    v.closes.push_back(static_cast<float>(c.close));
+    v.times.push_back(instantOf(r, c.time));
+  }
+  v.dated = isDateResolution(r);
 }
 
 // Fills in the last price and the trace of a period from its series `bars`. The series is loaded now and then, the daily bar is
 // replaced every few minutes: where the daily bar is as new as the series (its date `since` or later) its close is the latest
 // price, the one the Price column shows, and the trace ends with it so the line ends where the change does.
-void finish(const Seq<Candle> & bars, const std::optional<Candle> & daily, int64_t since, PeriodView & v, bool withTrace) {
+void finish(Resolution r, const Seq<Candle> & bars, const std::optional<Candle> & daily, int64_t since, PeriodView & v, bool withTrace) {
   v.last = bars.back().close;
   if (daily && daily->time >= since && isDefined(daily->close)) v.last = daily->close;
   if (!withTrace) return;
-  trace(bars, v);
-  if (v.last != bars.back().close) v.closes.push_back(static_cast<float>(v.last));
+  trace(r, bars, v);
+  if (v.last != bars.back().close) {
+    // The daily bar's close ends the line, at its date (a day's trace with intraday bars gets its time of day from the bars: the
+    // last of them, which this close follows).
+    v.closes.push_back(static_cast<float>(v.last));
+    v.times.push_back(v.dated && daily ? instantOf(Resolution::Day, daily->time) : v.times.back());
+  }
 }
 
 }  // namespace
@@ -66,7 +79,7 @@ PeriodView periodView(const Snapshot & snapshot, const EdgeKey & edge, Period pe
       if (!days.empty() && session < days.back().time) continue;  // older than the daily bars: a session gone by
       const Seq<Candle> bars = snapshot.candles(edge, r, {keyOf(r, session), kEnd}).candles;
       v.primary = true;
-      finish(bars, days.empty() ? std::nullopt : std::optional<Candle>(days.back()), session, v, withTrace);
+      finish(r, bars, days.empty() ? std::nullopt : std::optional<Candle>(days.back()), session, v, withTrace);
       if (auto previous = snapshot.previousClose(edge, session)) v.base = *previous;
       else
         for (size_t i = days.size(); i-- > 0;)
@@ -99,7 +112,7 @@ PeriodView periodView(const Snapshot & snapshot, const EdgeKey & edge, Period pe
     v.primary = f < in.primary;
     v.base = bars[0].close;
     // A daily stand-in is the daily bars already: nothing newer to take.
-    finish(bars, r == Resolution::Day ? std::nullopt : daily, end, v, withTrace);
+    finish(r, bars, r == Resolution::Day ? std::nullopt : daily, end, v, withTrace);
     return v;
   }
   return v;

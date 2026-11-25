@@ -756,6 +756,68 @@ TEST(a_click_on_the_info_button_opens_its_row_and_leaves_the_selection) {
   CHECK(closed);
 }
 
+TEST(a_click_on_a_trace_cell_opens_its_chart_with_dates_and_a_reading_and_a_click_on_text_does_not) {
+  Fixture f;
+  f.app->execute("show-nasdaq-helsinki");
+  auto [heading_row, heading_col] = cellOf(f.text(), "3 months");  // the trace column's heading
+  CHECK(heading_row >= 0);
+  Table & table = f.browser->table();
+  const int expected = table.rowAt(0);
+  const auto & quotes = static_cast<const Quotes &>(*table.model());
+  const auto view = periodView(*f.store->snapshot(), quotes.edge(expected), Period::Quarter, true);
+  CHECK(view.closes.size() > 2 && view.closes.size() == view.times.size() && view.dated);
+
+  std::string shown;
+  bool closed = f.inModal([&] { f.click(heading_row + 1, heading_col + 1); }, {[&] { shown = f.text(); }, [&] { f.press(Key::Escape); }});
+  CHECK(closed);
+  CHECK(table.selectedRow() == expected);  // the click chose the row too
+  CHECK(shown.find("3 months") != std::string::npos);  // the title says which period
+  const Date first = dateOfDayNumber(dayNumberOfInstant(view.times.front()));
+  char date[16];
+  std::snprintf(date, sizeof date, "%04d-%02u-%02u", first.year, first.month, first.day);
+  CHECK(shown.find(date) != std::string::npos);  // the axis starts at the first bar's date
+  CHECK(shown.find(fixed(view.closes.back(), 2)) != std::string::npos);  // the cursor starts at the latest value
+
+  // A cell of text is no chart.
+  auto [name_row, name_col] = cellOf(f.text(), "Name");
+  shown.clear();
+  f.inModal([&] { f.click(name_row + 2, name_col + 1); }, {[&] { shown = f.text(); }});
+  CHECK(shown.empty());  // no modal was opened, so the loop its step was to run in never ran
+}
+
+TEST(enter_on_a_trace_cell_and_the_show_chart_command_open_the_chart) {
+  Fixture f;
+  f.app->execute("show-nasdaq-helsinki");
+  Table & table = f.browser->table();
+  table.select(0);
+  f.app->execute("focus-table");
+  table.setCursor(Quotes::HISTORY);
+  std::string shown;
+  bool closed = f.inModal([&] { f.press(Key::Enter); }, {[&] { shown = f.text(); }, [&] { f.press(Key::Escape); }});
+  CHECK(closed && shown.find("3 months") != std::string::npos);
+  Fixture g;
+  g.app->execute("show-nasdaq-helsinki");
+  g.browser->table().select(1);
+  shown.clear();
+  closed = g.inModal([&] { g.press('c'); }, {[&] { shown = g.text(); }, [&] { g.press(Key::Escape); }});
+  CHECK(closed && shown.find("3 months") != std::string::npos);
+  Fixture h(false);
+  h.app->execute("show-chart");
+  CHECK(h.text().find("No row selected") != std::string::npos);
+}
+
+TEST(a_periods_trace_has_a_time_for_each_value_in_order_and_none_when_it_is_not_asked_for) {
+  Fixture f(false);
+  const EdgeKey edge = addNokia(*f.store);
+  for (const Period period : {Period::Day, Period::Week, Period::Month, Period::Quarter, Period::Year}) {
+    const PeriodView v = periodView(*f.store->snapshot(), edge, period, true);
+    CHECK(v.times.size() == v.closes.size());
+    for (size_t i = 1; i < v.times.size(); i++) CHECK(v.times[i] >= v.times[i - 1]);
+    const PeriodView bare = periodView(*f.store->snapshot(), edge, period, false);
+    CHECK(bare.times.empty() && bare.closes.empty());
+  }
+}
+
 TEST(the_command_without_a_selected_row_says_so) {
   Fixture f(false);
   f.app->execute("show-info");
