@@ -101,6 +101,7 @@ class Quotes : public cellui::TableModel {
   std::string iconFallback(int r, int c) const override;
   std::span<const float> trace(int r, int) const override;
   std::span<const float> traceLight(int r, int) const override;
+  double traceSpan(int r, int) const override;
   std::optional<cellui::Color> color(int r, int c) const override;
   // Prices and changes sort by their values, not their rounded text; the others by their text, letters of either case alike.
   // The change is the number as shown: basis points for a rate, per cent for a price. In a preset that mixes rates and prices

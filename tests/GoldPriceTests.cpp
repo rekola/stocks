@@ -233,4 +233,6 @@ TEST(the_gold_chart_has_a_trace_for_every_period_the_bars_reach_and_a_change_onl
   CHECK(month.closes.size() > 20 && isDefined(month.change()));
   CHECK(quarter.closes.size() > 20 && !isDefined(quarter.change()));
   CHECK(year.closes.size() > 20 && !isDefined(year.change()));
+  // The chart is as wide as the days it has: the whole month, a third of the quarter, a twelfth of the year.
+  CHECK(month.span == 1.0 && std::abs(quarter.span - 30.0 / 90) < 0.02 && std::abs(year.span - 30.0 / 365) < 0.02);
 }
