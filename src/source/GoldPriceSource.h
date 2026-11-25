@@ -15,6 +15,8 @@
 // Each symbol is an instrument (by the ISIN source/KnownIsins.h gives it: the real one of the commodity for the metals, one of ours for the coins), priced as it is quoted on XXXX (the market of what is priced and
 // not traded), one edge for each currency in the dataset "GOLDPRICE": one daily bar, on the UTC date the API says it was updated,
 // whose close is the last price (no open, high, low or volume: the answer has none), replaced at every load and added on a new day.
+// A price is for the unit its row names ("Gold, per troy oz"; copper is per lb; a coin is per coin): the API does not say, so the unit is the
+// adapter's (the table in GoldPriceSource.cpp), and the physical estimate (PhysicalSource) uses gold and platinum per troy ounce.
 // The metals are commodities, so they are in the Commodities preset; the coins are of no kind. The physical metals estimate (PhysicalSource)
 // reads the gold here, in both currencies.
 //

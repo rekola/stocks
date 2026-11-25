@@ -29,14 +29,15 @@ struct Known {
   InstrumentKind kind;
   const char * type;
   const char * isin;
+  const char * unit;  // what a price is for: the answer does not say, and the metals are not all quoted by the same one
 };
-constexpr Known kKnown[] = {{"XAU", InstrumentKind::Commodity, "METAL", known_isin::kGold},
-                            {"XAG", InstrumentKind::Commodity, "METAL", known_isin::kSilver},
-                            {"XPT", InstrumentKind::Commodity, "METAL", known_isin::kPlatinum},
-                            {"XPD", InstrumentKind::Commodity, "METAL", known_isin::kPalladium},
-                            {"HG", InstrumentKind::Commodity, "METAL", known_isin::kCopper},
-                            {"BTC", InstrumentKind::Other, "CRYPTO", known_isin::kBitcoin},
-                            {"ETH", InstrumentKind::Other, "CRYPTO", known_isin::kEthereum}};
+constexpr Known kKnown[] = {{"XAU", InstrumentKind::Commodity, "METAL", known_isin::kGold, "troy oz"},
+                            {"XAG", InstrumentKind::Commodity, "METAL", known_isin::kSilver, "troy oz"},
+                            {"XPT", InstrumentKind::Commodity, "METAL", known_isin::kPlatinum, "troy oz"},
+                            {"XPD", InstrumentKind::Commodity, "METAL", known_isin::kPalladium, "troy oz"},
+                            {"HG", InstrumentKind::Commodity, "METAL", known_isin::kCopper, "lb"},  // the pound, not the ounce
+                            {"BTC", InstrumentKind::Other, "CRYPTO", known_isin::kBitcoin, "coin"},
+                            {"ETH", InstrumentKind::Other, "CRYPTO", known_isin::kEthereum, "coin"}};
 
 const Known * knownSymbol(const std::string & symbol) {
   for (const Known & k : kKnown)
@@ -166,7 +167,8 @@ void GoldPriceSource::load(Store & store, Http & http, SourceListener & listener
         if (!quote.valid()) continue;
         const EdgeKey edge{base, quote, market, dataset};
         b.appendCandles(edge, Resolution::Day, {{p.day, kUndefined, kUndefined, kUndefined, p.price, kUndefined}});
-        b.setListing({edge, s.symbol, "", "", known ? known->type : "SPOT", s.name});
+        // The unit is in the name the row shows: a price of copper is for a pound and one of gold for a troy ounce.
+        b.setListing({edge, s.symbol, "", "", known ? known->type : "SPOT", known ? s.name + ", per " + known->unit : s.name});
       }
     });
     listener.changed();

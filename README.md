@@ -68,7 +68,7 @@ portfolio offers to make one.
 **Spot prices of metals.** `goldprice` is a source ([goldprice.dev](https://api.gold-api.com), no key; it runs by default) that lists its
 symbols (gold, silver, platinum, palladium, copper, and Bitcoin and Ethereum) and asks the price of each in euros and in dollars: each is an
 instrument with a price in both currencies on the market of what is priced and not traded, in the Commodities preset (the metals) and in
-All. They are spot prices and cannot be bought.
+All. They are spot prices and cannot be bought. A price is for the unit its row's name says: the metals by the troy ounce (`Gold, per troy oz`), copper by the pound (`Copper, per lb`), a coin by the coin.
 
 **Physical metals.** `physical` is a source (it runs beside the default one) that estimates the metals held in hand, off exchange (XOFF),
 from the spot prices of goldprice.dev (in euros and in dollars, each its own price; Nordnet's gold in dollars where goldprice.dev has none),
