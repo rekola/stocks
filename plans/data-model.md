@@ -215,10 +215,14 @@ stays in memory only, exactly as written, and nothing persists or changes it; it
 with a store of their own. The summary is a separate record that the store keeps of each edge, for the tables, the sparklines and the
 portfolios, and it is the only thing kept on disk about prices. No reader of the data reads a summary, or the opposite.
 
-An edge's summary is its **quote** and, for each resolution, a **queue**:
+An edge's summary is its **quote**, its **changes** and, for each resolution, a **queue**:
 
 - The **quote** is the last price, the bid and the ask, and the one time (seconds, UTC) they are for. A provider that gives only a last
   price, or none, leaves the rest undefined.
+- The **changes** are one number for each period (day, week, month, 3 months, year, 3 years, 10 years): per cent, basis points for a rate,
+  undefined where not known. A source that lists returns (`setChanges`) gives them with its first list, so a table sorts by any period
+  before a bar is loaded; a period whose queue is in memory and covers it is worked out from the bars instead, and kept in step as the
+  bars, the quote or the close before the session change. They are kept on the disk with the edge.
 - A **queue** is the bars that the periods using a resolution show: time-ordered, a bar at a time already there replaces it, a new time is
   pushed, and bars older than the window are popped from the old end. There is no downsampling and no base bar. The window is measured back
   from the *last bar* of that resolution, not from the clock, so the day's sparkline on a Sunday is Friday's session. How long it is is the

@@ -35,6 +35,7 @@
 enum class Period : uint8_t { Day, Week, Month, Quarter, Year, Year3, Year10 };
 
 inline constexpr size_t kPeriodCount = 7;
+static_assert(kPeriodCount == kChangeCount, "an edge keeps a change for each period (Summary.h)");
 // What the table shows until a period is chosen: the three months, the table as it was before there were periods.
 inline constexpr Period kDefaultPeriod = Period::Quarter;
 

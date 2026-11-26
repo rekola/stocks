@@ -16,7 +16,7 @@ namespace {
 
 namespace fs = std::filesystem;
 
-constexpr int kSummariesVersion = 3;  // 3: the keys of codes are of eleven capitals or digits, base 37; 2: a digest of each queue's last bar (`last_hash`); 1: the first
+constexpr int kSummariesVersion = 4;  // 4: the change over each period of an edge; 3: the keys of codes are of eleven capitals or digits, base 37; 2: a digest of each queue's last bar (`last_hash`); 1: the first
 // SQLite's result codes for a damaged database and for a file that is none (as the facts store has them).
 constexpr int kCorrupt = 11, kNotADatabase = 26;
 
@@ -62,6 +62,7 @@ class SqliteSummaryStore : public SummaryStore {
       SQLite::Statement q(db,
                           "SELECT e.id, e.base, e.quote, e.market, e.symbol, e.identifier, e.order_book, e.type, e.name, "
                           "e.last, e.bid, e.ask, e.quote_time, e.previous_close, e.previous_close_day, "
+                          "e.change_day, e.change_week, e.change_month, e.change_quarter, e.change_year, e.change_year3, e.change_year10, "
                           "q.resolution, q.kind, q.fetched, q.count, q.first_key, q.last_key, q.last_hash "
                           "FROM edges e LEFT JOIN queues q ON q.edge = e.id ORDER BY e.id, q.resolution");
       int64_t current = -1;
@@ -83,18 +84,19 @@ class SqliteSummaryStore : public SummaryStore {
           e.quote.time = q.getColumn(12).isNull() ? 0 : q.getColumn(12).getInt64();
           e.previous_close = real(q.getColumn(13));
           e.previous_close_day = q.getColumn(14).isNull() ? 0 : q.getColumn(14).getInt64();
+          for (size_t i = 0; i < kChangeCount; i++) e.changes.pct[i] = real(q.getColumn(15 + static_cast<int>(i)));
           out.push_back(std::move(e));
         }
-        if (!q.getColumn(15).isNull()) {
-          const int resolution = q.getColumn(15).getInt();
+        if (!q.getColumn(22).isNull()) {
+          const int resolution = q.getColumn(22).getInt();
           if (resolution < 0 || resolution > static_cast<int>(Resolution::Quarter)) continue;
           QueueCoverage c;
-          c.kind = q.getColumn(16).getInt() == static_cast<int>(QueueKind::Value) ? QueueKind::Value : QueueKind::Candle;
-          c.fetched = q.getColumn(17).getInt64();
-          c.count = static_cast<uint32_t>(q.getColumn(18).getInt64());
-          c.first_key = q.getColumn(19).getInt64();
-          c.last_key = q.getColumn(20).getInt64();
-          c.last_hash = static_cast<uint64_t>(q.getColumn(21).getInt64());
+          c.kind = q.getColumn(23).getInt() == static_cast<int>(QueueKind::Value) ? QueueKind::Value : QueueKind::Candle;
+          c.fetched = q.getColumn(24).getInt64();
+          c.count = static_cast<uint32_t>(q.getColumn(25).getInt64());
+          c.first_key = q.getColumn(26).getInt64();
+          c.last_key = q.getColumn(27).getInt64();
+          c.last_hash = static_cast<uint64_t>(q.getColumn(28).getInt64());
           out.back().queues.emplace_back(static_cast<Resolution>(resolution), c);
         }
       }
@@ -171,11 +173,15 @@ class SqliteSummaryStore : public SummaryStore {
   void putEdge(const StoredEdge & e) {
     SQLite::Statement put(*db_,
                           "INSERT INTO edges (base, quote, market, symbol, identifier, order_book, type, name, last, bid, ask, quote_time, "
-                          "previous_close, previous_close_day) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                          "previous_close, previous_close_day, change_day, change_week, change_month, change_quarter, change_year, change_year3, change_year10) "
+                          "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
                           "ON CONFLICT (base, quote, market) DO UPDATE SET symbol = excluded.symbol, identifier = excluded.identifier, "
                           "order_book = excluded.order_book, type = excluded.type, name = excluded.name, last = excluded.last, "
                           "bid = excluded.bid, ask = excluded.ask, quote_time = excluded.quote_time, "
-                          "previous_close = excluded.previous_close, previous_close_day = excluded.previous_close_day");
+                          "previous_close = excluded.previous_close, previous_close_day = excluded.previous_close_day, "
+                          "change_day = excluded.change_day, change_week = excluded.change_week, change_month = excluded.change_month, "
+                          "change_quarter = excluded.change_quarter, change_year = excluded.change_year, change_year3 = excluded.change_year3, "
+                          "change_year10 = excluded.change_year10");
     const EdgeKey & k = e.listing.key;
     put.bind(1, asInt(k.base.value));
     put.bind(2, asInt(k.quote.value));
@@ -193,6 +199,7 @@ class SqliteSummaryStore : public SummaryStore {
     bindReal(put, 13, e.previous_close);
     if (isDefined(e.previous_close)) put.bind(14, e.previous_close_day);
     else put.bind(14);
+    for (size_t i = 0; i < kChangeCount; i++) bindReal(put, 15 + static_cast<int>(i), e.changes.pct[i]);
     put.exec();
   }
 
@@ -306,6 +313,7 @@ class SqliteSummaryStore : public SummaryStore {
         "symbol TEXT NOT NULL DEFAULT '', identifier TEXT NOT NULL DEFAULT '', order_book TEXT NOT NULL DEFAULT '', "
         "type TEXT NOT NULL DEFAULT '', name TEXT NOT NULL DEFAULT '', "
         "last REAL, bid REAL, ask REAL, quote_time INTEGER, previous_close REAL, previous_close_day INTEGER, "
+        "change_day REAL, change_week REAL, change_month REAL, change_quarter REAL, change_year REAL, change_year3 REAL, change_year10 REAL, "
         "UNIQUE (base, quote, market))");
     db_->exec(
         "CREATE TABLE IF NOT EXISTS queues ("
