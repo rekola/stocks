@@ -39,7 +39,9 @@ void trace(Resolution r, const Seq<Candle> & bars, PeriodView & v) {
   for (const Candle & c : bars) {
     v.closes.push_back(static_cast<float>(c.close));
     v.times.push_back(instantOf(r, c.time));
+    v.volumes.push_back(c.volume);
   }
+  if (std::none_of(v.volumes.begin(), v.volumes.end(), [](double x) { return isDefined(x) && x > 0; })) v.volumes.clear();
   v.dated = isDateResolution(r);
   v.light = activity(bars);
 }
@@ -60,6 +62,7 @@ void finish(Resolution r, const Seq<Candle> & bars, const std::optional<Quote> &
   if (v.last != bars.back().close) {
     v.closes.push_back(static_cast<float>(v.last));
     v.times.push_back(quote && quote->time != 0 ? quote->time : v.times.back());  // at the quote's time, else with the last bar
+    if (!v.volumes.empty()) v.volumes.push_back(v.volumes.back());
     if (!v.light.empty()) v.light.push_back(v.light.back());  // the latest price is the last bar's, as it goes on
   }
 }
