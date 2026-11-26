@@ -295,3 +295,87 @@ TEST(a_transaction_the_file_holds_that_can_no_longer_be_bought_or_read_is_left_o
   auto store = openStore(d);
   CHECK(store->snapshot()->transactions({kMine, DatasetId{datasetKey(kUserDataset)->value}}).size() == 1);
 }
+
+namespace {
+// An edge of Nokia on the Helsinki market, as the dataset `d` says it, quoted in euro.
+EdgeKey nokiaEdge(const Things & t, DatasetId d) { return EdgeKey{t.nokia, t.eur, t.hel, d}; }
+}  // namespace
+
+TEST(an_edge_is_on_a_list_or_not_whatever_else_the_instrument_is_on_and_a_list_is_made_by_its_first) {
+  auto store = makeMemoryStore();
+  const Things t = makeThings(*store);
+  const DatasetId other = store->addDataset("yahoo");
+  const EdgeKey one = nokiaEdge(t, t.user), two = nokiaEdge(t, other);
+  CHECK(store->snapshot()->listMembers("watchlist").empty() && !store->snapshot()->onList("watchlist", one));
+  const uint64_t before = store->snapshot()->version();
+  store->addToList("watchlist", {one});
+  auto s = store->snapshot();
+  CHECK(s->version() == before + 1 && s->onList("watchlist", one) && !s->onList("watchlist", two));  // that edge, not the instrument
+  CHECK(!s->onList("holdings", one));  // a list of its own
+  store->addToList("holdings", {one, two});
+  store->addToList("watchlist", {one});  // there already: nothing changes
+  CHECK(store->snapshot()->version() == s->version() + 1 && store->snapshot()->listMembers("holdings").size() == 2);
+  CHECK(s->listMembers("holdings").empty());  // a snapshot already taken does not change
+  store->removeFromList("watchlist", {two});  // not on it: nothing changes
+  const uint64_t same = store->snapshot()->version();
+  store->removeFromList("watchlist", {two});
+  CHECK(store->snapshot()->version() == same && store->snapshot()->onList("watchlist", one));
+  store->removeFromList("watchlist", {one});
+  CHECK(store->snapshot()->listMembers("watchlist").empty() && store->snapshot()->listMembers("holdings").size() == 2);
+  // A list with no code, and an edge with a part that is none, are refused and nothing of the call is written.
+  const uint64_t refused_at = store->snapshot()->version();
+  bool refused_list = false, refused_edge = false;
+  try { store->addToList("", {one}); } catch (const std::invalid_argument &) { refused_list = true; }
+  try { store->addToList("watchlist", {one, EdgeKey{t.nokia, t.eur, MarketId{}, t.user}}); } catch (const std::invalid_argument &) { refused_edge = true; }
+  CHECK(refused_list && refused_edge && store->snapshot()->version() == refused_at && store->snapshot()->listMembers("watchlist").empty());
+  // A batch is one version.
+  store->batch([&](Batch & b) {
+    b.addToList("watchlist", {one});
+    b.addToList("watchlist", {two});
+  });
+  CHECK(store->snapshot()->version() == refused_at + 1 && store->snapshot()->listMembers("watchlist").size() == 2);
+}
+
+TEST(the_lists_come_back_after_a_restart_with_no_version_and_a_removal_is_kept) {
+  Dir d;
+  EdgeKey one, two;
+  {
+    auto store = openStore(d);
+    const Things t = makeThings(*store);
+    const DatasetId other = store->addDataset("yahoo");
+    one = nokiaEdge(t, t.user);
+    two = nokiaEdge(t, other);
+    store->addToList("watchlist", {one, two});
+    store->addToList("holdings", {two});
+    store->removeFromList("watchlist", {two});
+    store->addToList("watchlist", {two});  // put back after it was taken off, in a later write
+    store->removeFromList("watchlist", {one});
+  }
+  auto store = openStore(d);
+  auto s = store->snapshot();
+  CHECK(s->version() == 0);
+  CHECK(s->listMembers("watchlist") == std::vector<EdgeKey>{two});
+  CHECK(s->listMembers("holdings") == std::vector<EdgeKey>{two});
+  CHECK(!s->onList("watchlist", one));
+  // They are the user's own: in their file and not in the cache.
+  CHECK(keysIn(d.portfolios, "SELECT base FROM list_members").size() == 2);
+  SQLite::Database cache(d.facts.string(), SQLite::OPEN_READONLY);
+  CHECK(cache.execAndGet("SELECT count(*) FROM sqlite_master WHERE name = 'list_members'").getInt() == 0);
+}
+
+TEST(a_list_member_with_a_part_that_is_none_in_the_file_is_not_read) {
+  Dir d;
+  {
+    auto store = openStore(d);
+    makeThings(*store);
+  }
+  {
+    auto file = openSqlitePortfolioStore(d.portfolios);
+    FactBatch planted;
+    planted.members.push_back({"watchlist", 0, 0, 0, 0});
+    planted.members.push_back({"", 1, 2, 3, 4});
+    file->apply(planted);
+  }
+  auto store = openStore(d);
+  CHECK(store->snapshot()->listMembers("watchlist").empty());
+}

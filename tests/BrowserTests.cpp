@@ -135,6 +135,9 @@ struct Fixture {
   }
 };
 
+// The menu button at the end of a row: the hamburger.
+constexpr const char * kMenuGlyphText = "\xE2\x98\xB0";
+
 // Where `needle` first is on the screen, in cells: {row, column}, or {-1, -1}.
 std::pair<int, int> cellOf(const std::string & screen, const std::string & needle) {
   int row = 0, col = 0;
@@ -238,13 +241,10 @@ TEST(preset_commands_choose_the_tag_and_fill_the_table) {
 
 TEST(a_click_on_a_heading_sorts_and_prices_sort_by_value) {
   Fixture f;
-  // The Price heading, on the table's first row.
-  std::string text = f.text();
-  size_t line = 0;
-  for (int row = 0; row < 2; row++) line = text.find('\n', line) + 1;
-  int col = static_cast<int>(text.find("Price", line) - line);
-  CHECK(col > 0 && text.find('\n', line) > line + static_cast<size_t>(col));
-  f.click(2, col);
+  // The Price heading, on the table's first row (below the presets, which take as many lines as they need).
+  const auto [heading_row, col] = cellOf(f.text(), "Price");
+  CHECK(heading_row >= 2 && col > 0);
+  f.click(heading_row, col);
   const Table & table = f.browser->table();
   CHECK(table.sortColumn() == Quotes::PRICE && table.sortOrder() == SortOrder::ASCENDING);
   auto & quotes = static_cast<const Quotes &>(*table.model());
@@ -764,15 +764,17 @@ TEST(show_info_from_the_keyboard_shows_the_isin_the_symbol_a_number_and_a_date_a
   CHECK(shown.find("FI0009000681") != std::string::npos);
 }
 
-TEST(a_click_on_the_info_button_opens_its_row_and_leaves_the_selection) {
+TEST(a_click_on_the_menu_button_opens_the_menu_of_its_row_whose_first_entry_is_its_info_and_leaves_the_selection) {
   Fixture f(false);
   addNokia(*f.store);
   f.app->execute("show-nasdaq-helsinki");
   f.browser->table().select(-1);
-  auto [row, col] = cellOf(f.text(), kInfoGlyph);
+  auto [row, col] = cellOf(f.text(), kMenuGlyphText);
   CHECK(row >= 0);
-  std::string shown;
-  const bool closed = f.inModal([&] { f.click(row, col); }, {[&] { shown = f.text(); }, [&] { f.press(Key::Escape); }});
+  std::string menu, shown;
+  const bool closed = f.inModal([&] { f.click(row, col); },
+                                {[&] { menu = f.text(); }, [&] { f.press(Key::Enter); }, [&] { shown = f.text(); }, [&] { f.press(Key::Escape); }});
+  CHECK(menu.find("Show info") != std::string::npos && menu.find("NOKIA") != std::string::npos);  // titled by the row
   CHECK(f.browser->table().selectedRow() == -1);  // the click chose nothing
   CHECK(shown.find("FI0009000681") != std::string::npos && shown.find("NOKIA") != std::string::npos);
   CHECK(closed);
@@ -846,7 +848,7 @@ TEST(the_command_without_a_selected_row_says_so) {
   CHECK(f.text().find("No row selected") != std::string::npos);
 }
 
-TEST(the_buttons_follow_a_sort_and_leave_the_scroll_position_alone) {
+TEST(the_menu_buttons_follow_a_sort_and_leave_the_scroll_position_alone) {
   Fixture f;
   f.app->execute("show-nasdaq-helsinki");
   Table & table = f.browser->table();
@@ -857,11 +859,11 @@ TEST(the_buttons_follow_a_sort_and_leave_the_scroll_position_alone) {
   CHECK(first > 0);
   const int selected_before = table.selectedRow();
   auto open_first_visible = [&] {
-    auto [row, col] = cellOf(f.text(), kInfoGlyph);  // the first row in view
+    auto [row, col] = cellOf(f.text(), kMenuGlyphText);  // the first row in view
     CHECK(row >= 0);
     const int expected = table.rowAt(table.firstVisiblePosition());
     std::string shown;
-    f.inModal([&] { f.click(row, col); }, {[&] { shown = f.text(); }, [&] { f.press(Key::Escape); }});
+    f.inModal([&] { f.click(row, col); }, {[&] { f.press(Key::Enter); }, [&] { shown = f.text(); }, [&] { f.press(Key::Escape); }});
     CHECK(table.selectedRow() == selected_before);
     auto isin = f.store->snapshot()->isin(quotes.edge(expected).base);
     CHECK(!isin.empty() && shown.find(isin) != std::string::npos);  // the row clicked, not another
@@ -1536,8 +1538,6 @@ int rowOfBase(Fixture & f, const std::string & base) {
   return -1;
 }
 
-constexpr const char * kBuyGlyphText = "\xE2\x8A\x95";
-constexpr const char * kSellGlyphText = "\xE2\x8A\x96";
 
 size_t countOf(const std::string & text, const std::string & needle) {
   size_t n = 0;
@@ -1572,34 +1572,43 @@ std::vector<std::function<void()>> fillOrder(Fixture & f, std::vector<std::strin
 
 }  // namespace
 
-TEST(buy_and_sell_buttons_are_on_the_rows_that_can_be_bought_and_not_on_an_index_a_rate_or_a_pair) {
-  Fixture f(false, 120);  // the Portfolio context has more columns, and the buttons are the last
+namespace {
+// What the menu of the selected row offers, as the screen shows it, and then closes it.
+std::string menuOf(Fixture & f) {
+  std::string shown;
+  f.inModal([&] { f.app->execute("row-menu"); }, {[&] { shown = f.text(); }, [&] { f.press(Key::Escape); }});
+  f.press(Key::Down);  // the Escape's key again (the KeyReader waits for it, as Emacs's does)
+  return shown;
+}
+}  // namespace
+
+TEST(the_menu_offers_buy_and_sell_on_the_rows_that_can_be_bought_and_not_on_an_index_a_rate_or_a_pair) {
+  Fixture f(false, 120);  // the Portfolio context has more columns, and the button is the last
   Holdings h = addHoldings(*f.store);
   Untradables u = addUntradables(*f.store, h);
   f.app->execute("show-all");
-  const auto * quotes = dynamic_cast<const Quotes *>(f.browser->table().model().get());
-  CHECK(quotes != nullptr);
-  if (!quotes) return;
-  auto buttons = [&](const std::string & base) {
+  auto offers = [&](const std::string & base) {
     const int r = rowOfBase(f, base);
     CHECK(r >= 0);
-    return std::vector<bool>{quotes->buttonShown(r, 0, kInfoButton), quotes->buttonShown(r, 0, kBuyButton), quotes->buttonShown(r, 0, kSellButton)};
+    f.browser->table().select(r);
+    const std::string menu = menuOf(f);
+    return std::vector<bool>{menu.find("Show info") != std::string::npos, menu.find("Buy") != std::string::npos, menu.find("Sell") != std::string::npos};
   };
   const std::vector<bool> all{true, true, true}, info_only{true, false, false};
-  CHECK(buttons("NOKIA") == all && buttons("AAPL") == all && buttons("AFUND") == all);                 // a venue; a fund off exchange
-  CHECK(buttons("OMXH25") == info_only && buttons("EURIBOR12") == info_only && buttons("EUR") == info_only);  // an index, a rate, a pair
-  // On the screen: the glyphs of buy and sell on the three rows that can be bought, the info glyph on all.
-  const std::string screen = f.text();
-  CHECK(countOf(screen, kBuyGlyphText) == 3 && countOf(screen, kSellGlyphText) == 3);
-  CHECK(countOf(screen, kInfoGlyph) == 6);
-  // The Portfolio context always has them.
+  CHECK(offers("NOKIA") == all && offers("AAPL") == all && offers("AFUND") == all);                 // a venue; a fund off exchange
+  CHECK(offers("OMXH25") == info_only && offers("EURIBOR12") == info_only && offers("EUR") == info_only);  // an index, a rate, a pair
+  // On the screen: one button on each of the six rows, and no more.
+  CHECK(countOf(f.text(), kMenuGlyphText) == 6);
+  // The Portfolio context always offers them.
   f.press(Key::Tab);
-  const auto * positions = dynamic_cast<const Positions *>(f.browser->table().model().get());
-  CHECK(positions && positions->buttonShown(0, 0, kBuyButton) && positions->buttonShown(1, 0, kSellButton));
-  CHECK(countOf(f.text(), kBuyGlyphText) == 2 && countOf(f.text(), kSellGlyphText) == 2);
+  CHECK(dynamic_cast<const Positions *>(f.browser->table().model().get()) != nullptr);
+  f.browser->table().select(0);
+  const std::string menu = menuOf(f);
+  CHECK(menu.find("Buy") != std::string::npos && menu.find("Sell") != std::string::npos && menu.find("Watchlist") == std::string::npos);  // a position is of no dataset
+  CHECK(countOf(f.text(), kMenuGlyphText) == 2);
 }
 
-TEST(a_click_on_the_buy_button_opens_the_form_for_that_row_and_not_the_selected_one) {
+TEST(a_click_on_the_menu_button_and_buy_opens_the_form_for_that_row_and_not_the_selected_one) {
   Fixture f(false);
   Holdings h = addHoldings(*f.store);
   addUntradables(*f.store, h);
@@ -1608,7 +1617,7 @@ TEST(a_click_on_the_buy_button_opens_the_form_for_that_row_and_not_the_selected_
   f.browser->table().sortBy(Quotes::BASE, SortOrder::ASCENDING);
   f.browser->table().select(rowOfBase(f, "AFUND"));
   const std::string screen = f.text();
-  // The buy glyph on the NOKIA row, which is not the selected one.
+  // The menu button on the NOKIA row, which is not the selected one.
   int target_row = -1, target_col = -1;
   {
     int row = 0;
@@ -1618,7 +1627,7 @@ TEST(a_click_on_the_buy_button_opens_the_form_for_that_row_and_not_the_selected_
       const std::string line = screen.substr(from, end - from);
       const size_t first = line.find_first_not_of(' ');  // the icon column comes before the base
       if (first != std::string::npos && line.compare(first, 5, "NOKIA") == 0) {
-        const auto at = cellOf(line, kBuyGlyphText);
+        const auto at = cellOf(line, kMenuGlyphText);
         target_row = row;
         target_col = at.second;
       }
@@ -1627,8 +1636,9 @@ TEST(a_click_on_the_buy_button_opens_the_form_for_that_row_and_not_the_selected_
   }
   CHECK(target_row >= 0);
   std::string shown;
+  // Show info, then Buy: one Down, and Enter.
   const bool closed = f.inModal([&] { f.click(target_row, target_col); },
-                                {[&] { shown = f.text(); }, [&] { f.press(Key::Escape); }});
+                                {[&] { f.press(Key::Down); f.press(Key::Enter); }, [&] { shown = f.text(); }, [&] { f.press(Key::Escape); }});
   CHECK(closed);
   CHECK(shown.find("Buy NOKIA on Nasdaq Helsinki") != std::string::npos);
   CHECK(shown.find("2026-12-01") != std::string::npos && shown.find("Retirement") != std::string::npos);
@@ -1636,33 +1646,21 @@ TEST(a_click_on_the_buy_button_opens_the_form_for_that_row_and_not_the_selected_
   CHECK(f.text().find("Nothing bought") != std::string::npos);
 }
 
-TEST(the_keyboard_reaches_the_buy_and_sell_buttons_with_the_cursor_and_enter_presses_one) {
+TEST(the_keyboard_reaches_the_menu_button_with_the_cursor_and_enter_presses_it_on_every_row) {
   Fixture f(false);
   Holdings h = addHoldings(*f.store);
   Untradables u = addUntradables(*f.store, h);
   f.app->execute("show-all");
   Table & table = f.browser->table();
-  // A row that can be bought: Right to the end is the sell button, one Left the buy button, and Enter presses it.
-  table.select(rowOfBase(f, "NOKIA"));
-  for (int i = 0; i < 14; i++) f.press(Key::Right);
-  CHECK(table.cursorColumn() == static_cast<int>(table.columns().size()) - 1 && table.cursorButton() == kSellButton);
-  f.press(Key::Left);
-  CHECK(table.cursorButton() == kBuyButton);
-  std::string shown;
-  f.inModal([&] { f.press(Key::Enter); }, {[&] { shown = f.text(); }, [&] { f.press(Key::Escape); }});
-  CHECK(shown.find("Buy NOKIA") != std::string::npos);
-  // The Escape that closed it still waits for its key, as Emacs's does (cellui's KeyReader): the next key is Meta's, and ignored by
-  // the table. Then Right goes on to the sell button, and Enter presses it.
-  f.press(Key::Right);
-  f.press(Key::Right);
-  CHECK(table.cursorButton() == kSellButton);
-  f.inModal([&] { f.press(Key::Enter); }, {[&] { shown = f.text(); }, [&] { f.press(Key::Escape); }});
-  CHECK(shown.find("Sell NOKIA") != std::string::npos);
-  f.press(Key::Down);  // the Escape's key again
-  // A row that cannot: the cursor stops at the info button, the last one it has.
-  table.select(rowOfBase(f, "OMXH25"));
-  for (int i = 0; i < 14; i++) f.press(Key::Right);
-  CHECK(table.cursorButton() == kInfoButton);
+  for (const char * base : {"NOKIA", "OMXH25"}) {  // a row that can be bought, and one that cannot: the one button is on both
+    table.select(rowOfBase(f, base));
+    for (int i = 0; i < 14; i++) f.press(Key::Right);
+    CHECK(table.cursorColumn() == static_cast<int>(table.columns().size()) - 1 && table.cursorButton() == 0);
+    std::string shown;
+    f.inModal([&] { f.press(Key::Enter); }, {[&] { shown = f.text(); }, [&] { f.press(Key::Escape); }});
+    CHECK(shown.find("Show info") != std::string::npos && shown.find(base) != std::string::npos);
+    f.press(Key::Down);  // the Escape's key again
+  }
 }
 
 TEST(buy_and_sell_refuse_a_row_that_cannot_be_bought_when_run_from_the_palette) {
@@ -2148,4 +2146,89 @@ TEST(the_physical_preset_has_what_is_held_in_hand_and_not_the_funds_or_the_spot)
   f.app->execute("show-physical");
   CHECK(f.browser->context() == Context::Markets && quotes != nullptr);
   CHECK(!f.app->commands().description("show-physical").empty());
+}
+
+namespace {
+// Nokia on the Helsinki market from two datasets: two rows, which are two edges.
+std::pair<EdgeKey, EdgeKey> addNokiaTwice(Store & store) {
+  const EdgeKey one = addNokia(store);
+  const DatasetId other = store.addDataset("yahoo", "Yahoo");
+  const EdgeKey two{one.base, one.quote, one.market, other};
+  store.appendCandles(two, Resolution::Day, {{dayNumber(2026, 1, 2), 1, 1, 1, 4.1, 1}, {dayNumber(2026, 1, 5), 1, 1, 1, 4.4, 1}});
+  store.setListing({two, "NOKIA", "99", "98", "STOCK", "Nokia"});
+  return {one, two};
+}
+}  // namespace
+
+TEST(a_row_is_put_on_the_watchlist_from_its_menu_and_only_that_row_not_the_instrument_on_its_other_dataset) {
+  Fixture f(false);
+  const auto [one, two] = addNokiaTwice(*f.store);
+  f.app->execute("show-nasdaq-helsinki");
+  Table & table = f.browser->table();
+  CHECK(table.model()->rowCount() == 2);
+  auto & quotes = static_cast<Quotes &>(*table.model());
+  const int first = quotes.edge(0) == one ? 0 : 1;
+  table.select(first);
+  std::string menu;
+  // Show info, Buy, Sell, then the list: three Downs and Enter.
+  f.inModal([&] { f.app->execute("row-menu"); },
+            {[&] { menu = f.text(); }, [&] { f.press(Key::Down); f.press(Key::Down); f.press(Key::Down); f.press(Key::Enter); }, [&] { f.press(Key::Escape); }});
+  CHECK(menu.find("Put on the Watchlist") != std::string::npos);
+  CHECK(f.store->snapshot()->onList("watchlist", one) && !f.store->snapshot()->onList("watchlist", two));
+  CHECK(f.text().find("Put NOKIA on the Watchlist") != std::string::npos && f.browser->undoDepth() == 1);
+  // The menu now offers the way back, and the preset shows that row alone.
+  table.select(first);
+  CHECK(menuOf(f).find("Take off the Watchlist") != std::string::npos);
+  f.app->execute("show-watchlist");
+  CHECK(f.browser->table().model()->rowCount() == 1 && static_cast<Quotes &>(*f.browser->table().model()).edge(0) == one);
+  CHECK(f.text().find("Nothing on the Watchlist") == std::string::npos);
+  // Taking it off, from the list itself, leaves it empty and says what to do.
+  f.browser->table().select(0);
+  f.app->execute("remove-from-watchlist");
+  CHECK(f.browser->table().model()->rowCount() == 0 && f.text().find("Nothing on the Watchlist yet") != std::string::npos);
+  CHECK(!f.store->snapshot()->onList("watchlist", one));
+  // Undo puts it back, and undo again takes it off, as for any change of hers.
+  f.app->execute("undo");
+  CHECK(f.browser->table().model()->rowCount() == 1 && f.store->snapshot()->onList("watchlist", one));
+  f.app->execute("undo");
+  CHECK(f.browser->table().model()->rowCount() == 0 && f.browser->undoDepth() == 0 && f.browser->redoDepth() == 2);
+  f.app->execute("redo");
+  CHECK(f.browser->table().model()->rowCount() == 1);
+}
+
+TEST(a_row_already_on_the_watchlist_or_not_on_it_is_told_so_and_nothing_is_recorded) {
+  Fixture f(false);
+  const auto edges = addNokiaTwice(*f.store);
+  f.app->execute("show-nasdaq-helsinki");
+  f.browser->table().select(0);
+  f.app->execute("remove-from-watchlist");
+  CHECK(f.text().find("is not on the Watchlist") != std::string::npos && f.browser->undoDepth() == 0);
+  f.app->execute("add-to-watchlist");
+  f.app->execute("add-to-watchlist");
+  CHECK(f.text().find("is on the Watchlist already") != std::string::npos && f.browser->undoDepth() == 1);
+}
+
+TEST(a_list_is_of_edges_so_a_position_cannot_be_put_on_one) {
+  Fixture f(false);
+  Holdings h = addHoldings(*f.store);
+  f.press(Key::Tab);
+  f.browser->table().select(0);
+  f.app->execute("add-to-watchlist");
+  CHECK(f.text().find("Only a row of Markets") != std::string::npos && f.browser->undoDepth() == 0);
+}
+
+TEST(the_presets_wrap_onto_a_second_line_on_a_narrow_screen_and_every_one_can_still_be_clicked) {
+  Fixture f(true, 60);
+  const std::string text = f.text();
+  const auto [watch_row, watch_col] = cellOf(text, "Watchlist");
+  const auto [commodities_row, commodities_col] = cellOf(text, "Commodities");
+  CHECK(commodities_row == 0 && watch_row > 0);  // the last one is on a line of its own below the first
+  const auto [heading_row, heading_col] = cellOf(text, "Base");
+  CHECK(heading_row > watch_row);  // and the table starts below them
+  f.click(watch_row, watch_col + 2);
+  CHECK(f.browser->tags().selected() == static_cast<int>(f.browser->tags().tags().size()) - 1);
+  CHECK(f.text().find("Showing Watchlist") != std::string::npos);
+  // Wide enough for one line, they are on one.
+  Fixture wide(true, 200);
+  CHECK(cellOf(wide.text(), "Watchlist").first == 0);
 }
