@@ -151,7 +151,7 @@ EdgeKey addNokia(Store & store) {
   InstrumentId eur = store.addInstrument("EUR", "Euro", InstrumentKind::Currency);
   InstrumentId nokia = store.addInstrument("", "Nokia Oyj", InstrumentKind::Company, "FI0009000681");
   MarketId helsinki = store.addMarket("XHEL", "Nasdaq Helsinki");
-  DatasetId data = store.addDataset("nordnet");
+  DatasetId data = store.addDataset(kNordnetDataset);
   EdgeKey key{nokia, eur, helsinki, data};
   store.appendCandles(key, Resolution::Day, {{dayNumber(2026, 1, 2), 1, 1, 1, 4.2, 1}, {dayNumber(2026, 1, 5), 1, 1, 1, 4.3, 1}});
   store.setListing({key, "NOKIA", "1234", "5678", "STOCK", "Nokia"});
@@ -524,7 +524,7 @@ TEST(the_rows_on_screen_have_their_history_loaded_and_the_table_follows) {
   std::shared_ptr<Store> store = makeMemoryStore();
   InstrumentId usd = store->addInstrument("USD", "US dollar", InstrumentKind::Currency);
   MarketId market = store->addMarket("XHEL", "Nasdaq Helsinki");
-  DatasetId nordnet = store->addDataset("nordnet");
+  DatasetId nordnet = store->addDataset(kNordnetDataset);
   std::vector<EdgeKey> edges;
   for (int i = 0; i < 40; i++) {  // more rows than the screen holds
     InstrumentId inst = store->addInstrument("", "Stock " + std::to_string(i), InstrumentKind::Company, testIsin(100000 + i));
@@ -574,7 +574,7 @@ TEST(a_sort_tells_the_history_loader_the_edges_it_brings_on_screen) {
   std::shared_ptr<Store> store = makeMemoryStore();
   InstrumentId usd = store->addInstrument("USD", "US dollar", InstrumentKind::Currency);
   MarketId market = store->addMarket("XHEL", "Nasdaq Helsinki");
-  DatasetId nordnet = store->addDataset("nordnet");
+  DatasetId nordnet = store->addDataset(kNordnetDataset);
   for (int i = 0; i < 100; i++) {  // more than the screens the loader is told of
     // The first row, which is selected, sorts first by name either way, so the sort does not scroll to it.
     const std::string name = i == 0 ? "Stock 999" : "Stock " + std::to_string(100 + i);
@@ -623,7 +623,7 @@ TEST(a_sort_still_tells_the_history_loader_the_edges_where_the_day_is_asked_agai
   std::shared_ptr<Store> store = makeMemoryStore();
   InstrumentId usd = store->addInstrument("USD", "US dollar", InstrumentKind::Currency);
   MarketId market = store->addMarket("XHEL", "Nasdaq Helsinki");
-  DatasetId nordnet = store->addDataset("nordnet");
+  DatasetId nordnet = store->addDataset(kNordnetDataset);
   for (int i = 0; i < 100; i++) {  // more than the screens the loader is told of
     // The first row, which is selected, sorts first by name either way, so the sort does not scroll to it.
     const std::string name = i == 0 ? "Stock 999" : "Stock " + std::to_string(100 + i);
@@ -688,7 +688,7 @@ TEST(the_all_preset_shows_every_market_and_the_market_column_tells_the_rows_apar
   InstrumentId eur = g.store->addInstrument("EUR", "Euro", InstrumentKind::Currency);
   InstrumentId usd = g.store->addInstrument("USD", "US dollar", InstrumentKind::Currency);
   MarketId unnamed = g.store->addMarket("XNYS");
-  DatasetId a = g.store->addDataset("nordnet");
+  DatasetId a = g.store->addDataset(kNordnetDataset);
   g.store->appendCandles({eur, usd, unnamed, a}, Resolution::Day, {{0, 1, 1, 1, 1.0, 1}});
   g.app->execute("show-all");
   CHECK(g.browser->table().model()->text(0, Quotes::MARKET) == "XNYS");
@@ -699,7 +699,7 @@ TEST(a_currency_pair_shows_its_first_currency_as_the_base_and_not_the_listing_sy
   InstrumentId eur = f.store->addInstrument("EUR", "Euro", InstrumentKind::Currency);
   InstrumentId usd = f.store->addInstrument("USD", "US dollar", InstrumentKind::Currency);
   MarketId currencies = f.store->addMarket("XXXX", "Currencies");
-  DatasetId a = f.store->addDataset("nordnet");
+  DatasetId a = f.store->addDataset(kNordnetDataset);
   EdgeKey k{eur, usd, currencies, a};
   f.store->appendCandles(k, Resolution::Day, {{0, 1, 1, 1, 1.0, 1}});
   f.store->setListing({k, "EURUSD", "", "", "CURRENCY", "EUR/USD"});
@@ -877,7 +877,7 @@ TEST(the_buttons_follow_a_sort_and_leave_the_scroll_position_alone) {
 TEST(a_node_is_shown_as_the_node_it_names_and_is_a_link) {
   Fixture f(false);
   InstrumentId eur = f.store->addInstrument("EUR", "Euro", InstrumentKind::Currency);
-  DatasetId data = f.store->addDataset("nordnet", "Nordnet");
+  DatasetId data = f.store->addDataset(kNordnetDataset, "Nordnet");
   const auto snapshot = f.store->snapshot();
   const ShownValue currency = showValue(*snapshot, "currency", Value(NodeKey{eur.value}));
   CHECK(currency.text == "Euro" && currency.link && *currency.link == NodeRef(eur));
@@ -1250,7 +1250,7 @@ Holdings addHoldings(Store & store) {
   h.hel = store.addMarket("XHEL", "Nasdaq Helsinki");
   h.nasdaq = store.addMarket("XNAS", "Nasdaq");
   MarketId none = store.addMarket(kNoMarket, "No market");
-  DatasetId data = store.addDataset("nordnet");
+  DatasetId data = store.addDataset(kNordnetDataset);
   h.user = store.addDataset(kUserDataset);
   h.nokia = {nokia, h.eur, h.hel, data};
   h.apple = {apple, h.usd, h.nasdaq, data};
@@ -1453,7 +1453,7 @@ TEST(the_history_loader_is_told_the_edges_of_the_positions_on_screen) {
   std::shared_ptr<Store> store = makeMemoryStore();
   InstrumentId usd = store->addInstrument("USD", "US dollar", InstrumentKind::Currency);
   MarketId market = store->addMarket("XHEL", "Nasdaq Helsinki");
-  DatasetId nordnet = store->addDataset("nordnet"), user = store->addDataset(kUserDataset);
+  DatasetId nordnet = store->addDataset(kNordnetDataset), user = store->addDataset(kUserDataset);
   InstrumentId inst = store->addInstrument("", "Held", InstrumentKind::Company, testIsin(100001));
   InstrumentId other = store->addInstrument("", "Not held", InstrumentKind::Company, testIsin(100002));
   for (auto [i, book] : {std::pair{inst, "book-held"}, std::pair{other, "book-other"}}) {
@@ -1517,7 +1517,7 @@ Untradables addUntradables(Store & store, const Holdings & h) {
   InstrumentId pts = store.addInstrument("pts", "Points", InstrumentKind::Unit);
   InstrumentId pct = store.addInstrument("pct", "Per cent", InstrumentKind::Unit);
   MarketId none = store.addMarket(kNoMarket, "No market"), off = store.addMarket(kOffExchange, "Off exchange");
-  DatasetId data = store.addDataset("nordnet");
+  DatasetId data = store.addDataset(kNordnetDataset);
   u.index = {omx, pts, none, data};
   u.rate = {euribor, pct, none, data};
   u.fund = {fund, h.eur, off, data};
@@ -2072,7 +2072,7 @@ NewsItem newsItem(const char * id, Timestamp time, const char * headline, std::v
 TEST(the_news_context_shows_the_news_newest_first_and_a_preset_is_a_selection_by_kind) {
   Fixture f(false, 160);
   const InstrumentId nokia = f.store->addInstrument("", "Nokia Oyj", InstrumentKind::Company, "FI0009000681", "ESH");
-  const DatasetId data = f.store->addDataset("nordnet", "Nordnet");
+  const DatasetId data = f.store->addDataset(kNordnetDataset, "Nordnet");
   const NodeRef finland = nodeOf(*countryKey("FI"));
   f.store->appendNews(data, {newsItem("1", 1795214400, "Nokia buys back shares", {nokia, finland}, kPressRelease),
                              newsItem("2", 1795218000, "Analyst raises Nokia", {nokia}, kAnalysis),
@@ -2112,7 +2112,7 @@ TEST(the_info_of_a_news_item_says_whom_it_is_about_and_the_info_of_a_row_lists_i
   const InstrumentId eur = f.store->addInstrument("EUR", "Euro", InstrumentKind::Currency, "", "");
   const InstrumentId nokia = f.store->addInstrument("", "Nokia Oyj", InstrumentKind::Company, "FI0009000681", "ESH");
   const MarketId hel = f.store->addMarket("XHEL", "Nasdaq Helsinki");
-  const DatasetId data = f.store->addDataset("nordnet", "Nordnet");
+  const DatasetId data = f.store->addDataset(kNordnetDataset, "Nordnet");
   f.store->appendCandles({nokia, eur, hel, data}, Resolution::Day, {{dayNumber(2026, 1, 2), 1, 1, 1, 4.2, 1}});
   f.store->appendNews(data, {newsItem("1", 1795214400, "Nokia buys back shares", {nokia}, kPressRelease)});
   auto snapshot = f.store->snapshot();

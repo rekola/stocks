@@ -49,9 +49,11 @@
 //   often than daily detail                    {url, fields}: a request for
 //   each fund (`{id}`) whose answer says more of it (the fees); asked for once
 //   history                   {url}: the NAV history of a fund, `[[ms, value],
-//   ...]`, asked for with `{id}`. It is not asked for with the list but
-//                             when the fund is wanted (on the screen), one fund
-//                             at a time, together with its details.
+//   ...]`, asked for with `{id}`; or {morningstar: {client, universe, currency
+//   (EUR), startDate (2000-01-01)}}: Morningstar's, where the fund's `id` is
+//   its Morningstar id (secId), and this adapter makes the URL. It is not asked
+//   for with the list but when the fund is wanted (on the screen), one fund at
+//   a time, together with its details.
 //
 // The ISIN of a fund is found, in this order, in: its `isin` field,
 // `isinFromId`, `isins`, any string of its list row that is an ISIN, and (when
@@ -103,7 +105,7 @@ class FundHistory : public HistoryProvider {
  public:
   explicit FundHistory(FundSchema schema) : schema_(std::move(schema)) {}
   std::string dataset() const override { return schema_.dataset; }
-  // One request for a fund company's every edge, whatever the period: the details and the NAV history, once per session, unless the store has the quarter's bars.
+  // One request for a fund company's every edge, whatever the period: the details and the NAV history, once per session, unless the store has the quarter's bars (daily, and weekly for the 3 and 10 years).
   std::optional<Need> need(const Snapshot &, const EdgeKey &, Period) const override;
   Outcome load(Store &, Http &, const EdgeKey &, int request, const Wait &) override;
   std::chrono::milliseconds pause() const override { return schema_.pause; }

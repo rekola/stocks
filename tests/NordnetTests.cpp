@@ -167,7 +167,7 @@ TEST(loading_pages_through_every_list_and_stores_instruments_markets_and_edges) 
   // No tick time: a node, and no edge.
   CHECK(s->findInstrumentByIsin("NO0010903685") &&
         s->edges(*s->findMarket("FNSE")).empty());
-  DatasetId nordnet = *s->findDataset("nordnet");
+  DatasetId nordnet = *s->findDataset(kNordnetDataset);
   EdgeKey onXetra{xaix, *s->findInstrument("EUR"), xetra, nordnet};
   EdgeKey onStockholm{xaix, *s->findInstrument("SEK"), stockholm, nordnet};
   // Each listing's price block is today's bar, in the daily series, keyed by its date (the tick was at 16:30 UTC on the 20th).
@@ -342,8 +342,8 @@ TEST(an_indicator_row_with_another_price_source_is_nordnets_own) {
   auto s = store->snapshot();
   const MarketId none = *s->findMarket("XXXX");
   CHECK(s->listing({*s->findInstrument("EUR"), *s->findInstrument("USD"), none, *s->findDataset(kMorningstarDataset)}));
-  CHECK(s->listing({*s->findInstrument("USD"), *s->findInstrument("JPY"), none, *s->findDataset("nordnet")}));
-  CHECK(source.historyProvider()->datasets() == (std::vector<std::string>{"nordnet", kMorningstarDataset}));
+  CHECK(s->listing({*s->findInstrument("USD"), *s->findInstrument("JPY"), none, *s->findDataset(kNordnetDataset)}));
+  CHECK(source.historyProvider()->datasets() == (std::vector<std::string>{kNordnetDataset, kMorningstarDataset}));
 }
 
 TEST(listings_of_one_isin_with_different_names_leave_one_name_and_no_change_on_the_next_pass) {
@@ -508,7 +508,7 @@ TEST(a_new_day_adds_a_bar_to_the_series) {
   auto s = store->snapshot();
   InstrumentId xaix = *s->findInstrumentByIsin("IE00BGV5VN51");
   EdgeKey onXetra{xaix, *s->findInstrument("EUR"), *s->findMarket("XETR"),
-                  *s->findDataset("nordnet")};
+                  *s->findDataset(kNordnetDataset)};
   CandleSeries c = s->candles(onXetra, Resolution::Day);
   CHECK(c.candles.size() == 2 && c.candles[0].time == dayNumber(2026, 11, 20) && c.candles[1].time == dayNumber(2026, 11, 21));
 }
@@ -670,7 +670,7 @@ TEST(
 TEST(every_kind_of_node_keeps_its_attributes_the_same_way) {
   auto store = makeMemoryStore();
   InstrumentId i = store->addInstrument("NOKIA", "Nokia", InstrumentKind::Company, "FI0009000681", "ESH");
-  DatasetId d = store->addDataset("nordnet");
+  DatasetId d = store->addDataset(kNordnetDataset);
   MarketId m = store->addMarket("XHEL");
   store->setAttribute(i, {"nordnet-id", "16"});
   store->setAttribute(d, {"description", "Nordnet"});
@@ -713,7 +713,7 @@ TEST(an_instrument_listed_on_two_markets_is_one_node_with_an_edge_and_a_say_for_
   auto s = store->snapshot();
   InstrumentId xaix = *s->findInstrumentByIsin("IE00BGV5VN51");
   MarketId xetra = *s->findMarket("XETR"), stockholm = *s->findMarket("XSTO");
-  DatasetId nordnet = *s->findDataset("nordnet");
+  DatasetId nordnet = *s->findDataset(kNordnetDataset);
   const EdgeKey onXetra{xaix, *s->findInstrument("EUR"), xetra, nordnet};
   const EdgeKey onStockholm{xaix, *s->findInstrument("SEK"), stockholm, nordnet};
   CHECK(s->symbol(onXetra) == "XAIX" && s->symbol(onStockholm) == "XAIX");

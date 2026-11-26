@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cmath>
 
 using namespace cellui;
 
@@ -457,6 +458,14 @@ std::string timeLabel(Timestamp at, bool dated) {
   return buf;
 }
 
+// A volume as a short number: 1.23M, 45.6k, 789.
+std::string volumeText(double v) {
+  if (v >= 1e9) return fixed(v / 1e9, 2) + "G";
+  if (v >= 1e6) return fixed(v / 1e6, 2) + "M";
+  if (v >= 1e3) return fixed(v / 1e3, 1) + "k";
+  return fixed(v, 0);
+}
+
 }  // namespace
 
 void Browser::showChart() {
@@ -485,8 +494,20 @@ void Browser::showChart() {
   data.title = label + "  " + info(period_).trace;
   data.values = view.closes;
   data.light = view.light;  // the volume traded at each point, as how bright the line is there, as in the table
-  for (const Timestamp at : view.times) data.labels.push_back(timeLabel(at, view.dated));
-  data.format = [rate](float v) { return rate ? fixed(v, 3) + "%" : fixed(v, 2); };
+  // The volume is each point's note: read after the value at the cursor.
+  for (size_t i = 0; i < view.times.size(); i++) {
+    data.labels.push_back(timeLabel(view.times[i], view.dated));
+    const bool traded = i < view.volumes.size() && isDefined(view.volumes[i]) && view.volumes[i] > 0;
+    data.notes.push_back(traded ? "vol " + volumeText(view.volumes[i]) : std::string());
+  }
+  // Decimals enough that the labels at the bottom, middle and top of the axis differ: a narrow range (a currency pair) needs more
+  // than the usual two (three for a rate).
+  int decimals = rate ? 3 : 2;
+  if (const auto [low, high] = std::minmax_element(view.closes.begin(), view.closes.end()); low != view.closes.end() && *high > *low) {
+    const double step = (static_cast<double>(*high) - static_cast<double>(*low)) / 4;
+    decimals = std::clamp(std::max(decimals, static_cast<int>(std::ceil(-std::log10(step)))), 0, 8);
+  }
+  data.format = [rate, decimals](float v) { return rate ? fixed(v, decimals) + "%" : fixed(v, decimals); };
   // The line is the colour of the period's change, as the table's trace is.
   if (const std::optional<bool> up = trendUp(view.change())) data.color = *up ? cellui::Color(0x3f, 0xb9, 0x50) : cellui::Color(0xf8, 0x51, 0x49);
   cellui::ChartModal chart(app_.widgets(), app_.root(), app_.backend().eventLoop(), app_.charts(), std::move(data));

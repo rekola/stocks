@@ -49,6 +49,11 @@ std::optional<int64_t> looseDay(const json & v) {
     unsigned m = 0, d = 0;
     if (s.size() >= 10 && s[4] == '-' && s[7] == '-' && std::sscanf(s.c_str(), "%d-%u-%u", &y, &m, &d) == 3 && m >= 1 && m <= 12 && d >= 1 && d <= 31)
       return dayNumber(y, m, d);
+    // The Finnish way: 25.11.2026 (a day or month may be one digit).
+    int used = 0;
+    if (std::sscanf(s.c_str(), "%u.%u.%d%n", &d, &m, &y, &used) == 3 && static_cast<size_t>(used) == s.size() && y >= 1000 && y <= 9999 && m >= 1 &&
+        m <= 12 && d >= 1 && d <= 31)
+      return dayNumber(y, m, d);
   }
   auto n = looseNumber(v);
   if (!n || *n <= 0) return std::nullopt;

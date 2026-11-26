@@ -1,6 +1,6 @@
 {
  "name": "op",
- "dataset": "op",
+ "dataset": "OP",
  "pauseMs": 2000,
  "refreshHours": 6,
  "headers": {

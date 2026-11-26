@@ -153,7 +153,7 @@ struct Things {
     index = s.addInstrument("", "An index", InstrumentKind::Index, testIsin(9), "INDEX");
     hel = s.addMarket("XHEL", "Nasdaq Helsinki");
     off = s.addMarket(kOffExchange, "Off exchange");
-    ds = s.addDataset("nordnet", "Nordnet");
+    ds = s.addDataset(kNordnetDataset, "Nordnet");
   }
   EdgeKey edge(InstrumentId base) const { return EdgeKey{base, eur, base == fund ? off : hel, ds}; }
 };
@@ -782,7 +782,7 @@ TEST(the_ui_works_while_the_files_are_read_and_what_the_portfolios_hold_comes_fi
   const auto written = std::chrono::steady_clock::now();
   const InstrumentId fresh = store->addInstrument("NEW", "New", InstrumentKind::Company, testIsin(31337), "STOCK");
   const InstrumentId eur = store->addInstrument("EUR", "Euro", InstrumentKind::Currency);
-  const EdgeKey freshEdge{fresh, eur, store->addMarket("XHEL", "Nasdaq Helsinki"), store->addDataset("nordnet", "Nordnet")};
+  const EdgeKey freshEdge{fresh, eur, store->addMarket("XHEL", "Nasdaq Helsinki"), store->addDataset(kNordnetDataset, "Nordnet")};
   store->appendCandles(freshEdge, Resolution::Day, days(3));
   CHECK(std::chrono::steady_clock::now() - written < std::chrono::milliseconds(500));
   CHECK(store->restoring());
