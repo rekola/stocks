@@ -904,8 +904,10 @@ TEST(a_source_is_named_by_the_dataset_it_writes) {
   };
   for (const auto & source : sources) {
     const std::vector<std::string> codes = source->datasetCodes();
-    CHECK(codes.size() == 1 && lower(codes[0]) == source->name());
-    if (codes.size() != 1 || lower(codes[0]) != source->name()) std::fprintf(stderr, "  source %s writes %s\n", source->name().c_str(), codes.empty() ? "none" : codes[0].c_str());
+    // A source may write more datasets than its own (Nordnet also writes the Morningstar ratings), but one of them is named as it is.
+    const bool named = std::any_of(codes.begin(), codes.end(), [&](const std::string & code) { return lower(code) == source->name(); });
+    CHECK(named);
+    if (!named) std::fprintf(stderr, "  source %s writes %s\n", source->name().c_str(), codes.empty() ? "none" : codes[0].c_str());
   }
 }
 
