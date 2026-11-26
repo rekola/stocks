@@ -3,10 +3,10 @@
 #include "model/Dates.h"
 #include "source/GoldPriceSource.h"
 
+#include <cellui/NumberParse.h>
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
-#include <charconv>
 #include <chrono>
 #include <cmath>
 
@@ -24,7 +24,7 @@ std::optional<double> amount(const json & row, const char * key) {
   if (!it->is_string()) return std::nullopt;
   const std::string s = it->get<std::string>();
   double v = 0;
-  const auto [end, ec] = std::from_chars(s.data(), s.data() + s.size(), v);
+  const auto [end, ec] = cellui::parseFloat(s.data(), s.data() + s.size(), v);
   if (ec != std::errc() || end != s.data() + s.size() || !std::isfinite(v)) return std::nullopt;
   return v;
 }
