@@ -326,6 +326,7 @@ TEST(the_funds_of_nordnets_list_are_on_the_off_exchange_market_and_are_funds) {
   CHECK(xoff && !s->edges(*xoff).empty());  // none left out for want of a market
   const auto fund = s->findInstrumentByIsin(page.listings[0].isin);
   CHECK(fund && s->kind(*fund) == InstrumentKind::Fund);
+}
 
 TEST(an_indicator_row_with_another_price_source_is_nordnets_own) {
   using nlohmann::json;
