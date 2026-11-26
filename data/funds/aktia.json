@@ -1,6 +1,6 @@
 {
  "name": "aktia",
- "dataset": "aktia",
+ "dataset": "AKTIA",
  "pauseMs": 2000,
  "refreshHours": 6,
  "list": {

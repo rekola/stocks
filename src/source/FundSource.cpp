@@ -8,6 +8,7 @@
 
 #include <chrono>
 #include <algorithm>
+#include <cctype>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -183,6 +184,19 @@ void applyFields(const FundSchema::Request & request, const json & doc, FundRow 
   }
 }
 
+// Morningstar's price history of a fund, `{id}` being the fund's Morningstar id (its secId, "F00000JTC7"): the answer is `[[ms, NAV], ...]`.
+// `client` is the company's key in Morningstar's URLs and `universe` its number there (the part after FOFIN$$ALL_ of the id Morningstar's own
+// pages for the company's funds use).
+std::string morningstarHistoryUrl(const std::string & client, const std::string & universe, const std::string & currency, const std::string & startDate) {
+  return "https://lt.morningstar.com/api/rest.svc/timeseries_price/" + client + "?currencyId=" + currency +
+         "&idtype=Morningstar&frequency=daily&startDate=" + startDate + "&priceType=&outputType=COMPACTJSON&id={id}]2]1]FOFIN$$ALL_" + universe +
+         "&applyTrackRecordExtension=true";
+}
+
+bool plainWord(const std::string & s) {
+  return !s.empty() && std::all_of(s.begin(), s.end(), [](unsigned char c) { return std::isalnum(c) || c == '-'; });
+}
+
 std::string failure(const HttpResult & r) {
   return r.status == 0 ? (r.error.empty() ? std::string("no answer") : r.error) : "HTTP " + std::to_string(r.status);
 }
@@ -242,11 +256,26 @@ bool FundSchema::parse(const std::string & text, FundSchema & out, std::string &
     s.detail.emplace();
     if (!requestOf(*detail, "detail", *s.detail, error)) return false;
   }
-  if (!d.contains("history") || !d["history"].is_object() || !d["history"].contains("url") || !d["history"]["url"].is_string()) {
+  const json history = d.contains("history") ? d["history"] : json();
+  if (history.is_object() && history.contains("morningstar")) {
+    // The company's history is Morningstar's: the schema says whose, and the URL is made here, so that only this adapter knows the endpoint.
+    const json & m = history["morningstar"];
+    auto text = [&](const char * key, const char * otherwise) -> std::string {
+      auto it = m.is_object() ? m.find(key) : json::const_iterator();
+      return m.is_object() && it != m.end() && it->is_string() ? it->get<std::string>() : std::string(otherwise);
+    };
+    const std::string client = text("client", ""), universe = text("universe", ""), currency = text("currency", "EUR"), start = text("startDate", "2000-01-01");
+    if (!plainWord(client) || !plainWord(universe) || !plainWord(currency) || !looseDay(json(start))) {
+      error = "history.morningstar needs a client and a universe (letters and digits), and may have a currency and a startDate (YYYY-MM-DD)";
+      return false;
+    }
+    s.historyUrl = morningstarHistoryUrl(client, universe, currency, start);
+  } else if (!history.is_object() || !history.contains("url") || !history["url"].is_string()) {
     error = "history: no url";
     return false;
+  } else {
+    s.historyUrl = history["url"].get<std::string>();
   }
-  s.historyUrl = d["history"]["url"].get<std::string>();
   if (auto from = d.find("isinFromId"); from != d.end() && from->is_string()) {
     s.isinFromId = from->get<std::string>();
     try {

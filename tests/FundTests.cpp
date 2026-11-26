@@ -430,6 +430,26 @@ TEST(a_source_with_a_token_asks_for_its_history_with_it) {
   CHECK(store->snapshot()->candles(*edge, Resolution::Day).candles.size() == 4);  // the history's three and the list's
   CHECK(store->snapshot()->candles(*other, Resolution::Day).candles.size() == 3);  // the wrapped series
 }
+TEST(morningstar_is_a_history_a_schema_names_by_client_and_universe_and_a_finnish_date_is_a_day) {
+  FundSchema s;
+  std::string error;
+  CHECK(FundSchema::load("saastopankki", s, error));
+  const std::string url = FundSource::expand(s.historyUrl, "F00000JTC7", "");
+  CHECK(url == "https://lt.morningstar.com/api/rest.svc/timeseries_price/24y0loe6zj?currencyId=EUR&idtype=Morningstar&frequency=daily&startDate=2000-01-01"
+               "&priceType=&outputType=COMPACTJSON&id=F00000JTC7]2]1]FOFIN$$ALL_3664&applyTrackRecordExtension=true");
+  const std::string rest = R"(,"list":{"url":"u","fields":{"id":"/a"}})";
+  CHECK(FundSchema::parse(R"({"name":"x","dataset":"x","history":{"morningstar":{"client":"c1","universe":"9","currency":"SEK","startDate":"2010-05-01"}})" + rest + "}", s, error));
+  CHECK(s.historyUrl.find("/c1?currencyId=SEK&") != std::string::npos && s.historyUrl.find("startDate=2010-05-01&") != std::string::npos);
+  CHECK(!FundSchema::parse(R"({"name":"x","dataset":"x","history":{"morningstar":{"client":"c1"}})" + rest + "}", s, error));  // no universe
+  CHECK(!FundSchema::parse(R"({"name":"x","dataset":"x","history":{"morningstar":{"client":"c/1","universe":"9"}})" + rest + "}", s, error));
+  CHECK(looseDay(nlohmann::json("25.11.2026")) == dayNumber(2026, 11, 25));
+  CHECK(looseDay(nlohmann::json("5.1.2026")) == dayNumber(2026, 1, 5));
+  CHECK(!looseDay(nlohmann::json("31.13.2026")) && !looseDay(nlohmann::json("1.2.26")));
+  // Morningstar's COMPACTJSON is the pairs of milliseconds and NAVs.
+  std::vector<Candle> bars;
+  CHECK(parseNavSeries("[[1764028800000,339.1],[1764115200000,340.06]]", bars, error) && bars.size() == 2 && bars.back().close == 340.06);
+}
+
 TEST(a_fund_with_a_wrong_isin_is_not_stored_and_is_reported) {
   FakeHttp http;
   http.answer = [](const std::string & url) {
@@ -550,7 +570,10 @@ TEST(a_real_discovery_answer_shows_the_funds_with_an_isin_and_a_new_nav_and_says
     auto store = makeMemoryStore();
     Listener listener;
     FundSource funds(schema);
-    funds.setToday([] { return dayNumber(2026, 11, 20); });
+    // The day is the expected file's `today` where it has one (a list newer than the other fixtures), else the one after the latest NAVs of the others.
+    int64_t today = dayNumber(2026, 11, 20);
+    if (expected.contains("today")) today = *looseDay(expected["today"]);
+    funds.setToday([today] { return today; });
     funds.load(*store, http, listener);
     auto snapshot = store->snapshot();
 
@@ -563,7 +586,7 @@ TEST(a_real_discovery_answer_shows_the_funds_with_an_isin_and_a_new_nav_and_says
         edges++;
         CHECK(snapshot->kind(edge.base) == InstrumentKind::Fund && isValidIsin(snapshot->isin(edge.base)));
         auto bars = snapshot->candles(edge, Resolution::Day).candles;
-        CHECK(bars.size() == 1 && bars[0].close > 0 && bars[0].time <= dayNumber(2026, 11, 20));
+        CHECK(bars.size() == 1 && bars[0].close > 0 && bars[0].time <= today);
       }
     CHECK(edges == expected["shown"].get<size_t>());
     for (const std::string & url : http.urls) CHECK(url == listUrl || url == pageUrl || url.find("details") != std::string::npos);
