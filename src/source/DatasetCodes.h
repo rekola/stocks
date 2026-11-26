@@ -1,6 +1,6 @@
 #pragma once
 
-// The codes of the datasets the built-in sources write (NodeKey.h: one to eleven capitals or digits). A code is permanent: what is
+// The codes of the datasets the built-in sources write (NodeKey.h: one to eleven capitals, digits, hyphens, periods or hashes). A code is permanent: what is
 // kept under it keeps its meaning, so it is never changed, and a dataset whose meaning changes gets a new code.
 inline constexpr const char * kNordnetDataset = "NORDNET";
 // Morningstar's prices, as Nordnet passes them on: the indicator lists (currency pairs, commodities, indices) name their price source in every row
@@ -18,7 +18,7 @@ inline constexpr const char * kUserDataset = "USER";
 // their spot prices and the factors in data/physical (PhysicalSource). A dealer's real list is a dataset of its own and wins where there is one.
 inline constexpr const char * kPhysicalDataset = "PHYSICAL";
 // gold-api.com (api.gold-api.com): the spot prices of metals (and a few coins) in dollars and euros, GoldApiSource.
-inline constexpr const char * kGoldApiDataset = "GOLDAPI";
+inline constexpr const char * kGoldApiDataset = "GOLD-API";
 // goldprice.dev (api.goldprice.dev): the spot prices of gold, silver and copper in 31 currencies, and their daily bars, GoldPriceSource.
 inline constexpr const char * kGoldPriceDataset = "GOLDPRICE";
 // The NAVs of the Sifter Fund's share classes, SifterSource.

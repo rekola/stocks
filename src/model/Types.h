@@ -186,7 +186,7 @@ inline InstrumentKind kindOfName(const std::string & s) {
 
 // A market and a dataset are not records: a market is its MIC (`MarketId`, the
 // ISO 10383 code, four characters, which never changes) and a dataset is its
-// code (`DatasetId`, one to eleven capitals or digits that its adapter defines and
+// code (`DatasetId`, one to eleven capitals, digits, hyphens, periods or hashes that its adapter defines and
 // never changes); what is said of either, its name among that, is facts
 // (`Snapshot::name()`, `attribute()`).
 inline std::string datasetCode(DatasetId id) { return text(NodeKey{id.value}); }

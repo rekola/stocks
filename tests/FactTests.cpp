@@ -228,7 +228,7 @@ TEST(what_cannot_be_given_a_key_is_refused_and_told_of) {
   CHECK(!store->addInstrument("NOKIA", "Nokia", InstrumentKind::Company, "FI0009000680").valid());  // the check digit is wrong
   CHECK(!store->addInstrument("", "", InstrumentKind::Other).valid());
   CHECK(!store->addInstrument("A CURRENCY CODE", "Too long", InstrumentKind::Currency).valid());
-  CHECK(!store->addDataset("provider-a").valid());  // a code is letters and digits
+  CHECK(!store->addDataset("provider_a").valid());  // a code is letters and digits
   CHECK(!store->addDataset("morethanten1").valid());
   CHECK(told.size() == 5);
   CHECK(store->snapshot()->nodeCount(NodeType::Instrument) == 0 && store->snapshot()->nodeCount(NodeType::Dataset) == 0);

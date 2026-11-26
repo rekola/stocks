@@ -102,13 +102,26 @@ TEST(codes_round_trip_in_capitals) {
 TEST(a_code_that_does_not_fit_has_no_key) {
   CHECK(!currencyKey(""));
   CHECK(!currencyKey("ABCDEFGHIJKL"));  // twelve
-  CHECK(!currencyKey("EU-R"));
+  CHECK(!currencyKey("EU_R"));
   CHECK(!currencyKey("EU R"));
   CHECK(!currencyKey("EURO\xC3\xA9"));
   CHECK(!datasetKey("nord net"));
   CHECK(!datasetKey(std::string("a\0b", 3)));
   CHECK(currencyKey("ABCDEFGHIJK"));  // eleven
   CHECK(currencyKey("ZZZZZZZZZZZ")->identity() < (uint64_t{1} << 60));  // the largest of them is under sixty bits
+  CHECK(currencyKey("###########")->identity() < (uint64_t{1} << 60));    // and the largest with the hyphen, the period and the hash
+}
+
+TEST(a_hyphen_and_a_period_are_characters_of_a_code) {
+  for (const char * code : {"GOLD-API", "price.dev", "A-B.C#", "#", "C#", "#.-", "-", ".", "..", "A.", "-A", "0.5-"}) {
+    const auto dataset = datasetKey(code);
+    CHECK(dataset && text(*dataset) == upper(code));
+  }
+  CHECK(!(orNone(datasetKey("A-B")) == orNone(datasetKey("A.B"))) && !(orNone(datasetKey("A-B")) == orNone(datasetKey("AB"))));
+  CHECK(orNone(datasetKey("gold-api")) == orNone(datasetKey("GOLD-API")));
+  CHECK(!datasetKey("A_B") && !datasetKey("A B") && !datasetKey("A/B") && !datasetKey("A@B"));  // no other character
+  CHECK(!(orNone(datasetKey("A#")) == orNone(datasetKey("A."))));
+  CHECK(!marketKey("X-EL") && !countryKey("F-"));                          // a MIC and a country are as strict as before
 }
 
 TEST(different_codes_make_different_keys_and_a_longer_code_is_not_the_shorter_and_the_case_is_not_one) {
@@ -129,6 +142,11 @@ TEST(a_key_that_is_not_a_code_has_no_text_of_one) {
   const uint64_t a = currencyKey("A")->identity(), ab = currencyKey("AB")->identity();
   CHECK(text(NodeKey{(uint64_t{1} << 60) | a}) == "A" && text(NodeKey{(uint64_t{1} << 60) | ab}) == "AB");
   CHECK(text(NodeKey{(uint64_t{1} << 60) | (a + 1)}).empty());  // a character after the end
+  // The symbols 40 to 42 are kept for characters to come: no code has them, and no key of one has a text.
+  uint64_t unit = 1;
+  for (int i = 0; i < 10; i++) unit *= 43;  // the first character's place
+  for (uint64_t reserved : {40u, 41u, 42u}) CHECK(text(NodeKey{(uint64_t{1} << 60) | (reserved * unit)}).empty());
+  CHECK(text(NodeKey{(uint64_t{1} << 60) | (39 * unit)}) == "#");
 }
 
 TEST(a_market_key_is_its_mic) {

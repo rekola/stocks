@@ -13,9 +13,9 @@
 #   charges. THE FACTORS ARE ESTIMATES, not any dealer's: until a dealer's list is read they stand for what a coin or a bar loses
 #   or costs in premium, and they are the one place that guess lives.
 spot,gold,XAU,GOLDPRICE
-spot,gold,XAU,GOLDAPI
+spot,gold,XAU,GOLD-API
 spot,gold,GOLD
-spot,platinum,XPT,GOLDAPI
+spot,platinum,XPT,GOLD-API
 item,gold,GOLDBAR,Gold bar (1 g fine),0.0321507466,0.97,1.04
 item,gold,GOLDCOIN,Gold coin (1 oz fine),1,0.98,1.08,🪙
 # A sample of platinum: a bar by the gram. Its premium is a guess, higher than gold's.

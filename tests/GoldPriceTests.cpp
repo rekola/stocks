@@ -190,7 +190,7 @@ TEST(of_two_sources_of_one_spot_the_newest_bar_wins_and_on_the_same_day_the_row_
   GoldApiSource(std::chrono::minutes(2), std::chrono::milliseconds(0)).load(*store, http, said);
   PhysicalTable table;
   std::string error;
-  CHECK(parsePhysicalTable("spot,gold,XAU,GOLDPRICE\nspot,gold,XAU,GOLDAPI\nitem,gold,GOLDCOIN,Coin,1,1,1\n", table, error));
+  CHECK(parsePhysicalTable("spot,gold,XAU,GOLDPRICE\nspot,gold,XAU,GOLD-API\nitem,gold,GOLDCOIN,Coin,1,1,1\n", table, error));
   PhysicalSource estimate(table);
   const auto coin = [&](const char * currency) {
     const auto s = store->snapshot();

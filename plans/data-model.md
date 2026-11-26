@@ -344,7 +344,7 @@ low sixty (country 4 and attribute 6 are planned, 5 is the portfolio, and 7 is a
 | kind | node | low 60 bits |
 |---|---|---|
 | 0 | instrument | its ISIN: 26 x 26 country letters and nine letters or digits make 56 bits, plus one so that AA0000000000 is not zero; the check digit is not stored, since `isinCheckDigit()` gives it back |
-| 1 | currency or unit | its code: up to eleven characters of `0-9A-Z`, the digits of a number of base 37 (0 is the end, 1 to 36 are the characters; 37^11 is under 2^60), the case not kept (`pts` is `PTS`) |
+| 1 | currency or unit | its code: up to eleven characters of `0-9A-Z`, `-`, `.` and `#`, the digits of a number of base 43 (0 is the end, 1 to 39 are the characters, 40 to 42 are kept for others; 43^11 is under 2^60 and 44^11 is not), the case not kept (`pts` is `PTS`) |
 | 2 | market | its MIC, the ISO 10383 market code: four characters of `A-Z0-9`, packed in the same way as a currency's |
 | 3 | dataset | its code, packed in the same way as a currency's |
 | 5 | portfolio | sixty random bits, minted when the user makes one; in text a `P` and fifteen hex digits (`mintPortfolioKey()`, `portfolioKey()`) |
@@ -366,7 +366,7 @@ low sixty (country 4 and attribute 6 are planned, 5 is the portfolio, and 7 is a
   market, has its own MIC. The name and the country are facts of the market (the name is the MIC until something says otherwise).
   A preset that shows currency pairs or commodities is therefore a selection: market XXXX and the kind of the base. Files of the
   second schema lose their markets on opening (the sources say them again).
-- **A dataset** is its **code**, one to eleven capitals or digits that its adapter defines and never changes (`source/DatasetCodes.h`; a
+- **A dataset** is its **code**, one to eleven capitals, digits, hyphens, periods or hashes that its adapter defines and never changes (`source/DatasetCodes.h`; a
   fund schema names its own); two sources may not write the same one. Its name is a fact that is the code until something says
   otherwise. A name can change, so a dataset is looked up by its code.
 - **Order** of rows: by the keys (an instrument's ISIN, then the quote and the dataset). A key's order means nothing of its own, so
@@ -421,7 +421,7 @@ An attribute (a predicate such as `name`, `isin`, `shares`, `pe`) is a node of i
 node, value, updated)` and not `(node, string, value, updated)`, so an attribute has facts of its own: its label ("P/E"), the type of
 value it takes (number, text, truth, node), its unit and how it is shown. A new attribute needs no change to the program.
 
-- **Its key is its code**, packed as a currency's (up to eleven characters of `0-9A-Z`, so `PE`, `MCAP`, `DIVYIELD`), and its label is a
+- **Its key is its code**, packed as a currency's (up to eleven characters of `0-9A-Z-.#`, so `PE`, `MCAP`, `DIVYIELD`), and its label is a
   fact, as a currency's name is: a long or odd name is what the label is for. Open: whether eleven characters are enough, or an
   attribute needs a numbered table instead.
 - **The facts file** keeps the attribute's key and not its text, so the `predicate` column becomes an integer.

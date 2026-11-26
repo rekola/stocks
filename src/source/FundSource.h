@@ -18,7 +18,7 @@
 // them in turn.
 //
 //   name, dataset             what the company is called and the code of its
-//   dataset in the store ("SOME": one to eleven capitals or digits, and
+//   dataset in the store ("SOME": one to eleven capitals, digits, hyphens, periods or hashes, and
 //                             never changed, since what is kept is kept under
 //                             it). A fund is priced by its company and on no
 //                             venue: market XOFF

@@ -50,8 +50,8 @@ Every node has a **key**, one 64-bit number that means the same in every run, in
 (`src/model/NodeKey.h`, and "Node keys" in `data-model.md`). The server adopts it as it is, so that nothing
 anywhere translates between ids, and no table holds an "internal id" of its own:
 
-- an **instrument** is its ISIN, packed (56 bits, the check digit left out); a **currency or a unit** its code (up to eleven capitals or
-  digits); a **dataset** its code, which its adapter defines and never changes; a **market** its MIC (four characters, `A-Z0-9`), which never changes; XXXX is no market (indices, spot prices, currency pairs) and XOFF what is priced off exchange (funds);
+- an **instrument** is its ISIN, packed (56 bits, the check digit left out); a **currency or a unit** its code (up to eleven capitals, digits,
+  hyphens, periods or hashes); a **dataset** its code, which its adapter defines and never changes; a **market** its MIC (four characters, `A-Z0-9`), which never changes; XXXX is no market (indices, spot prices, currency pairs) and XOFF what is priced off exchange (funds);
 - the kind of node is in the top bits, and a key is below 2^62, so it is a positive `BIGINT` in MariaDB and a `UInt64` in ClickHouse;
 - in text, an instrument is its ISIN, a currency or dataset its code and a market its MIC (`describe()`), which is
   what a URL carries;

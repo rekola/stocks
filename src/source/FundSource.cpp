@@ -220,7 +220,7 @@ bool FundSchema::parse(const std::string & text, FundSchema & out, std::string &
     *target = d[key].get<std::string>();
   }
   if (!datasetKey(s.dataset)) {
-    error = "dataset is the code of the dataset, one to eleven capitals or digits (it is never changed), not \"" + s.dataset + "\"";
+    error = "dataset is the code of the dataset, one to eleven capitals, digits, hyphens, periods or hashes (it is never changed), not \"" + s.dataset + "\"";
     return false;
   }
   if (auto title = d.find("title"); title != d.end() && title->is_string()) s.title = title->get<std::string>();

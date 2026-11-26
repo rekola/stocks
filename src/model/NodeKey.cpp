@@ -18,24 +18,32 @@ int base36(char c) {
 }
 char fromBase36(uint64_t v) { return static_cast<char>(v < 10 ? '0' + v : 'A' + (v - 10)); }
 
-// The symbol of a character of a code: 1 to 10 for 0-9 and 11 to 36 for A-Z, 0 for any other. A lower case letter is its capital: the
+// The symbol of a character of a code: 1 to 10 for 0-9, 11 to 36 for A-Z, 37 for a hyphen, 38 for a period and 39 for a hash, 0 for any other (40 to 42 are reserved). A lower case letter is its capital: the
 // case of a code is not kept, so that `nordnet` and `NORDNET` are one node.
 uint64_t symbolOf(char c) {
   if (c >= '0' && c <= '9') return static_cast<uint64_t>(c - '0') + 1;
   if (c >= 'A' && c <= 'Z') return static_cast<uint64_t>(c - 'A') + 11;
   if (c >= 'a' && c <= 'z') return static_cast<uint64_t>(c - 'a') + 11;
+  if (c == '-') return 37;
+  if (c == '.') return 38;
+  if (c == '#') return 39;
   return 0;
 }
 char charOf(uint64_t symbol) {
   if (symbol >= 1 && symbol <= 10) return static_cast<char>('0' + (symbol - 1));
   if (symbol >= 11 && symbol <= 36) return static_cast<char>('A' + (symbol - 11));
-  return '\0';
+  if (symbol == 37) return '-';
+  if (symbol == 38) return '.';
+  if (symbol == 39) return '#';
+  return '\0';  // 0 and the reserved 40 to 42
 }
 
-// A code is kMaxCodeLength digits of base 37 (0 ends it and pads it, 1 to 36 are the characters), the first character the most significant:
-// 37^11 is under 2^60, so eleven characters fit the sixty bits of the identity, where six bits for each would have left room for ten.
-constexpr uint64_t kBase = 37;
-constexpr uint64_t kCodeValues = 177'917'621'779'460'413;  // 37^11
+// A code is kMaxCodeLength digits of base 43 (0 ends it and pads it, 1 to 39 are the characters, 40 to 42 are kept for others), the first
+// character the most significant: 43^11 is under 2^60, so eleven characters fit the sixty bits of the identity, where six bits for each would
+// have left room for ten. 43 is the largest base that fits (44^11 is over 2^60), so a character is added to the alphabet from 40 on and
+// no key changes.
+constexpr uint64_t kBase = 43;
+constexpr uint64_t kCodeValues = 929'293'739'471'222'707;  // 43^11
 
 std::optional<uint64_t> packCode(const std::string & code) {
   if (code.empty() || code.size() > kMaxCodeLength) return std::nullopt;
@@ -65,7 +73,9 @@ std::string unpackCode(uint64_t packed) {
         if (symbols[j] != 0) return {};  // a character after the end
       break;
     }
-    code += charOf(symbols[i]);
+    const char c = charOf(symbols[i]);
+    if (c == '\0') return {};  // a symbol that is kept for another character
+    code += c;
   }
   return code;  // empty for the identity zero
 }
