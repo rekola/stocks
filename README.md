@@ -18,16 +18,14 @@ session if the first gives nothing (no network, a refusal).
 
     cmake -B build
     cmake --build build -j
-    build/stocks                 # on the display cellui picks
-    build/stocks   # Nordnet (or Yahoo) plus the small loaders: Euribor, €STR and every fund company in data/funds; --source replaces that set
+    build/stocks   # Start with the default backend and sources
     build/stocks --ui terminal   # in the terminal
     build/stocks --ui window     # in a window, when cellui is built with GTK
     build/stocks --source synthetic   # made-up prices, no network
     build/stocks --market XHEL   # load only that market
-    build/stocks --source spfb   # the daily Euribor rates (1 week to 12 months) from the Bank of Finland, in per cent, no key
-    build/stocks --source ecb   # the euro short-term rate (€STR) and its compounded index from the European Central Bank, no key
+    build/stocks --source spfb,ecb   # several sources: the daily Euribor rates from the Bank of Finland and the euro short-term rate from the ECB
+    build/stocks --source funds:NAME   # funds:NAME is a fund company by its schema, data/funds/NAME.json (shown under All)
     build/stocks --source sifter   # the NAV history of the Sifter Fund's PA, PB and PI share classes, no key
-    build/stocks --source nordnet,funds:NAME   # several sources, at once; funds:NAME is a fund company by its schema, data/funds/NAME.json (shown under All)
 
 Keys: arrows, PgUp/PgDn, Home/End move; `Tab` and `Shift+Tab` switch the context (below); `M-x` (`Ctrl+Shift+P` on
 the desktop keymap) opens the command palette, where every command is listed with
@@ -79,7 +77,7 @@ instrument with a price in both currencies on the market of what is priced and n
 All. They are spot prices and cannot be bought. The API takes them from several data providers (another answers when one is down) and cross-checks them, but does not guarantee them: verify a price before a financial decision. A price is for the unit its row's name says: the metals by the troy ounce (`Gold, per troy oz`), copper by the metric tonne (`Copper, per tonne`: the API quotes it per pound and it is converted, so it is the same number as another source's copper of the same ISIN), a coin by the coin.
 
 **Physical metals.** `physical` is a source (it runs beside the default one) that estimates the metals held in hand, off exchange (XOFF),
-from the spot prices the others give (in euros and in dollars, each its own price: the one with the newest bar, and of those of one day the first that `data/physical/items.csv` names, goldprice.dev's before gold-api.com's, so one that stops answering is passed by the other; Nordnet's gold in dollars where neither has any),
+from the spot prices the others give (in euros and in dollars, each its own price: the one with the newest bar, and of those of one day the first that `data/physical/items.csv` names, goldprice.dev's before gold-api.com's, so one that stops answering is passed by the other),
 so they are bought and sold like any other row: **Gold bar (1 g fine)**, held by the gram, **Gold coin (1 oz fine)**, held by the troy
 ounce, and a sample, **Platinum bar (1 g fine)**. Their price in each currency is their metal's spot price in it (per troy ounce) times the fine weight of a unit
 and a bid factor, and a holding is valued at that, so the premium paid shows as a loss at first. **The factors in `data/physical/items.csv` are
@@ -99,8 +97,7 @@ chooses it; `]` and `[` (`next-period`, `previous-period`) step through them, `C
 desktop keymap) choose one (`show-period-day`, `-week`, `-month`, `-quarter`, `-year`, `-year3`, `-year10`). It is one for every row, kept while the
 program runs, and starts at the three months. The change is the last price against the period's first (for the day, the
 previous close); a rate's (a row quoted in per cent: Euribor, €STR) is the difference in basis points, and the colour of both is its sign. A row with no bars for the period shows no number and no trace. The rows on
-screen load what the period needs, and again once it is old (the day after 15 minutes, the week after an hour, the year after
-a day; see `NordnetHistory.h`).
+screen load what the period needs, and again once it is old.
 
 cellui is not pinned while the two are developed together: the build fetches its
 `main`. CI builds on Linux (x86-64 and ARM64, with the GTK window), macOS and
@@ -133,7 +130,7 @@ from their candidate lists, the other countries from the largest companies of a 
 that has ISINs (each found by its ISIN, so the ticker is certainly the same company).
 Asia-Pacific and Latin America are not covered: there is no source of their ISINs yet.
 
-An instrument whose source gives it no ISIN (zinc, lead and the BRIC 50 India index in Nordnet's lists, the coins, the physical metals) has one its
+An instrument whose source gives it no ISIN (zinc, lead and some of the indices, the coins, the physical metals) has one its
 adapter names from `src/source/KnownIsins.h`: the real ISIN where there is one, else one of ours (`ZZ…`, numbered). The file's head says how
 to add one, and it does not compile with an invalid or repeated ISIN. A row with none there is not kept, and the status line says so.
 
