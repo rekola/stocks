@@ -314,7 +314,7 @@ bool NordnetSource::parseIndicators(const std::string & body, std::vector<Nordne
 }
 
 size_t NordnetSource::loadIndicators(const List & list, Store & store, Http & http, SourceListener & listener, bool & stop) {
-  HttpResult r = http.get(list.url, nordnet::marketDataHeaders());
+  HttpResult r = http.get(list.url, nordnet::marketDataHeaders(list.url));
   if (!r.ok()) {
     const bool refused = r.status == 429 || r.status == 403;
     listener.message("nordnet: " + list.name + ": " +
@@ -404,7 +404,8 @@ size_t NordnetSource::loadNews(const List & list, Store & store, Http & http, So
   const DatasetId dataset = store.addDataset(kNordnetDataset);
   for (int page = 0; page < pages; page++) {
     if (listener.cancelled()) return stored;
-    HttpResult r = http.get(list.url + "&offset=" + std::to_string(page * list.pageSize), nordnet::marketDataHeaders());
+    const std::string url = list.url + "&offset=" + std::to_string(page * list.pageSize);
+    HttpResult r = http.get(url, nordnet::marketDataHeaders(url));
     if (!r.ok()) {
       const bool refused = r.status == 429 || r.status == 403;
       listener.message("nordnet: " + list.name + ": " +
@@ -465,7 +466,7 @@ void NordnetSource::load(Store & store, Http & http, SourceListener & listener) 
       if (listener.cancelled()) return;
       std::string url = list.url + "&limit=" + std::to_string(list.pageSize);
       if (offset) url += "&offset=" + std::to_string(offset);
-      HttpResult r = http.get(url, nordnet::searchHeaders());
+      HttpResult r = http.get(url, nordnet::searchHeaders(url));
       if (!r.ok()) {
         const bool refused = r.status == 429 || r.status == 403;
         listener.message("nordnet: " + list.name + ": " +

@@ -183,7 +183,8 @@ bool NordnetDetails::loadBatch(Store & store, Http & http, SourceListener & list
     if (done >= batch) return true;
     tried_.insert(t.id.value);
     done++;
-    HttpResult r = http.get(t.fund ? fundUrl(t.orderBook) : stockUrl(t.orderBook), nordnet::detailHeaders());
+    const std::string url = t.fund ? fundUrl(t.orderBook) : stockUrl(t.orderBook);
+    HttpResult r = http.get(url, nordnet::detailHeaders(url));
     std::vector<Attribute> said;
     std::string error;
     if (r.status == 403 || r.status == 429) {

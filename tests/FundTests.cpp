@@ -420,7 +420,19 @@ TEST(a_source_with_a_token_asks_for_its_history_with_it) {
   auto base = *s->findInstrumentByIsin("FI0008800511");
   auto url = s->attribute(base, predicate::webUrl);
   CHECK(url && asText(*url) && *asText(*url) == "https://beta.example/funds/beta-world/");
-  CHECK(!http.headers.empty() && http.headers[0].size() == 2);  // asked for with a Referer and an Origin
+  // Asked for as a browser on the company's site does, with the schema's Referer and Origin: the token page as a page, the list as its
+  // script's call.
+  CHECK(http.headers.size() >= 2);
+  if (http.headers.size() < 2) return;
+  const auto value = [](const HttpHeaders & h, const std::string & name) {
+    for (const auto & [n, v] : h)
+      if (n == name) return v;
+    return std::string("(none)");
+  };
+  CHECK(value(http.headers[0], "Referer") == "https://beta.example" && value(http.headers[0], "Origin") == "https://beta.example/");
+  CHECK(value(http.headers[0], "Sec-Fetch-Mode") == "navigate" && value(http.headers[0], "Sec-Fetch-Site") == "same-origin");
+  CHECK(value(http.headers[1], "Sec-Fetch-Mode") == "cors" && value(http.headers[1], "Sec-Fetch-Dest") == "empty");
+  CHECK(value(http.headers[1], "User-Agent").find("Chrome/") != std::string::npos);
 
   HistoryLoader loader(store, borrow(history), quickly(), [] {});
   loader.addProvider(funds.historyProvider());

@@ -952,3 +952,57 @@ TEST(yahoo_history_loads_ten_years_of_weekly_bars_for_the_long_periods_only) {
   http.answer = [](const std::string &) { return failed(404); };
   CHECK(history->load(*store, http, edge, 0, [] { return true; }) == HistoryProvider::Outcome::Missing);
 }
+
+namespace {
+
+std::string headerValue(const HttpHeaders & h, const std::string & name) {
+  std::string found = "(none)";
+  int count = 0;
+  for (const auto & [n, v] : h)
+    if (n == name) found = v, count++;
+  return count > 1 ? "(" + std::to_string(count) + " times)" : found;
+}
+
+}  // namespace
+
+TEST(a_browsers_fetch_says_whose_page_asks_by_its_referer) {
+  // Yahoo's page asks its API on another host of the same site.
+  HttpHeaders h = browserHeaders("https://query1.finance.yahoo.com/v8/finance/chart/X", {{"Referer", "https://finance.yahoo.com/"}});
+  CHECK(headerValue(h, "Sec-Fetch-Site") == "same-site");
+  CHECK(headerValue(h, "Origin") == "https://finance.yahoo.com");  // a cross-origin fetch says where it is from
+  CHECK(headerValue(h, "Sec-Fetch-Mode") == "cors" && headerValue(h, "Accept") == "*/*");
+  // Nordnet's page asks an API on another site; its search is on its own origin, and sends no Origin of its own.
+  CHECK(headerValue(browserHeaders("https://api.prod.nntech.io/x", {{"Referer", "https://www.nordnet.fi/"}}), "Sec-Fetch-Site") == "cross-site");
+  HttpHeaders search = browserHeaders("https://www.nordnet.fi/api/2/x", {{"Referer", "https://www.nordnet.fi/"}});
+  CHECK(headerValue(search, "Sec-Fetch-Site") == "same-origin" && headerValue(search, "Origin") == "(none)");
+  // Without a Referer the fetch is the URL's own page's.
+  CHECK(headerValue(browserHeaders("https://a.example/data"), "Sec-Fetch-Site") == "same-origin");
+}
+
+TEST(a_browsers_page_is_typed_in_unless_a_referer_says_where_it_was_followed_from) {
+  HttpHeaders typed = browserHeaders("https://a.example/funds", {}, BrowserRequest::Page);
+  CHECK(headerValue(typed, "Sec-Fetch-Site") == "none" && headerValue(typed, "Sec-Fetch-Mode") == "navigate");
+  CHECK(headerValue(typed, "Sec-Fetch-Dest") == "document" && headerValue(typed, "Origin") == "(none)");
+  CHECK(headerValue(typed, "Accept").rfind("text/html", 0) == 0);
+  CHECK(headerValue(browserHeaders("https://a.example/funds", {{"Referer", "https://b.example/"}}, BrowserRequest::Page), "Sec-Fetch-Site") ==
+        "cross-site");
+}
+
+TEST(a_browsers_headers_are_replaced_by_an_adapters_own_of_any_case_and_left_out_when_empty) {
+  HttpHeaders h = browserHeaders("https://a.example/", {{"accept", "application/json"}, {"sec-ch-ua", ""}, {"X-One", "1"}, {"X-One", "2"}});
+  CHECK(headerValue(h, "Accept") == "(none)" && headerValue(h, "accept") == "application/json");
+  CHECK(headerValue(h, "sec-ch-ua") == "(none)");
+  CHECK(headerValue(h, "X-One") == "(2 times)");  // the adapter's own are all sent
+}
+
+TEST(a_browsers_user_agent_and_client_hints_name_the_same_chrome) {
+  HttpHeaders h = browserHeaders("https://a.example/");
+  const std::string agent = headerValue(h, "User-Agent"), hints = headerValue(h, "sec-ch-ua");
+  const size_t at = agent.find("Chrome/");
+  CHECK(at != std::string::npos);
+  if (at == std::string::npos) return;
+  const std::string major = agent.substr(at + 7, agent.find('.', at) - at - 7);
+  CHECK(hints.find("\"Google Chrome\";v=\"" + major + "\"") != std::string::npos);
+  CHECK(hints.find("\"Chromium\";v=\"" + major + "\"") != std::string::npos);
+  CHECK(hints.find("Brand\";v=\"") != std::string::npos);
+}
