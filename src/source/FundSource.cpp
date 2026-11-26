@@ -220,9 +220,10 @@ bool FundSchema::parse(const std::string & text, FundSchema & out, std::string &
     *target = d[key].get<std::string>();
   }
   if (!datasetKey(s.dataset)) {
-    error = "dataset is the code of the dataset, one to ten letters or digits (it is never changed), not \"" + s.dataset + "\"";
+    error = "dataset is the code of the dataset, one to eleven capitals or digits (it is never changed), not \"" + s.dataset + "\"";
     return false;
   }
+  if (auto title = d.find("title"); title != d.end() && title->is_string()) s.title = title->get<std::string>();
   if (auto age = d.find("maxAgeDays"); age != d.end() && age->is_number_integer()) s.maxAgeDays = age->get<int>();
   if (auto pause = d.find("pauseMs"); pause != d.end() && pause->is_number()) s.pause = std::chrono::milliseconds(pause->get<int64_t>());
   if (auto hours = d.find("refreshHours"); hours != d.end() && hours->is_number())
@@ -444,6 +445,7 @@ void FundSource::load(Store & store, Http & http, SourceListener & listener) {
     const Candle bar{*e.fund.day, kUndefined, kUndefined, kUndefined, *e.fund.price, kUndefined};
     bool written = false;
     store.batch([&](Batch & b) {
+      if (!schema_.title.empty()) b.addDataset(schema_.dataset, schema_.title);
       auto edge = writeFund(b, schema_.dataset, e.fund, {bar});
       if (!edge) return;
       if (e.fund.change && *e.fund.change > -1) b.setPreviousClose(*edge, *e.fund.day, *e.fund.price / (1 + *e.fund.change));

@@ -238,7 +238,7 @@ TEST(a_dataset_is_its_code_and_its_name_is_a_fact_that_is_the_code_until_said) {
   Clock clock;
   auto store = makeMemoryStore(optionsFor(nullptr, clock));
   DatasetId d = store->addDataset("nordnet");
-  CHECK(d.valid() && datasetCode(d) == "nordnet" && store->snapshot()->name(d) == "nordnet" && d.value == numberOf(datasetKey("nordnet")));
+  CHECK(d.valid() && datasetCode(d) == "NORDNET" && store->snapshot()->name(d) == "NORDNET" && d.value == numberOf(datasetKey("NORDNET")));  // the case is not kept
   store->addDataset("nordnet", "Nordnet");
   CHECK(store->snapshot()->name(d) == "Nordnet");
   store->addDataset("nordnet");  // said again with no name: the name that was said stays

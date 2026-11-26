@@ -493,7 +493,7 @@ InstrumentId Snapshot::resolveInstrument(const std::vector<Attribute> & identify
     if (!key) notices_.push_back("instrument: the ISIN " + isin + " is not valid, so it is not kept");
   } else if (isCurrencyKind(textFact(all, predicate::kind))) {
     key = currencyKey(symbol);
-    if (!key) notices_.push_back("instrument: the code " + symbol + " is not one to ten letters or digits, so it is not kept");
+    if (!key) notices_.push_back("instrument: the code " + symbol + " is not one to eleven capitals or digits, so it is not kept");
   } else {
     const std::string called = symbol.empty() ? name : symbol;
     std::string own;
@@ -552,14 +552,14 @@ MarketId Snapshot::addMarket(const std::string &mic, const std::string &name) {
 DatasetId Snapshot::addDataset(const std::string & code, const std::string & name) {
   const auto key = datasetKey(code);
   if (!key) {
-    notices_.push_back("dataset: the code " + code + " is not one to ten letters or digits, so it is not kept");
+    notices_.push_back("dataset: the code " + code + " is not one to eleven capitals or digits, so it is not kept");
     return DatasetId{};
   }
   const DatasetId id{key->value};
   if (!name.empty())
     setAttributes(NodeRef(id), {{predicate::name, name}});
   else if (!fact(NodeRef(id), predicate::name))
-    setAttributes(NodeRef(id), {{predicate::name, code}});
+    setAttributes(NodeRef(id), {{predicate::name, text(*key)}});  // the code as the key has it: its case is not kept
   return id;
 }
 

@@ -18,19 +18,24 @@ int base36(char c) {
 }
 char fromBase36(uint64_t v) { return static_cast<char>(v < 10 ? '0' + v : 'A' + (v - 10)); }
 
-// The six-bit symbol of a character of a code: 1 to 62, 0 for any other.
+// The symbol of a character of a code: 1 to 10 for 0-9 and 11 to 36 for A-Z, 0 for any other. A lower case letter is its capital: the
+// case of a code is not kept, so that `nordnet` and `NORDNET` are one node.
 uint64_t symbolOf(char c) {
   if (c >= '0' && c <= '9') return static_cast<uint64_t>(c - '0') + 1;
   if (c >= 'A' && c <= 'Z') return static_cast<uint64_t>(c - 'A') + 11;
-  if (c >= 'a' && c <= 'z') return static_cast<uint64_t>(c - 'a') + 37;
+  if (c >= 'a' && c <= 'z') return static_cast<uint64_t>(c - 'a') + 11;
   return 0;
 }
 char charOf(uint64_t symbol) {
   if (symbol >= 1 && symbol <= 10) return static_cast<char>('0' + (symbol - 1));
   if (symbol >= 11 && symbol <= 36) return static_cast<char>('A' + (symbol - 11));
-  if (symbol >= 37 && symbol <= 62) return static_cast<char>('a' + (symbol - 37));
   return '\0';
 }
+
+// A code is kMaxCodeLength digits of base 37 (0 ends it and pads it, 1 to 36 are the characters), the first character the most significant:
+// 37^11 is under 2^60, so eleven characters fit the sixty bits of the identity, where six bits for each would have left room for ten.
+constexpr uint64_t kBase = 37;
+constexpr uint64_t kCodeValues = 177'917'621'779'460'413;  // 37^11
 
 std::optional<uint64_t> packCode(const std::string & code) {
   if (code.empty() || code.size() > kMaxCodeLength) return std::nullopt;
@@ -41,21 +46,28 @@ std::optional<uint64_t> packCode(const std::string & code) {
       symbol = symbolOf(code[i]);
       if (symbol == 0) return std::nullopt;
     }
-    packed = (packed << 6) | symbol;
+    packed = packed * kBase + symbol;
   }
   return packed;
 }
 
 std::string unpackCode(uint64_t packed) {
+  if (packed >= kCodeValues) return {};
+  uint64_t symbols[kMaxCodeLength];
+  for (size_t i = kMaxCodeLength; i-- > 0;) {
+    symbols[i] = packed % kBase;
+    packed /= kBase;
+  }
   std::string code;
   for (size_t i = 0; i < kMaxCodeLength; i++) {
-    const uint64_t symbol = (packed >> (6 * (kMaxCodeLength - 1 - i))) & 63;
-    if (symbol == 0) break;
-    const char c = charOf(symbol);
-    if (c == '\0') return {};
-    code += c;
+    if (symbols[i] == 0) {
+      for (size_t j = i; j < kMaxCodeLength; j++)
+        if (symbols[j] != 0) return {};  // a character after the end
+      break;
+    }
+    code += charOf(symbols[i]);
   }
-  return code;
+  return code;  // empty for the identity zero
 }
 
 }  // namespace
