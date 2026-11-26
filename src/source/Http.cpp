@@ -7,7 +7,18 @@
 #include <CurlClient.h>
 #endif
 
+#include <algorithm>
+#include <cctype>
+
 namespace {
+
+// One browser, kept in step: the user agent, the client hints and the Chrome major version agree.
+constexpr const char * kBrowserUserAgent =
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+
+bool sameName(const std::string & a, const std::string & b) {
+  return a.size() == b.size() && std::equal(a.begin(), a.end(), b.begin(), [](unsigned char x, unsigned char y) { return std::tolower(x) == std::tolower(y); });
+}
 
 class HttpClientHttp : public Http {
  public:
@@ -58,11 +69,27 @@ class HttpClientHttp : public Http {
     r.error = "cancelled";
     return r;
   }
-  // Some providers refuse an empty or library user agent.
+  // Some providers refuse an empty or library user agent; the adapters that need a browser's say so with browserHeaders().
   static constexpr const char * kUserAgent = "Mozilla/5.0 (compatible; stocks)";
   std::unique_ptr<httpclient::HTTPClient> client_;
 };
 
 }  // namespace
+
+HttpHeaders browserHeaders(const HttpHeaders & own) {
+  HttpHeaders headers = {{"User-Agent", kBrowserUserAgent},
+                         {"Accept", "*/*"},
+                         {"Accept-Language", "en-US,en;q=0.9"},
+                         {"sec-ch-ua", "\"Google Chrome\";v=\"131\", \"Chromium\";v=\"131\", \"Not_A Brand\";v=\"24\""},
+                         {"sec-ch-ua-mobile", "?0"},
+                         {"sec-ch-ua-platform", "\"Windows\""},
+                         {"Sec-Fetch-Dest", "empty"},
+                         {"Sec-Fetch-Mode", "cors"}};
+  for (const auto & h : own) {
+    headers.erase(std::remove_if(headers.begin(), headers.end(), [&](const auto & b) { return sameName(b.first, h.first); }), headers.end());
+    headers.push_back(h);
+  }
+  return headers;
+}
 
 std::unique_ptr<Http> makeHttp() { return std::make_unique<HttpClientHttp>(); }

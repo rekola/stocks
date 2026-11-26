@@ -216,6 +216,7 @@ bool FundSchema::parse(const std::string & text, FundSchema & out, std::string &
   if (auto headers = d.find("headers"); headers != d.end() && headers->is_object())
     for (const auto & [key, v] : headers->items())
       if (v.is_string()) s.headers.push_back({key, v.get<std::string>()});
+  s.headers = browserHeaders(s.headers);  // a browser's, which the schema's own replace
   if (auto token = d.find("token"); token != d.end()) {
     if (!token->is_object() || !token->contains("page") || !token->contains("regex") || !(*token)["page"].is_string() || !(*token)["regex"].is_string()) {
       error = "token needs a page and a regex";
