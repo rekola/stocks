@@ -25,6 +25,7 @@ session if the first gives nothing (no network, a refusal).
     build/stocks --market XHEL   # load only that market
     build/stocks --source spfb,ecb   # several sources: the daily Euribor rates from the Bank of Finland and the euro short-term rate from the ECB
     build/stocks --source funds:NAME   # funds:NAME is a fund company by its schema, data/funds/NAME.json (shown under All)
+    build/stocks --source sifter   # the NAV history of the Sifter Fund's PA, PB and PI share classes, no key
 
 Keys: arrows, PgUp/PgDn, Home/End move; `Tab` and `Shift+Tab` switch the context (below); `M-x` (`Ctrl+Shift+P` on
 the desktop keymap) opens the command palette, where every command is listed with

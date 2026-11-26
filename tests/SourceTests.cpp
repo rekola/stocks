@@ -6,6 +6,7 @@
 #include "model/Isin.h"
 #include "source/AutoSource.h"
 #include "source/EcbSource.h"
+#include "source/SifterSource.h"
 #include "source/GoldApiSource.h"
 #include "source/GoldPriceSource.h"
 #include "source/PhysicalSource.h"
@@ -892,6 +893,7 @@ TEST(a_source_is_named_by_the_dataset_it_writes) {
   sources.push_back(std::make_unique<EcbSource>());
   sources.push_back(std::make_unique<GoldApiSource>());
   sources.push_back(std::make_unique<GoldPriceSource>());
+  sources.push_back(std::make_unique<SifterSource>());
   PhysicalTable table;
   std::string error;
   CHECK(parsePhysicalTable("spot,gold,XAU\nitem,gold,GOLDBAR,Gold bar,1,1,1\n", table, error));
