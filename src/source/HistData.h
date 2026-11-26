@@ -55,6 +55,7 @@ std::string extractToken(const std::string & html);
 std::vector<Period> periodsCovering(Timestamp first, Timestamp last, int currentYear, int firstPeriod);
 
 // ---- the instruments ----
+// The list page is kept in the cache (histdata_pairs.html) and read from there until a run asks to refresh.
 // The pairs on HistData's list page, with the month each begins; empty where the page is not that.
 std::vector<market::InstrumentSpec> parseDiscovery(const std::string & html);
 // The list to fall back on (the one the adapter was written from).
@@ -72,7 +73,7 @@ class HistData : public market::Dataset {
   HistData(Http & http, market::RawCache cache, Settings settings = {});
   std::string code() const override { return "histdata"; }
   std::string name() const override { return "HistData.com 1-minute bid quotes"; }
-  std::vector<market::InstrumentSpec> discover(const market::Log & log) override;
+  std::vector<market::InstrumentSpec> discover(const market::Log & log, bool refresh) override;
   market::LoadResult load(const market::InstrumentSpec & instrument, const market::LoadOptions & options, const market::Log & log) override;
 
  private:
@@ -81,6 +82,7 @@ class HistData : public market::Dataset {
     Fetch status = Fetch::Failed;
     std::string bytes, why;
   };
+  void reportDifferences(const std::vector<market::InstrumentSpec> & found, const market::Log & log);
   void pace();
   // One file from the site, with the retries; never from the cache.
   Got download(const std::string & code, Period, const market::Log & log);

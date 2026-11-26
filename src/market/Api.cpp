@@ -1,9 +1,11 @@
+// httplib first: the model declares a global seconds(Resolution) that its own `seconds` would otherwise be ambiguous with.
+#include <httplib.h>
+
 #include "market/Api.h"
 
 #include "model/Dates.h"
 #include "model/NodeKey.h"
 
-#include <httplib.h>
 #include <nlohmann/json.hpp>
 
 #include <algorithm>

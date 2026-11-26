@@ -49,8 +49,9 @@ class Dataset {
   // The dataset's own code ("histdata"): what its bars are tagged with, and the name of its key in the catalog.
   virtual std::string code() const = 0;
   virtual std::string name() const = 0;
-  // The instruments the dataset has now. An adapter that cannot find out falls back to a list of its own and says so in the log.
-  virtual std::vector<InstrumentSpec> discover(const Log & log) = 0;
+  // The instruments the dataset has. An adapter that cannot find out falls back to a list of its own and says so in the log. What it
+  // has read before may be kept (in the raw cache), so that a run with everything in hand asks for nothing; `refresh` reads it again.
+  virtual std::vector<InstrumentSpec> discover(const Log & log, bool refresh) = 0;
   // Gets what the levels need and builds them. Never throws for a file that cannot be had: that is `failed`.
   virtual LoadResult load(const InstrumentSpec & instrument, const LoadOptions & options, const Log & log) = 0;
 };

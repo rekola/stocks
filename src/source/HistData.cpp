@@ -19,6 +19,7 @@ namespace {
 
 constexpr int64_t kEstOffset = -5 * 3600;  // fixed EST, no daylight saving
 const char * const kListUrl = "https://www.histdata.com/download-free-forex-historical-data/?/ascii/1-minute-bar-quotes";
+const char * const kListFile = "histdata_pairs.html";  // the list page, in the cache
 const char * const kGetUrl = "https://www.histdata.com/get.php";
 const char * const kOrigin = "https://www.histdata.com";
 
@@ -242,16 +243,29 @@ HistData::HistData(Http & http, market::RawCache cache, Settings settings) : htt
   if (!settings_.sleep) settings_.sleep = [](std::chrono::milliseconds d) { std::this_thread::sleep_for(d); };
 }
 
-std::vector<market::InstrumentSpec> HistData::discover(const market::Log & log) {
+std::vector<market::InstrumentSpec> HistData::discover(const market::Log & log, bool refresh) {
   std::vector<market::InstrumentSpec> found;
+  // The page is kept in the cache beside the files, so that a run that has what it needs asks for nothing.
+  if (!refresh)
+    if (auto saved = cache_.read(kListFile)) found = parseDiscovery(*saved);
+  if (!found.empty()) return reportDifferences(found, log), found;
   const HttpResult page = http_.get(kListUrl);
   requested_ = true, lastRequest_ = std::chrono::steady_clock::now();
-  if (page.ok()) found = parseDiscovery(page.body);
+  if (page.ok()) {
+    found = parseDiscovery(page.body);
+    std::string error;
+    if (!found.empty() && !cache_.store(kListFile, page.body, error)) log("histdata: the list page is not cached: " + error);
+  }
   if (found.empty()) {
     log(std::string("histdata: the list of pairs could not be read from ") + kListUrl + (page.ok() ? " (no pairs on the page)" : " (" + (page.error.empty() ? "status " + std::to_string(page.status) : page.error) + ")") +
         "; using the built-in list of " + std::to_string(fallbackInstruments().size()));
     return fallbackInstruments();
   }
+  reportDifferences(found, log);
+  return found;
+}
+
+void HistData::reportDifferences(const std::vector<market::InstrumentSpec> & found, const market::Log & log) {
   // Say how the page differs from the list this was written from.
   std::map<std::string, int> known, now;
   for (const auto & s : fallbackInstruments()) known[s.code] = s.firstPeriod;
@@ -265,7 +279,6 @@ std::vector<market::InstrumentSpec> HistData::discover(const market::Log & log) 
   for (const auto & [code, first] : known)
     if (!now.count(code)) log("histdata: " + code + " is in the built-in list and not on the page"), differences++;
   log("histdata: " + std::to_string(found.size()) + " pairs on the page, " + std::to_string(differences) + " difference" + (differences == 1 ? "" : "s") + " from the built-in list");
-  return found;
 }
 
 void HistData::pace() {

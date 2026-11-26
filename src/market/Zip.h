@@ -25,6 +25,6 @@ bool readZipEntry(std::string_view zip, const ZipEntry & entry, std::string & da
 const ZipEntry * findZipEntry(const std::vector<ZipEntry> & entries, std::string_view suffix);
 
 // A zip of the given entries (name and contents), each stored or deflated: for tests.
-std::string makeZip(const std::vector<std::pair<std::string, std::string>> & files, bool deflate);
+std::string makeZip(const std::vector<std::pair<std::string, std::string>> & files, bool compress);
 
 }  // namespace market

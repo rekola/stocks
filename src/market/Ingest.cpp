@@ -38,7 +38,7 @@ std::string formatTime(Timestamp t) {
 
 IngestReport runIngest(Dataset & dataset, MarketStore & store, const IngestOptions & options, const Log & log) {
   IngestReport report;
-  const std::vector<InstrumentSpec> found = dataset.discover(log);
+  const std::vector<InstrumentSpec> found = dataset.discover(log, options.refresh);
 
   std::vector<InstrumentSpec> chosen;
   if (options.codes.empty()) {

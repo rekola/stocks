@@ -129,12 +129,12 @@ const ZipEntry * findZipEntry(const std::vector<ZipEntry> & entries, std::string
   return nullptr;
 }
 
-std::string makeZip(const std::vector<std::pair<std::string, std::string>> & files, bool deflate) {
+std::string makeZip(const std::vector<std::pair<std::string, std::string>> & files, bool compress) {
   std::string out, central;
   for (const auto & [name, content] : files) {
     std::string packed = content;
     uint16_t method = 0;
-    if (deflate) {
+    if (compress) {
       z_stream stream{};
       deflateInit2(&stream, Z_DEFAULT_COMPRESSION, Z_DEFLATED, -15, 8, Z_DEFAULT_STRATEGY);
       std::string buffer(deflateBound(&stream, static_cast<uLong>(content.size())), '\0');
