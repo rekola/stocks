@@ -1,3 +1,4 @@
+#include "source/DatasetCodes.h"
 #include "TestFramework.h"
 
 #include "FakeHttp.h"
@@ -125,7 +126,7 @@ TEST(a_yahoo_chart_becomes_candles_on_the_edge_of_its_market) {
     std::string error;
   CHECK(YahooSource::parse(fixture("nokia.json"), entry("NOKIA.HE"), *store, error));
   auto s = store->snapshot();
-  EdgeKey k = edgeOf(*s, kNokia, "EUR", "XHEL", "yahoo");
+  EdgeKey k = edgeOf(*s, kNokia, "EUR", "XHEL", kYahooDataset);
   CandleSeries c = s->candles(k, Resolution::Day);
   CHECK(c.resolution == Resolution::Day && c.candles.size() > 400);
   // Keyed by trading date: the exchange's date of the first bar, not an instant.
@@ -167,7 +168,7 @@ TEST(yahoo_dividends_become_corporate_actions_in_the_quote_currency) {
     std::string error;
   CHECK(YahooSource::parse(fixture("nokia.json"), entry("NOKIA.HE"), *store, error));
   auto s = store->snapshot();
-  EventKey k{*s->findInstrumentByIsin(kNokia), *s->findDataset("yahoo")};
+  EventKey k{*s->findInstrumentByIsin(kNokia), *s->findDataset(kYahooDataset)};
   auto actions = s->actions(k);
   CHECK(actions.size() >= 2);
   for (const CorporateAction & a : actions) {
@@ -185,7 +186,7 @@ TEST(a_yahoo_split_is_new_shares_per_old) {
     std::string error;
   CHECK(YahooSource::parse(body, entry("NOKIA.HE"), *store, error));
   auto s = store->snapshot();
-  auto actions = s->actions({*s->findInstrumentByIsin(kNokia), *s->findDataset("yahoo")});
+  auto actions = s->actions({*s->findInstrumentByIsin(kNokia), *s->findDataset(kYahooDataset)});
   CHECK(actions.size() == 1 && actions[0].kind == ActionKind::Split && actions[0].value == 2.0 && actions[0].note == "2:1");
   CHECK(actions[0].time == dayNumber(2023, 11, 15));  // an ex-date is a date, not an instant
 }
@@ -196,7 +197,7 @@ TEST(days_yahoo_has_no_price_for_are_skipped) {
   CHECK(YahooSource::parse(fixture("gold.json"), entry("GC=F"), *store, error));
   auto s = store->snapshot();
   CandleSeries c =
-      s->candles(edgeOf(*s, kGold, "USD", "XXXX", "yahoo"), Resolution::Day);
+      s->candles(edgeOf(*s, kGold, "USD", "XXXX", kYahooDataset), Resolution::Day);
   CHECK(c.candles.size() == 504);  // 506 days, two of them null
   CHECK(s->kind(*s->findInstrumentByIsin(kGold)) == InstrumentKind::Commodity);
 }
@@ -206,7 +207,7 @@ TEST(a_currency_pair_is_an_edge_between_two_currencies) {
   std::string error;
   CHECK(YahooSource::parse(fixture("eurusd.json"), entry("EURUSD=X"), *store, error));
   auto s = store->snapshot();
-  EdgeKey k = edgeOf(*s, "EUR", "USD", "XXXX", "yahoo");
+  EdgeKey k = edgeOf(*s, "EUR", "USD", "XXXX", kYahooDataset);
   CHECK(s->lastCandles(k, Resolution::Day, 1).candles.size() == 1);
   CHECK(s->kind(k.base) == InstrumentKind::Currency && s->name(k.quote) == "US dollar");
 }
@@ -438,7 +439,7 @@ TEST(yahoo_makes_the_instrument_from_the_isin_in_its_list_and_the_same_node_as_a
   std::string error;
   CHECK(YahooSource::parse(fixture("nokia.json"), entry("NOKIA.HE"), *store, error));
   auto s = store->snapshot();
-  EdgeKey k = edgeOf(*s, kNokia, "EUR", "XHEL", "yahoo");
+  EdgeKey k = edgeOf(*s, kNokia, "EUR", "XHEL", kYahooDataset);
   CHECK(k.base == made && s->nodeCount(NodeType::Instrument) == 2);  // the one instrument, and the euro
   CHECK(s->symbol(k) == "NOKIA.HE");                          // what Yahoo calls it
   // Where Yahoo's history begins is said of the instrument.
@@ -458,8 +459,8 @@ TEST(yahoo_keeps_its_own_type_on_the_edge) {
   CHECK(YahooSource::parse(fixture("gold.json"), entry("GC=F"), *store, error));
   auto s = store->snapshot();
   auto typeOf = [&](const EdgeKey & k) { return s->listing(k)->type; };
-  CHECK(typeOf(edgeOf(*s, kNokia, "EUR", "XHEL", "yahoo")) == "EQUITY");
-  CHECK(typeOf(edgeOf(*s, kGold, "USD", "XXXX", "yahoo")) ==
+  CHECK(typeOf(edgeOf(*s, kNokia, "EUR", "XHEL", kYahooDataset)) == "EQUITY");
+  CHECK(typeOf(edgeOf(*s, kGold, "USD", "XXXX", kYahooDataset)) ==
         "FUTURE"); // the contract, not the metal
   CHECK(s->kind(*s->findInstrumentByIsin(kGold)) == InstrumentKind::Commodity);
 }
@@ -513,10 +514,10 @@ TEST(autos_history_provider_is_asked_for_before_the_choice_and_follows_it) {
   auto store = makeMemoryStore();
   FakeHttp http;
   auto primary = std::make_unique<Scripted>("nordnet", 0), fallback = std::make_unique<Scripted>("yahoo", 1);
-  primary->history = std::make_shared<NamedHistory>("nordnet");
+  primary->history = std::make_shared<NamedHistory>(kNordnetDataset);
   AutoSource source(std::move(primary), std::move(fallback));
   auto history = source.historyProvider();  // as the program does, before the primary has loaded
-  CHECK(history && history->dataset() == "nordnet");
+  CHECK(history && history->dataset() == kNordnetDataset);
   Listener listener;
   source.load(*store, http, listener);  // the primary gave nothing: the fallback, which has no history of its own, is the source
   CHECK(history->dataset().empty() && !history->need(*store->snapshot(), EdgeKey{}, Period::Quarter));
@@ -526,18 +527,18 @@ TEST(autos_history_goes_to_the_fallbacks_provider_where_it_has_one_and_there_is_
   auto store = makeMemoryStore();
   FakeHttp http;
   auto primary = std::make_unique<Scripted>("nordnet", 0), fallback = std::make_unique<Scripted>("yahoo", 1);
-  primary->history = std::make_shared<NamedHistory>("nordnet");
-  fallback->history = std::make_shared<NamedHistory>("yahoo");
+  primary->history = std::make_shared<NamedHistory>(kNordnetDataset);
+  fallback->history = std::make_shared<NamedHistory>(kYahooDataset);
   AutoSource source(std::move(primary), std::move(fallback));
   auto history = source.historyProvider();
   Listener listener;
   source.load(*store, http, listener);
-  CHECK(history->dataset() == "yahoo");
+  CHECK(history->dataset() == kYahooDataset);
   AutoSource neither(std::make_unique<Scripted>("a", 1), std::make_unique<Scripted>("b", 1));
   CHECK(!neither.historyProvider());
   // The real pair: Nordnet's provider until Nordnet fails, and Yahoo loads its history with its list.
   AutoSource real(std::make_unique<NordnetSource>(), std::make_unique<YahooSource>(InstrumentList{}));
-  CHECK(real.historyProvider() && real.historyProvider()->dataset() == "nordnet");
+  CHECK(real.historyProvider() && real.historyProvider()->dataset() == kNordnetDataset);
 }
 
 TEST(auto_stays_with_the_primary_when_it_gives_something) {
@@ -773,7 +774,7 @@ TEST(a_yahoo_answer_that_lacks_a_column_parses_without_crashing) {
         R"({"chart":{"result":[{"timestamp":[1767254400],"indicators":{"quote":[{"open":[1],"high":[2],"low":[0.5],"close":[1.5]}]}}]}})",
         entry("NOKIA.HE"), *store, error));
     auto s = store->snapshot();
-    CandleSeries c = s->candles(edgeOf(*s, kNokia, "EUR", "XHEL", "yahoo"), Resolution::Day);
+    CandleSeries c = s->candles(edgeOf(*s, kNokia, "EUR", "XHEL", kYahooDataset), Resolution::Day);
     CHECK(c.candles.size() == 1 && c.candles[0].close == 1.5 && !isDefined(c.candles[0].volume));
   }
   // No open, a quote that is not an object, events of the wrong shape: no candles, or none of the bad events, and no throw.
