@@ -458,6 +458,14 @@ std::string timeLabel(Timestamp at, bool dated) {
   return buf;
 }
 
+// A volume as a short number: 1.23M, 45.6k, 789.
+std::string volumeText(double v) {
+  if (v >= 1e9) return fixed(v / 1e9, 2) + "G";
+  if (v >= 1e6) return fixed(v / 1e6, 2) + "M";
+  if (v >= 1e3) return fixed(v / 1e3, 1) + "k";
+  return fixed(v, 0);
+}
+
 }  // namespace
 
 void Browser::showChart() {
@@ -486,7 +494,12 @@ void Browser::showChart() {
   data.title = label + "  " + info(period_).trace;
   data.values = view.closes;
   data.light = view.light;  // the volume traded at each point, as how bright the line is there, as in the table
-  for (const Timestamp at : view.times) data.labels.push_back(timeLabel(at, view.dated));
+  // The volume is each point's note: read after the value at the cursor.
+  for (size_t i = 0; i < view.times.size(); i++) {
+    data.labels.push_back(timeLabel(view.times[i], view.dated));
+    const bool traded = i < view.volumes.size() && isDefined(view.volumes[i]) && view.volumes[i] > 0;
+    data.notes.push_back(traded ? "vol " + volumeText(view.volumes[i]) : std::string());
+  }
   // Decimals enough that the labels at the bottom, middle and top of the axis differ: a narrow range (a currency pair) needs more
   // than the usual two (three for a rate).
   int decimals = rate ? 3 : 2;
