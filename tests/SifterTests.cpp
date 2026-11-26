@@ -21,7 +21,8 @@ std::vector<Candle> navs(const Snapshot & s, const char * isin) {
   auto market = s.findMarket("XOFF");
   auto dataset = s.findDataset(kSifterDataset);
   if (!base || !quote || !market || !dataset) return {};
-  return s.candles(EdgeKey{*base, *quote, *market, *dataset}, Resolution::Day).candles;
+  const auto series = s.candles(EdgeKey{*base, *quote, *market, *dataset}, Resolution::Day).candles;
+  return std::vector<Candle>(series.begin(), series.end());
 }
 
 }  // namespace

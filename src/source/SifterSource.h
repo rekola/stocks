@@ -24,4 +24,7 @@ class SifterSource : public Source {
   // The answer into the store. False, with `error` set, when it is not a list of days. A row that cannot be read (no date, or a value that
   // is not a number above zero) is left out and said in `notes`.
   static bool parse(const std::string & body, Store &, std::string & error, std::vector<std::string> & notes);
+
+ private:
+  std::chrono::milliseconds refresh_;
 };
