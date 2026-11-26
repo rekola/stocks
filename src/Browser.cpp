@@ -493,11 +493,11 @@ void Browser::showChart() {
   data.title = label + "  " + info(period_).trace;
   data.values = view.closes;
   data.light = view.light;  // the volume traded at each point, as how bright the line is there, as in the table
-  // The volume goes with the time the cursor reads (it shows beside the title), so it can be read at each point.
+  // The volume is each point's note: read after the value at the cursor.
   for (size_t i = 0; i < view.times.size(); i++) {
-    std::string text = timeLabel(view.times[i], view.dated);
-    if (i < view.volumes.size() && isDefined(view.volumes[i]) && view.volumes[i] > 0) text += "  vol " + volumeText(view.volumes[i]);
-    data.labels.push_back(std::move(text));
+    data.labels.push_back(timeLabel(view.times[i], view.dated));
+    const bool traded = i < view.volumes.size() && isDefined(view.volumes[i]) && view.volumes[i] > 0;
+    data.notes.push_back(traded ? "vol " + volumeText(view.volumes[i]) : std::string());
   }
   data.format = [rate](float v) { return rate ? fixed(v, 3) + "%" : fixed(v, 2); };
   // The line is the colour of the period's change, as the table's trace is.
