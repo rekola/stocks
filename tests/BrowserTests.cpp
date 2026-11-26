@@ -1060,6 +1060,14 @@ TEST(a_long_value_wraps_at_whitespace_and_a_long_word_is_broken_between_characte
   CHECK((wrapText("ab\xE6\x97\xA5\xE6\x97\xA5", 3) == std::vector<std::string>{"ab", "\xE6\x97\xA5", "\xE6\x97\xA5"}));  // wide characters are not split
 }
 
+TEST(a_value_wraps_by_the_width_the_display_gives_the_text_not_by_its_count_of_cells) {
+  // A proportional face: every character half a cell wide, so twice as much fits a line.
+  const TextWidth half = [](const std::string & s) { return 0.5 * utf8::displayWidth(s); };
+  CHECK((wrapText("aaaa bbbb cccc", 5, half) == std::vector<std::string>{"aaaa bbbb", "cccc"}));
+  CHECK((wrapText("aaaa bbbb cccc", 5) == std::vector<std::string>{"aaaa", "bbbb", "cccc"}));
+  CHECK((wrapText("abcdefghij", 3, half) == std::vector<std::string>{"abcdef", "ghij"}));
+}
+
 TEST(the_attribute_dialog_wraps_a_long_value_under_its_predicate_and_asks_for_the_displays_selection) {
   Fixture f(false);
   Rows rows = periodWorld(*f.store);
