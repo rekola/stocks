@@ -9,6 +9,7 @@
 #include "portfolio/Portfolio.h"
 #include "source/DatasetCodes.h"
 #include "Synthetic.h"
+#include "TransactionsView.h"
 #include "model/Dates.h"
 #include "source/NordnetHistory.h"
 #include "source/Source.h"
@@ -1614,6 +1615,73 @@ TEST(the_menu_offers_buy_and_sell_on_the_rows_that_can_be_bought_and_not_on_an_i
   const std::string menu = menuOf(f);
   CHECK(menu.find("Buy") != std::string::npos && menu.find("Sell") != std::string::npos && menu.find("Watchlist") == std::string::npos);  // a position is of no dataset
   CHECK(countOf(f.text(), kMenuGlyphText) == 2);
+}
+
+namespace {
+// Retirement's NOKIA, sold in part, and a sell of more than is held that the arithmetic leaves out.
+void addNokiaSells(Store & store, const Holdings & h) {
+  auto sell = [&](uint64_t id, int64_t day, double quantity, double price, double fee, std::string note) {
+    portfolio::Transaction t;
+    t.id = id;
+    t.day = day;
+    t.side = portfolio::Side::Sell;
+    t.instrument = h.nokia.base;
+    t.market = h.nokia.market;
+    t.quote = h.nokia.quote;
+    t.quantity = quantity;
+    t.price = price;
+    t.fee = fee;
+    t.note = std::move(note);
+    return t;
+  };
+  store.appendTransactions({h.retirement, h.user}, {sell(11, kNow - 5, 100, 5, 0, ""), sell(10, kNow - 10, 4, 5, 1, "half")});
+}
+}  // namespace
+
+TEST(the_transactions_of_a_position_are_its_own_in_the_order_they_are_applied_with_what_is_held_after_each) {
+  Fixture f(false);
+  Holdings h = addHoldings(*f.store);
+  addNokiaSells(*f.store, h);
+  const TransactionTable table = buildTransactionTable(*f.store->snapshot(), h.retirement, h.nokia.base, h.nokia.market, h.nokia.quote);
+  CHECK(table.currency == "EUR");
+  CHECK(table.rows.size() == 3);  // not Apple's, nor Trading's
+  using T = TransactionTable;
+  auto cells = [&](size_t r) { return std::vector<std::string>(std::begin(table.rows[r].cells), std::end(table.rows[r].cells)); };
+  CHECK(cells(0) == (std::vector<std::string>{dateText(kNow - 50), "Buy", "10", "4", "", "40.00", "10", ""}));
+  CHECK(cells(1) == (std::vector<std::string>{dateText(kNow - 10), "Sell", "4", "5", "1", "19.00", "6", "half"}));
+  CHECK(cells(2)[T::HELD] == "-" && cells(2)[T::NOTE] == "Left out: it sells more than is held" && table.rows[2].refused == "it sells more than is held");
+  CHECK(table.rows[0].refused.empty() && table.rows[1].refused.empty());
+  // Nothing of a portfolio that holds none.
+  CHECK(buildTransactionTable(*f.store->snapshot(), h.trading, h.apple.base, h.apple.market, h.apple.quote).rows.empty());
+}
+
+TEST(the_menu_of_a_position_shows_its_transactions_as_a_table_and_markets_rows_do_not_offer_it) {
+  Fixture f(false, 120);
+  Holdings h = addHoldings(*f.store);
+  addNokiaSells(*f.store, h);
+  f.app->execute("show-all");
+  f.browser->table().select(rowOfBase(f, "NOKIA"));
+  CHECK(menuOf(f).find("Show transactions") == std::string::npos);
+  f.app->execute("show-transactions");  // from the palette in Markets: said, and no dialog opens (or this would wait for one)
+  CHECK(f.text().find("Only a position has transactions") != std::string::npos);
+  f.press(Key::Tab);
+  auto positions = std::dynamic_pointer_cast<Positions>(f.browser->table().model());
+  CHECK(positions != nullptr && f.browser->shownPortfolio() == h.retirement);
+  int nokia = -1;
+  for (int r = 0; r < positions->rowCount(); r++)
+    if (positions->row(r).position.instrument == h.nokia.base) nokia = r;
+  CHECK(nokia >= 0);
+  f.browser->table().select(nokia);
+  // Show info, then Show transactions: one Down, and Enter.
+  std::string shown;
+  const bool closed = f.inModal([&] { f.app->execute("row-menu"); },
+                                {[&] { f.press(Key::Down); f.press(Key::Enter); }, [&] { shown = f.text(); }, [&] { f.press(Key::Escape); }});
+  CHECK(closed);
+  CHECK(shown.find("Transactions: NOKIA on Nasdaq Helsinki in Retirement") != std::string::npos);
+  for (const char * text : {"Date", "Side", "Quantity", "Held", "Note", "half", "19.00", "Left out: it sells more than is held", "3 transactions, prices in EUR. Held 6"})
+    CHECK(shown.find(text) != std::string::npos);
+  CHECK(shown.find(dateText(kNow - 50)) < shown.find(dateText(kNow - 10)) && shown.find(dateText(kNow - 10)) < shown.find(dateText(kNow - 5)));
+  CHECK(shown.find("Held 6 at an average cost of 4.00 EUR") != std::string::npos);
 }
 
 TEST(a_click_on_the_menu_button_and_buy_opens_the_form_for_that_row_and_not_the_selected_one) {
