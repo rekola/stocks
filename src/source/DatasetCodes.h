@@ -21,5 +21,5 @@ inline constexpr const char * kPhysicalDataset = "PHYSICAL";
 inline constexpr const char * kGoldApiDataset = "GOLDAPI";
 // goldprice.dev (api.goldprice.dev): the spot prices of gold, silver and copper in 31 currencies, and their daily bars, GoldPriceSource.
 inline constexpr const char * kGoldPriceDataset = "GOLDPRICE";
-// Altus Investor's fund pages: the NAVs of the Sifter Fund's share classes, SifterSource.
+// The NAVs of the Sifter Fund's share classes, SifterSource.
 inline constexpr const char * kSifterDataset = "SIFTER";
