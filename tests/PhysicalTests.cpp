@@ -34,7 +34,7 @@ struct World {
   InstrumentId eur = store->addInstrument("EUR", "Euro", InstrumentKind::Currency);
   InstrumentId gold = store->addInstrument("GOLD", "Kulta", InstrumentKind::Commodity, "XC0009655157");
   MarketId none = store->addMarket(kNoMarket, "No market");
-  DatasetId data = store->addDataset("nordnet");
+  DatasetId data = store->addDataset(kNordnetDataset);
   EdgeKey spot{gold, usd, none, data};
   void setSpot(double close, int64_t day = kDay) {
     store->appendCandles(spot, Resolution::Day, {{day, kUndefined, close * 1.01, close * 0.99, close, kUndefined}});

@@ -1,3 +1,4 @@
+#include "source/DatasetCodes.h"
 #include "HistoryWorld.h"
 
 #include "source/NordnetHistory.h"
@@ -292,7 +293,7 @@ TEST(nordnets_history_is_asked_for_by_the_headers_its_endpoint_expects_and_its_d
   FakeHttp http;
   http.answer = [](const std::string &) { return ok(fixture("history-stock-day.json")); };
   NordnetHistory history;
-  CHECK(history.dataset() == "nordnet");
+  CHECK(history.dataset() == kNordnetDataset);
   history.load(*w.store, http, k, NordnetHistory::Quarter, [] { return true; });
   bool origin = false;
   for (const auto & [n, v] : http.headers.at(0)) origin = origin || (n == "Origin" && v == "https://www.nordnet.fi");

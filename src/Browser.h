@@ -106,6 +106,12 @@ class Browser {
   void showChart();
   // The chart of `row`, if `column` is a trace column.
   void openChartAt(int row, int column);
+  // The menu of a row (the button at the end of it): info, buy and sell, and the lists it can be put on or taken off.
+  void openMenu(int row);
+  // Puts the selected row (or the one the menu was opened on) on a list of kLists, or takes it off; the user's change, which undo takes back.
+  void changeList(size_t list, bool add);
+  // What a row is called in the menu's title and in messages.
+  std::string rowLabel(int row) const;
   void defineCommands();
   void bindKeys();
 

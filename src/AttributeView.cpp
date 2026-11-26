@@ -65,15 +65,14 @@ std::string barTime(Resolution r, int64_t time) {
 
 }  // namespace
 
-std::vector<std::string> wrapText(const std::string & text, int cols) {
-  std::vector<std::string> lines;
+std::vector<std::string> wrapText(const std::string & text, double cols, const TextWidth & width) {
+  auto measure = [&](const std::string & s) { return width ? width(s) : static_cast<double>(utf8::displayWidth(s)); };
   if (cols < 1) return {text};
+  std::vector<std::string> lines;
   std::string line;
-  int width = 0;
   auto flush = [&] {
     lines.push_back(std::move(line));
     line.clear();
-    width = 0;
   };
   size_t at = 0;
   while (at < text.size()) {
@@ -82,26 +81,21 @@ std::vector<std::string> wrapText(const std::string & text, int cols) {
     while (at < text.size() && !std::isspace(static_cast<unsigned char>(text[at]))) at++;
     if (start == at) break;
     const std::string word = text.substr(start, at - start);
-    const int w = utf8::displayWidth(word);
-    if (width > 0 && width + 1 + w <= cols) {
+    if (!line.empty() && measure(line + ' ' + word) <= cols) {
       line += ' ' + word;
-      width += 1 + w;
-    } else if (w <= cols) {
-      if (width > 0) flush();
+    } else if (measure(word) <= cols) {
+      if (!line.empty()) flush();
       line = word;
-      width = w;
     } else {
       // Wider than a line: starts on a fresh one and is cut between characters.
-      if (width > 0) flush();
+      if (!line.empty()) flush();
       for (const std::string & cluster : utf8::clusters(word)) {
-        const int cw = utf8::displayWidth(cluster);
-        if (width > 0 && width + cw > cols) flush();
+        if (!line.empty() && measure(line + cluster) > cols) flush();
         line += cluster;
-        width += cw;
       }
     }
   }
-  if (width > 0 || lines.empty()) flush();
+  if (!line.empty() || lines.empty()) flush();
   return lines;
 }
 
@@ -254,6 +248,7 @@ AttributeModal::AttributeModal(Widget & root, Plane & screen, EventLoop & loop, 
   }
   predicate_width_ = std::min(predicate_width_, kMaxPredicateWidth);
   wrapLines(kMaxWidth);
+  value_cols_ = -1;  // for lines() until the first layout, which wraps for the dialog's own width
 }
 
 std::vector<std::string> AttributeModal::lines() const {
@@ -266,7 +261,7 @@ std::vector<std::string> AttributeModal::lines() const {
   return out;
 }
 
-void AttributeModal::wrapLines(int value_cols) {
+void AttributeModal::wrapLines(int value_cols, const TextWidth & width) {
   if (value_cols == value_cols_) return;
   value_cols_ = value_cols;
   lines_.clear();
@@ -276,7 +271,7 @@ void AttributeModal::wrapLines(int value_cols) {
       continue;
     }
     bool first = true;
-    for (std::string & part : wrapText(row.text, value_cols)) {
+    for (std::string & part : wrapText(row.text, value_cols, width)) {
       lines_.push_back({Line::ROW, first ? row.predicate : "", std::move(part), row.link, !first});
       first = false;
     }
@@ -286,7 +281,9 @@ void AttributeModal::wrapLines(int value_cols) {
 void AttributeModal::layout(Plane & screen, int rows, int cols) {
   const int width = std::min(kMaxWidth, std::max(20, cols - 4));
   const int valueX = 1 + predicate_width_ + 2, valueCols = std::max(1, width - 1 - valueX);
-  wrapLines(valueCols);
+  // By what the display makes of the text: a window sets it in a proportional face, narrower than the cells it is
+  // given, so counting cells would break the lines far short of the dialog's edge.
+  wrapLines(valueCols, [&screen](const std::string & s) { return screen.textWidth(s, kPlainFace); });
   // Padding, title, a gap, the lines, a gap, the hint, padding.
   constexpr int kChrome = 6;
   const int height = std::min(static_cast<int>(lines_.size()) + kChrome, std::max(kChrome + 1, rows - 2));

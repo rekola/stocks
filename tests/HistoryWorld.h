@@ -1,5 +1,6 @@
 #pragma once
 
+#include "source/DatasetCodes.h"
 #include "TestFramework.h"
 #include "TestIsin.h"
 
@@ -44,7 +45,7 @@ struct World {
   std::shared_ptr<Store> store = makeMemoryStore();
   InstrumentId usd = store->addInstrument("USD", "US dollar", InstrumentKind::Currency);
   MarketId market = store->addMarket("XSTO", "Nasdaq Stockholm");
-  DatasetId nordnet = store->addDataset("nordnet");
+  DatasetId nordnet = store->addDataset(kNordnetDataset);
   int count = 0;
   EdgeKey edge(InstrumentKind kind, const std::string & book, bool mainData = true) {
     InstrumentId i = store->addInstrument("", "Instrument", kind, testIsin(100000 + count++));

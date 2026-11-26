@@ -293,6 +293,7 @@ void Snapshot::setPreviousClose(const EdgeKey & k, int64_t day, double close) {
   previousClose_ = previousClose_.set(k, {day, close});
   dirtyEdges_.insert(k);
   version_++;
+  refreshChanges(k);
 }
 bool Snapshot::hasCandles(const EdgeKey & k, Resolution r) const {
   const auto * s = series_.find(SeriesKey{k, r});
@@ -493,7 +494,7 @@ InstrumentId Snapshot::resolveInstrument(const std::vector<Attribute> & identify
     if (!key) notices_.push_back("instrument: the ISIN " + isin + " is not valid, so it is not kept");
   } else if (isCurrencyKind(textFact(all, predicate::kind))) {
     key = currencyKey(symbol);
-    if (!key) notices_.push_back("instrument: the code " + symbol + " is not one to ten letters or digits, so it is not kept");
+    if (!key) notices_.push_back("instrument: the code " + symbol + " is not one to eleven capitals, digits, hyphens, periods or hashes, so it is not kept");
   } else {
     const std::string called = symbol.empty() ? name : symbol;
     std::string own;
@@ -552,14 +553,14 @@ MarketId Snapshot::addMarket(const std::string &mic, const std::string &name) {
 DatasetId Snapshot::addDataset(const std::string & code, const std::string & name) {
   const auto key = datasetKey(code);
   if (!key) {
-    notices_.push_back("dataset: the code " + code + " is not one to ten letters or digits, so it is not kept");
+    notices_.push_back("dataset: the code " + code + " is not one to eleven capitals, digits, hyphens, periods or hashes, so it is not kept");
     return DatasetId{};
   }
   const DatasetId id{key->value};
   if (!name.empty())
     setAttributes(NodeRef(id), {{predicate::name, name}});
   else if (!fact(NodeRef(id), predicate::name))
-    setAttributes(NodeRef(id), {{predicate::name, code}});
+    setAttributes(NodeRef(id), {{predicate::name, text(*key)}});  // the code as the key has it: its case is not kept
   return id;
 }
 
@@ -743,6 +744,43 @@ void Snapshot::setQuote(const EdgeKey & k, const Quote & in) {
   addEdge(k);
   noteRow(k);
   version_++;
+  refreshChanges(k);
+}
+
+Changes Snapshot::changes(const EdgeKey & k) const {
+  const Changes * c = changes_.find(k);
+  return c ? *c : Changes{};
+}
+
+void Snapshot::setChanges(const EdgeKey & k, const Changes & in) {
+  require(k);
+  if (!in.says()) return;
+  Changes now = changes(k);
+  for (size_t i = 0; i < kChangeCount; i++)
+    if (isDefined(in.pct[i])) now.pct[i] = in.pct[i];
+  if (const Changes * old = changes_.find(k); old ? *old != now : true) {
+    changes_ = changes_.set(k, now);
+    dirtyEdges_.insert(k);
+    addEdge(k);
+    version_++;
+  }
+  refreshChanges(k);
+}
+
+void Snapshot::refreshChanges(const EdgeKey & k) {
+  Changes now = changes(k);
+  bool any = false;
+  for (size_t p = 0; p < kChangeCount; p++) {
+    const double c = periodView(*this, k, static_cast<Period>(p), false).change();
+    if (isDefined(c) && !(now.pct[p] == c)) {
+      now.pct[p] = c;
+      any = true;
+    }
+  }
+  if (!any) return;
+  changes_ = changes_.set(k, now);
+  dirtyEdges_.insert(k);
+  version_++;
 }
 
 // The summary of the bars a source writes: the quote moves to the newest bar if that is newer than it, and the queue of the resolution takes
@@ -831,7 +869,10 @@ bool Snapshot::deriveSummary(const EdgeKey & k, Resolution r, const std::vector<
       checks_++;
     }
   }
-  if (changed) noteRow(k);
+  if (changed) {
+    noteRow(k);
+    refreshChanges(k);
+  }
   return changed;
 }
 
@@ -847,6 +888,7 @@ void Snapshot::loadEdges(const std::vector<StoredEdge> & edges) {
       const Quote * old = quotes_.find(k);
       if (!old || (e.quote.time != 0 && old->time != 0 && e.quote.time > old->time)) quotes_ = quotes_.set(k, e.quote);
     }
+    if (e.changes.says() && !changes_.find(k)) changes_ = changes_.set(k, e.changes);  // what a source has said is newer
     if (isDefined(e.previous_close) && !previousClose_.find(k)) previousClose_ = previousClose_.set(k, {e.previous_close_day, e.previous_close});
     for (const auto & [r, c] : e.queues) {
       const SeriesKey key{k, r};
@@ -908,6 +950,7 @@ void Snapshot::loadQueue(const StoredQueue & in) {
   queues_ = queues_.set(key, std::move(state));
   noteRow(in.edge);
   version_++;
+  refreshChanges(in.edge);
 }
 
 void Snapshot::evictQueue(const EdgeKey & k, Resolution r) {
@@ -933,11 +976,13 @@ SummaryBatch Snapshot::takeSummaries() {
   for (const EdgeKey & k : dirtyEdges_) {
     const Quote * q = quotes_.find(k);
     const auto * previous = previousClose_.find(k);
-    if (!q && !previous && !hasQueueOp(k)) continue;  // nothing of a summary yet: an edge with a listing and books is not kept
+    const Changes * changes = changes_.find(k);
+    if (!q && !previous && !changes && !hasQueueOp(k)) continue;  // nothing of a summary yet: an edge with a listing and books is not kept
     StoredEdge e;
     if (const Listing * l = listings_.find(k)) e.listing = *l;
     e.listing.key = k;
     if (q) e.quote = *q;
+    if (changes) e.changes = *changes;
     if (previous) {
       e.previous_close_day = previous->first;
       e.previous_close = previous->second;
@@ -1194,6 +1239,62 @@ void Snapshot::removeTransactions(const LedgerKey & k, const std::vector<uint64_
   version_++;
 }
 
+namespace {
+bool whole(const EdgeKey & k) { return k.base.valid() && k.quote.valid() && k.market.valid() && k.dataset.valid(); }
+StoredMember storedMember(const std::string & list, const EdgeKey & k) { return {list, k.base.value, k.quote.value, k.market.value, k.dataset.value}; }
+}  // namespace
+
+std::vector<EdgeKey> Snapshot::listMembers(const std::string & list) const { return sorted(lists_.find(list)); }
+bool Snapshot::onList(const std::string & list, const EdgeKey & k) const {
+  const auto * members = lists_.find(list);
+  return members && members->count(k) > 0;
+}
+
+void Snapshot::addToList(const std::string & list, const std::vector<EdgeKey> & edges) {
+  if (list.empty()) throw std::invalid_argument("a list needs a code");
+  for (const EdgeKey & k : edges)
+    if (!whole(k)) throw std::invalid_argument("an edge on a list needs an instrument, a currency, a market and a dataset");
+  const auto * old = lists_.find(list);
+  immer::set<EdgeKey> members = old ? *old : immer::set<EdgeKey>{};
+  bool changed = false;
+  for (const EdgeKey & k : edges) {
+    if (members.count(k)) continue;
+    members = members.insert(k);
+    changed = true;
+    std::erase_if(outbox_.members_removed, [&](const StoredMember & m) { return m == storedMember(list, k); });
+    outbox_.members.push_back(storedMember(list, k));
+  }
+  if (!changed) return;
+  lists_ = lists_.set(list, members);
+  version_++;
+}
+
+void Snapshot::removeFromList(const std::string & list, const std::vector<EdgeKey> & edges) {
+  const auto * old = lists_.find(list);
+  if (!old) return;
+  immer::set<EdgeKey> members = *old;
+  bool changed = false;
+  for (const EdgeKey & k : edges) {
+    if (!members.count(k)) continue;
+    members = members.erase(k);
+    changed = true;
+    std::erase_if(outbox_.members, [&](const StoredMember & m) { return m == storedMember(list, k); });
+    outbox_.members_removed.push_back(storedMember(list, k));
+  }
+  if (!changed) return;
+  lists_ = members.size() ? lists_.set(list, members) : lists_.erase(list);
+  version_++;
+}
+
+void Snapshot::loadMembers(const std::vector<StoredMember> & stored) {
+  for (const StoredMember & m : stored) {
+    const EdgeKey k{InstrumentId{m.base}, InstrumentId{m.quote}, MarketId{m.market}, DatasetId{m.dataset}};
+    if (m.list.empty() || !whole(k) || NodeKey{m.market}.kind() != NodeKind::Market || NodeKey{m.dataset}.kind() != NodeKind::Dataset) continue;
+    const auto * old = lists_.find(m.list);
+    lists_ = lists_.set(m.list, (old ? *old : immer::set<EdgeKey>{}).insert(k));
+  }
+}
+
 void Snapshot::loadEvents(const std::vector<StoredEvent> & events) {
   std::map<LedgerKey, std::vector<portfolio::Transaction>> grouped;
   for (const StoredEvent & e : events) {
@@ -1263,6 +1364,7 @@ class SnapshotBatch : public Batch {
   void appendCandles(const EdgeKey & k, Resolution r, const std::vector<Candle> & c) override { s_.appendCandles(k, r, c); }
   void setPreviousClose(const EdgeKey & k, int64_t day, double close) override { s_.setPreviousClose(k, day, close); }
   void setQuote(const EdgeKey & k, const Quote & q) override { s_.setQuote(k, q); }
+  void setChanges(const EdgeKey & k, const Changes & c) override { s_.setChanges(k, c); }
   void appendBooks(const EdgeKey & k, const std::vector<BookSnapshot> & b) override { s_.appendBooks(k, b); }
   void appendNews(DatasetId d, const std::vector<NewsItem> & n) override { s_.appendNews(d, n); }
   void appendActions(const EventKey & k, const std::vector<CorporateAction> & a) override { s_.appendActions(k, a); }
@@ -1270,6 +1372,8 @@ class SnapshotBatch : public Batch {
   void removePortfolio(PortfolioId id) override { s_.removePortfolio(id); }
   void appendTransactions(const LedgerKey & k, const std::vector<portfolio::Transaction> & t) override { s_.appendTransactions(k, t); }
   void removeTransactions(const LedgerKey & k, const std::vector<uint64_t> & ids) override { s_.removeTransactions(k, ids); }
+  void addToList(const std::string & list, const std::vector<EdgeKey> & e) override { s_.addToList(list, e); }
+  void removeFromList(const std::string & list, const std::vector<EdgeKey> & e) override { s_.removeFromList(list, e); }
 
  private:
   Snapshot & s_;
@@ -1304,6 +1408,7 @@ class MemoryStore : public Store {
         if (NodeKey{f.node}.kind() == NodeKind::Portfolio) mine.push_back(std::move(f));
       first.load(std::move(mine));
       first.loadEvents(portfolios_->loadEvents());
+      first.loadMembers(portfolios_->loadMembers());
     }
     const bool restore = facts_ || summary_;
     first.setRestoring(restore && background_);
@@ -1381,6 +1486,9 @@ class MemoryStore : public Store {
   void setQuote(const EdgeKey & k, const Quote & q) override {
     write([&](Snapshot & s) { s.setQuote(k, q); });
   }
+  void setChanges(const EdgeKey & k, const Changes & c) override {
+    write([&](Snapshot & s) { s.setChanges(k, c); });
+  }
   void setRetention(DatasetId d, Resolution r, std::optional<std::chrono::seconds> keep) override {
     write([&](Snapshot & s) { s.setRetention(d, r, keep); });
   }
@@ -1426,6 +1534,12 @@ class MemoryStore : public Store {
   }
   void removeTransactions(const LedgerKey & k, const std::vector<uint64_t> & ids) override {
     write([&](Snapshot & s) { s.removeTransactions(k, ids); });
+  }
+  void addToList(const std::string & list, const std::vector<EdgeKey> & e) override {
+    write([&](Snapshot & s) { s.addToList(list, e); });
+  }
+  void removeFromList(const std::string & list, const std::vector<EdgeKey> & e) override {
+    write([&](Snapshot & s) { s.removeFromList(list, e); });
   }
 
  private:
@@ -1679,6 +1793,8 @@ class MemoryStore : public Store {
       mine.removed_nodes = std::move(facts.removed_nodes);
       mine.events = std::move(facts.events);
       mine.events_removed = std::move(facts.events_removed);
+      mine.members = std::move(facts.members);
+      mine.members_removed = std::move(facts.members_removed);
       const auto portfolioFact = [](const StoredFact & f) { return NodeKey{f.node}.kind() == NodeKind::Portfolio; };
       for (auto * list : {&facts.changed, &facts.rechecked}) {
         auto & to = list == &facts.changed ? mine.changed : mine.rechecked;

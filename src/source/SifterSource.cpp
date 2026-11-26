@@ -60,6 +60,7 @@ bool SifterSource::parse(const std::string & body, Store & store, std::string & 
     return false;
   }
   store.batch([&](Batch & b) {
+    b.addDataset(kSifterDataset, "Sifter");  // the name the table shows
     for (size_t i = 0; i < std::size(kClasses); i++) {
       auto & series = bars[i];
       std::stable_sort(series.begin(), series.end(), [](const Candle & a, const Candle & c) { return a.time < c.time; });

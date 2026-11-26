@@ -105,7 +105,7 @@ YahooSource::Parsed YahooSource::parseEntry(const std::string & body, const List
   // One entry is one publication: the bars, the listing and what is said of the instrument together.
   bool leftOut = false;
   store.batch([&](Batch & b) {
-    const DatasetId dataset = b.addDataset(kYahooDataset);
+    const DatasetId dataset = b.addDataset(kYahooDataset, "Yahoo");
     const MarketId market = b.addMarket(e.mic, e.market);
     const InstrumentId base = baseOf(b, e);
     const InstrumentId quote = quoteNode(b, e.quote);

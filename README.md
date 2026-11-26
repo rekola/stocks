@@ -8,7 +8,7 @@
 A stock data browser for the terminal and a GTK window, built on
 [cellui](https://github.com/rekola/cellui).
 
-A row of preset tags (commodities, Nasdaq Helsinki, currencies, indices, funds, and all of them) over a sortable,
+A row of preset tags (commodities, Nasdaq Helsinki, currencies, indices, funds, all of them, and your Watchlist) over a sortable,
 scrollable table with a price trace per row. The rows are the edges of a
 [data model](plans/data-model.md) that data sources fill on a thread of their
 own; the table follows as the data arrives, a few times a second at most, and reads
@@ -29,7 +29,7 @@ session if the first gives nothing (no network, a refusal).
 
 Keys: arrows, PgUp/PgDn, Home/End move; `Tab` and `Shift+Tab` switch the context (below); `M-x` (`Ctrl+Shift+P` on
 the desktop keymap) opens the command palette, where every command is listed with
-its description and key; `q` (`C-x C-c`, `Ctrl+Q`) quits. `i` (`C-x =`) or the 🛈 button at the end of a row shows everything known about the row (Esc closes it). Clicking a
+its description and key; `q` (`C-x C-c`, `Ctrl+Q`) quits. `i` (`C-x =`) or the ☰ menu button at the end of a row (its first entry) shows everything known about the row (Esc closes it). Clicking a
 heading sorts; clicking a tag or row chooses it; the wheel scrolls. The table
 fills the screen and follows it when it is resized.
 
@@ -54,24 +54,32 @@ values on the left, the first and last date under it, and a cursor with a readin
 the cursor (`Page Up`/`Page Down` by a tenth, `Home`/`End` to the ends), and so does the pointer; `Esc`, `Enter`, `q` or a click away from the
 chart close it. The chart is cellui's `ChartModal`, drawn by the same line chart as the table's traces.
 
-At the end of each row are the info button 🛈 and, on a row that can be bought, **buy ⊕ and sell ⊖**: a click with the mouse, or move the
-cursor onto one with Left and Right (`Enter` presses it). Only a row on a real market or a fund priced by its company has them: an index, a spot
-price, a currency pair and an interest rate (Euribor, the €STR) have the info button alone, and `buy` and `sell` run from the palette
-on such a row say it cannot be bought. A row of the Portfolio context always has them. They open a form: portfolio, quantity, price
+At the end of each row is the **menu button ☰**: a click with the mouse, or move the cursor onto it with `Right` (`Enter` presses it; `row-menu`
+opens the menu of the selected row from the palette). It opens a list for that row: **Show info**, **Buy** and **Sell**, and **Put on the Watchlist** (or
+**Take off** it, where the row is on it). Buy and sell are only on a row on a real market or a fund priced by its company: an index, a spot
+price, a currency pair and an interest rate (Euribor, the €STR) have the rest, and `buy` and `sell` run from the palette on such a row say it
+cannot be bought. A row of the Portfolio context always has them, and no list (a list is of rows of Markets). Buy and sell open a form: portfolio, quantity, price
 (the last one is offered), date (today), fee, note, and a live total; `Tab` moves between the fields, `Enter` accepts, `Esc` cancels, and
 a sell of more than is held is refused as you type. `buy` and `sell` have no key; both are in the palette. The first buy with no
 portfolio offers to make one.
+
+**Lists.** The **Watchlist** preset shows the rows you put on it. A row is one edge (the instrument on a market, from a dataset), and so is a list's
+member: Nokia from Nordnet on the list does not put Nokia from Yahoo there. They are kept in `portfolios.sqlite`, beside the portfolios, and `undo`
+takes a change back. More lists are one line each (`kLists` and a preset in `src/Browser.cpp`), with the menu entries and the commands
+`add-to-<list>` and `remove-from-<list>` following. When the presets do not fit on a line they go on to the next.
 
 | command | what it does | terminal keymap | desktop keymap |
 |---|---|---|---|
 | `next-context`, `previous-context` | Markets, Portfolio, News | `Tab`, `Shift+Tab` | `Tab`, `Shift+Tab` |
 | `new-portfolio` | a name and a currency | | |
 | `rename-portfolio`, `delete-portfolio` | the portfolio shown; delete confirms | | |
-| `buy`, `sell` | the row's form (the buttons) | | |
+| `buy`, `sell` | the row's form (its menu) | | |
+| `row-menu` | the menu of the selected row | | |
+| `add-to-watchlist`, `remove-from-watchlist` | puts the selected row on the Watchlist, or takes it off | | |
 | `undo` | takes back your last change: a trade, a new, renamed or deleted portfolio | `C-x u`, `C-/` | `Ctrl+Z` |
 | `redo` | makes it again | `C-M-_` | `Ctrl+Y` |
 
-**Spot prices of metals.** Two sources give them, each a dataset of its own with its own row for the same instrument (the rows are never merged in the store; what reads a spot picks one, see below). `goldprice` ([goldprice.dev](https://goldprice.dev), no key; it runs by default) asks one request for the prices of gold, silver and copper (it stores euros and dollars) and has daily bars: the last 30 days of gold in dollars without a key, which the month shows as a trace. Its prices come 15 minutes late. `goldapi` ([gold-api.com](https://gold-api.com), no key; it runs by default) lists its
+**Spot prices of metals.** Two sources give them, each a dataset of its own with its own row for the same instrument (the rows are never merged in the store; what reads a spot picks one, see below). `goldprice` ([goldprice.dev](https://goldprice.dev), no key; it runs by default) asks one request for the prices of gold, silver and copper (it stores euros and dollars) and has daily bars: the last 30 days of gold in dollars without a key, which the month shows as a trace. Its prices come 15 minutes late. `gold-api` ([gold-api.com](https://gold-api.com), no key; it runs by default) lists its
 symbols (gold, silver, platinum, palladium, copper, and Bitcoin and Ethereum) and asks the price of each in euros and in dollars: each is an
 instrument with a price in both currencies on the market of what is priced and not traded, in the Commodities preset (the metals) and in
 All. They are spot prices and cannot be bought. The API takes them from several data providers (another answers when one is down) and cross-checks them, but does not guarantee them: verify a price before a financial decision. A price is for the unit its row's name says: the metals by the troy ounce (`Gold, per troy oz`), copper by the metric tonne (`Copper, per tonne`: the API quotes it per pound and it is converted, so it is the same number as another source's copper of the same ISIN), a coin by the coin.

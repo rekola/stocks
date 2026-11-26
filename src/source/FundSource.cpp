@@ -2,12 +2,15 @@
 
 #include "model/Dates.h"
 #include "model/Isin.h"
+#include "model/Period.h"
 #include "source/DataDirectory.h"
 #include "source/LeftOut.h"
 #include "model/NodeKey.h"
 
 #include <chrono>
 #include <algorithm>
+#include <cctype>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -142,6 +145,13 @@ void applyFields(const FundSchema::Request & request, const json & doc, FundRow 
   for (const auto & [key, pointers] : request.fields) {
     const json * v = firstOf(doc, pointers);
     if (!v) continue;
+    const auto setChange = [&](Period p, std::optional<double> pct) {
+      if (pct) fund.changes.pct[static_cast<size_t>(p)] = *pct;
+    };
+    // A return per annum over `years` years, as the change over all of them.
+    const auto setAnnual = [&](Period p, int years, std::optional<double> pct) {
+      if (pct && *pct > -100) setChange(p, (std::pow(1 + *pct / 100, years) - 1) * 100);
+    };
     auto scaled = [&](std::optional<double> n) -> std::optional<double> {
       auto s = request.scale.find(key);
       return n && s != request.scale.end() ? std::optional<double>(*n * s->second) : n;
@@ -159,6 +169,12 @@ void applyFields(const FundSchema::Request & request, const json & doc, FundRow 
     else if (key == "price") fund.price = looseNumber(*v);
     else if (key == "change") fund.change = scaled(looseNumber(*v));
     else if (key == "date") fund.day = looseDay(*v);
+    else if (key == "changeWeek") setChange(Period::Week, scaled(looseNumber(*v)));
+    else if (key == "changeMonth") setChange(Period::Month, scaled(looseNumber(*v)));
+    else if (key == "changeQuarter") setChange(Period::Quarter, scaled(looseNumber(*v)));
+    else if (key == "changeYear") setChange(Period::Year, scaled(looseNumber(*v)));
+    else if (key == "annualYear3") setAnnual(Period::Year3, 3, scaled(looseNumber(*v)));
+    else if (key == "annualYear10") setAnnual(Period::Year10, 10, scaled(looseNumber(*v)));
     else if (key == "link") {
       std::string link = textOf(*v);
       if (!link.empty() && link.rfind("http", 0) != 0) link = request.linkPrefix + (link[0] == '/' ? link : "/" + link);
@@ -181,6 +197,19 @@ void applyFields(const FundSchema::Request & request, const json & doc, FundRow 
     if (at != fund.extra.end()) *at = *said;
     else fund.extra.push_back(*said);
   }
+}
+
+// Morningstar's price history of a fund, `{id}` being the fund's Morningstar id (its secId, "F00000JTC7"): the answer is `[[ms, NAV], ...]`.
+// `client` is the company's key in Morningstar's URLs and `universe` its number there (the part after FOFIN$$ALL_ of the id Morningstar's own
+// pages for the company's funds use).
+std::string morningstarHistoryUrl(const std::string & client, const std::string & universe, const std::string & currency, const std::string & startDate) {
+  return "https://lt.morningstar.com/api/rest.svc/timeseries_price/" + client + "?currencyId=" + currency +
+         "&idtype=Morningstar&frequency=daily&startDate=" + startDate + "&priceType=&outputType=COMPACTJSON&id={id}]2]1]FOFIN$$ALL_" + universe +
+         "&applyTrackRecordExtension=true";
+}
+
+bool plainWord(const std::string & s) {
+  return !s.empty() && std::all_of(s.begin(), s.end(), [](unsigned char c) { return std::isalnum(c) || c == '-'; });
 }
 
 // A GET as a browser makes it, the schema's headers over the browser's: the token page as a page, the rest as its script's calls.
@@ -211,9 +240,10 @@ bool FundSchema::parse(const std::string & text, FundSchema & out, std::string &
     *target = d[key].get<std::string>();
   }
   if (!datasetKey(s.dataset)) {
-    error = "dataset is the code of the dataset, one to ten letters or digits (it is never changed), not \"" + s.dataset + "\"";
+    error = "dataset is the code of the dataset, one to eleven capitals, digits, hyphens, periods or hashes (it is never changed), not \"" + s.dataset + "\"";
     return false;
   }
+  if (auto title = d.find("title"); title != d.end() && title->is_string()) s.title = title->get<std::string>();
   if (auto age = d.find("maxAgeDays"); age != d.end() && age->is_number_integer()) s.maxAgeDays = age->get<int>();
   if (auto pause = d.find("pauseMs"); pause != d.end() && pause->is_number()) s.pause = std::chrono::milliseconds(pause->get<int64_t>());
   if (auto hours = d.find("refreshHours"); hours != d.end() && hours->is_number())
@@ -247,11 +277,26 @@ bool FundSchema::parse(const std::string & text, FundSchema & out, std::string &
     s.detail.emplace();
     if (!requestOf(*detail, "detail", *s.detail, error)) return false;
   }
-  if (!d.contains("history") || !d["history"].is_object() || !d["history"].contains("url") || !d["history"]["url"].is_string()) {
+  const json history = d.contains("history") ? d["history"] : json();
+  if (history.is_object() && history.contains("morningstar")) {
+    // The company's history is Morningstar's: the schema says whose, and the URL is made here, so that only this adapter knows the endpoint.
+    const json & m = history["morningstar"];
+    auto text = [&](const char * key, const char * otherwise) -> std::string {
+      auto it = m.is_object() ? m.find(key) : json::const_iterator();
+      return m.is_object() && it != m.end() && it->is_string() ? it->get<std::string>() : std::string(otherwise);
+    };
+    const std::string client = text("client", ""), universe = text("universe", ""), currency = text("currency", "EUR"), start = text("startDate", "2000-01-01");
+    if (!plainWord(client) || !plainWord(universe) || !plainWord(currency) || !looseDay(json(start))) {
+      error = "history.morningstar needs a client and a universe (letters and digits), and may have a currency and a startDate (YYYY-MM-DD)";
+      return false;
+    }
+    s.historyUrl = morningstarHistoryUrl(client, universe, currency, start);
+  } else if (!history.is_object() || !history.contains("url") || !history["url"].is_string()) {
     error = "history: no url";
     return false;
+  } else {
+    s.historyUrl = history["url"].get<std::string>();
   }
-  s.historyUrl = d["history"]["url"].get<std::string>();
   if (auto from = d.find("isinFromId"); from != d.end() && from->is_string()) {
     s.isinFromId = from->get<std::string>();
     try {
@@ -420,9 +465,15 @@ void FundSource::load(Store & store, Http & http, SourceListener & listener) {
     const Candle bar{*e.fund.day, kUndefined, kUndefined, kUndefined, *e.fund.price, kUndefined};
     bool written = false;
     store.batch([&](Batch & b) {
+      if (!schema_.title.empty()) b.addDataset(schema_.dataset, schema_.title);
       auto edge = writeFund(b, schema_.dataset, e.fund, {bar});
       if (!edge) return;
-      if (e.fund.change && *e.fund.change > -1) b.setPreviousClose(*edge, *e.fund.day, *e.fund.price / (1 + *e.fund.change));
+      if (e.fund.change && *e.fund.change > -1) {
+        b.setPreviousClose(*edge, *e.fund.day, *e.fund.price / (1 + *e.fund.change));
+      }
+      Changes changes = e.fund.changes;
+      if (e.fund.change) changes.pct[static_cast<size_t>(Period::Day)] = *e.fund.change * 100;  // a fraction in the list: per cent
+      b.setChanges(*edge, changes);
       written = true;
     });
     if (!written) {  // the one reason there is: it could not be named

@@ -1,6 +1,7 @@
 {
  "name": "op",
- "dataset": "op",
+ "dataset": "OP",
+ "title": "OP",
  "pauseMs": 2000,
  "refreshHours": 6,
  "headers": {
@@ -36,7 +37,12 @@
    "link": "/link",
    "price": "/price",
    "date": "/datetime_price",
-   "change": "/fund_last"
+   "change": "/fund_last",
+   "changeMonth": "/performance_1m_pct",
+   "changeQuarter": "/performance_3m_pct",
+   "changeYear": "/performance_1y_pct",
+   "annualYear3": "/performance_3y_pa_pct",
+   "annualYear10": "/performance_10y_pa_pct"
   },
   "linkPrefix": "https://www.op.fi",
   "scale": {

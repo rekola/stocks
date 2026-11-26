@@ -31,6 +31,13 @@ struct StoredEvent {
   std::string body;
 };
 
+// One edge on one of the user's lists as it is kept: the list's code (a name the application gives it) and the four keys of the edge.
+struct StoredMember {
+  std::string list;
+  uint64_t base = 0, quote = 0, market = 0, dataset = 0;
+  friend bool operator==(const StoredMember &, const StoredMember &) = default;
+};
+
 // What one write to the store asks the disk to do. The first two lists are told apart so that a writer can be quick with what
 // changed and slow with what was only said again. The rest is the user's own data (a portfolio's), which is kept in a file of
 // its own and written at once: facts taken back, a node taken back whole (its facts and its events), and transactions put and
@@ -42,8 +49,11 @@ struct FactBatch {
   std::vector<uint64_t> removed_nodes;                     // everything of the node: its facts and its events
   std::vector<StoredEvent> events;                         // put: replaces the one with the same (portfolio, dataset, id)
   std::vector<StoredEvent> events_removed;                 // taken back: only the three keys are read
+  std::vector<StoredMember> members;                       // put on a list (one that is there already stays)
+  std::vector<StoredMember> members_removed;               // taken off it
   bool empty() const {
-    return changed.empty() && rechecked.empty() && removed.empty() && removed_nodes.empty() && events.empty() && events_removed.empty();
+    return changed.empty() && rechecked.empty() && removed.empty() && removed_nodes.empty() && events.empty() && events_removed.empty() &&
+           members.empty() && members_removed.empty();
   }
 };
 
@@ -66,6 +76,8 @@ class FactStore {
   }
   // The events that are kept, in no particular order (only the portfolio file has any).
   virtual std::vector<StoredEvent> loadEvents() { return {}; }
+  // The edges on the user's lists, in no particular order (only the portfolio file has any).
+  virtual std::vector<StoredMember> loadMembers() { return {}; }
   // Applies a batch as one unit: the facts put in place of those with the same (node, predicate).
   virtual void apply(const FactBatch &) = 0;
 };

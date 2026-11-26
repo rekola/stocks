@@ -1,0 +1,13 @@
+{
+ "today": "2026-11-26",
+ "rows": 44,
+ "shown": 42,
+ "stale": 2,
+ "noIsin": [],
+ "isins": {
+  "F00000JTC7": "FI4000015532"
+ },
+ "previousClose": {
+  "F00000JTC7": 339.75
+ }
+}

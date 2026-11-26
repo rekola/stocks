@@ -18,10 +18,12 @@
 // them in turn.
 //
 //   name, dataset             what the company is called and the code of its
-//   dataset in the store ("some": one to ten letters or digits, and
+//   dataset in the store ("SOME": one to eleven capitals, digits, hyphens, periods or hashes, and
 //                             never changed, since what is kept is kept under
 //                             it). A fund is priced by its company and on no
 //                             venue: market XOFF
+//   title                     the name the table shows for the dataset
+//                             ("Säästöpankki"); the code, if there is none
 //   pauseMs, refreshHours     the wait between requests (2000) and how often to
 //   load again (6) headers                   sent with every request, over a Chrome's (browserHeaders: the Referer says
 //   which page asks, an empty value leaves the browser's out) token
@@ -50,9 +52,11 @@
 //   often than daily detail                    {url, fields}: a request for
 //   each fund (`{id}`) whose answer says more of it (the fees); asked for once
 //   history                   {url}: the NAV history of a fund, `[[ms, value],
-//   ...]`, asked for with `{id}`. It is not asked for with the list but
-//                             when the fund is wanted (on the screen), one fund
-//                             at a time, together with its details.
+//   ...]`, asked for with `{id}`; or {morningstar: {client, universe, currency
+//   (EUR), startDate (2000-01-01)}}: Morningstar's, where the fund's `id` is
+//   its Morningstar id (secId), and this adapter makes the URL. It is not asked
+//   for with the list but when the fund is wanted (on the screen), one fund at
+//   a time, together with its details.
 //
 // The ISIN of a fund is found, in this order, in: its `isin` field,
 // `isinFromId`, `isins`, any string of its list row that is an ISIN, and (when
@@ -68,7 +72,7 @@ struct FundSchema {
     std::map<std::string, Pointers> attributes;  // predicate to where it is: kept of the fund as it is (a predicate ending in -day is a date)
     std::string rows, linkPrefix;
   };
-  std::string name, dataset;
+  std::string name, dataset, title;
   std::chrono::milliseconds pause{2000}, refresh{std::chrono::hours(6)};
   HttpHeaders headers;
   std::string tokenPage, tokenRegex;

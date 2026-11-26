@@ -228,7 +228,7 @@ TEST(what_cannot_be_given_a_key_is_refused_and_told_of) {
   CHECK(!store->addInstrument("NOKIA", "Nokia", InstrumentKind::Company, "FI0009000680").valid());  // the check digit is wrong
   CHECK(!store->addInstrument("", "", InstrumentKind::Other).valid());
   CHECK(!store->addInstrument("A CURRENCY CODE", "Too long", InstrumentKind::Currency).valid());
-  CHECK(!store->addDataset("provider-a").valid());  // a code is letters and digits
+  CHECK(!store->addDataset("provider_a").valid());  // a code is letters and digits
   CHECK(!store->addDataset("morethanten1").valid());
   CHECK(told.size() == 5);
   CHECK(store->snapshot()->nodeCount(NodeType::Instrument) == 0 && store->snapshot()->nodeCount(NodeType::Dataset) == 0);
@@ -238,7 +238,7 @@ TEST(a_dataset_is_its_code_and_its_name_is_a_fact_that_is_the_code_until_said) {
   Clock clock;
   auto store = makeMemoryStore(optionsFor(nullptr, clock));
   DatasetId d = store->addDataset("nordnet");
-  CHECK(d.valid() && datasetCode(d) == "nordnet" && store->snapshot()->name(d) == "nordnet" && d.value == numberOf(datasetKey("nordnet")));
+  CHECK(d.valid() && datasetCode(d) == "NORDNET" && store->snapshot()->name(d) == "NORDNET" && d.value == numberOf(datasetKey("NORDNET")));  // the case is not kept
   store->addDataset("nordnet", "Nordnet");
   CHECK(store->snapshot()->name(d) == "Nordnet");
   store->addDataset("nordnet");  // said again with no name: the name that was said stays

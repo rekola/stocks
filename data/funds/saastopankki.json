@@ -1,0 +1,46 @@
+{
+ "name": "saastopankki",
+ "dataset": "SAASTOPANKK",
+ "title": "Säästöpankki",
+ "pauseMs": 2000,
+ "refreshHours": 6,
+ "list": {
+  "url": "https://www.saastopankki.fi/api/fundservice/screener/getfunds?category=7&dataPoints=name|ReturnM1|ReturnM0|ReturnM12|SustainabilityRating|StarRating|CustomRisk|buyLink|name|Price|ReturnD1|ClosePriceDate|name|CustomClassification1|CS_LowCarbonDesignation|SustainabilityRating|CS_CarbonRiskScore|CS_CarbonRiskLvlClassification|name|ReturnM1|ReturnM0|ReturnM12|ReturnM36|ReturnM60|ReturnM120|ReturnM255|name|ManagementFee|KID_OneOffEntryCost|KID_OneOffExitCost|InitialPurchase|name|PRIIPKIDDocument|CustomExternalURL1|CustomExternalURL3|CustomExternalURL2|CustomExternalURL4|CustomExternalURL5|CustomExternalURL7",
+  "rows": "/rows",
+  "fields": {
+   "id": "/secId",
+   "symbol": "/isin",
+   "name": "/name",
+   "isin": "/isin",
+   "risk": "/CustomRisk",
+   "rating": "/StarRating",
+   "esg": "/SustainabilityRating",
+   "managementFee": "/ManagementFee",
+   "subscriptionFee": "/KID_OneOffEntryCost",
+   "redemptionFee": "/KID_OneOffExitCost",
+   "link": "/href",
+   "price": "/Price",
+   "date": "/ClosePriceDate",
+   "change": "/ReturnD1",
+   "changeMonth": "/ReturnM1",
+   "changeYear": "/ReturnM12",
+   "annualYear3": "/ReturnM36",
+   "annualYear10": "/ReturnM120"
+  },
+  "linkPrefix": "https://www.saastopankki.fi",
+  "scale": {
+   "change": 0.01
+  },
+  "attributes": {
+   "kiid-url": "/PRIIPKIDDocument",
+   "low-carbon": "/CS_LowCarbonDesignation"
+  }
+ },
+ "history": {
+  "morningstar": {
+   "client": "24y0loe6zj",
+   "universe": "3664"
+  }
+ },
+ "maxAgeDays": 14
+}
