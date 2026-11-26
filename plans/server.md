@@ -1,8 +1,38 @@
 # Server, API and bars
 
-Status: plan, nothing built. A living document: it holds what is decided, what is
+Status: plan; the MVP of the ingest and the API is built ("The MVP as built", below). A living document: it holds what is decided, what is
 proposed (so it can be argued with) and what is open. The desktop app's model is
 in [data-model.md](data-model.md); this is the other end of it.
+
+## The MVP as built
+
+`market-ingest` and `market-server` (`src/market/`, the HistData adapter in `src/source/HistData.cpp`); how to run them is in the README.
+What it holds is small on purpose: the bars the sparklines need, three levels, each replaced by every run:
+
+| Level | Bar | Stored | Feeds |
+|---|---|---|---|
+| 5m | 5 minutes, key `floor(unix / 300)` | last 1 day | day |
+| 1h | 1 hour, the hour number | last 31 days | week, month |
+| 1d | 1 day, the day number (`Date_to_Days`) | last 10 years | 3 months, 1 year, 3 years, 10 years |
+
+Each period ends at the instrument's last bar (the data lags by weeks), the bucketing is UTC and in one function (`barKey`), and how a
+09:30 New York open falls on the numbers is still the open question above. The 1-minute data is not in the database: the raw zips
+are the only copy and are kept as they came. The catalog is the plan's edge: an instrument is `(base, quote, market, dataset)`, the
+keys of `NodeKey.h` (a pair's two nodes are currencies or units by code, the market XXXX, the dataset `histdata`), and a bar carries the
+batch that wrote it (`version`). The API is `/health`, `/instruments` and `/summary` (see `src/market/Api.h`), unversioned for now.
+
+Where it differs from the plan above, and why:
+
+- **Bars are in MariaDB, behind `MarketStore`, not in ClickHouse.** ClickHouse cannot run where this was built (the distribution's package is
+  from 2018 and the official one is not reachable), and the MVP's few hundred thousand rows do not need it. The table has the plan's
+  columns, so the move is a second implementation of the interface.
+- **A run replaces a level instead of adding a version of each bar**: the task asks that nothing outside the period remains. The
+  `version` column still says which batch wrote a bar, and the plan's insert-only history is a later change.
+- **Intraday levels are built from the 1-minute quotes, not loaded as the provider gives them** (the plan says nothing is derived from another
+  interval): HistData has only 1-minute data, so this is the one dataset where that is how it has to be.
+- **No `/v1` prefix and no columnar chunks yet**: the paths are the task's, and a window is JSON columns (`keys`, `close`).
+- **A currency pair, a metal, an oil price and an index are all an edge between two codes** (`EUR`/`USD`, `XAU`/`USD`, `SPX`/`USD`), as the plan
+  says of pairs; they have no ISIN, and no `KnownIsins` entry is made for them.
 
 ## Goals and constraints
 

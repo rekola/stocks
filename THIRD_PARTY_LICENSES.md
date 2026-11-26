@@ -78,3 +78,8 @@ WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 OTHER DEALINGS IN THE SOFTWARE.
 ```
+
+## cpp-httplib
+
+MIT licence, Copyright (c) 2017 yhirose. <https://github.com/yhirose/cpp-httplib>, version 0.18.3. The market-data server's HTTP
+(`src/market/Api.cpp`); built only where the market-data programs are.
