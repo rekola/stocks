@@ -446,7 +446,12 @@ void FundSource::load(Store & store, Http & http, SourceListener & listener) {
     store.batch([&](Batch & b) {
       auto edge = writeFund(b, schema_.dataset, e.fund, {bar});
       if (!edge) return;
-      if (e.fund.change && *e.fund.change > -1) b.setPreviousClose(*edge, *e.fund.day, *e.fund.price / (1 + *e.fund.change));
+      if (e.fund.change && *e.fund.change > -1) {
+        b.setPreviousClose(*edge, *e.fund.day, *e.fund.price / (1 + *e.fund.change));
+        Changes changes;
+        changes.pct[0] = *e.fund.change * 100;  // the day's, as a fraction in the list: per cent
+        b.setChanges(*edge, changes);
+      }
       written = true;
     });
     if (!written) {  // the one reason there is: it could not be named

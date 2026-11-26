@@ -293,6 +293,7 @@ void Snapshot::setPreviousClose(const EdgeKey & k, int64_t day, double close) {
   previousClose_ = previousClose_.set(k, {day, close});
   dirtyEdges_.insert(k);
   version_++;
+  refreshChanges(k);
 }
 bool Snapshot::hasCandles(const EdgeKey & k, Resolution r) const {
   const auto * s = series_.find(SeriesKey{k, r});
@@ -743,6 +744,43 @@ void Snapshot::setQuote(const EdgeKey & k, const Quote & in) {
   addEdge(k);
   noteRow(k);
   version_++;
+  refreshChanges(k);
+}
+
+Changes Snapshot::changes(const EdgeKey & k) const {
+  const Changes * c = changes_.find(k);
+  return c ? *c : Changes{};
+}
+
+void Snapshot::setChanges(const EdgeKey & k, const Changes & in) {
+  require(k);
+  if (!in.says()) return;
+  Changes now = changes(k);
+  for (size_t i = 0; i < kChangeCount; i++)
+    if (isDefined(in.pct[i])) now.pct[i] = in.pct[i];
+  if (const Changes * old = changes_.find(k); old ? *old != now : true) {
+    changes_ = changes_.set(k, now);
+    dirtyEdges_.insert(k);
+    addEdge(k);
+    version_++;
+  }
+  refreshChanges(k);
+}
+
+void Snapshot::refreshChanges(const EdgeKey & k) {
+  Changes now = changes(k);
+  bool any = false;
+  for (size_t p = 0; p < kChangeCount; p++) {
+    const double c = periodView(*this, k, static_cast<Period>(p), false).change();
+    if (isDefined(c) && !(now.pct[p] == c)) {
+      now.pct[p] = c;
+      any = true;
+    }
+  }
+  if (!any) return;
+  changes_ = changes_.set(k, now);
+  dirtyEdges_.insert(k);
+  version_++;
 }
 
 // The summary of the bars a source writes: the quote moves to the newest bar if that is newer than it, and the queue of the resolution takes
@@ -831,7 +869,10 @@ bool Snapshot::deriveSummary(const EdgeKey & k, Resolution r, const std::vector<
       checks_++;
     }
   }
-  if (changed) noteRow(k);
+  if (changed) {
+    noteRow(k);
+    refreshChanges(k);
+  }
   return changed;
 }
 
@@ -847,6 +888,7 @@ void Snapshot::loadEdges(const std::vector<StoredEdge> & edges) {
       const Quote * old = quotes_.find(k);
       if (!old || (e.quote.time != 0 && old->time != 0 && e.quote.time > old->time)) quotes_ = quotes_.set(k, e.quote);
     }
+    if (e.changes.says() && !changes_.find(k)) changes_ = changes_.set(k, e.changes);  // what a source has said is newer
     if (isDefined(e.previous_close) && !previousClose_.find(k)) previousClose_ = previousClose_.set(k, {e.previous_close_day, e.previous_close});
     for (const auto & [r, c] : e.queues) {
       const SeriesKey key{k, r};
@@ -908,6 +950,7 @@ void Snapshot::loadQueue(const StoredQueue & in) {
   queues_ = queues_.set(key, std::move(state));
   noteRow(in.edge);
   version_++;
+  refreshChanges(in.edge);
 }
 
 void Snapshot::evictQueue(const EdgeKey & k, Resolution r) {
@@ -933,11 +976,13 @@ SummaryBatch Snapshot::takeSummaries() {
   for (const EdgeKey & k : dirtyEdges_) {
     const Quote * q = quotes_.find(k);
     const auto * previous = previousClose_.find(k);
-    if (!q && !previous && !hasQueueOp(k)) continue;  // nothing of a summary yet: an edge with a listing and books is not kept
+    const Changes * changes = changes_.find(k);
+    if (!q && !previous && !changes && !hasQueueOp(k)) continue;  // nothing of a summary yet: an edge with a listing and books is not kept
     StoredEdge e;
     if (const Listing * l = listings_.find(k)) e.listing = *l;
     e.listing.key = k;
     if (q) e.quote = *q;
+    if (changes) e.changes = *changes;
     if (previous) {
       e.previous_close_day = previous->first;
       e.previous_close = previous->second;
@@ -1263,6 +1308,7 @@ class SnapshotBatch : public Batch {
   void appendCandles(const EdgeKey & k, Resolution r, const std::vector<Candle> & c) override { s_.appendCandles(k, r, c); }
   void setPreviousClose(const EdgeKey & k, int64_t day, double close) override { s_.setPreviousClose(k, day, close); }
   void setQuote(const EdgeKey & k, const Quote & q) override { s_.setQuote(k, q); }
+  void setChanges(const EdgeKey & k, const Changes & c) override { s_.setChanges(k, c); }
   void appendBooks(const EdgeKey & k, const std::vector<BookSnapshot> & b) override { s_.appendBooks(k, b); }
   void appendNews(DatasetId d, const std::vector<NewsItem> & n) override { s_.appendNews(d, n); }
   void appendActions(const EventKey & k, const std::vector<CorporateAction> & a) override { s_.appendActions(k, a); }
@@ -1380,6 +1426,9 @@ class MemoryStore : public Store {
   }
   void setQuote(const EdgeKey & k, const Quote & q) override {
     write([&](Snapshot & s) { s.setQuote(k, q); });
+  }
+  void setChanges(const EdgeKey & k, const Changes & c) override {
+    write([&](Snapshot & s) { s.setChanges(k, c); });
   }
   void setRetention(DatasetId d, Resolution r, std::optional<std::chrono::seconds> keep) override {
     write([&](Snapshot & s) { s.setRetention(d, r, keep); });

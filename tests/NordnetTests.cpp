@@ -3,6 +3,7 @@
 #include "FakeHttp.h"
 #include "model/Dates.h"
 #include "model/Isin.h"
+#include "model/Period.h"
 #include "source/InstrumentLists.h"
 #include "source/NordnetSource.h"
 
@@ -63,6 +64,30 @@ TEST(a_page_of_the_etf_list_becomes_listings_with_the_ids_the_history_needs) {
   CHECK(l.name == "Franklin FTSE Korea UCITS ETF" && l.issuer == "Franklin Templeton" && l.country == "DE");
   CHECK(page.listings[1].symbol == "XACT BULL" && page.listings[1].currency == "SEK" && page.listings[1].type == "KETF");
   CHECK(page.listings[2].marketId == 14 && page.listings[2].currency == "DKK");
+}
+
+TEST(the_returns_of_a_listing_are_its_changes_from_the_first_list_with_no_history) {
+  NordnetSource::Page page;
+  std::string error;
+  CHECK(NordnetSource::parsePage(fixture("etflist-1.json"), page, error));
+  const Changes & c = page.listings[0].changes;  // FLXK
+  CHECK(c.pct[0] == -8.2 && c.pct[1] == -12.49 && c.pct[2] == -18.37 && c.pct[3] == -22.26 && c.pct[4] == 59.31 && c.pct[5] == 123.05);
+  CHECK(!isDefined(c.pct[6]));  // Nordnet gives no ten years
+  // Written with the edge: a table can sort by any of them at once.
+  auto store = makeMemoryStore();
+  FakeHttp http;
+  http.answer = pages;
+  Listener listener;
+  NordnetSource source = quick();
+  source.load(*store, http, listener);
+  auto s = store->snapshot();
+  const InstrumentId flxk = *s->findInstrumentByIsin("IE00BHZRR030");
+  bool found = false;
+  for (const EdgeKey & edge : s->edgesOf(flxk)) {
+    found = true;
+    CHECK(s->changes(edge).pct[static_cast<size_t>(Period::Week)] == -12.49 && s->changes(edge).pct[static_cast<size_t>(Period::Year3)] == 123.05);
+  }
+  CHECK(found);
 }
 
 TEST(a_market_is_named_by_its_nordnet_id_where_that_is_known) {
