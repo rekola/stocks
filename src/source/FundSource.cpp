@@ -524,10 +524,22 @@ HistoryProvider::Outcome FundHistory::load(Store & store, Http & http, const Edg
   std::vector<Attribute> said;
   bool answered = false;  // the details were asked for and answered, and are not kept yet
   const auto keep = [&](const std::vector<Candle> * bars) {
+    // The 3 and 10 years read weekly bars: a week's is its last NAV, the NAV being one value a day.
+    std::vector<Candle> weeks;
+    if (bars)
+      for (const Candle & c : *bars) {
+        Candle w = c;
+        w.time = weekStart(c.time);
+        if (!weeks.empty() && weeks.back().time == w.time) weeks.back() = w;
+        else weeks.push_back(w);
+      }
     if (!said.empty() || bars)
       store.batch([&](Batch & b) {
         b.setAttributes(edge.base, said);
-        if (bars) b.appendCandles(edge, Resolution::Day, *bars);
+        if (bars) {
+          b.appendCandles(edge, Resolution::Day, *bars);
+          b.appendCandles(edge, Resolution::Week, weeks);
+        }
       });
     if (answered) {
       std::lock_guard lock(mutex_);

@@ -103,7 +103,7 @@ class FundHistory : public HistoryProvider {
  public:
   explicit FundHistory(FundSchema schema) : schema_(std::move(schema)) {}
   std::string dataset() const override { return schema_.dataset; }
-  // One request for a fund company's every edge, whatever the period: the details and the NAV history, once per session, unless the store has the quarter's bars.
+  // One request for a fund company's every edge, whatever the period: the details and the NAV history, once per session, unless the store has the quarter's bars (daily, and weekly for the 3 and 10 years).
   std::optional<Need> need(const Snapshot &, const EdgeKey &, Period) const override;
   Outcome load(Store &, Http &, const EdgeKey &, int request, const Wait &) override;
   std::chrono::milliseconds pause() const override { return schema_.pause; }
