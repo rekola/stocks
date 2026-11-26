@@ -21,9 +21,12 @@
 //   36^9 values, under 2^56), plus one so that the
 //               ISIN AA0000000000 is not zero. The check digit is not kept:
 //               isinCheckDigit() gives it back
-//   Currency    a currency's or a unit's code, up to ten characters of
-//   0-9A-Za-z, six bits each (0 ends it, 1 to 62 are the
-//               characters), case kept
+//   Currency    a currency's or a unit's code, up to eleven characters of
+//   0-9A-Z, a hyphen, a period or a hash, the digits of a number of base
+//               43 (0 ends it, 1 to 39 are the characters, 40 to 42 are kept
+//               for others): 43^11 is under 2^60, and 43 is the largest base
+//               that is. A lower case letter is its capital, so the case of a
+//               code is not kept (`pts` is `PTS`)
 //   Market      its MIC, the ISO 10383 market identifier code: four characters
 //   of A-Z0-9, packed as a code. The special
 //               ones are markets too: XOFF (listed instruments traded off an
@@ -34,7 +37,7 @@
 //               natural identity); in text a "P" and the fifteen hex digits
 //
 // A string that does not fit is refused (an empty optional), never changed: an
-// ISIN must be valid, a code must be one to ten characters of 0-9A-Za-z, a MIC
+// ISIN must be valid, a code must be one to eleven characters of 0-9A-Za-z, a hyphen, a period or a hash (letters read as capitals), a MIC
 // four of A-Z0-9.
 
 enum class NodeKind : uint8_t { Instrument = 0,
@@ -63,7 +66,7 @@ NodeKey mintPortfolioKey();
 // The key of a portfolio's text ("P" and fifteen hex digits, as `text()` writes it).
 std::optional<NodeKey> portfolioKey(const std::string & text);
 
-constexpr size_t kMaxCodeLength = 10;
+constexpr size_t kMaxCodeLength = 11;
 
 std::optional<NodeKey> instrumentKey(const std::string & isin);  // a valid ISIN
 std::optional<NodeKey> currencyKey(const std::string & code);    // a currency's or a unit's code

@@ -331,7 +331,7 @@ TEST(a_preset_shows_one_row_per_edge_with_its_dataset) {
   Table & t = f.browser->table();
   CHECK(t.model()->rowCount() == 2);  // the same pair on the same market from two datasets: two rows
   t.sortBy(Quotes::DATASET, SortOrder::ASCENDING);
-  CHECK(t.model()->text(t.rowAt(0), Quotes::DATASET) == "providera" && t.model()->text(t.rowAt(1), Quotes::DATASET) == "providerb");
+  CHECK(t.model()->text(t.rowAt(0), Quotes::DATASET) == "PROVIDERA" && t.model()->text(t.rowAt(1), Quotes::DATASET) == "PROVIDERB");
   CHECK(t.model()->text(t.rowAt(0), Quotes::BASE) == "EUR" && t.model()->text(t.rowAt(0), Quotes::QUOTE) == "USD");
   CHECK(t.model()->text(t.rowAt(0), Quotes::PRICE) == "1.10" && t.model()->text(t.rowAt(0), Quotes::CHANGE) == "+10.00%");
   CHECK(t.model()->text(t.rowAt(1), Quotes::PRICE) == "1.00" && t.model()->text(t.rowAt(1), Quotes::CHANGE) == "-50.00%");
@@ -362,7 +362,7 @@ TEST(the_made_up_data_fills_every_preset_with_what_the_lists_hold) {
     f.app->execute(command);
     CHECK(f.browser->table().model()->rowCount() > 0);
     CHECK(static_cast<size_t>(f.browser->table().model()->rowCount()) == count);
-    CHECK(f.browser->table().model()->text(f.browser->table().rowAt(0), Quotes::DATASET) == "synthetic");
+    CHECK(f.browser->table().model()->text(f.browser->table().rowAt(0), Quotes::DATASET) == "Synthetic");
   }
 }
 

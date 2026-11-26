@@ -621,7 +621,7 @@ TEST(over_its_budget_the_queues_not_wanted_for_the_longest_go_and_the_quote_stay
 TEST(a_damaged_file_another_schema_or_a_directory_that_cannot_be_made_say_so_and_the_store_runs_without) {
   Disk d;
   fs::create_directories(d.dir / "summaries");
-  { std::ofstream(d.dir / "summaries" / "nordnet.sqlite") << std::string(4000, 'x'); }
+  { std::ofstream(d.dir / "summaries" / "NORDNET.sqlite") << std::string(4000, 'x'); }
   {
     auto store = makeMemoryStore(d.options());
     Things t(*store);

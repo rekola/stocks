@@ -91,7 +91,7 @@ TEST(every_symbol_is_priced_in_euros_and_in_dollars_as_edges_of_the_dataset) {
   const InstrumentId eur = *s->findInstrument("EUR"), usd = *s->findInstrument("USD");
   CHECK(s->kind(eur) == InstrumentKind::Currency && s->kind(usd) == InstrumentKind::Currency);
   const DatasetId data = *s->findDataset(kGoldApiDataset);
-  CHECK(s->name(NodeRef(data)) == "goldapi" && s->edges(none).size() == 14);
+  CHECK(s->name(NodeRef(data)) == "gold-api.com" && s->edges(none).size() == 14);
   const InstrumentId gold = *s->findInstrument("XAU");
   const CandleSeries inEuros = s->candles({gold, eur, none, data}, Resolution::Day), inDollars = s->candles({gold, usd, none, data}, Resolution::Day);
   CHECK(inEuros.candles.size() == 1 && inDollars.candles.size() == 1);
@@ -198,7 +198,7 @@ TEST(a_failed_symbols_request_uses_the_list_from_before_and_with_none_says_so) {
   said.messages.clear();
   source.load(*store, http, said);  // the list is not there, the prices of the one before are asked for again
   CHECK(said.messages.size() == 1 && said.messages[0].find("using the list from before") != std::string::npos);
-  CHECK(source.refreshInterval() == std::chrono::minutes(2) && source.datasetCodes() == std::vector<std::string>{kGoldApiDataset} && source.name() == "goldapi");
+  CHECK(source.refreshInterval() == std::chrono::minutes(2) && source.datasetCodes() == std::vector<std::string>{kGoldApiDataset} && source.name() == "gold-api");
 }
 
 TEST(the_gold_estimate_is_made_in_euros_and_in_dollars_from_gold_api_com_and_beats_the_other_spot) {

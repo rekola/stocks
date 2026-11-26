@@ -78,39 +78,75 @@ TEST(the_isins_the_adapters_supply_have_keys) {
   }
 }
 
-TEST(codes_round_trip_with_their_case) {
-  for (const char * code : {"EUR", "USD", "pts", "USDT", "BTC", "a", "Z", "0", "0123456789", "AbCdEfGhIj", "nordnet", "yahoo", "synthetic"}) {
+namespace {
+std::string upper(std::string text) {
+  for (char & c : text)
+    if (c >= 'a' && c <= 'z') c = static_cast<char>(c - 'a' + 'A');
+  return text;
+}
+}  // namespace
+
+TEST(codes_round_trip_in_capitals) {
+  for (const char * code : {"EUR", "USD", "pts", "USDT", "BTC", "a", "Z", "0", "0123456789", "0123456789A", "AbCdEfGhIjK", "nordnet", "yahoo", "MORNINGSTAR"}) {
     const auto currency = currencyKey(code);
     const auto dataset = datasetKey(code);
     CHECK(currency && dataset);
     if (!currency || !dataset) continue;
     CHECK(currency->kind() == NodeKind::Currency && dataset->kind() == NodeKind::Dataset);
     CHECK(currency->value < kBelow62 && dataset->value < kBelow62);
-    CHECK(text(*currency) == code && text(*dataset) == code);
+    CHECK(text(*currency) == upper(code) && text(*dataset) == upper(code));  // the case of a code is not kept
     CHECK(currency->identity() == dataset->identity() && !(*currency == *dataset));  // the same code, a different kind of node
   }
 }
 
 TEST(a_code_that_does_not_fit_has_no_key) {
   CHECK(!currencyKey(""));
-  CHECK(!currencyKey("ABCDEFGHIJK"));  // eleven
-  CHECK(!currencyKey("EU-R"));
+  CHECK(!currencyKey("ABCDEFGHIJKL"));  // twelve
+  CHECK(!currencyKey("EU_R"));
   CHECK(!currencyKey("EU R"));
   CHECK(!currencyKey("EURO\xC3\xA9"));
   CHECK(!datasetKey("nord net"));
   CHECK(!datasetKey(std::string("a\0b", 3)));
-  CHECK(currencyKey("ABCDEFGHIJ"));  // ten
+  CHECK(currencyKey("ABCDEFGHIJK"));  // eleven
+  CHECK(currencyKey("ZZZZZZZZZZZ")->identity() < (uint64_t{1} << 60));  // the largest of them is under sixty bits
+  CHECK(currencyKey("###########")->identity() < (uint64_t{1} << 60));    // and the largest with the hyphen, the period and the hash
 }
 
-TEST(different_codes_make_different_keys_and_a_longer_code_is_not_the_shorter) {
+TEST(a_hyphen_and_a_period_are_characters_of_a_code) {
+  for (const char * code : {"GOLD-API", "price.dev", "A-B.C#", "#", "C#", "#.-", "-", ".", "..", "A.", "-A", "0.5-"}) {
+    const auto dataset = datasetKey(code);
+    CHECK(dataset && text(*dataset) == upper(code));
+  }
+  CHECK(!(orNone(datasetKey("A-B")) == orNone(datasetKey("A.B"))) && !(orNone(datasetKey("A-B")) == orNone(datasetKey("AB"))));
+  CHECK(orNone(datasetKey("gold-api")) == orNone(datasetKey("GOLD-API")));
+  CHECK(!datasetKey("A_B") && !datasetKey("A B") && !datasetKey("A/B") && !datasetKey("A@B"));  // no other character
+  CHECK(!(orNone(datasetKey("A#")) == orNone(datasetKey("A."))));
+  CHECK(!marketKey("X-EL") && !countryKey("F-"));                          // a MIC and a country are as strict as before
+}
+
+TEST(different_codes_make_different_keys_and_a_longer_code_is_not_the_shorter_and_the_case_is_not_one) {
   CHECK(orNone(currencyKey("EUR")).valid() && !(orNone(currencyKey("EUR")) == orNone(currencyKey("EURO"))));
-  CHECK(!(orNone(currencyKey("EUR")) == orNone(currencyKey("eur"))));
+  CHECK(orNone(currencyKey("EUR")) == orNone(currencyKey("eur")) && orNone(datasetKey("Nordnet")) == orNone(datasetKey("nordnet")));
   CHECK(orNone(currencyKey("A")).valid() && !(orNone(currencyKey("A")) == orNone(currencyKey("A0"))));  // 0 is a character, and not the padding
   std::set<uint64_t> keys;
-  const std::string alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  const std::string alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
   for (char a : alphabet)
-    for (char b : alphabet) keys.insert(orNone(currencyKey(std::string{a, b})).value);
-  CHECK(keys.size() == alphabet.size() * alphabet.size());
+    for (char b : alphabet)
+      for (char c : alphabet) keys.insert(orNone(currencyKey(std::string{a, b, c})).value);
+  CHECK(keys.size() == alphabet.size() * alphabet.size() * alphabet.size());
+  for (uint64_t key : keys) CHECK(text(NodeKey{key}).size() == 3);
+}
+
+TEST(a_key_that_is_not_a_code_has_no_text_of_one) {
+  CHECK(text(NodeKey{(uint64_t{1} << 60) | (uint64_t{1} << 59)}).empty());  // above the largest code
+  const uint64_t a = currencyKey("A")->identity(), ab = currencyKey("AB")->identity();
+  CHECK(text(NodeKey{(uint64_t{1} << 60) | a}) == "A" && text(NodeKey{(uint64_t{1} << 60) | ab}) == "AB");
+  CHECK(text(NodeKey{(uint64_t{1} << 60) | (a + 1)}).empty());  // a character after the end
+  // The symbols 40 to 42 are kept for characters to come: no code has them, and no key of one has a text.
+  uint64_t unit = 1;
+  for (int i = 0; i < 10; i++) unit *= 43;  // the first character's place
+  for (uint64_t reserved : {40u, 41u, 42u}) CHECK(text(NodeKey{(uint64_t{1} << 60) | (reserved * unit)}).empty());
+  CHECK(text(NodeKey{(uint64_t{1} << 60) | (39 * unit)}) == "#");
 }
 
 TEST(a_market_key_is_its_mic) {
@@ -175,6 +211,6 @@ TEST(a_portfolio_is_written_as_a_p_and_fifteen_hex_digits_and_read_back) {
 
 TEST(the_kinds_that_are_planned_and_the_escape_have_no_text_and_the_built_ones_are_as_they_were) {
   for (uint64_t kind : {4u, 6u, 7u}) CHECK(text(NodeKey{(kind << 60) | 1}).empty());  // country, attribute, the escape: not built
-  CHECK(currencyKey("EUR")->value >> 60 == 1 && marketKey("XHEL")->value >> 60 == 2 && datasetKey("nordnet")->value >> 60 == 3);
+  CHECK(currencyKey("EUR")->value >> 60 == 1 && marketKey("XHEL")->value >> 60 == 2 && datasetKey("NORDNET")->value >> 60 == 3);
   CHECK(instrumentKey("FI0009000681")->value >> 60 == 0);
 }

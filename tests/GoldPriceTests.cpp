@@ -58,7 +58,7 @@ TEST(the_prices_are_one_request_and_the_metals_are_stored_in_the_unit_of_their_i
   const auto s = store->snapshot();
   const MarketId none = *s->findMarket(kNoMarket);
   const DatasetId data = *s->findDataset(kGoldPriceDataset);
-  CHECK(s->name(NodeRef(data)) == "goldprice" && s->edges(none).size() == 4);  // XAU in EUR and USD (not SEK: it was not asked for), XAG and HG in USD
+  CHECK(s->name(NodeRef(data)) == "goldprice.dev" && s->edges(none).size() == 4);  // XAU in EUR and USD (not SEK: it was not asked for), XAG and HG in USD
   const InstrumentId gold = *s->findInstrument("XAU"), eur = *s->findInstrument("EUR"), usd = *s->findInstrument("USD");
   CHECK(!s->findInstrument("SEK"));
   const auto last = [&](InstrumentId base, InstrumentId quote) { return s->lastCandles({base, quote, none, data}, Resolution::Day, 1).candles.back(); };
@@ -190,7 +190,7 @@ TEST(of_two_sources_of_one_spot_the_newest_bar_wins_and_on_the_same_day_the_row_
   GoldApiSource(std::chrono::minutes(2), std::chrono::milliseconds(0)).load(*store, http, said);
   PhysicalTable table;
   std::string error;
-  CHECK(parsePhysicalTable("spot,gold,XAU,GOLDPRICE\nspot,gold,XAU,GOLDAPI\nitem,gold,GOLDCOIN,Coin,1,1,1\n", table, error));
+  CHECK(parsePhysicalTable("spot,gold,XAU,GOLDPRICE\nspot,gold,XAU,GOLD-API\nitem,gold,GOLDCOIN,Coin,1,1,1\n", table, error));
   PhysicalSource estimate(table);
   const auto coin = [&](const char * currency) {
     const auto s = store->snapshot();
