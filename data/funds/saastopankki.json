@@ -1,6 +1,6 @@
 {
  "name": "saastopankki",
- "dataset": "saastopank",
+ "dataset": "SAASTOPANK",
  "pauseMs": 2000,
  "refreshHours": 6,
  "list": {
