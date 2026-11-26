@@ -24,9 +24,21 @@ class HttpClientHttp : public Http {
   }
 
   HttpResult get(const std::string & url, const HttpHeaders & headers) override {
-    if (cancelled()) return cancelledResult();
     httpclient::HTTPRequest request(httpclient::Method::GET, url);
     request.setFollowLocation(true);
+    return send(request, headers);
+  }
+
+  HttpResult post(const std::string & url, const std::string & body, const HttpHeaders & headers) override {
+    httpclient::HTTPRequest request(httpclient::Method::POST, url);
+    request.setContent(body);
+    request.setContentType("application/x-www-form-urlencoded");
+    return send(request, headers);
+  }
+
+ private:
+  HttpResult send(httpclient::HTTPRequest & request, const HttpHeaders & headers) {
+    if (cancelled()) return cancelledResult();
     request.setConnectTimeout(client_->getConnectTimeout());
     request.setReadTimeout(client_->getReadTimeout());
     request.setConnectionTimeout(client_->getConnectionTimeout());
@@ -41,7 +53,6 @@ class HttpClientHttp : public Http {
     return r;
   }
 
- private:
   // A response that ends the transfer when the Http is cancelled: httpclient asks onIdle() about once a second while it waits
   // (connecting, or for data), and a chunk that is not taken ends it at once.
   class Response : public httpclient::HTTPResponse {

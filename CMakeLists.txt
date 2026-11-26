@@ -85,11 +85,16 @@ target_link_libraries(stocks_model PUBLIC immer Threads::Threads)
 target_link_libraries(stocks_model PRIVATE SQLiteCpp nlohmann_json::nlohmann_json)
 
 # The browser: the screen, its commands and the rows it shows, as a library so the tests can drive it.
-add_library(stocks_lib STATIC src/Browser.cpp src/BrowserPortfolio.cpp src/Positions.cpp src/News.cpp src/AttributeView.cpp src/Quotes.cpp src/Synthetic.cpp src/source/Http.cpp src/source/InstrumentLists.cpp
+# The blocking GET and POST over httpclient, apart from the browser so that the market-data programs need no window toolkit.
+add_library(stocks_http STATIC src/source/Http.cpp)
+target_include_directories(stocks_http PUBLIC src)
+target_link_libraries(stocks_http PUBLIC httpclient::httpclient)
+
+add_library(stocks_lib STATIC src/Browser.cpp src/BrowserPortfolio.cpp src/Positions.cpp src/News.cpp src/AttributeView.cpp src/Quotes.cpp src/Synthetic.cpp src/source/InstrumentLists.cpp
   src/icons/IconLoader.cpp src/history/HistoryLoader.cpp src/source/NordnetHistory.cpp src/source/YahooSource.cpp src/source/YahooHistory.cpp src/source/NordnetSource.cpp src/source/SourceRunner.cpp src/source/DatasetCodes.cpp src/source/AutoSource.cpp
   src/source/DataDirectory.cpp src/source/FundRows.cpp src/source/FundSource.cpp src/source/NordnetDetails.cpp src/source/Countries.cpp src/source/KnownMarkets.cpp src/source/NordnetNews.cpp src/source/SuomenPankkiSource.cpp src/source/EcbSource.cpp src/source/PhysicalSource.cpp src/source/GoldApiSource.cpp src/source/GoldPriceSource.cpp src/source/GoldPriceHistory.cpp)
 target_include_directories(stocks_lib PUBLIC src)
-target_link_libraries(stocks_lib PUBLIC cellui stocks_model httpclient::httpclient nlohmann_json::nlohmann_json pugixml::pugixml)
+target_link_libraries(stocks_lib PUBLIC cellui stocks_model stocks_http httpclient::httpclient nlohmann_json::nlohmann_json pugixml::pugixml)
 target_compile_definitions(stocks_lib PUBLIC STOCKS_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
   STOCKS_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")
 
@@ -142,4 +147,20 @@ if(NOT WIN32)
   target_link_libraries(stocks_tests PRIVATE stocks_lib SQLiteCpp)  # the tests of the file make an old one with it
   add_test(NAME stocks_tests COMMAND stocks_tests)
   set_tests_properties(stocks_tests PROPERTIES TIMEOUT 60)
+endif()
+
+# The market-data server and its ingest (src/market, plans/server.md): `market-ingest` loads datasets into MariaDB and `market-server`
+# serves them. They need the MariaDB client library (libmariadb) and zlib, and are left out, with a message, where either is missing
+# (Windows, a machine without them).
+if(NOT WIN32)
+  find_package(PkgConfig QUIET)
+  find_package(ZLIB QUIET)
+  if(PkgConfig_FOUND AND ZLIB_FOUND)
+    pkg_check_modules(MARIADB QUIET IMPORTED_TARGET libmariadb)
+  endif()
+endif()
+if(MARIADB_FOUND AND ZLIB_FOUND)
+  add_subdirectory(src/market)
+else()
+  message(STATUS "market-ingest and market-server are not built: they need libmariadb (pkg-config) and zlib")
 endif()
