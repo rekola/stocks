@@ -26,7 +26,7 @@ struct NordnetListing {
   bool hasQuote = false;
   Quote quote;
   // The returns the list gives (historical_returns_info: per cent over a day, a week, a month, three months, a year, three years and ten
-  // years, which it calls `yield_max`): the edge's changes until it has history of its own.
+  // years: a listing younger than that has none): the edge's changes until it has history of its own.
   Changes changes;
   // What else the row says about the instrument, as triples (the subject is the instrument, once it is made).
   std::vector<Attribute> attributes;

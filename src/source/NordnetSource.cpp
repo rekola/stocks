@@ -264,8 +264,9 @@ bool NordnetSource::parsePage(const std::string & body, Page & page, std::string
     }
     if (row.is_object() && row.contains("historical_returns_info") && row["historical_returns_info"].is_object()) {
       const json & h = row["historical_returns_info"];
-      // In the order of `Period`, which has no year-to-date: `yield_max` is the ten years.
-      static constexpr const char * keys[] = {"yield_1d", "yield_1w", "yield_1m", "yield_3m", "yield_1y", "yield_3y", "yield_max"};
+      // In the order of `Period`, which has no year-to-date. `yield_max` is since the start, whatever its age, so it is not the ten years: a
+      // listing younger than ten years has no `yield_10y`.
+      static constexpr const char * keys[] = {"yield_1d", "yield_1w", "yield_1m", "yield_3m", "yield_1y", "yield_3y", "yield_10y"};
       static_assert(std::size(keys) == kChangeCount);
       for (size_t i = 0; i < kChangeCount; i++)
         if (auto it = h.find(keys[i]); it != h.end() && it->is_number()) l.changes.pct[i] = it->get<double>();
