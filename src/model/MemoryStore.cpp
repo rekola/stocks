@@ -1239,6 +1239,62 @@ void Snapshot::removeTransactions(const LedgerKey & k, const std::vector<uint64_
   version_++;
 }
 
+namespace {
+bool whole(const EdgeKey & k) { return k.base.valid() && k.quote.valid() && k.market.valid() && k.dataset.valid(); }
+StoredMember storedMember(const std::string & list, const EdgeKey & k) { return {list, k.base.value, k.quote.value, k.market.value, k.dataset.value}; }
+}  // namespace
+
+std::vector<EdgeKey> Snapshot::listMembers(const std::string & list) const { return sorted(lists_.find(list)); }
+bool Snapshot::onList(const std::string & list, const EdgeKey & k) const {
+  const auto * members = lists_.find(list);
+  return members && members->count(k) > 0;
+}
+
+void Snapshot::addToList(const std::string & list, const std::vector<EdgeKey> & edges) {
+  if (list.empty()) throw std::invalid_argument("a list needs a code");
+  for (const EdgeKey & k : edges)
+    if (!whole(k)) throw std::invalid_argument("an edge on a list needs an instrument, a currency, a market and a dataset");
+  const auto * old = lists_.find(list);
+  immer::set<EdgeKey> members = old ? *old : immer::set<EdgeKey>{};
+  bool changed = false;
+  for (const EdgeKey & k : edges) {
+    if (members.count(k)) continue;
+    members = members.insert(k);
+    changed = true;
+    std::erase_if(outbox_.members_removed, [&](const StoredMember & m) { return m == storedMember(list, k); });
+    outbox_.members.push_back(storedMember(list, k));
+  }
+  if (!changed) return;
+  lists_ = lists_.set(list, members);
+  version_++;
+}
+
+void Snapshot::removeFromList(const std::string & list, const std::vector<EdgeKey> & edges) {
+  const auto * old = lists_.find(list);
+  if (!old) return;
+  immer::set<EdgeKey> members = *old;
+  bool changed = false;
+  for (const EdgeKey & k : edges) {
+    if (!members.count(k)) continue;
+    members = members.erase(k);
+    changed = true;
+    std::erase_if(outbox_.members, [&](const StoredMember & m) { return m == storedMember(list, k); });
+    outbox_.members_removed.push_back(storedMember(list, k));
+  }
+  if (!changed) return;
+  lists_ = members.size() ? lists_.set(list, members) : lists_.erase(list);
+  version_++;
+}
+
+void Snapshot::loadMembers(const std::vector<StoredMember> & stored) {
+  for (const StoredMember & m : stored) {
+    const EdgeKey k{InstrumentId{m.base}, InstrumentId{m.quote}, MarketId{m.market}, DatasetId{m.dataset}};
+    if (m.list.empty() || !whole(k) || NodeKey{m.market}.kind() != NodeKind::Market || NodeKey{m.dataset}.kind() != NodeKind::Dataset) continue;
+    const auto * old = lists_.find(m.list);
+    lists_ = lists_.set(m.list, (old ? *old : immer::set<EdgeKey>{}).insert(k));
+  }
+}
+
 void Snapshot::loadEvents(const std::vector<StoredEvent> & events) {
   std::map<LedgerKey, std::vector<portfolio::Transaction>> grouped;
   for (const StoredEvent & e : events) {
@@ -1316,6 +1372,8 @@ class SnapshotBatch : public Batch {
   void removePortfolio(PortfolioId id) override { s_.removePortfolio(id); }
   void appendTransactions(const LedgerKey & k, const std::vector<portfolio::Transaction> & t) override { s_.appendTransactions(k, t); }
   void removeTransactions(const LedgerKey & k, const std::vector<uint64_t> & ids) override { s_.removeTransactions(k, ids); }
+  void addToList(const std::string & list, const std::vector<EdgeKey> & e) override { s_.addToList(list, e); }
+  void removeFromList(const std::string & list, const std::vector<EdgeKey> & e) override { s_.removeFromList(list, e); }
 
  private:
   Snapshot & s_;
@@ -1350,6 +1408,7 @@ class MemoryStore : public Store {
         if (NodeKey{f.node}.kind() == NodeKind::Portfolio) mine.push_back(std::move(f));
       first.load(std::move(mine));
       first.loadEvents(portfolios_->loadEvents());
+      first.loadMembers(portfolios_->loadMembers());
     }
     const bool restore = facts_ || summary_;
     first.setRestoring(restore && background_);
@@ -1475,6 +1534,12 @@ class MemoryStore : public Store {
   }
   void removeTransactions(const LedgerKey & k, const std::vector<uint64_t> & ids) override {
     write([&](Snapshot & s) { s.removeTransactions(k, ids); });
+  }
+  void addToList(const std::string & list, const std::vector<EdgeKey> & e) override {
+    write([&](Snapshot & s) { s.addToList(list, e); });
+  }
+  void removeFromList(const std::string & list, const std::vector<EdgeKey> & e) override {
+    write([&](Snapshot & s) { s.removeFromList(list, e); });
   }
 
  private:
@@ -1728,6 +1793,8 @@ class MemoryStore : public Store {
       mine.removed_nodes = std::move(facts.removed_nodes);
       mine.events = std::move(facts.events);
       mine.events_removed = std::move(facts.events_removed);
+      mine.members = std::move(facts.members);
+      mine.members_removed = std::move(facts.members_removed);
       const auto portfolioFact = [](const StoredFact & f) { return NodeKey{f.node}.kind() == NodeKind::Portfolio; };
       for (auto * list : {&facts.changed, &facts.rechecked}) {
         auto & to = list == &facts.changed ? mine.changed : mine.rechecked;

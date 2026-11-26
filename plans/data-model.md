@@ -102,10 +102,17 @@ Today a preset is one market by name (or All), the simplest selection, and it wi
   ones), a regional preset the markets of several countries, All every market.
 - **A filter** on the edges of those markets: by the base instrument's kind or type (every commodity, wherever it trades), by the
   country of the market, by the dataset.
-- **The user's own preset: the edges she follows.** An explicit list of edges (four keys each), added to and removed from with
-  commands on a row (follow, unfollow). It is the user's data, not a fact of any node, so it lives in a file of her own beside the
-  facts file (and, with a server, per user). An edge's four keys are the same in every run, so the list survives a restart, which
-  it could not while ids belonged to one run.
+- **The user's own preset: the edges she follows.** Built as **lists**: a list is a code (`watchlist`; the application's `kLists`
+  names them) and the edges she put on it, kept as `(list, base, quote, market, dataset)` rows in the user's own file
+  (`portfolios.sqlite`, table `list_members`), beside the portfolios and never in the cache. The membership is of the **edge**, the
+  row she sees, and not of the instrument: NOKIA from Nordnet on the watchlist does not put NOKIA from Yahoo, or on another market,
+  there; an edge can be on any number of lists; and no source, which says what a dataset says of a listing, can write over it. (An
+  `is-on-list` fact on the instrument would show every market and dataset of it, take a predicate per list because a node has one
+  value per predicate, and live in the cache, which starts over with the schema; a list on the `Listing` would be a dataset's
+  word for what is hers.) A row is put on a list, or taken off, from the menu button at the end of the row (`add-to-<code>`,
+  `remove-from-<code>` as commands), undo takes either back, and a preset with a `list` shows the members that are rows. A new list
+  is a line in `kLists` and a preset that names it. Not built: one instrument on a list whatever the market (a derived view of the
+  edges whose base is on it, if wanted), and the lists on a server.
 - **A combination**, such as what she follows together with everything in a preset.
 
 A preset is then data and not code: a name and a selection (markets, filters, a list of edges), read from a file; the built-in ones

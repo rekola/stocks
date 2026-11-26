@@ -25,8 +25,9 @@ constexpr int kPlain = 0, kBoolean = 1, kNode = 2;
 constexpr int kCorrupt = 11, kNotADatabase = 26;
 
 // The portfolio file's own schema, which shares no table and no version with the cache's: `facts` as the cache has it, and
-// `events` for the transactions. 2: the keys of codes are of eleven capitals or digits, base 37 (a file of 1 is upgraded, `upgradeV1`); 1: the first.
-constexpr int kPortfoliosVersion = 2;
+// `events` for the transactions and `list_members` for the edges on the lists. 3: the lists (a file of 2 only gets the table); 2: the keys of codes are
+// of eleven capitals or digits, base 37 (a file of 1 is upgraded, `upgradeV1`); 1: the first.
+constexpr int kPortfoliosVersion = 3;
 
 // A file that cannot be used as it is: damaged or not a database.
 struct Unusable {
@@ -124,6 +125,28 @@ class SqliteFactStore : public FactStore {
         e.time = q.getColumn(3).getInt64();
         e.body = q.getColumn(4).getString();
         out.push_back(std::move(e));
+      }
+    } catch (const std::exception & ex) {
+      say(std::string("cannot read ") + file_.string() + ": " + ex.what());
+      out.clear();
+    }
+    return out;
+  }
+
+  std::vector<StoredMember> loadMembers() override {
+    std::vector<StoredMember> out;
+    if (!db_ || kind_ != Kind::Portfolios) return out;
+    std::lock_guard lock(mutex_);
+    try {
+      SQLite::Statement q(*db_, "SELECT list, base, quote, market, dataset FROM list_members");
+      while (q.executeStep()) {
+        StoredMember m;
+        m.list = q.getColumn(0).getString();
+        m.base = static_cast<uint64_t>(q.getColumn(1).getInt64());
+        m.quote = static_cast<uint64_t>(q.getColumn(2).getInt64());
+        m.market = static_cast<uint64_t>(q.getColumn(3).getInt64());
+        m.dataset = static_cast<uint64_t>(q.getColumn(4).getInt64());
+        out.push_back(std::move(m));
       }
     } catch (const std::exception & ex) {
       say(std::string("cannot read ") + file_.string() + ": " + ex.what());
@@ -238,6 +261,24 @@ class SqliteFactStore : public FactStore {
       q.bind(5, e.body);
       q.exec();
     }
+    for (const StoredMember & m : batch.members_removed) {
+      SQLite::Statement q(*db_, "DELETE FROM list_members WHERE list = ? AND base = ? AND quote = ? AND market = ? AND dataset = ?");
+      bindMember(q, m);
+      q.exec();
+    }
+    for (const StoredMember & m : batch.members) {
+      SQLite::Statement q(*db_, "INSERT OR IGNORE INTO list_members (list, base, quote, market, dataset) VALUES (?, ?, ?, ?, ?)");
+      bindMember(q, m);
+      q.exec();
+    }
+  }
+
+  static void bindMember(SQLite::Statement & q, const StoredMember & m) {
+    q.bind(1, m.list);
+    q.bind(2, static_cast<int64_t>(m.base));
+    q.bind(3, static_cast<int64_t>(m.quote));
+    q.bind(4, static_cast<int64_t>(m.market));
+    q.bind(5, static_cast<int64_t>(m.dataset));
   }
 
   bool hasTables() {
@@ -265,8 +306,11 @@ class SqliteFactStore : public FactStore {
       // A new file has no version and no table: it only gets its version. Another schema is emptied for the cache and moved aside for
       // the portfolios.
       if (kind_ == Kind::Portfolios && hasTables()) {
-        if (version != 1) throw OtherSchema{version};
-        upgradeV1();
+        if (version != 1 && version != 2) throw OtherSchema{version};
+        if (version == 1) upgradeV1();
+        // A file of 2 has what 3 has but the table of the lists, which `createTable` makes.
+        createTable();
+        db_->exec("PRAGMA user_version = " + std::to_string(schemaVersion()));
       } else {
         startOver(version);
       }
@@ -361,11 +405,17 @@ class SqliteFactStore : public FactStore {
         "node_key INTEGER NOT NULL, predicate TEXT NOT NULL, "
         "value, tag INTEGER NOT NULL DEFAULT 0, updated INTEGER NOT NULL, "
         "PRIMARY KEY (node_key, predicate)) WITHOUT ROWID");
-    if (kind_ == Kind::Portfolios)
+    if (kind_ == Kind::Portfolios) {
       db_->exec(
           "CREATE TABLE IF NOT EXISTS events ("
           "portfolio INTEGER NOT NULL, dataset INTEGER NOT NULL, id INTEGER NOT NULL, time INTEGER NOT NULL, body TEXT NOT NULL, "
           "PRIMARY KEY (portfolio, dataset, id)) WITHOUT ROWID");
+      // The edges on the user's lists: a list is its code, an edge its four keys.
+      db_->exec(
+          "CREATE TABLE IF NOT EXISTS list_members ("
+          "list TEXT NOT NULL, base INTEGER NOT NULL, quote INTEGER NOT NULL, market INTEGER NOT NULL, dataset INTEGER NOT NULL, "
+          "PRIMARY KEY (list, base, quote, market, dataset)) WITHOUT ROWID");
+    }
   }
 
   // Puts the file (and what WAL mode keeps beside it) out of the way, with `prefix` and the time added: `.bad-` for one that is damaged,

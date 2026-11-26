@@ -134,6 +134,13 @@ class Snapshot {
   // The datasets that say anything of what a portfolio did. Sorted.
   std::vector<DatasetId> ledgers(PortfolioId) const;
 
+  // The user's lists. A list is a code (the application names them: "watchlist") and has the edges the user put on it, which are hers and
+  // no dataset's: an edge is a row, so a row is on a list or it is not, whatever else the instrument is on (another market, another
+  // dataset). They are kept in the user's own file, beside the portfolios. The members are sorted by key and are not checked to have
+  // data (an edge listed here that no source says anything of is not a row, and nothing selects it).
+  std::vector<EdgeKey> listMembers(const std::string & list) const;
+  bool onList(const std::string & list, const EdgeKey &) const;
+
   // The snapshots in `range`, oldest first.
   Seq<BookSnapshot> books(const EdgeKey &, TimeRange range = {}) const;
   // The snapshot standing at `time`: the latest at or before it.
@@ -170,6 +177,8 @@ class Snapshot {
   void removePortfolio(PortfolioId);
   void appendTransactions(const LedgerKey &, const std::vector<portfolio::Transaction> &);
   void removeTransactions(const LedgerKey &, const std::vector<uint64_t> & ids);
+  void addToList(const std::string & list, const std::vector<EdgeKey> &);
+  void removeFromList(const std::string & list, const std::vector<EdgeKey> &);
 
   // For a store to make on its own copy, with the changes above. `setTime` is the time of the write in progress: what
   // `updated` becomes. `load` gives it what an earlier run said: the facts of nodes, which makes no version and no node but
@@ -188,6 +197,8 @@ class Snapshot {
   void load(std::vector<StoredFact> facts);  // by value: a caller that is done with them moves them in
   // The transactions an earlier run kept: no version, no write for the disk; one that cannot be read, or that is not tradable, is left out.
   void loadEvents(const std::vector<StoredEvent> &);
+  // The edges an earlier run kept on the lists: no version, no write for the disk; one with a part that is none is left out.
+  void loadMembers(const std::vector<StoredMember> &);
   // What an earlier run kept of edges: their listing, quote and close before the session, and the coverage of their queues. It makes the
   // edges, but no bar and no write for the disk, and what a source has said since stands (it is newer than the disk).
   void loadEdges(const std::vector<StoredEdge> &);
@@ -263,6 +274,7 @@ class Snapshot {
   immer::map<InstrumentId, immer::set<EventKey>> eventsByInstrument_;
   immer::map<LedgerKey, Seq<portfolio::Transaction>> ledgers_;
   immer::map<PortfolioId, immer::set<DatasetId>> ledgersOf_;  // the datasets that have transactions
+  immer::map<std::string, immer::set<EdgeKey>> lists_;       // the user's lists: the edges on each
   immer::set<PortfolioId> portfolios_;                        // those that anything is said of
   void settle(PortfolioId);                                   // lists or forgets the portfolio, by whether anything is said of it
   void forget(uint64_t node, const std::string * predicate);  // takes what is waiting for the disk of the node back
@@ -348,6 +360,11 @@ class StoreWrites {
   virtual void appendTransactions(const LedgerKey &, const std::vector<portfolio::Transaction> &) = 0;
   // Takes back the transactions with these ids; ids not there change nothing.
   virtual void removeTransactions(const LedgerKey &, const std::vector<uint64_t> & ids) = 0;
+  // Puts edges on a user's list, which is made by the first (a list is only its code, which is not empty); one that is on it already
+  // stays. An edge with a part that is none is refused with std::invalid_argument and nothing of the call is written.
+  virtual void addToList(const std::string & list, const std::vector<EdgeKey> &) = 0;
+  // Takes edges off it; ones that are not on it change nothing.
+  virtual void removeFromList(const std::string & list, const std::vector<EdgeKey> &) = 0;
 };
 
 // What `Store::batch()` gives its function: the writes above, applied to one copy of the store that nothing sees until the
