@@ -1,6 +1,7 @@
 #include "Browser.h"
 
 #include "AttributeView.h"
+#include "TransactionsView.h"
 #include "News.h"
 #include "Quotes.h"
 #include "model/Dates.h"
@@ -592,6 +593,34 @@ void Browser::showInfo() {
   app_.requestFrame();
 }
 
+void Browser::showTransactions() {
+  const int row = action_row_.value_or(table_.selectedRow());
+  auto positions = std::dynamic_pointer_cast<Positions>(table_.model());
+  if (!positions) {
+    status_.setMessage("Only a position has transactions: choose one in the Portfolio context (Tab)");
+    return;
+  }
+  if (row < 0 || row >= positions->rowCount()) {
+    status_.setMessage("No row selected");
+    return;
+  }
+  auto snapshot = store_->snapshot();
+  const portfolio::Position & p = positions->row(row).position;
+  TransactionTable table = buildTransactionTable(*snapshot, positions->portfolio(), p.instrument, p.market, p.quote);
+  const std::string market = snapshot->name(NodeRef(p.market));
+  const std::string title = "Transactions: " + rowLabel(row) + (market.empty() ? "" : " on " + market) + " in " + snapshot->name(NodeRef(positions->portfolio()));
+  const size_t count = table.rows.size();
+  const std::string summary = std::to_string(count) + (count == 1 ? " transaction" : " transactions") + ", prices in " + table.currency + ". Held " +
+                              realText(p.quantity) + " at an average cost of " + fixed(p.average_cost, 2) + " " + table.currency + ", fees included";
+  TransactionsModal modal(app_.widgets(), app_.root(), app_.backend().eventLoop(), title, std::move(table), summary);
+  // The input that got us here does not return until the modal closes, so no frame follows it: ask for the one that shows it.
+  app_.requestFrame();
+  app_.backend().setNativeSelection(modal.wantsNativeSelection());
+  modal.showModal();
+  app_.backend().setNativeSelection(false);
+  app_.requestFrame();
+}
+
 std::optional<EdgeKey> Browser::selectedKey() const {
   const int row = table_.selectedRow();
   if (row < 0) return std::nullopt;
@@ -767,6 +796,7 @@ void Browser::openMenu(int row) {
     std::string label, command;
   };
   std::vector<Entry> entries{{"Show info", "show-info"}};
+  if (positions) entries.push_back({"Show transactions", "show-transactions"});
   // A position is of something that is traded; an edge of Markets is, unless it is an index, a spot price, a currency pair or a rate.
   if (!quotes || portfolio::tradable(*snapshot, quotes->edge(row))) {
     entries.push_back({"Buy", "buy"});
@@ -861,6 +891,8 @@ void Browser::defineCommands() {
   commands.define("focus-tags", "Move the keyboard to the preset tags", [this] { app_.input().setFocus(&tags_); });
   commands.define("focus-table", "Move the keyboard to the table", [this] { app_.input().setFocus(&table_); });
   commands.define("show-info", "Show everything known about the selected row", [this] { showInfo(); });
+  commands.define("show-transactions", "Show the transactions of the selected position in the portfolio shown, as a table",
+                  [this] { showTransactions(); });
   commands.define("row-menu", "Open the menu of the selected row: its info, buy and sell, and the lists it can be put on", [this] { openMenu(table_.selectedRow()); });
   commands.define("show-chart", "Show the selected row's trace of the period as a large chart", [this] { showChart(); });
   commands.define("buy", "Buy the selected row in a portfolio: quantity, price, date, fee and a note", [this] { trade(portfolio::Side::Buy); });

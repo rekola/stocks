@@ -101,12 +101,16 @@ class Browser {
   void showLink();
   // The attribute viewer for the selected row, from the store's snapshot now.
   void showInfo();
+  // The transactions of the selected position (or the one the menu was opened on) in the portfolio shown, as a table: to see that
+  // what was entered is right. Only the Portfolio context has positions.
+  void showTransactions();
   // The selected row's trace of the period shown as a large chart over the dimmed screen: the line, its values and dates, and a cursor
   // to read it with. A click on a trace cell opens it for that row, and so does Enter on one.
   void showChart();
   // The chart of `row`, if `column` is a trace column.
   void openChartAt(int row, int column);
-  // The menu of a row (the button at the end of it): info, buy and sell, and the lists it can be put on or taken off.
+  // The menu of a row (the button at the end of it): info, a position's transactions, buy and sell, and the lists it can be put on or
+  // taken off.
   void openMenu(int row);
   // Puts the selected row (or the one the menu was opened on) on a list of kLists, or takes it off; the user's change, which undo takes back.
   void changeList(size_t list, bool add);

@@ -63,6 +63,10 @@ cannot be bought. A row of the Portfolio context always has them, and no list (a
 a sell of more than is held is refused as you type. `buy` and `sell` have no key; both are in the palette. The first buy with no
 portfolio offers to make one.
 
+**Show transactions** (a row of the Portfolio context only) lists what the portfolio says was done with that position, as a table: date, buy or
+sell, quantity, price, fee, total, how many were held after it, and the note, in the order they are applied (by day, the buys of a day first). A
+transaction the arithmetic leaves out (a sell of more than was held) is in red and says why. It only shows them: nothing is edited there yet.
+
 **Lists.** The **Watchlist** preset shows the rows you put on it. A row is one edge (the instrument on a market, from a dataset), and so is a list's
 member: Nokia from Nordnet on the list does not put Nokia from Yahoo there. They are kept in `portfolios.sqlite`, beside the portfolios, and `undo`
 takes a change back. More lists are one line each (`kLists` and a preset in `src/Browser.cpp`), with the menu entries and the commands
@@ -75,6 +79,7 @@ takes a change back. More lists are one line each (`kLists` and a preset in `src
 | `rename-portfolio`, `delete-portfolio` | the portfolio shown; delete confirms | | |
 | `buy`, `sell` | the row's form (its menu) | | |
 | `row-menu` | the menu of the selected row | | |
+| `show-transactions` | the transactions of the selected position, as a table (its menu) | | |
 | `add-to-watchlist`, `remove-from-watchlist` | puts the selected row on the Watchlist, or takes it off | | |
 | `undo` | takes back your last change: a trade, a new, renamed or deleted portfolio | `C-x u`, `C-/` | `Ctrl+Z` |
 | `redo` | makes it again | `C-M-_` | `Ctrl+Y` |
