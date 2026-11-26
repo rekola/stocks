@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <nlohmann/json.hpp>
+#include <iterator>
 #include <set>
 
 #include <optional>
@@ -260,6 +261,14 @@ bool NordnetSource::parsePage(const std::string & body, Page & page, std::string
         l.bar = {dayNumberOfInstant(tick), *open, *high, *low, *last,
                  volume != p.end() && volume->is_number() ? volume->get<double>() : kUndefined};
       }
+    }
+    if (row.is_object() && row.contains("historical_returns_info") && row["historical_returns_info"].is_object()) {
+      const json & h = row["historical_returns_info"];
+      // In the order of `Period`, which has no year-to-date: `yield_max` is the ten years.
+      static constexpr const char * keys[] = {"yield_1d", "yield_1w", "yield_1m", "yield_3m", "yield_1y", "yield_3y", "yield_max"};
+      static_assert(std::size(keys) == kChangeCount);
+      for (size_t i = 0; i < kChangeCount; i++)
+        if (auto it = h.find(keys[i]); it != h.end() && it->is_number()) l.changes.pct[i] = it->get<double>();
     }
     if (row.is_object() && row.contains("exchange_info") && row["exchange_info"].is_object())
       l.country = text(row["exchange_info"], "exchange_country");
@@ -543,6 +552,7 @@ void NordnetSource::load(Store & store, Http & http, SourceListener & listener) 
             const EdgeKey edge{base, quote, market, dataset};
             b.appendCandles(edge, Resolution::Day, {l.bar});
             if (l.hasQuote) b.setQuote(edge, l.quote);
+            b.setChanges(edge, l.changes);
             // What the market says of it: what it calls it, its own id for it and the order book its history is asked for by.
             b.setListing({edge, l.symbol, l.identifier, l.bookId, l.type, l.name});
           }

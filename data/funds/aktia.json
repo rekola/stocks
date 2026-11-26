@@ -1,6 +1,7 @@
 {
  "name": "aktia",
  "dataset": "AKTIA",
+ "title": "Aktia",
  "pauseMs": 2000,
  "refreshHours": 6,
  "list": {
@@ -16,10 +17,18 @@
    "price": "/rateLast",
    "date": "/rateDate",
    "change": "/lastRateChange",
-   "esg": "/esgRating"
+   "esg": "/esgRating",
+   "changeMonth": "/value_1M",
+   "changeQuarter": "/value_3M",
+   "changeYear": "/value_1Y",
+   "annualYear3": "/value_3YPa"
   },
   "scale": {
-   "managementFee": 100
+   "managementFee": 100,
+   "changeMonth": 100,
+   "changeQuarter": 100,
+   "changeYear": 100,
+   "annualYear3": 100
   },
   "attributes": {
    "sfdr-class": "/esgArt",

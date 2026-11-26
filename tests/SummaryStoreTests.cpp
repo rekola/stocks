@@ -336,6 +336,49 @@ TEST(the_change_over_a_period_is_the_last_price_against_the_first_bar_of_its_que
   CHECK(!one.primary && !isDefined(one.change()) && !one.closes.empty());
 }
 
+TEST(a_source_says_the_changes_of_an_edge_and_the_bars_take_over_the_periods_they_cover_and_keep_them_up_to_date) {
+  auto store = makeMemoryStore();
+  Things t(*store);
+  const EdgeKey k = t.edge(t.nokia);
+  const auto at = [&](Period p) { return store->snapshot()->changes(k).pct[static_cast<size_t>(p)]; };
+  CHECK(!store->snapshot()->changes(k).says());
+  // A list says the day, the week and the year, with no bar behind any of them.
+  Changes said;
+  said.pct[static_cast<size_t>(Period::Day)] = 1.5;
+  said.pct[static_cast<size_t>(Period::Week)] = -2;
+  said.pct[static_cast<size_t>(Period::Year)] = 40;
+  store->setChanges(k, said);
+  CHECK(at(Period::Day) == 1.5 && at(Period::Week) == -2 && at(Period::Year) == 40 && !isDefined(at(Period::Month)));
+  // Said again with a period left out: that one keeps what it had.
+  Changes more;
+  more.pct[static_cast<size_t>(Period::Month)] = 7;
+  more.pct[static_cast<size_t>(Period::Day)] = 2;
+  store->setChanges(k, more);
+  CHECK(at(Period::Day) == 2 && at(Period::Week) == -2 && at(Period::Month) == 7);
+  // The same again is no new version.
+  const uint64_t version = store->snapshot()->version();
+  store->setChanges(k, more);
+  CHECK(store->snapshot()->version() == version);
+  // Bars that cover the quarter (and the month) give those two from the bars; what no bar covers stays as it was said.
+  store->setRetention(t.ds, Resolution::Day, std::chrono::seconds(92 * 86400));
+  store->appendCandles(k, Resolution::Day, days(100));
+  const auto snapshot = store->snapshot();
+  CHECK_NEAR(at(Period::Quarter), periodView(*snapshot, k, Period::Quarter, false).change(), 1e-9);
+  CHECK_NEAR(at(Period::Month), periodView(*snapshot, k, Period::Month, false).change(), 1e-9);
+  CHECK(at(Period::Year) == 40);  // 100 daily bars do not reach back a year
+  CHECK_NEAR(at(Period::Week), periodView(*snapshot, k, Period::Week, false).change(), 1e-9);  // daily bars cover the week too
+  // The source says its number for a covered period again: the bars still decide.
+  Changes again;
+  again.pct[static_cast<size_t>(Period::Quarter)] = 999;
+  store->setChanges(k, again);
+  CHECK_NEAR(at(Period::Quarter), periodView(*store->snapshot(), k, Period::Quarter, false).change(), 1e-9);
+  // A price that has moved moves the changes with it.
+  const double before = at(Period::Quarter);
+  store->setQuote(k, {210, 209, 211, midnight(kLast) + 50000});
+  CHECK(at(Period::Quarter) > before);
+  CHECK_NEAR(at(Period::Quarter), periodView(*store->snapshot(), k, Period::Quarter, false).change(), 1e-9);
+}
+
 TEST(a_fund_and_an_index_keep_value_queues_and_a_company_keeps_bars) {
   auto store = makeMemoryStore();
   Things t(*store);
@@ -358,6 +401,7 @@ TEST(after_a_restart_every_edge_shows_its_price_bid_and_ask_and_a_portfolio_is_v
   Disk d;
   const PortfolioId mine{portfolioKey(0x1234567890abcdull)->value};
   EdgeKey nokia, elisa, fund;
+  double quarterBefore = kUndefined;
   {
     auto store = makeMemoryStore(d.options());
     Things t(*store);
@@ -379,6 +423,7 @@ TEST(after_a_restart_every_edge_shows_its_price_bid_and_ask_and_a_portfolio_is_v
     const portfolio::Transaction buy{1, kLast - 3, portfolio::Side::Buy, t.nokia, t.hel, t.eur, 10, 4, 1, "x"};
     store->setAttributes(NodeRef(mine), {{predicate::name, "Mine"}, {predicate::currency, NodeKey{t.eur.value}}});
     store->appendTransactions({mine, store->addDataset(kUserDataset)}, {buy});
+    quarterBefore = store->snapshot()->changes(nokia).pct[static_cast<size_t>(Period::Quarter)];
     store->flush();
   }
   // No network: no Http is made here at all. And no queue is read: `loadEdges` is all the start-up asks.
@@ -412,11 +457,13 @@ TEST(after_a_restart_every_edge_shows_its_price_bid_and_ask_and_a_portfolio_is_v
   // A row with no queue shows the price and no trace.
   const PeriodView view = periodView(*s, nokia, Period::Quarter, true);
   CHECK(view.closes.empty() && !isDefined(view.change()));
+  // The change the bars gave before the restart is kept with the edge: the table sorts by it with no queue read.
+  CHECK(isDefined(quarterBefore) && s->changes(nokia).pct[static_cast<size_t>(Period::Quarter)] == quarterBefore);
   // The table's rows are the same: every edge, with its price and its name, and no trace until the queue is read.
   const std::vector<QuoteRow> rows = makeAllRows(*s, Period::Quarter);
   CHECK(rows.size() == 3);
   for (const QuoteRow & row : rows)
-    if (row.key == nokia) CHECK(row.price == 5.5 && row.name == "Nokia Oyj" && row.history.empty() && !isDefined(row.change));
+    if (row.key == nokia) CHECK(row.price == 5.5 && row.name == "Nokia Oyj" && row.history.empty() && row.change == quarterBefore);
 }
 
 TEST(the_info_of_an_edge_shows_its_summary_and_where_each_queue_is) {
@@ -574,7 +621,7 @@ TEST(over_its_budget_the_queues_not_wanted_for_the_longest_go_and_the_quote_stay
 TEST(a_damaged_file_another_schema_or_a_directory_that_cannot_be_made_say_so_and_the_store_runs_without) {
   Disk d;
   fs::create_directories(d.dir / "summaries");
-  { std::ofstream(d.dir / "summaries" / "nordnet.sqlite") << std::string(4000, 'x'); }
+  { std::ofstream(d.dir / "summaries" / "NORDNET.sqlite") << std::string(4000, 'x'); }
   {
     auto store = makeMemoryStore(d.options());
     Things t(*store);

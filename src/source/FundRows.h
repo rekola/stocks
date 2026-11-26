@@ -22,6 +22,9 @@ struct FundRow {
   // The latest NAV the list gives, and the day it is of (a day number); `change` is its change from the NAV before it, as a fraction.
   std::optional<double> price, change;
   std::optional<int64_t> day;
+  // The returns over the longer periods that the list gives (by `Period`; the day's is `change`): cumulative, per cent. A list that gives a
+  // return per annum (3 and 10 years) is compounded here, so every period is the same kind of number.
+  Changes changes;
   std::vector<Attribute> extra;  // whatever else the schema says to keep of the fund: a predicate and a value
 };
 

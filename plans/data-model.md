@@ -222,10 +222,14 @@ stays in memory only, exactly as written, and nothing persists or changes it; it
 with a store of their own. The summary is a separate record that the store keeps of each edge, for the tables, the sparklines and the
 portfolios, and it is the only thing kept on disk about prices. No reader of the data reads a summary, or the opposite.
 
-An edge's summary is its **quote** and, for each resolution, a **queue**:
+An edge's summary is its **quote**, its **changes** and, for each resolution, a **queue**:
 
 - The **quote** is the last price, the bid and the ask, and the one time (seconds, UTC) they are for. A provider that gives only a last
   price, or none, leaves the rest undefined.
+- The **changes** are one number for each period (day, week, month, 3 months, year, 3 years, 10 years): per cent, basis points for a rate,
+  undefined where not known. A source that lists returns (`setChanges`) gives them with its first list, so a table sorts by any period
+  before a bar is loaded; a period whose queue is in memory and covers it is worked out from the bars instead, and kept in step as the
+  bars, the quote or the close before the session change. They are kept on the disk with the edge.
 - A **queue** is the bars that the periods using a resolution show: time-ordered, a bar at a time already there replaces it, a new time is
   pushed, and bars older than the window are popped from the old end. There is no downsampling and no base bar. The window is measured back
   from the *last bar* of that resolution, not from the clock, so the day's sparkline on a Sunday is Friday's session. How long it is is the
@@ -351,7 +355,7 @@ low sixty (country 4 and attribute 6 are planned, 5 is the portfolio, and 7 is a
 | kind | node | low 60 bits |
 |---|---|---|
 | 0 | instrument | its ISIN: 26 x 26 country letters and nine letters or digits make 56 bits, plus one so that AA0000000000 is not zero; the check digit is not stored, since `isinCheckDigit()` gives it back |
-| 1 | currency or unit | its code: up to ten letters or digits, six bits each (0 is the end, 1 to 62 are `0-9A-Za-z`), case kept (`pts`) |
+| 1 | currency or unit | its code: up to eleven characters of `0-9A-Z`, `-`, `.` and `#`, the digits of a number of base 43 (0 is the end, 1 to 39 are the characters, 40 to 42 are kept for others; 43^11 is under 2^60 and 44^11 is not), the case not kept (`pts` is `PTS`) |
 | 2 | market | its MIC, the ISO 10383 market code: four characters of `A-Z0-9`, packed in the same way as a currency's |
 | 3 | dataset | its code, packed in the same way as a currency's |
 | 5 | portfolio | sixty random bits, minted when the user makes one; in text a `P` and fifteen hex digits (`mintPortfolioKey()`, `portfolioKey()`) |
@@ -373,7 +377,7 @@ low sixty (country 4 and attribute 6 are planned, 5 is the portfolio, and 7 is a
   market, has its own MIC. The name and the country are facts of the market (the name is the MIC until something says otherwise).
   A preset that shows currency pairs or commodities is therefore a selection: market XXXX and the kind of the base. Files of the
   second schema lose their markets on opening (the sources say them again).
-- **A dataset** is its **code**, one to ten letters or digits that its adapter defines and never changes (`source/DatasetCodes.h`; a
+- **A dataset** is its **code**, one to eleven capitals, digits, hyphens, periods or hashes that its adapter defines and never changes (`source/DatasetCodes.h`; a
   fund schema names its own); two sources may not write the same one. Its name is a fact that is the code until something says
   otherwise. A name can change, so a dataset is looked up by its code.
 - **Order** of rows: by the keys (an instrument's ISIN, then the quote and the dataset). A key's order means nothing of its own, so
@@ -428,8 +432,8 @@ An attribute (a predicate such as `name`, `isin`, `shares`, `pe`) is a node of i
 node, value, updated)` and not `(node, string, value, updated)`, so an attribute has facts of its own: its label ("P/E"), the type of
 value it takes (number, text, truth, node), its unit and how it is shown. A new attribute needs no change to the program.
 
-- **Its key is its code**, packed as a currency's (up to ten characters of `0-9A-Za-z`, so `PE`, `MCAP`, `DIVYIELD`), and its label is a
-  fact, as a currency's name is: a long or odd name is what the label is for. Open: whether ten characters are enough, or an
+- **Its key is its code**, packed as a currency's (up to eleven characters of `0-9A-Z-.#`, so `PE`, `MCAP`, `DIVYIELD`), and its label is a
+  fact, as a currency's name is: a long or odd name is what the label is for. Open: whether eleven characters are enough, or an
   attribute needs a numbered table instead.
 - **The facts file** keeps the attribute's key and not its text, so the `predicate` column becomes an integer.
 - Not built; it changes `Facts.h`, `Store.h` and every source that says a fact, so it is its own change, before the facts below grow.

@@ -2,6 +2,7 @@
 
 #include "model/Dates.h"
 #include "model/Isin.h"
+#include "model/Period.h"
 #include "source/DataDirectory.h"
 #include "source/LeftOut.h"
 #include "model/NodeKey.h"
@@ -9,6 +10,7 @@
 #include <chrono>
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -143,6 +145,13 @@ void applyFields(const FundSchema::Request & request, const json & doc, FundRow 
   for (const auto & [key, pointers] : request.fields) {
     const json * v = firstOf(doc, pointers);
     if (!v) continue;
+    const auto setChange = [&](Period p, std::optional<double> pct) {
+      if (pct) fund.changes.pct[static_cast<size_t>(p)] = *pct;
+    };
+    // A return per annum over `years` years, as the change over all of them.
+    const auto setAnnual = [&](Period p, int years, std::optional<double> pct) {
+      if (pct && *pct > -100) setChange(p, (std::pow(1 + *pct / 100, years) - 1) * 100);
+    };
     auto scaled = [&](std::optional<double> n) -> std::optional<double> {
       auto s = request.scale.find(key);
       return n && s != request.scale.end() ? std::optional<double>(*n * s->second) : n;
@@ -160,6 +169,12 @@ void applyFields(const FundSchema::Request & request, const json & doc, FundRow 
     else if (key == "price") fund.price = looseNumber(*v);
     else if (key == "change") fund.change = scaled(looseNumber(*v));
     else if (key == "date") fund.day = looseDay(*v);
+    else if (key == "changeWeek") setChange(Period::Week, scaled(looseNumber(*v)));
+    else if (key == "changeMonth") setChange(Period::Month, scaled(looseNumber(*v)));
+    else if (key == "changeQuarter") setChange(Period::Quarter, scaled(looseNumber(*v)));
+    else if (key == "changeYear") setChange(Period::Year, scaled(looseNumber(*v)));
+    else if (key == "annualYear3") setAnnual(Period::Year3, 3, scaled(looseNumber(*v)));
+    else if (key == "annualYear10") setAnnual(Period::Year10, 10, scaled(looseNumber(*v)));
     else if (key == "link") {
       std::string link = textOf(*v);
       if (!link.empty() && link.rfind("http", 0) != 0) link = request.linkPrefix + (link[0] == '/' ? link : "/" + link);
@@ -220,9 +235,10 @@ bool FundSchema::parse(const std::string & text, FundSchema & out, std::string &
     *target = d[key].get<std::string>();
   }
   if (!datasetKey(s.dataset)) {
-    error = "dataset is the code of the dataset, one to ten letters or digits (it is never changed), not \"" + s.dataset + "\"";
+    error = "dataset is the code of the dataset, one to eleven capitals, digits, hyphens, periods or hashes (it is never changed), not \"" + s.dataset + "\"";
     return false;
   }
+  if (auto title = d.find("title"); title != d.end() && title->is_string()) s.title = title->get<std::string>();
   if (auto age = d.find("maxAgeDays"); age != d.end() && age->is_number_integer()) s.maxAgeDays = age->get<int>();
   if (auto pause = d.find("pauseMs"); pause != d.end() && pause->is_number()) s.pause = std::chrono::milliseconds(pause->get<int64_t>());
   if (auto hours = d.find("refreshHours"); hours != d.end() && hours->is_number())
@@ -444,9 +460,15 @@ void FundSource::load(Store & store, Http & http, SourceListener & listener) {
     const Candle bar{*e.fund.day, kUndefined, kUndefined, kUndefined, *e.fund.price, kUndefined};
     bool written = false;
     store.batch([&](Batch & b) {
+      if (!schema_.title.empty()) b.addDataset(schema_.dataset, schema_.title);
       auto edge = writeFund(b, schema_.dataset, e.fund, {bar});
       if (!edge) return;
-      if (e.fund.change && *e.fund.change > -1) b.setPreviousClose(*edge, *e.fund.day, *e.fund.price / (1 + *e.fund.change));
+      if (e.fund.change && *e.fund.change > -1) {
+        b.setPreviousClose(*edge, *e.fund.day, *e.fund.price / (1 + *e.fund.change));
+      }
+      Changes changes = e.fund.changes;
+      if (e.fund.change) changes.pct[static_cast<size_t>(Period::Day)] = *e.fund.change * 100;  // a fraction in the list: per cent
+      b.setChanges(*edge, changes);
       written = true;
     });
     if (!written) {  // the one reason there is: it could not be named
