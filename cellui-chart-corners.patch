@@ -1,0 +1,48 @@
+diff --git a/src/BufferPlane.cpp b/src/BufferPlane.cpp
+index f0d5cb2..2fefe4e 100644
+--- a/src/BufferPlane.cpp
++++ b/src/BufferPlane.cpp
+@@ -281,7 +281,7 @@ void BufferPlane::refresh() {
+     }
+     if (bordered) {
+       // The border goes with the plane's area, or is an area of its own that casts nothing.
+-      if (!has_area) top.elevations_.push_back(ElevatedArea{ r0, c0, r1 - r0, c1 - c0, p.elevation, p.plane->name_, top.layers_.size(), false, 0.0, 0.0, p.plane->corner_radius_, {}, false });
++      if (!has_area) top.elevations_.push_back(ElevatedArea{ r0, c0, r1 - r0, c1 - c0, p.elevation, p.plane->name_, top.layers_.size(), false, 0.0, 0.0, p.plane->corner_radius_, corner_bg, false });
+       ElevatedArea & area = top.elevations_.back();
+       area.border_px = p.plane->border_px_;
+       area.border_color = p.plane->border_color_;
+diff --git a/src/gtk/Window.cpp b/src/gtk/Window.cpp
+index f0705b2..dbe5c3c 100644
+--- a/src/gtk/Window.cpp
++++ b/src/gtk/Window.cpp
+@@ -1512,8 +1512,10 @@ void Window::Impl::appendShadows(GtkSnapshot * snap, GskRenderNode * top, GskRen
+         GdkRGBA fill = { rgb[0] / 255.0f, rgb[1] / 255.0f, rgb[2] / 255.0f, 1.0f };
+         gtk_snapshot_append_color(snap, &fill, &ear);
+       }
+-      gtk_snapshot_append_outset_shadow(snap, &outline, &ambient, 0, 0, 0, ambient_blur);
+-      gtk_snapshot_append_outset_shadow(snap, &outline, &key, dx, dy, 0, blur);
++      if (a.shadow) {
++        gtk_snapshot_append_outset_shadow(snap, &outline, &ambient, 0, 0, 0, ambient_blur);
++        gtk_snapshot_append_outset_shadow(snap, &outline, &key, dx, dy, 0, blur);
++      }
+       gtk_snapshot_pop(snap);
+     }
+   };
+@@ -1604,6 +1606,17 @@ void Window::Impl::appendShadows(GtkSnapshot * snap, GskRenderNode * top, GskRen
+         gtk_snapshot_append_border(snap, &outline, widths, colors);
+       }
+     }
++    // A rounded area that casts no shadow (a bordered chart box) still has its corners cut: what lay under them shows, the body is clipped.
++    for (size_t k = i; k < level_end; k++) {
++      if (!shown(elevations[k]) || elevations[k].shadow || elevations[k].scrim || radiusOf(elevations[k]) <= 0.0f) continue;
++      graphene_rect_t rect = rectOf(elevations[k]);
++      GskRoundedRect outline;
++      gsk_rounded_rect_init_from_rect(&outline, &rect, radiusOf(elevations[k]));
++      fillCorners(elevations[k], outline, dx, dy, blur, ambient_blur);
++      gtk_snapshot_push_rounded_clip(snap, &outline);
++      redraw(elevations[k]);
++      gtk_snapshot_pop(snap);
++    }
+     i = level_end;
+   }
+   // The planes' borders, inside each area's rectangle and rounded like it. They are drawn over what is
