@@ -151,7 +151,7 @@ void GoldApiSource::load(Store & store, Http & http, SourceListener & listener) 
     if (prices.empty()) continue;
     // One symbol, both currencies: one publication.
     store.batch([&](Batch & b) {
-      const DatasetId dataset = b.addDataset(kGoldApiDataset, "goldapi");
+      const DatasetId dataset = b.addDataset(kGoldApiDataset, "gold-api.com");
       const MarketId market = b.addMarket(kNoMarket, marketNameOfMic(kNoMarket));
       const Known * known = knownSymbol(s.symbol);
       const InstrumentKind kind = known ? known->kind : InstrumentKind::Other;

@@ -58,7 +58,7 @@ TEST(the_prices_are_one_request_and_the_metals_are_stored_in_the_unit_of_their_i
   const auto s = store->snapshot();
   const MarketId none = *s->findMarket(kNoMarket);
   const DatasetId data = *s->findDataset(kGoldPriceDataset);
-  CHECK(s->name(NodeRef(data)) == "goldprice" && s->edges(none).size() == 4);  // XAU in EUR and USD (not SEK: it was not asked for), XAG and HG in USD
+  CHECK(s->name(NodeRef(data)) == "goldprice.dev" && s->edges(none).size() == 4);  // XAU in EUR and USD (not SEK: it was not asked for), XAG and HG in USD
   const InstrumentId gold = *s->findInstrument("XAU"), eur = *s->findInstrument("EUR"), usd = *s->findInstrument("USD");
   CHECK(!s->findInstrument("SEK"));
   const auto last = [&](InstrumentId base, InstrumentId quote) { return s->lastCandles({base, quote, none, data}, Resolution::Day, 1).candles.back(); };
