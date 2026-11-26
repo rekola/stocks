@@ -136,7 +136,7 @@ struct Fixture {
 };
 
 // The menu button at the end of a row: the hamburger.
-constexpr const char * kMenuGlyphText = "\xE2\x98\xB0";
+constexpr const char * kMenuGlyphText = "\xE2\x89\xA1";
 
 // Where `needle` first is on the screen, in cells: {row, column}, or {-1, -1}.
 std::pair<int, int> cellOf(const std::string & screen, const std::string & needle) {
@@ -2231,4 +2231,29 @@ TEST(the_presets_wrap_onto_a_second_line_on_a_narrow_screen_and_every_one_can_st
   // Wide enough for one line, they are on one.
   Fixture wide(true, 200);
   CHECK(cellOf(wide.text(), "Watchlist").first == 0);
+}
+
+TEST(the_menu_opens_in_place_under_its_button_and_the_screen_behind_is_as_it_was) {
+  Fixture f(false);
+  addNokia(*f.store);
+  f.app->execute("show-nasdaq-helsinki");
+  f.browser->table().select(0);
+  const std::string before = f.text();
+  const auto [button_row, button_col] = cellOf(before, kMenuGlyphText);
+  CHECK(button_row >= 0);
+  std::string shown;
+  f.inModal([&] { f.app->execute("row-menu"); }, {[&] { shown = f.text(); }, [&] { f.press(Key::Escape); }});
+  f.press(Key::Down);  // the Escape's key again
+  // The first entry is on the line under the button, and the right edge of the menu is at the button's column.
+  const auto [info_row, info_col] = cellOf(shown, "Show info");
+  CHECK(info_row == button_row + 1 && info_col <= button_col);
+  // What was there is there still: the rows above the menu are as they were, and the table's first row too (nothing is dimmed or blurred
+  // away; the text is what the test sees, so only the cells under the menu differ).
+  auto line = [](const std::string & text, int n) {
+    size_t at = 0;
+    for (int i = 0; i < n; i++) at = text.find('\n', at) + 1;
+    return text.substr(at, text.find('\n', at) - at);
+  };
+  for (int n = 0; n <= button_row; n++) CHECK(line(shown, n) == line(before, n));
+  CHECK(shown.find("Nasdaq Helsinki") != std::string::npos && shown.find("Nokia") != std::string::npos);
 }

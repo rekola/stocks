@@ -7,7 +7,7 @@
 #include "source/Source.h"
 
 #include <cellui/ChartModal.h>
-#include <cellui/ChoiceModal.h>
+#include <cellui/PopupMenu.h>
 #include <cellui/Layout.h>
 
 #include <algorithm>
@@ -70,9 +70,10 @@ std::function<bool(const NewsItem &)> newsKeep(const NewsPreset & preset) {
   return [kind](const NewsItem & n) { return newsText(n, predicate::kind) == kind; };
 }
 
-// The one button at the end of a row opens the row's menu: the hamburger (U+2630, the first of the trigrams), which the monospace
-// fonts terminals and the window use have, one cell wide, so it draws the same in both.
-constexpr const char * kMenuGlyph = "\xE2\x98\xB0";
+// The one button at the end of a row opens the row's menu: the hamburger, three equal lines (U+2261, identical to, in Mathematical
+// Operators with the circled plus and minus that were here before), which the monospace fonts terminals and the window use have, one
+// cell wide. The trigram (U+2630) is in fewer of them and its lines came with margins of their own where it was not.
+constexpr const char * kMenuGlyph = "\xE2\x89\xA1";
 
 Quotes::Scope scopeOf(const Snapshot & snapshot, const Preset & preset) {
   if (!preset.mic)
@@ -753,6 +754,17 @@ std::string Browser::rowLabel(int row) const {
   return {};
 }
 
+// Where the menu button of a model row is on the screen: its line in the table (the heading is the first line), and the table's last
+// column but one (the button is the last cell of a row). A row out of view is taken to be on the first line.
+std::pair<int, int> Browser::menuAnchor(int row) const {
+  const auto [top, left] = table_.getPosition();
+  const int first = table_.firstVisiblePosition(), count = table_.visibleRows();
+  int line = 0;
+  for (int p = first; p < first + count; p++)
+    if (table_.rowAt(p) == row) line = p - first;
+  return {top + 1 + line, left + table_.getDim().second - 2};
+}
+
 // The menu of a row: what it can be done with, as a list to choose from. What is offered depends on the row (buy and sell where it can be
 // bought, a list to be put on or taken off where it is not on it or is), and each entry is a command, which runs for this row.
 void Browser::openMenu(int row) {
@@ -781,7 +793,10 @@ void Browser::openMenu(int row) {
   }
   std::vector<std::string> labels;
   for (const Entry & e : entries) labels.push_back(e.label);
-  ChoiceModal menu(app_.widgets(), app_.root(), app_.backend().eventLoop(), rowLabel(row), std::move(labels), -1);
+  // A menu of the usual kind: it opens in place, under the button, and leaves the screen as it is.
+  PopupMenu menu(app_.widgets(), app_.root(), app_.backend().eventLoop(), labels);
+  const auto [anchor_row, anchor_col] = menuAnchor(row);
+  menu.setAnchor(anchor_row, anchor_col);
   // The input that got us here does not return until the menu is closed, so no frame follows it: ask for the one that shows it.
   app_.requestFrame();
   const int chosen = menu.showModal();

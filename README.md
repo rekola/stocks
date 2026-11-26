@@ -29,7 +29,7 @@ session if the first gives nothing (no network, a refusal).
 
 Keys: arrows, PgUp/PgDn, Home/End move; `Tab` and `Shift+Tab` switch the context (below); `M-x` (`Ctrl+Shift+P` on
 the desktop keymap) opens the command palette, where every command is listed with
-its description and key; `q` (`C-x C-c`, `Ctrl+Q`) quits. `i` (`C-x =`) or the ☰ menu button at the end of a row (its first entry) shows everything known about the row (Esc closes it). Clicking a
+its description and key; `q` (`C-x C-c`, `Ctrl+Q`) quits. `i` (`C-x =`) or the ≡ menu button at the end of a row (its first entry) shows everything known about the row (Esc closes it). Clicking a
 heading sorts; clicking a tag or row chooses it; the wheel scrolls. The table
 fills the screen and follows it when it is resized.
 
@@ -54,7 +54,7 @@ values on the left, the first and last date under it, and a cursor with a readin
 the cursor (`Page Up`/`Page Down` by a tenth, `Home`/`End` to the ends), and so does the pointer; `Esc`, `Enter`, `q` or a click away from the
 chart close it. The chart is cellui's `ChartModal`, drawn by the same line chart as the table's traces.
 
-At the end of each row is the **menu button ☰**: a click with the mouse, or move the cursor onto it with `Right` (`Enter` presses it; `row-menu`
+At the end of each row is the **menu button ≡**: a click with the mouse, or move the cursor onto it with `Right` (`Enter` presses it; `row-menu`
 opens the menu of the selected row from the palette). It opens a list for that row: **Show info**, **Buy** and **Sell**, and **Put on the Watchlist** (or
 **Take off** it, where the row is on it). Buy and sell are only on a row on a real market or a fund priced by its company: an index, a spot
 price, a currency pair and an interest rate (Euribor, the €STR) have the rest, and `buy` and `sell` run from the palette on such a row say it
