@@ -198,7 +198,7 @@ TEST(a_failed_symbols_request_uses_the_list_from_before_and_with_none_says_so) {
   said.messages.clear();
   source.load(*store, http, said);  // the list is not there, the prices of the one before are asked for again
   CHECK(said.messages.size() == 1 && said.messages[0].find("using the list from before") != std::string::npos);
-  CHECK(source.refreshInterval() == std::chrono::minutes(2) && source.datasetCodes() == std::vector<std::string>{kGoldApiDataset} && source.name() == "goldapi");
+  CHECK(source.refreshInterval() == std::chrono::minutes(2) && source.datasetCodes() == std::vector<std::string>{kGoldApiDataset} && source.name() == "gold-api");
 }
 
 TEST(the_gold_estimate_is_made_in_euros_and_in_dollars_from_gold_api_com_and_beats_the_other_spot) {

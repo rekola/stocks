@@ -295,7 +295,7 @@ class StoreWrites {
   // Says several things of a node in one write (an adapter's whole row), each as setAttribute does.
   virtual void setAttributes(NodeRef, const std::vector<Attribute> &) = 0;
   // The dataset with this code, made if it is new; `name` is what a person reads (the code until one is said), and one already said
-  // stands where none is given. A code that is not one to ten letters or digits makes none: the id is none, and it is told of.
+  // stands where none is given. A code that is not one to eleven capitals, digits, hyphens, periods or hashes makes none: the id is none, and it is told of.
   virtual DatasetId addDataset(const std::string & code, const std::string & name = {}) = 0;
 
   // What is said of an edge or an event needs all of its parts: a key with an

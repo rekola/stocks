@@ -111,7 +111,7 @@ void GoldApiSource::load(Store & store, Http & http, SourceListener & listener) 
   std::string error;
   std::vector<Symbol> symbols;
   if (!r.ok() || !parseSymbols(r.body, symbols, error)) {
-    listener.message("goldapi: symbols: " + (!r.ok() ? (r.status == 0 ? (r.error.empty() ? std::string("no answer") : r.error) : "HTTP " + std::to_string(r.status)) : error) +
+    listener.message("gold-api: symbols: " + (!r.ok() ? (r.status == 0 ? (r.error.empty() ? std::string("no answer") : r.error) : "HTTP " + std::to_string(r.status)) : error) +
                      (known_.empty() ? "" : "; using the list from before"));
     if (known_.empty()) return;
     symbols = known_;
@@ -130,7 +130,7 @@ void GoldApiSource::load(Store & store, Http & http, SourceListener & listener) 
       HttpResult answer = http.get(std::string(kBase) + "/price/" + s.symbol + "/" + currency, {});
       if (!answer.ok()) {
         const bool refused = answer.status == 429 || answer.status == 403;
-        listener.message("goldapi: " + s.symbol + "/" + currency + ": " +
+        listener.message("gold-api: " + s.symbol + "/" + currency + ": " +
                          (answer.status == 0 ? (answer.error.empty() ? std::string("no answer") : answer.error) : "HTTP " + std::to_string(answer.status)) +
                          (refused ? ", stopping" : ""));
         if (refused) return;
@@ -138,12 +138,12 @@ void GoldApiSource::load(Store & store, Http & http, SourceListener & listener) 
       }
       Price price;
       if (!parsePrice(answer.body, price, error)) {
-        listener.message("goldapi: " + s.symbol + "/" + currency + ": " + error);
+        listener.message("gold-api: " + s.symbol + "/" + currency + ": " + error);
         continue;
       }
       // What was asked for, not another symbol or currency in its place.
       if (price.symbol != s.symbol || price.currency != currency) {
-        listener.message("goldapi: " + s.symbol + "/" + currency + ": the answer is for " + price.symbol + "/" + price.currency);
+        listener.message("gold-api: " + s.symbol + "/" + currency + ": the answer is for " + price.symbol + "/" + price.currency);
         continue;
       }
       prices.push_back(std::move(price));

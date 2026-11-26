@@ -361,7 +361,7 @@ TEST(a_refusal_stops_the_provider_and_not_the_other_funds_of_the_screen_loader) 
   loader.waitIdle();
   CHECK(history.urls.size() == 1);  // the second fund is not asked for
   std::lock_guard l(m);
-  CHECK(messages.size() == 1 && messages[0].find("alpha refused") != std::string::npos);
+  CHECK(messages.size() == 1 && messages[0].find("ALPHA refused") != std::string::npos);
   CHECK(store->snapshot()->candles(*a, Resolution::Day).candles.size() == 1);  // what the list gave stays
 }
 TEST(an_op_page_gives_its_token_without_a_leading_ampersand) {
@@ -430,10 +430,27 @@ TEST(a_source_with_a_token_asks_for_its_history_with_it) {
   CHECK(store->snapshot()->candles(*edge, Resolution::Day).candles.size() == 4);  // the history's three and the list's
   CHECK(store->snapshot()->candles(*other, Resolution::Day).candles.size() == 3);  // the wrapped series
 }
+TEST(every_schema_that_comes_with_the_program_has_a_name_for_its_dataset) {
+  for (const char * name : {"aktia", "op", "saastopankki"}) {
+    FundSchema s;
+    std::string error;
+    CHECK(FundSchema::load(name, s, error));
+    CHECK(!s.title.empty());
+  }
+}
+
+TEST(a_funds_dataset_is_shown_by_the_title_its_schema_gives) {
+  FundSchema s;
+  std::string error;
+  CHECK(FundSchema::parse(R"({"name":"x","dataset":"XCO","title":"X Company","history":{"url":"h"},"list":{"url":"u","fields":{"id":"/a"}}})", s, error));
+  CHECK(s.title == "X Company");
+}
+
 TEST(morningstar_is_a_history_a_schema_names_by_client_and_universe_and_a_finnish_date_is_a_day) {
   FundSchema s;
   std::string error;
   CHECK(FundSchema::load("saastopankki", s, error));
+  CHECK(s.dataset == "SAASTOPANKK" && s.dataset.size() == kMaxCodeLength && s.title == "Säästöpankki");  // the longest code there is, and a name the table shows
   const std::string url = FundSource::expand(s.historyUrl, "F00000JTC7", "");
   CHECK(url == "https://lt.morningstar.com/api/rest.svc/timeseries_price/24y0loe6zj?currencyId=EUR&idtype=Morningstar&frequency=daily&startDate=2000-01-01"
                "&priceType=&outputType=COMPACTJSON&id=F00000JTC7]2]1]FOFIN$$ALL_3664&applyTrackRecordExtension=true");
