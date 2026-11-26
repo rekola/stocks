@@ -21,5 +21,5 @@ inline constexpr const char * kPhysicalDataset = "PHYSICAL";
 inline constexpr const char * kGoldApiDataset = "GOLDAPI";
 // goldprice.dev (api.goldprice.dev): the spot prices of gold, silver and copper in 31 currencies, and their daily bars, GoldPriceSource.
 inline constexpr const char * kGoldPriceDataset = "GOLDPRICE";
-// The NAVs of the Sifter Fund's share classes, SifterSource (lower case, like nordnet and yahoo: what the table shows).
+// The NAVs of the Sifter Fund's share classes, SifterSource.
 inline constexpr const char * kSifterDataset = "sifter";

@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-// The Sifter Fund's share classes (the page data of ir.altusinvestor.com, the endpoint the legacy loader used). The fund has no list to discover and no
+// The Sifter Fund's share classes. The fund has no list to discover and no
 // history call of its own: one request gives every daily NAV of every share class, `[{"d": "2026-11-19", "cr": 12.3, "c": 11.2,
 // "cpi": 10.1}, ...]` (`cr` the PA class, `c` the PB, `cpi` the PI; a class that has no NAV that day has no member). So the three
 // classes are known here, and their history is loaded with them, not by a HistoryProvider. No key. The dataset is "sifter".
