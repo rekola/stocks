@@ -49,16 +49,18 @@ void HistoryLoader::waitIdle() {
 void HistoryLoader::addProvider(std::shared_ptr<HistoryProvider> provider) {
   if (!provider) return;
   // What the summary keeps of each queue of its dataset's edges is the provider's to say.
-  if (const auto dataset = datasetKey(provider->dataset()))
-    for (int r = 0; r <= static_cast<int>(Resolution::Quarter); r++)
-      store_->setRetention(DatasetId{dataset->value}, static_cast<Resolution>(r), provider->keep(static_cast<Resolution>(r)));
+  for (const std::string & code : provider->datasets())
+    if (const auto dataset = datasetKey(code))
+      for (int r = 0; r <= static_cast<int>(Resolution::Quarter); r++)
+        store_->setRetention(DatasetId{dataset->value}, static_cast<Resolution>(r), provider->keep(static_cast<Resolution>(r)));
   std::lock_guard lock(mutex_);
   providers_.push_back(std::move(provider));
 }
 
 std::shared_ptr<HistoryProvider> HistoryLoader::providerOf(const std::string & dataset) const {
   for (const auto & p : providers_)
-    if (p->dataset() == dataset) return p;
+    for (const std::string & code : p->datasets())
+      if (code == dataset) return p;
   return nullptr;
 }
 

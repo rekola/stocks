@@ -36,6 +36,9 @@ class HistoryProvider {
   virtual ~HistoryProvider() = default;
   // The code of the dataset whose edges it loads.
   virtual std::string dataset() const = 0;
+  // The codes of every dataset whose edges it loads: the one above, unless it serves more (a provider that loads by an id that several
+  // datasets share).
+  virtual std::vector<std::string> datasets() const { return {dataset()}; }
   // What the edge needs for `period`; none if it cannot load the edge (it has not what it needs of it).
   virtual std::optional<Need> need(const Snapshot &, const EdgeKey &, Period) const { return Need{}; }
   // How long a loaded request stays good before a wanted edge is asked for again; zero (the default): once per session.

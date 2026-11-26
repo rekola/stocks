@@ -326,6 +326,23 @@ TEST(the_funds_of_nordnets_list_are_on_the_off_exchange_market_and_are_funds) {
   CHECK(xoff && !s->edges(*xoff).empty());  // none left out for want of a market
   const auto fund = s->findInstrumentByIsin(page.listings[0].isin);
   CHECK(fund && s->kind(*fund) == InstrumentKind::Fund);
+
+TEST(an_indicator_row_with_another_price_source_is_nordnets_own) {
+  using nlohmann::json;
+  json rows = json::parse(fixture("indicators-currencies.json"));
+  rows[1]["price"]["priceSource"] = "SOMEONE";
+  auto store = makeMemoryStore();
+  FakeHttp http;
+  http.answer = [&](const std::string &) { return ok(rows.dump()); };
+  auto lists = listsNamed({"currencies"});
+  Listener listener;
+  NordnetSource source(lists, std::chrono::milliseconds(0));
+  source.load(*store, http, listener);
+  auto s = store->snapshot();
+  const MarketId none = *s->findMarket("XXXX");
+  CHECK(s->listing({*s->findInstrument("EUR"), *s->findInstrument("USD"), none, *s->findDataset(kMorningstarDataset)}));
+  CHECK(s->listing({*s->findInstrument("USD"), *s->findInstrument("JPY"), none, *s->findDataset("nordnet")}));
+  CHECK(source.historyProvider()->datasets() == (std::vector<std::string>{"nordnet", kMorningstarDataset}));
 }
 
 TEST(listings_of_one_isin_with_different_names_leave_one_name_and_no_change_on_the_next_pass) {
@@ -737,7 +754,9 @@ TEST(the_indicator_lists_make_indices_in_points_currency_pairs_and_commodities_i
   CHECK(http.urls.size() == 3 && http.urls[0].find("/instrument-screening/v1/indicator/web/list/WORLDMAP") != std::string::npos);
   CHECK(http.urls[0].find("spark") == std::string::npos);  // no sparkline
   auto s = store->snapshot();
-  DatasetId nordnet = *s->findDataset("nordnet");
+  // Every row of these lists names Morningstar as its price source: its edges are Morningstar's, not Nordnet's.
+  DatasetId nordnet = *s->findDataset(kMorningstarDataset);
+  CHECK(s->name(nordnet) == "Morningstar");
 
   // An index: its ISIN, in points, on no market.
   InstrumentId dax = *s->findInstrumentByIsin("DE0008469008");
