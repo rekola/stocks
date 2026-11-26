@@ -13,9 +13,11 @@ data or keys. Change the format and bump the schema version.
 
 ## Providers
 
-One adapter per provider, in `src/source/`: only that adapter knows its endpoints, headers and formats (what it asks for, how it
-asks, how an answer reads), history and details included (`HistoryProvider`, handed over by `Source::historyProvider()`). A loader,
-the store and the UI name no provider; the only place that lists the adapters is `main.cpp`.
+One adapter per provider: only that adapter knows its endpoints, headers and formats (what it asks for, how it asks, how an answer
+reads), history and details included (`HistoryProvider`, handed over by `Source::historyProvider()`). The sources that run beside the
+browser are in `src/source/`; the offline datasets that the market-data server loads on request (`market-ingest`) are in
+`src/market/offline/`, and are not added to the realtime sources. A loader, the store and the UI name no provider; the only place that
+lists the adapters is `main.cpp` (`market_ingest_main.cpp` for the offline datasets).
 
 ## Git and sessions
 

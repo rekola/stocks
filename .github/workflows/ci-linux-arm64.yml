@@ -16,7 +16,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y cmake pkg-config libunistring-dev \
             libcairo2-dev libfontconfig1-dev libgtk-4-dev libcurl4-openssl-dev xvfb xdotool \
-            libmariadb-dev zlib1g-dev mariadb-server
+            libmariadb-dev mariadb-server
 
       # The market-data tests that need a server (the store and the API over it) run against a MariaDB of the runner's own.
       - name: Start MariaDB for the market-data tests

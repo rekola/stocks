@@ -11,8 +11,9 @@
 #include <string_view>
 #include <vector>
 
-// HistData.com's free 1-minute quotes (ASCII), as a market-data dataset: its instruments, its files and how to read them. Everything
-// that names HistData's endpoints, headers and formats is in this adapter.
+// HistData.com's free 1-minute bid quotes (ASCII), as a market-data dataset: its instruments, its files and how to read them. Everything
+// that names HistData's endpoints, headers and formats is in this adapter. It is an offline dataset, loaded by market-ingest on request,
+// and so is not with the sources of src/source/, which run all the time beside the browser.
 //
 // No API and no login; one zip per request:
 //   1. GET the page of the file (`pageUrl`) and read the hidden <input id="tk">. A period with no data may still give a token (the
@@ -71,8 +72,8 @@ struct Settings {
 class HistData : public market::Dataset {
  public:
   HistData(Http & http, market::RawCache cache, Settings settings = {});
-  std::string code() const override { return "histdata"; }
-  std::string name() const override { return "HistData.com 1-minute bid quotes"; }
+  std::string code() const override { return "HISTDATA"; }
+  std::string name() const override { return "HistData.com"; }
   std::vector<market::InstrumentSpec> discover(const market::Log & log, bool refresh) override;
   market::LoadResult load(const market::InstrumentSpec & instrument, const market::LoadOptions & options, const market::Log & log) override;
 

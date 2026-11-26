@@ -82,4 +82,15 @@ OTHER DEALINGS IN THE SOFTWARE.
 ## cpp-httplib
 
 MIT licence, Copyright (c) 2017 yhirose. <https://github.com/yhirose/cpp-httplib>, version 0.18.3. The market-data server's HTTP
-(`src/market/Api.cpp`); built only where the market-data programs are.
+(`src/market/Api.cpp`).
+
+## miniz
+
+MIT licence, Copyright 2013-2014 RAD Game Tools and Valve Software, Copyright 2010-2014 Rich Geldreich and Tenacious Software LLC.
+<https://github.com/richgel999/miniz>, version 3.0.2. Reads the zip files the market-data ingest downloads (`src/market/Zip.cpp`).
+
+## sqlpp11
+
+BSD 2-clause licence, Copyright (c) 2013-2016, Roland Bock. <https://github.com/rbock/sqlpp11>, version 0.64. Typed SQL with prepared
+statements over SQLite and MariaDB (`src/market/SqlStore.h`); header only. It includes Howard Hinnant's date library (MIT licence,
+<https://github.com/HowardHinnant/date>, version 3.0.0).

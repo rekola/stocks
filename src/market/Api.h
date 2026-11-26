@@ -12,17 +12,17 @@
 //   GET /instruments            [code, name, asset class, first and last bar time]
 //   GET /summary[?codes=a,b]    for each instrument the latest bars of each sparkline window:
 //
-//     window    level  covers (counted back from the instrument's last bar)
-//     day       5m     the stored day (288 bars)
-//     week      1h     7 days
-//     month     1h     30 days
-//     3months   1d     90 days
-//     1year     1d     365 days
-//     3years    1d     1095 days
-//     10years   1d     3650 days
+//     window    level   bars (the level)        keeps
+//     day       day     5 minutes                  1 day
+//     week      week    1 hour                     7 days
+//     month     month   4 hours                    1 month
+//     3months   year    1 day                      the last 90 days of the year
+//     year      year    1 day                      1 year
+//     3years    3years  1 week                     3 years
+//     10years   10years 1 week                     10 years
 //
-//   A window is columns, as plans/server.md proposes for bars: {"level": "1h", "keys": [...], "close": [...]}, the key of each bar
-//   (the 5-minute slot number, the hour number or the day number; see market/Bars.h) and its close, oldest first. A sparkline draws
+//   A window is columns, as plans/server.md proposes for bars: {"level": "1h", "keys": [...], "close": [...]}, the size of the bars and the key of each
+//   (the 5-minute slot, the hour, the 4-hour slot, the day number, or the day number of the Monday of a week; see market/Bars.h) and its close, oldest first. A sparkline draws
 //   closes, and the change of a period is measured from the first one (the app's rule), so the bar's other values are not sent;
 //   the day also has "previous_close" (the close of the last day before the day of the last bar, or null), which its change is
 //   measured from. A level that has not been loaded gives an empty window, not an error.

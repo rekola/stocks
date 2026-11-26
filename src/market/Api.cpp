@@ -20,13 +20,13 @@ using nlohmann::json;
 
 struct Window {
   const char * id;
-  Resolution level;
-  int64_t days;  // 0: the stored window of the level
+  Level level;      // the stored level that feeds it
+  int64_t days;     // 0: the whole level; else only this many days of it (the level's bars are days)
 };
 
 constexpr Window kWindows[] = {
-    {"day", Resolution::Min5, 0},   {"week", Resolution::Hour1, 7},   {"month", Resolution::Hour1, 30},   {"3months", Resolution::Day, 90},
-    {"1year", Resolution::Day, 365}, {"3years", Resolution::Day, 1095}, {"10years", Resolution::Day, 3650},
+    {"day", Level::Day, 0},      {"week", Level::Week, 0},        {"month", Level::Month, 0},      {"3months", Level::Year, 90},
+    {"year", Level::Year, 0},    {"3years", Level::Years3, 0},    {"10years", Level::Years10, 0},
 };
 
 std::string lower(std::string s) {
@@ -37,20 +37,13 @@ std::string lower(std::string s) {
 ApiResponse reply(int status, const json & body) { return {status, body.dump()}; }
 ApiResponse failure(int status, const std::string & message) { return reply(status, {{"error", message}}); }
 
-// The first key of a window that ends at `last`: the keys are consecutive, so the days are counted in the level's own unit.
-int64_t firstKeyOf(const Window & w, int64_t last) {
-  if (w.days == 0) return windowFirstKey(w.level, last);
-  const int64_t perDay = w.level == Resolution::Hour1 ? 24 : 1;
-  return last - w.days * perDay + 1;
-}
-
 Timestamp lastBarTimeOf(const InstrumentInfo & info) {
   Timestamp last = 0;
   for (const LevelState & s : info.levels) last = std::max(last, s.lastBarTime);
   return last;
 }
 
-const LevelState * stateOf(const InstrumentInfo & info, Resolution level) {
+const LevelState * stateOf(const InstrumentInfo & info, Level level) {
   for (const LevelState & s : info.levels)
     if (s.level == level) return &s;
   return nullptr;
@@ -71,7 +64,7 @@ json instrumentJson(const InstrumentInfo & info) {
   Timestamp first = 0;
   for (const LevelState & s : info.levels) {
     if (s.barCount == 0) continue;
-    const Timestamp t = barStart(s.level, s.firstKey);
+    const Timestamp t = barStart(barOf(s.level), s.firstKey);
     first = any ? std::min(first, t) : t;
     any = true;
   }
@@ -93,23 +86,25 @@ json summaryJson(MarketStore & store, const InstrumentInfo & info) {
   for (const LevelState & s : info.levels) loaded = loaded || s.barCount > 0;
   if (loaded) out["last_bar_time"] = anchor;
   for (const Window & w : kWindows) {
-    json window = {{"level", name(w.level)}, {"keys", json::array()}, {"close", json::array()}};
+    json window = {{"level", name(barOf(w.level))}, {"keys", json::array()}, {"close", json::array()}};
     const LevelState * state = stateOf(info, w.level);
+    if (w.level == Level::Day) window["previous_close"] = nullptr;
     if (loaded && state && state->barCount > 0) {
-      const int64_t last = barKey(w.level, anchor);
-      const std::vector<Bar> bars = store.bars(info.instrument.edge, w.level, firstKeyOf(w, last), last);
+      // The window ends at the instrument's last bar, whenever the level was loaded.
+      const int64_t last = barKey(barOf(w.level), anchor);
+      int64_t first = windowFirstKey(w.level, anchor);
+      if (w.days > 0) first = std::max(first, last - w.days + 1);
       json & keys = window["keys"];
       json & closes = window["close"];
-      for (const Bar & bar : bars) keys.push_back(bar.key), closes.push_back(bar.close);
-      if (w.level == Resolution::Min5) {
+      store.forEachBar(info.instrument.edge, w.level, first, last, [&](const Bar & bar) {
+        keys.push_back(bar.key);
+        closes.push_back(bar.close);
+      });
+      if (w.level == Level::Day && stateOf(info, Level::Year)) {
         // What the day's change is measured from: the close before the day of the last bar.
-        window["previous_close"] = nullptr;
         const int64_t day = barKey(Resolution::Day, anchor);
-        const std::vector<Bar> before = store.bars(info.instrument.edge, Resolution::Day, day - 10, day - 1);
-        if (!before.empty()) window["previous_close"] = before.back().close;
+        store.forEachBar(info.instrument.edge, Level::Year, day - 10, day - 1, [&](const Bar & bar) { window["previous_close"] = bar.close; });
       }
-    } else if (w.level == Resolution::Min5) {
-      window["previous_close"] = nullptr;
     }
     out["windows"][w.id] = std::move(window);
   }

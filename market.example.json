@@ -1,5 +1,5 @@
 {
-  "database": { "host": "localhost", "port": 3306, "socket": "", "user": "market", "password": "", "name": "market" },
+  "database": { "type": "sqlite", "path": "market.sqlite" },
   "datasets": { "histdata": { "cache_dir": "cache/histdata" } },
   "server": { "listen": "127.0.0.1", "port": 8080 }
 }

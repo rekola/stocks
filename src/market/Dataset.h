@@ -25,12 +25,12 @@ struct InstrumentSpec {
 };
 
 struct LoadOptions {
-  std::vector<Resolution> levels;  // the levels to build, finest first
+  std::vector<Level> levels;  // the levels to build
   bool refresh = false;            // ask again for what may have grown since (a file of the current year)
 };
 
 struct LevelBars {
-  Resolution level = Resolution::Day;
+  Level level = Level::Year;
   std::vector<Bar> bars;  // the window of the level, ascending
 };
 
@@ -39,7 +39,8 @@ struct LoadResult {
   Timestamp lastBarTime = 0;         // the start of the instrument's last available bar of the finest data (UTC seconds); 0 for none
   std::vector<std::string> failed;   // what could not be had, each as "what: why"
   std::vector<std::string> skipped;  // the levels left as they are because of that, as "level: why"
-  bool noData = false;               // the dataset has nothing at all for the instrument
+  bool inactive = false;             // no data in the current year (or, early in a year, the last): the instrument is not carried
+  int activeFromYear = 0;            // what that means: the year its data has to reach into
   int downloads = 0, cached = 0;     // files asked for, and files that were there already
 };
 
@@ -49,7 +50,7 @@ class Dataset {
   // The dataset's own code ("histdata"): what its bars are tagged with, and the name of its key in the catalog.
   virtual std::string code() const = 0;
   virtual std::string name() const = 0;
-  // The instruments the dataset has. An adapter that cannot find out falls back to a list of its own and says so in the log. What it
+  // The instruments the dataset has (all that it lists: whether they are active is `load`'s to say). An adapter that cannot find out falls back to a list of its own and says so in the log. What it
   // has read before may be kept (in the raw cache), so that a run with everything in hand asks for nothing; `refresh` reads it again.
   virtual std::vector<InstrumentSpec> discover(const Log & log, bool refresh) = 0;
   // Gets what the levels need and builds them. Never throws for a file that cannot be had: that is `failed`.

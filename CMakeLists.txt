@@ -149,18 +149,12 @@ if(NOT WIN32)
   set_tests_properties(stocks_tests PROPERTIES TIMEOUT 60)
 endif()
 
-# The market-data server and its ingest (src/market, plans/server.md): `market-ingest` loads datasets into MariaDB and `market-server`
-# serves them. They need the MariaDB client library (libmariadb) and zlib, and are left out, with a message, where either is missing
-# (Windows, a machine without them).
+# The market-data server and its ingest (src/market, plans/server.md): `market-ingest` loads datasets into a database and `market-server`
+# serves them. The catalog and the bars are kept in SQLite, and in MariaDB too where libmariadb is found (pkg-config). Not built on Windows.
 if(NOT WIN32)
   find_package(PkgConfig QUIET)
-  find_package(ZLIB QUIET)
-  if(PkgConfig_FOUND AND ZLIB_FOUND)
-    pkg_check_modules(MARIADB QUIET IMPORTED_TARGET libmariadb)
+  if(PkgConfig_FOUND)
+    pkg_check_modules(MARIADB QUIET IMPORTED_TARGET GLOBAL libmariadb)
   endif()
-endif()
-if(MARIADB_FOUND AND ZLIB_FOUND)
   add_subdirectory(src/market)
-else()
-  message(STATUS "market-ingest and market-server are not built: they need libmariadb (pkg-config) and zlib")
 endif()

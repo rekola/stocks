@@ -1,4 +1,4 @@
-#include "source/HistData.h"
+#include "market/offline/HistData.h"
 
 #include "market/Zip.h"
 #include "model/Dates.h"
@@ -8,8 +8,8 @@
 #include <cmath>
 #include <cstdlib>
 #include <ctime>
-#include <map>
-#include <set>
+#include <unordered_map>
+#include <unordered_set>
 #include <sstream>
 #include <thread>
 
@@ -206,7 +206,7 @@ const std::vector<market::InstrumentSpec> & fallbackInstruments() {
 std::vector<market::InstrumentSpec> parseDiscovery(const std::string & html) {
   // <a href="/download-free-forex-historical-data/?/ascii/1-minute-bar-quotes/EURUSD" ...><strong>EUR/USD</strong></a><br/>(2000/May)
   std::vector<market::InstrumentSpec> out;
-  std::set<std::string> seen;
+  std::unordered_set<std::string> seen;
   const std::string marker = "1-minute-bar-quotes/";
   for (size_t at = html.find(marker); at != std::string::npos; at = html.find(marker, at + 1)) {
     size_t i = at + marker.size();
@@ -267,17 +267,24 @@ std::vector<market::InstrumentSpec> HistData::discover(const market::Log & log, 
 
 void HistData::reportDifferences(const std::vector<market::InstrumentSpec> & found, const market::Log & log) {
   // Say how the page differs from the list this was written from.
-  std::map<std::string, int> known, now;
+  std::unordered_map<std::string, int> known, now;
   for (const auto & s : fallbackInstruments()) known[s.code] = s.firstPeriod;
   for (const auto & s : found) now[s.code] = s.firstPeriod;
   int differences = 0;
-  for (const auto & [code, first] : now) {
+  std::vector<std::string> codes;
+  for (const auto & entry : now) codes.push_back(entry.first);
+  std::sort(codes.begin(), codes.end());
+  for (const std::string & code : codes) {
+    const int first = now[code];
     const auto it = known.find(code);
     if (it == known.end()) log("histdata: " + code + " is on the page and not in the built-in list (first month " + std::to_string(first) + "; asset class other)"), differences++;
     else if (it->second != first) log("histdata: " + code + " begins " + std::to_string(first) + " on the page, " + std::to_string(it->second) + " in the built-in list"), differences++;
   }
-  for (const auto & [code, first] : known)
-    if (!now.count(code)) log("histdata: " + code + " is in the built-in list and not on the page"), differences++;
+  std::vector<std::string> missing;
+  for (const auto & entry : known)
+    if (!now.count(entry.first)) missing.push_back(entry.first);
+  std::sort(missing.begin(), missing.end());
+  for (const std::string & code : missing) log("histdata: " + code + " is in the built-in list and not on the page"), differences++;
   log("histdata: " + std::to_string(found.size()) + " pairs on the page, " + std::to_string(differences) + " difference" + (differences == 1 ? "" : "s") + " from the built-in list");
 }
 
@@ -399,14 +406,17 @@ market::LoadResult HistData::load(const market::InstrumentSpec & instrument, con
   const Timestamp now = settings_.now();
   const Period current = estMonthOf(now);
   const int currentYear = current.year;
+  // A pair is carried while it has data this year. The data lags by weeks, so in the first weeks of a year the last year still counts.
+  const int activeFromYear = estMonthOf(now - 45 * 86400).year;
 
-  // 1. The latest file there is: the current month, back through the year, then the years. A period the site has nothing for (no token
-  // or an empty answer) is walked past; a file that could not be had at all stops it, or the data would end at an older file than
-  // the latest and look current.
+  // 1. The latest file there is: the current month, back through the year, then (early in a year) the year before. A period the site
+  // has nothing for (no token or an empty answer) is walked past; a file that could not be had at all stops it, or the data would
+  // end at an older file than the latest and look current. Nothing in the years that count: the pair is inactive, and no file of an
+  // earlier year is asked for.
   std::vector<Period> candidates;
   for (int m = current.month; m >= 1; m--) candidates.push_back({currentYear, m});
-  const int firstYear = instrument.firstPeriod ? instrument.firstPeriod / 100 : currentYear - 30;
-  for (int y = currentYear - 1; y >= firstYear; y--) candidates.push_back({y, 0});
+  const int firstYear = instrument.firstPeriod ? instrument.firstPeriod / 100 : activeFromYear;
+  for (int y = currentYear - 1; y >= std::max(activeFromYear, firstYear); y--) candidates.push_back({y, 0});
 
   std::optional<Period> latest;
   std::vector<MinuteBar> latestMinutes;
@@ -417,14 +427,14 @@ market::LoadResult HistData::load(const market::InstrumentSpec & instrument, con
     if (got.status == Fetch::Failed) {
       result.failed.push_back(periodText(period) + ": " + got.why);
       log("histdata: " + code + " " + periodText(period) + ": " + got.why + "; given up");
-      for (Resolution level : options.levels) result.skipped.push_back(std::string(::name(level)) + ": the latest file could not be had");
+      for (market::Level level : options.levels) result.skipped.push_back(std::string(market::name(level)) + ": the latest file could not be had");
       return result;
     }
     std::string why;
     if (!minutesOf(got, period, latestMinutes, why)) {
       result.failed.push_back(periodText(period) + ": " + why);
       log("histdata: " + code + " " + periodText(period) + ": " + why);
-      for (Resolution level : options.levels) result.skipped.push_back(std::string(::name(level)) + ": the latest file could not be read");
+      for (market::Level level : options.levels) result.skipped.push_back(std::string(market::name(level)) + ": the latest file could not be read");
       return result;
     }
     if (latestMinutes.empty()) continue;  // a file with no rows has no last bar
@@ -432,7 +442,8 @@ market::LoadResult HistData::load(const market::InstrumentSpec & instrument, con
     break;
   }
   if (!latest) {
-    result.noData = true;
+    result.inactive = true;
+    result.activeFromYear = activeFromYear;
     return result;
   }
   Timestamp lastBarTime = 0;
@@ -440,52 +451,52 @@ market::LoadResult HistData::load(const market::InstrumentSpec & instrument, con
   result.lastBarTime = lastBarTime;
 
   // 2. The files each level needs, the window of the level back from the last bar.
-  std::map<Resolution, std::vector<Period>> needs;
-  std::set<Period> all;
-  for (Resolution level : options.levels) {
+  std::unordered_map<market::Level, std::vector<Period>> needs;
+  std::vector<Period> all{*latest};  // already in hand
+  for (market::Level level : options.levels) {
     needs[level] = periodsCovering(market::windowStartTime(level, lastBarTime), lastBarTime, currentYear, instrument.firstPeriod);
-    all.insert(needs[level].begin(), needs[level].end());
+    all.insert(all.end(), needs[level].begin(), needs[level].end());
   }
-  all.insert(*latest);  // already in hand
+  std::sort(all.begin(), all.end());
+  all.erase(std::unique(all.begin(), all.end()), all.end());
 
   // 3. Each file once, oldest first, into every level that needs it.
-  std::map<Resolution, std::vector<Bar>> built;
-  std::map<Resolution, std::string> incomplete;
+  std::unordered_map<market::Level, std::vector<Bar>> built;
+  std::unordered_map<market::Level, std::string> incomplete;
   for (const Period & period : all) {
-    std::vector<Resolution> users;
-    for (Resolution level : options.levels)
+    std::vector<market::Level> users;
+    for (market::Level level : options.levels)
       if (std::find(needs[level].begin(), needs[level].end(), period) != needs[level].end()) users.push_back(level);
-    if (users.empty()) continue;  // only the latest file, which no level needs (it is out of every window)
+    if (users.empty()) continue;
     std::vector<MinuteBar> minutes;
     if (period == *latest) {
       minutes = latestMinutes;
     } else {
       const Got got = obtain(code, period, options.refresh, currentYear, result, log);
-      std::string why = got.why;
-      bool ok = got.status == Fetch::Ok && minutesOf(got, period, minutes, why);
       if (got.status == Fetch::NoData) {
         // Nothing for the period (before the instrument's data, or a gap): not a failure.
         log("histdata: " + code + " " + periodText(period) + ": no data");
         continue;
       }
-      if (!ok) {
+      std::string why = got.why;
+      if (got.status != Fetch::Ok || !minutesOf(got, period, minutes, why)) {
         result.failed.push_back(periodText(period) + ": " + why);
         log("histdata: " + code + " " + periodText(period) + ": " + why + "; moving on");
-        for (Resolution level : users) incomplete[level] = periodText(period) + " could not be had";
+        for (market::Level level : users) incomplete[level] = periodText(period) + " could not be had";
         continue;
       }
     }
-    for (Resolution level : users) built[level] = market::joinBars(std::move(built[level]), market::aggregate(level, minutes));
+    for (market::Level level : users) built[level] = market::joinBars(std::move(built[level]), market::aggregate(market::barOf(level), minutes));
   }
 
   // 4. Only a level built from every file it needs replaces what is stored: a gap in the middle of ten years would otherwise
   // wipe good bars.
-  for (Resolution level : options.levels) {
+  for (market::Level level : options.levels) {
     if (incomplete.count(level)) {
-      result.skipped.push_back(std::string(::name(level)) + ": " + incomplete[level]);
+      result.skipped.push_back(std::string(market::name(level)) + ": " + incomplete[level]);
       continue;
     }
-    result.levels.push_back({level, market::cutToWindow(level, std::move(built[level]), market::barKey(level, lastBarTime))});
+    result.levels.push_back({level, market::cutToWindow(level, std::move(built[level]), lastBarTime)});
   }
   return result;
 }

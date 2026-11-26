@@ -16,7 +16,7 @@ TEST(market_zip_round_trip_stored_and_deflated) {
     const ZipEntry * csv = findZipEntry(entries, ".CSV");
     CHECK(csv && csv->name == "a.csv" && csv->size == text.size());
     CHECK(csv && readZipEntry(zip, *csv, data, error) && data == text);
-    CHECK(compress == (csv && csv->compressedSize < csv->size));
+    CHECK(compress == (zip.size() < text.size() / 2));  // deflated, the long run of one letter is small
   }
 }
 
@@ -30,6 +30,7 @@ TEST(market_zip_refuses_what_is_not_a_zip_or_is_damaged) {
   zip[40] ^= 0x55;  // inside the data: the checksum catches it
   CHECK(!readZipEntry(zip, entries[0], data, error));
   CHECK(!listZip(zip.substr(0, zip.size() - 10), entries, error));
+  CHECK(!error.empty());
 }
 
 TEST(market_raw_cache_stores_whole_files_and_reads_them_back) {

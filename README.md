@@ -149,25 +149,37 @@ The market regime embeddings are planned in [plans/embeddings.md](plans/embeddin
 
 ## Market-data server
 
-Two programs (built where `libmariadb` and zlib are found; see [plans/server.md](plans/server.md)): `market-ingest` loads external
-datasets into a MariaDB database, and `market-server` serves what it holds to the desktop app over a read-only HTTP API (JSON, no
-key: it listens on the loopback address unless the config says otherwise).
+Two programs (see [plans/server.md](plans/server.md)): `market-ingest` loads external datasets into a database, and `market-server`
+serves what it holds to the desktop app over a read-only HTTP API (JSON, no key: it listens on the loopback address unless the config says
+otherwise). The database is SQLite (a file) or MariaDB (a schema of its own), the same tables and code either way, chosen by
+`database.type`; MariaDB needs `libmariadb` (`sudo apt install libmariadb-dev`) when the programs are built.
 
-    sudo apt install libmariadb-dev zlib1g-dev mariadb-server      # and a database user that may make the schema `market`
     cp market.example.json market.json                             # database, raw file cache, listen address
-    build/market-ingest histdata eurusd usdjpy --level 5m          # or: histdata all
+    build/market-ingest histdata eurusd usdjpy --level day         # or: histdata all
     build/market-server --config market.json                       # GET /health, /instruments, /summary[?codes=a,b]
 
-`market-ingest DATASET [CODE...|all] [--level 5m|1h|1d|all] [--refresh] [--config FILE]` does everything for one dataset in one run: it
-finds the instruments, makes the missing instrument records, gets the files (from the raw cache where they are), builds the levels and
-replaces what the database holds of each. Run it again whenever. The one dataset now is `histdata` (HistData.com's free 1-minute bid
-quotes, one file a request with a pause of two seconds). The levels are 5-minute bars of the last day, hourly bars of the last 31 days and
-daily bars of the last 10 years, each ending at the instrument's last bar (this data lags by weeks), keyed by slot number in UTC
-(`src/market/Bars.h`). The 1-minute data is not stored in the database: the downloaded zips are kept as they came in `cache_dir`, which is
-the only copy, and nothing deletes from it. `--refresh` asks again for the months of the current year and for the list of pairs.
+`market-ingest DATASET [CODE...|all] [--level day|week|month|year|3years|10years|all] [--refresh] [--config FILE]` does everything for one
+dataset in one run: it finds the instruments, makes the missing instrument records, gets the files (from the raw cache where they are),
+builds the levels and replaces what the database holds of each. Run it again whenever. The one dataset now is `histdata` (HistData.com's
+free 1-minute bid quotes, one file a request with a pause of two seconds); a pair with no data this year is left out.
 
-The tests are `market_tests` (part of `ctest`). Those that need a server run where `MARKET_TEST_DB_USER` (and `MARKET_TEST_DB_PASSWORD`,
-`MARKET_TEST_DB_HOST`, `_PORT`, `_SOCKET`) name a user that may make and drop schemas `market_test_*`, and print SKIPPED where it is not set.
+A level is a sparkline window with the bar size that draws it, ending at the instrument's last bar (this data lags by weeks), keyed by slot
+number in UTC (`src/market/Bars.h`):
+
+| level | bars | keeps | feeds |
+|---|---|---|---|
+| day | 5 minutes | 1 day | day |
+| week | 1 hour | 7 days | week |
+| month | 4 hours | 1 month | month |
+| year | 1 day | 1 year | 3 months, year |
+| 3years | 1 week | 3 years | 3 years |
+| 10years | 1 week | 10 years | 10 years |
+
+The 1-minute data is not stored in the database: the downloaded zips are kept as they came in `cache_dir`, which is the only copy, and
+nothing deletes from it. `--refresh` asks again for the months of the current year and for the list of pairs.
+
+The tests are `market_tests` (part of `ctest`). They run on SQLite and in memory always, and on MariaDB too where `MARKET_TEST_DB_USER` (and
+`MARKET_TEST_DB_PASSWORD`, `MARKET_TEST_DB_HOST`, `_PORT`, `_SOCKET`) name a user that may make and drop schemas `market_test_*`.
 
 ## Tests
 

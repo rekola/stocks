@@ -12,19 +12,19 @@ namespace market {
 
 struct IngestOptions {
   std::vector<std::string> codes;                       // the instruments to load; empty: all of them
-  std::vector<Resolution> levels{kLevels.begin(), kLevels.end()};
+  std::vector<Level> levels{kLevels.begin(), kLevels.end()};
   bool refresh = false;
 };
 
 struct LevelReport {
-  Resolution level = Resolution::Day;
+  Level level = Level::Year;
   int64_t bars = 0;
   Timestamp firstBar = 0, lastBar = 0;  // the start of the first and of the last bar stored (UTC seconds)
 };
 
 struct InstrumentReport {
   std::string code;
-  bool noData = false;
+  bool inactive = false;  // left out: no data this year
   Timestamp lastBarTime = 0;
   std::vector<LevelReport> levels;
   std::vector<std::string> failed, skipped;
@@ -35,6 +35,7 @@ struct IngestReport {
   uint64_t version = 0;
   std::vector<InstrumentReport> instruments;
   std::vector<std::string> unknownCodes;  // asked for and not in the dataset
+  int inactive = 0;                       // instruments left out for having no data this year
   // Whether everything asked for was done: no code unknown, no period that failed, no level skipped.
   bool complete() const;
 };

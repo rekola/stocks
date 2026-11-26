@@ -57,7 +57,7 @@ IngestReport runIngest(Dataset & dataset, MarketStore & store, const IngestOptio
 
   const uint64_t datasetId = store.putDataset(dataset.code(), dataset.name());
   std::string note = dataset.code() + ":";
-  for (Resolution level : options.levels) note += std::string(" ") + name(level);
+  for (Level level : options.levels) note += std::string(" ") + name(level);
   if (options.refresh) note += " refresh";
   report.version = store.beginBatch(datasetId, note);
 
@@ -74,25 +74,32 @@ IngestReport runIngest(Dataset & dataset, MarketStore & store, const IngestOptio
       continue;
     }
     const Edge edge{base->value, quote->value, market->value, datasetId};
-    store.putInstrument({edge, spec.code, spec.name, spec.assetClass, spec.firstPeriod});
 
     log("[" + std::to_string(index) + "/" + std::to_string(chosen.size()) + "] " + spec.code + " (" + spec.name + ")");
     LoadResult loaded = dataset.load(spec, {options.levels, options.refresh}, log);
-    out.noData = loaded.noData;
+    out.inactive = loaded.inactive;
     out.lastBarTime = loaded.lastBarTime;
     out.failed = loaded.failed;
     out.skipped = loaded.skipped;
     out.downloads = loaded.downloads;
     out.cached = loaded.cached;
+    if (loaded.inactive) {
+      // Not carried: a pair that stopped being quoted is not an instrument of the server, and what an earlier run made of it goes.
+      store.removeInstrument(edge);
+      report.inactive++;
+      log(dataset.code() + ": " + spec.code + ": no data in " + std::to_string(loaded.activeFromYear) + " or since, left out");
+      report.instruments.push_back(std::move(out));
+      continue;
+    }
+    store.putInstrument({edge, spec.code, spec.name, spec.assetClass, spec.firstPeriod});
     for (const LevelBars & built : loaded.levels) {
       store.replaceBars(edge, built.level, built.bars, loaded.lastBarTime, report.version);
       LevelReport level;
       level.level = built.level;
       level.bars = static_cast<int64_t>(built.bars.size());
-      if (!built.bars.empty()) level.firstBar = barStart(built.level, built.bars.front().key), level.lastBar = barStart(built.level, built.bars.back().key);
+      if (!built.bars.empty()) level.firstBar = barStart(barOf(built.level), built.bars.front().key), level.lastBar = barStart(barOf(built.level), built.bars.back().key);
       out.levels.push_back(level);
     }
-    if (loaded.noData) log(dataset.code() + ": " + spec.code + ": no data at all");
     report.instruments.push_back(std::move(out));
   }
   return report;
@@ -101,15 +108,15 @@ IngestReport runIngest(Dataset & dataset, MarketStore & store, const IngestOptio
 std::string formatReport(const IngestReport & report) {
   std::string text;
   char line[160];
-  std::snprintf(line, sizeof line, "%-8s %-5s %7s  %-20s  %-20s\n", "code", "level", "bars", "first bar", "last bar");
+  std::snprintf(line, sizeof line, "%-8s %-8s %7s  %-20s  %-20s\n", "code", "level", "bars", "first bar", "last bar");
   text += line;
   for (const InstrumentReport & r : report.instruments) {
     if (r.levels.empty()) {
-      std::snprintf(line, sizeof line, "%-8s %-5s %7s  %s\n", r.code.c_str(), "-", "-", r.noData ? "(no data)" : "(nothing stored)");
+      std::snprintf(line, sizeof line, "%-8s %-8s %7s  %s\n", r.code.c_str(), "-", "-", r.inactive ? "(left out: no data this year)" : "(nothing stored)");
       text += line;
     }
     for (const LevelReport & l : r.levels) {
-      std::snprintf(line, sizeof line, "%-8s %-5s %7lld  %-20s  %-20s\n", r.code.c_str(), name(l.level), static_cast<long long>(l.bars),
+      std::snprintf(line, sizeof line, "%-8s %-8s %7lld  %-20s  %-20s\n", r.code.c_str(), name(l.level), static_cast<long long>(l.bars),
                     l.bars ? formatTime(l.firstBar).c_str() : "-", l.bars ? formatTime(l.lastBar).c_str() : "-");
       text += line;
     }
@@ -129,6 +136,7 @@ std::string formatReport(const IngestReport & report) {
       text += "  " + r.code + " level left as it was, " + s + "\n";
     }
   for (const std::string & c : report.unknownCodes) text += "unknown instrument: " + c + "\n";
+  if (report.inactive) text += std::to_string(report.inactive) + " instruments left out for having no data this year\n";
   if (!any && report.unknownCodes.empty()) text += "no failed periods\n";
   return text;
 }

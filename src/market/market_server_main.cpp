@@ -6,7 +6,7 @@
 //   GET /health   GET /instruments   GET /summary[?codes=a,b]        (see market/Api.h)
 #include "market/Api.h"
 #include "market/Config.h"
-#include "market/MariaDbStore.h"
+#include "market/SqlStores.h"
 
 #include <csignal>
 #include <cstdio>
@@ -54,7 +54,7 @@ int main(int argc, char ** argv) {
   if (!listen.empty()) config.listen = listen;
 
   try {
-    auto store = market::openMariaDbStore(config.database, market::OpenMode::ReadOnly);
+    auto store = market::openStore(config.database, market::OpenMode::ReadOnly);
     market::ApiServer server(*store);
     g_server = &server;
     std::signal(SIGINT, onSignal);

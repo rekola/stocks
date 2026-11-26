@@ -6,24 +6,33 @@ in [data-model.md](data-model.md); this is the other end of it.
 
 ## The MVP as built
 
-`market-ingest` and `market-server` (`src/market/`, the HistData adapter in `src/source/HistData.cpp`); how to run them is in the README.
-What it holds is small on purpose: the bars the sparklines need, three levels, each replaced by every run:
+`market-ingest` and `market-server` (`src/market/`; the HistData adapter is in `src/market/offline/`, apart from the realtime sources of
+`src/source/`); how to run them is in the README. What it holds is small on purpose: the bars the sparklines need, six levels, each
+replaced by every run, each a window with the bar size that draws it:
 
-| Level | Bar | Stored | Feeds |
+| Level | Bar, key | Stored | Feeds |
 |---|---|---|---|
-| 5m | 5 minutes, key `floor(unix / 300)` | last 1 day | day |
-| 1h | 1 hour, the hour number | last 31 days | week, month |
-| 1d | 1 day, the day number (`Date_to_Days`) | last 10 years | 3 months, 1 year, 3 years, 10 years |
+| day | 5 minutes, `floor(unix / 300)` | 1 day | day |
+| week | 1 hour, the hour number | 7 days | week |
+| month | 4 hours, `floor(unix / 14400)` | 1 month | month |
+| year | 1 day, the day number (`Date_to_Days`) | 1 year | 3 months, year |
+| 3years | 1 week, the day number of its Monday | 3 years | 3 years |
+| 10years | 1 week, the same | 10 years | 10 years |
 
 Each period ends at the instrument's last bar (the data lags by weeks), the bucketing is UTC and in one function (`barKey`), and how a
 09:30 New York open falls on the numbers is still the open question above. The 1-minute data is not in the database: the raw zips
 are the only copy and are kept as they came. The catalog is the plan's edge: an instrument is `(base, quote, market, dataset)`, the
-keys of `NodeKey.h` (a pair's two nodes are currencies or units by code, the market XXXX, the dataset `histdata`), and a bar carries the
-batch that wrote it (`version`). The API is `/health`, `/instruments` and `/summary` (see `src/market/Api.h`), unversioned for now.
+keys of `NodeKey.h` (a pair's two nodes are currencies or units by code, the market XXXX, the dataset `HISTDATA`), and a bar carries the
+batch that wrote it (`version`). A pair with no data in the current year is not carried (early in a year, the year before still counts).
+The API is `/health`, `/instruments` and `/summary` (see `src/market/Api.h`), unversioned for now.
+
+**Storage.** The catalog and the bars are the same SQL tables in SQLite or in MariaDB, through sqlpp11 (typed, every statement prepared with
+its values bound, a result read a row at a time), written once in `SqlStore.h`; a backend only says how it connects and ends a CREATE
+TABLE. A row store is the plan's MariaDB for the catalog; for the bars it stands in for ClickHouse (below).
 
 Where it differs from the plan above, and why:
 
-- **Bars are in MariaDB, behind `MarketStore`, not in ClickHouse.** ClickHouse cannot run where this was built (the distribution's package is
+- **Bars are in SQL behind `MarketStore`, not in ClickHouse.** ClickHouse cannot run where this was built (the distribution's package is
   from 2018 and the official one is not reachable), and the MVP's few hundred thousand rows do not need it. The table has the plan's
   columns, so the move is a second implementation of the interface.
 - **A run replaces a level instead of adding a version of each bar**: the task asks that nothing outside the period remains. The

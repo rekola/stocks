@@ -43,7 +43,8 @@ bool loadConfig(const std::string & path, Config & config, std::string & error) 
   };
   if (const auto * db = section("database")) {
     DbConfig & d = config.database;
-    if (!take(*db, "host", d.host, error, "database.") || !take(*db, "port", d.port, error, "database.") ||
+    if (!take(*db, "type", d.type, error, "database.") || !take(*db, "path", d.path, error, "database.") ||
+        !take(*db, "host", d.host, error, "database.") || !take(*db, "port", d.port, error, "database.") ||
         !take(*db, "socket", d.socket, error, "database.") || !take(*db, "user", d.user, error, "database.") ||
         !take(*db, "password", d.password, error, "database.") || !take(*db, "name", d.name, error, "database."))
       return false;
@@ -55,7 +56,16 @@ bool loadConfig(const std::string & path, Config & config, std::string & error) 
     if (!take(*server, "listen", config.listen, error, "server.") || !take(*server, "port", config.port, error, "server.")) return false;
   if (const char * password = std::getenv("MARKET_DB_PASSWORD")) config.database.password = password;
 
+  if (config.database.type != "mariadb" && config.database.type != "sqlite") {
+    error = "database.type is \"mariadb\" or \"sqlite\", not \"" + config.database.type + "\"";
+    return false;
+  }
   const std::filesystem::path base = std::filesystem::path(path).parent_path();
+  if (config.database.type == "sqlite" && config.database.path != ":memory:") {
+    std::filesystem::path file = config.database.path;
+    if (file.is_relative()) file = base / file;
+    config.database.path = file.lexically_normal().string();
+  }
   std::filesystem::path cache = config.histdataCacheDir;
   if (cache.is_relative()) cache = base / cache;
   config.histdataCacheDir = cache.lexically_normal().string();

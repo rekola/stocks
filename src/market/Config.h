@@ -4,7 +4,8 @@
 
 // The settings of the market-data programs, from one JSON file (market.example.json at the top of the repository is a model):
 //
-//   { "database": { "host": "localhost", "port": 3306, "socket": "", "user": "market", "password": "", "name": "market" },
+//   { "database": { "type": "mariadb", "host": "localhost", "port": 3306, "socket": "", "user": "market", "password": "", "name": "market" },
+//                    or { "type": "sqlite", "path": "market.sqlite" } },
 //     "datasets": { "histdata": { "cache_dir": "cache/histdata" } },
 //     "server":   { "listen": "127.0.0.1", "port": 8080 } }
 //
@@ -13,6 +14,8 @@
 namespace market {
 
 struct DbConfig {
+  std::string type = "mariadb";  // "mariadb" or "sqlite": the catalog and the bars are the same either way
+  std::string path = "market.sqlite";  // sqlite: the file (":memory:" for none); relative to the config file
   std::string host = "localhost";
   int port = 3306;
   std::string socket;  // a Unix socket path; used for the host "localhost" where set (the server's default otherwise)

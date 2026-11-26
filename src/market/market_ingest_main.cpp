@@ -1,14 +1,14 @@
 // market-ingest: loads an external dataset into the market-data database.
 //
-//   market-ingest histdata [codes...|all] [--level 5m|1h|1d|all] [--refresh] [--config FILE]
+//   market-ingest histdata [codes...|all] [--level day|week|month|year|3years|10years|all] [--refresh] [--config FILE]
 //
 // One run does everything for the dataset: finds its instruments, makes the instrument records that are missing, gets the files
 // (from the raw cache when they are there), reads them, builds the levels and replaces what the database holds of each. Run it
 // again whenever: nothing it does is not safe to repeat. The datasets there are, are listed here and nowhere else.
 #include "market/Config.h"
 #include "market/Ingest.h"
-#include "market/MariaDbStore.h"
-#include "source/HistData.h"
+#include "market/SqlStores.h"
+#include "market/offline/HistData.h"
 #include "source/Http.h"
 
 #include <cstdio>
@@ -22,10 +22,10 @@
 namespace {
 
 constexpr const char * kUsage =
-    "usage: market-ingest DATASET [CODE...|all] [--level 5m|1h|1d|all] [--refresh] [--config FILE]\n"
+    "usage: market-ingest DATASET [CODE...|all] [--level day|week|month|year|3years|10years|all] [--refresh] [--config FILE]\n"
     "  datasets: histdata\n"
-    "  --level    the one level to build (default all: 5m, 1h and 1d)\n"
-    "  --refresh  ask again for the months of the current year (past years' files are never fetched again)\n"
+    "  --level    the one level to build (default all six; see market/Bars.h for the bars and the period of each)\n"
+    "  --refresh  ask again for the months of the current year and for the list of pairs (past years' files are never fetched again)\n"
     "  --config   the settings file (default: $MARKET_CONFIG, else ./market.json; without one the built-in defaults)\n";
 
 // The datasets, by the name the command line gives them.
@@ -70,7 +70,7 @@ int main(int argc, char ** argv) {
       if (v == "all") continue;
       const auto level = market::parseLevel(v);
       if (!level) {
-        std::fprintf(stderr, "market-ingest: unknown level \"%s\" (5m, 1h, 1d or all)\n", v.c_str());
+        std::fprintf(stderr, "market-ingest: unknown level \"%s\" (day, week, month, year, 3years, 10years or all)\n", v.c_str());
         return 2;
       }
       options.levels = {*level};
@@ -122,7 +122,7 @@ int main(int argc, char ** argv) {
   const market::Log log = [](const std::string & line) { std::fprintf(stderr, "%s\n", line.c_str()); };
 
   try {
-    auto store = market::openMariaDbStore(config.database, market::OpenMode::ReadWrite, log);
+    auto store = market::openStore(config.database, market::OpenMode::ReadWrite, log);
     const market::IngestReport report = market::runIngest(*dataset, *store, options, log);
     std::fputs("\n", stdout);
     std::fputs(market::formatReport(report).c_str(), stdout);

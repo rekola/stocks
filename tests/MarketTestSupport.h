@@ -1,10 +1,11 @@
 #pragma once
 
 #include "market/Config.h"
-#include "market/MariaDbStore.h"
+#include "market/SqlStores.h"
+#include "market/Store.h"
 #include "market/Zip.h"
 #include "model/Dates.h"
-#include "source/HistData.h"
+#include "market/offline/HistData.h"
 #include "source/Http.h"
 
 #include <unistd.h>
@@ -18,16 +19,17 @@
 #include <string>
 #include <vector>
 
-// A scratch MariaDB schema for the tests that need a server, where the environment names one:
-//   MARKET_TEST_DB_USER (required; the tests are skipped, and say so, without it), MARKET_TEST_DB_PASSWORD, MARKET_TEST_DB_HOST,
+// A scratch MariaDB schema for the tests that run on a server, where the environment names one:
+//   MARKET_TEST_DB_USER (required; those runs are skipped, and say so, without it), MARKET_TEST_DB_PASSWORD, MARKET_TEST_DB_HOST,
 //   MARKET_TEST_DB_PORT, MARKET_TEST_DB_SOCKET. The user needs the right to make and drop schemas named market_test_*.
 struct ScratchDb {
   market::DbConfig config;
   bool available = false;
   ScratchDb() {
     const char * user = std::getenv("MARKET_TEST_DB_USER");
-    if (!user) return;
+    if (!user || !market::hasBackend("mariadb")) return;
     available = true;
+    config.type = "mariadb";
     config.user = user;
     if (const char * v = std::getenv("MARKET_TEST_DB_PASSWORD")) config.password = v;
     if (const char * v = std::getenv("MARKET_TEST_DB_HOST")) config.host = v;
@@ -39,13 +41,45 @@ struct ScratchDb {
   ~ScratchDb() {
     if (!available) return;
     try {
-      market::dropMariaDbSchema(config);
+      market::dropStore(config);
     } catch (...) {
     }
   }
 };
 
-inline void skipWithoutDatabase() { std::printf("  SKIPPED: MARKET_TEST_DB_USER is not set, so there is no MariaDB to test against\n"); }
+// A SQLite file of its own, gone with the object.
+struct ScratchSqlite {
+  market::DbConfig config;
+  ScratchSqlite() {
+    static int counter = 0;
+    config.type = "sqlite";
+    config.path = (std::filesystem::temp_directory_path() / ("market_test_" + std::to_string(getpid()) + "_" + std::to_string(counter++) + ".sqlite")).string();
+  }
+  ~ScratchSqlite() { market::dropStore(config); }
+};
+
+inline void skipWithoutDatabase() { std::printf("  SKIPPED on MariaDB: MARKET_TEST_DB_USER is not set (or this build has no MariaDB)\n"); }
+
+// Runs `body(store, backendName)` on each way the data is kept: in memory, in SQLite, and in MariaDB where there is one to test against.
+template <class F>
+void forEachStore(F && body) {
+  {
+    auto store = market::makeMemoryStore();
+    body(*store, "memory");
+  }
+  {
+    ScratchSqlite db;
+    auto store = market::openStore(db.config, market::OpenMode::ReadWrite);
+    body(*store, "sqlite");
+  }
+  ScratchDb maria;
+  if (maria.available) {
+    auto store = market::openStore(maria.config, market::OpenMode::ReadWrite);
+    body(*store, "mariadb");
+  } else {
+    skipWithoutDatabase();
+  }
+}
 
 // A directory that goes away with the object.
 struct TempDir {
