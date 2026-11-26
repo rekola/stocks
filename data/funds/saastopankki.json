@@ -21,7 +21,11 @@
    "link": "/href",
    "price": "/Price",
    "date": "/ClosePriceDate",
-   "change": "/ReturnD1"
+   "change": "/ReturnD1",
+   "changeMonth": "/ReturnM1",
+   "changeYear": "/ReturnM12",
+   "annualYear3": "/ReturnM36",
+   "annualYear10": "/ReturnM120"
   },
   "linkPrefix": "https://www.saastopankki.fi",
   "scale": {

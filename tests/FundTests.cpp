@@ -1,6 +1,7 @@
 #include "TestFramework.h"
 
 #include "FakeHttp.h"
+#include "model/Period.h"
 #include "model/Dates.h"
 #include "AttributeView.h"
 #include "history/HistoryLoader.h"
@@ -618,6 +619,17 @@ TEST(a_real_discovery_answer_shows_the_funds_with_an_isin_and_a_new_nav_and_says
           if (snapshot->listing(edge)->identifier == id) previous = snapshot->previousClose(edge, snapshot->candles(edge, Resolution::Day).candles.back().time);
       CHECK(previous && std::fabs(*previous - close.get<double>()) < 0.005);
     }
+    // The returns the list gives over longer periods are the edge's changes at once (a per annum return as the change over the years).
+    if (expected.contains("changes"))
+      for (const auto & [id, periods] : expected["changes"].items())
+        for (MarketId market : snapshot->edgeMarkets())
+          for (const EdgeKey & edge : snapshot->edges(market))
+            if (snapshot->listing(edge)->identifier == id)
+              for (const auto & [name, value] : periods.items()) {
+                const Period p = name == "day" ? Period::Day : name == "month" ? Period::Month : name == "quarter" ? Period::Quarter
+                               : name == "year" ? Period::Year : name == "year3" ? Period::Year3 : Period::Year10;
+                CHECK(std::fabs(snapshot->changes(edge).pct[static_cast<size_t>(p)] - value.get<double>()) < 0.001);
+              }
     http.urls.clear();  // the next load asks for the list only: what has no ISIN is not asked for again
     funds.load(*store, http, listener);
     CHECK(http.urls.size() == requests);
