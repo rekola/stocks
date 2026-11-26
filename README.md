@@ -26,6 +26,7 @@ session if the first gives nothing (no network, a refusal).
     build/stocks --market XHEL   # load only that market
     build/stocks --source spfb   # the daily Euribor rates (1 week to 12 months) from the Bank of Finland, in per cent, no key
     build/stocks --source ecb   # the euro short-term rate (€STR) and its compounded index from the European Central Bank, no key
+    build/stocks --source sifter   # the NAV history of the Sifter Fund's PA, PB and PI share classes, no key
     build/stocks --source nordnet,funds:NAME   # several sources, at once; funds:NAME is a fund company by its schema, data/funds/NAME.json (shown under All)
 
 Keys: arrows, PgUp/PgDn, Home/End move; `Tab` and `Shift+Tab` switch the context (below); `M-x` (`Ctrl+Shift+P` on
