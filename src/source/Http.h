@@ -15,10 +15,15 @@ struct HttpResult {
 // Headers to send, as name and value.
 using HttpHeaders = std::vector<std::pair<std::string, std::string>>;
 
-// The headers of a current Chrome on Windows making a fetch() call (user agent, client hints, language), for the adapters whose
-// providers turn scripts away; each adapter names this itself, no other source is disguised. `own` is added to them, and a header
-// of the same name (any case) in `own` replaces the browser's.
-HttpHeaders browserHeaders(const HttpHeaders & own = {});
+// How a browser asks for a URL: a page's script with fetch(), or the page itself (typed in, or followed from a link).
+enum class BrowserRequest { Fetch, Page };
+
+// The headers of a current Chrome on Windows asking for `url` (user agent, client hints, language, the Sec-Fetch-* of `kind`), for the
+// adapters whose providers turn scripts away; each adapter names this itself, no other source is disguised. Sec-Fetch-Site follows
+// from the page that asks, `own`'s Referer, and `url`: without a Referer a fetch is the URL's own page's and a page is typed in. A
+// cross-origin fetch carries that page's Origin. `own` is added to them: a header of the same name (any case) replaces the
+// browser's, and one with an empty value is not sent.
+HttpHeaders browserHeaders(const std::string & url, const HttpHeaders & own = {}, BrowserRequest kind = BrowserRequest::Fetch);
 
 // A blocking GET, so a source can be tested with canned responses. The real one is httpclient's: WinHTTP on Windows,
 // libcurl elsewhere.

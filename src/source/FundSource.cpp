@@ -212,6 +212,11 @@ bool plainWord(const std::string & s) {
   return !s.empty() && std::all_of(s.begin(), s.end(), [](unsigned char c) { return std::isalnum(c) || c == '-'; });
 }
 
+// A GET as a browser makes it, the schema's headers over the browser's: the token page as a page, the rest as its script's calls.
+HttpResult browserGet(Http & http, const std::string & url, const HttpHeaders & own, BrowserRequest kind = BrowserRequest::Fetch) {
+  return http.get(url, browserHeaders(url, own, kind));
+}
+
 std::string failure(const HttpResult & r) {
   return r.status == 0 ? (r.error.empty() ? std::string("no answer") : r.error) : "HTTP " + std::to_string(r.status);
 }
@@ -246,7 +251,6 @@ bool FundSchema::parse(const std::string & text, FundSchema & out, std::string &
   if (auto headers = d.find("headers"); headers != d.end() && headers->is_object())
     for (const auto & [key, v] : headers->items())
       if (v.is_string()) s.headers.push_back({key, v.get<std::string>()});
-  s.headers = browserHeaders(s.headers);  // a browser's, which the schema's own replace
   if (auto token = d.find("token"); token != d.end()) {
     if (!token->is_object() || !token->contains("page") || !token->contains("regex") || !(*token)["page"].is_string() || !(*token)["regex"].is_string()) {
       error = "token needs a page and a regex";
@@ -429,7 +433,7 @@ void FundSource::load(Store & store, Http & http, SourceListener & listener) {
   };
   std::string error, token;
   if (!schema_.tokenPage.empty()) {
-    HttpResult page = http.get(schema_.tokenPage, schema_.headers);
+    HttpResult page = browserGet(http, schema_.tokenPage, schema_.headers, BrowserRequest::Page);
     if (!page.ok()) {
       listener.message(who + "the token page: " + failure(page));
       return;
@@ -441,7 +445,7 @@ void FundSource::load(Store & store, Http & http, SourceListener & listener) {
     history_->setToken(token);
     if (!pause()) return;
   }
-  HttpResult list = http.get(expand(schema_.list.url, "", token), schema_.headers);
+  HttpResult list = browserGet(http, expand(schema_.list.url, "", token), schema_.headers);
   if (!list.ok()) {
     listener.message(who + "the fund list: " + failure(list));
     return;
@@ -507,7 +511,7 @@ void FundSource::load(Store & store, Http & http, SourceListener & listener) {
     if (listener.cancelled()) return;
     if (schema_.detail && !unresolved_.count(e->id)) {
       if (!pause()) return;
-      HttpResult r = http.get(expand(schema_.detail->url, e->id, token), schema_.headers);
+      HttpResult r = browserGet(http, expand(schema_.detail->url, e->id, token), schema_.headers);
       if (r.status == 429 || r.status == 403) {
         listener.message(who + "refused, stopping");
         break;
@@ -599,7 +603,7 @@ HistoryProvider::Outcome FundHistory::load(Store & store, Http & http, const Edg
     }
   };
   if (schema_.detail && !detailed) {
-    HttpResult r = http.get(FundSource::expand(schema_.detail->url, id, token), schema_.headers);
+    HttpResult r = browserGet(http, FundSource::expand(schema_.detail->url, id, token), schema_.headers);
     if (auto s = status(r)) return *s;
     answered = true;
     FundEntry entry;
@@ -611,7 +615,7 @@ HistoryProvider::Outcome FundHistory::load(Store & store, Http & http, const Edg
       return Outcome::Offline;
     }
   }
-  HttpResult r = http.get(FundSource::expand(schema_.historyUrl, id, token), schema_.headers);
+  HttpResult r = browserGet(http, FundSource::expand(schema_.historyUrl, id, token), schema_.headers);
   if (auto s = status(r)) {
     keep(nullptr);
     return *s;

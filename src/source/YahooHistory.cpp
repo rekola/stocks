@@ -88,7 +88,8 @@ HistoryProvider::Outcome YahooHistory::load(Store & store, Http & http, const Ed
   if (!listing || listing->symbol.empty()) return Outcome::Missing;
   Outcome failure = Outcome::Offline;
   for (const char * host : kHosts) {  // the second host answers when the first does not
-    HttpResult r = http.get(std::string("https://") + host + "/v8/finance/chart/" + encoded(listing->symbol) + "?range=10y&interval=1wk", yahoo::headers());
+    const std::string url = std::string("https://") + host + "/v8/finance/chart/" + encoded(listing->symbol) + "?range=10y&interval=1wk";
+    HttpResult r = http.get(url, yahoo::headers(url));
     if (r.status == 403 || r.status == 429) return Outcome::Refused;
     if (r.status == 0 || r.status >= 500) continue;
     if (!r.ok()) return Outcome::Missing;

@@ -81,7 +81,7 @@ bool SifterSource::parse(const std::string & body, Store & store, std::string & 
 
 void SifterSource::load(Store & store, Http & http, SourceListener & listener) {
   if (listener.cancelled()) return;
-  static const HttpHeaders headers = browserHeaders({{"Sec-Fetch-Site", "same-origin"}});  // the chart page's own data call
+  static const HttpHeaders headers = browserHeaders(kUrl);  // the chart page's own data call: same-origin
   const HttpResult r = http.get(kUrl, headers);
   if (r.status == 429 || r.status == 403) {
     listener.message(r.status == 429 ? "sifter: rate limited, stopping" : "sifter: refused, stopping");

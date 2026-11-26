@@ -25,7 +25,8 @@
 //   title                     the name the table shows for the dataset
 //                             ("Säästöpankki"); the code, if there is none
 //   pauseMs, refreshHours     the wait between requests (2000) and how often to
-//   load again (6) headers                   sent with every request token
+//   load again (6) headers                   sent with every request, over a Chrome's (browserHeaders: the Referer says
+//   which page asks, an empty value leaves the browser's out) token
 //   {page, regex}: a page that hands out a token (the first capture of the
 //   regex) that the other URLs have in `{token}` list {url, rows, fields,
 //   scale, linkPrefix}: the list answer. `rows` points at the array of funds

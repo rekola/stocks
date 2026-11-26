@@ -79,7 +79,7 @@ HistoryProvider::Outcome fetch(Http & http, const std::string & book, const std:
                                NordnetHistory::Series & out) {
   std::string url = std::string(kUrl) + period + "/identifier/" + book + "?resolution=" + resolution;
   if (nav) url += "&fundType=FUND_NAV";
-  HttpResult r = http.get(url, nordnet::marketDataHeaders());
+  HttpResult r = http.get(url, nordnet::marketDataHeaders(url));
   if (r.status == 403 || r.status == 429) return HistoryProvider::Outcome::Refused;
   if (r.status == 0 || r.status >= 500) return HistoryProvider::Outcome::Offline;
   if (!r.ok()) return HistoryProvider::Outcome::Missing;
