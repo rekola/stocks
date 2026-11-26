@@ -72,7 +72,7 @@ TEST(the_returns_of_a_listing_are_its_changes_from_the_first_list_with_no_histor
   CHECK(NordnetSource::parsePage(fixture("etflist-1.json"), page, error));
   const Changes & c = page.listings[0].changes;  // FLXK
   CHECK(c.pct[0] == -8.2 && c.pct[1] == -12.49 && c.pct[2] == -18.37 && c.pct[3] == -22.26 && c.pct[4] == 59.31 && c.pct[5] == 123.05);
-  CHECK(!isDefined(c.pct[6]));  // Nordnet gives no ten years
+  CHECK(c.pct[6] == 185.72);  // yield_max is the ten years
   // Written with the edge: a table can sort by any of them at once.
   auto store = makeMemoryStore();
   FakeHttp http;
@@ -85,7 +85,8 @@ TEST(the_returns_of_a_listing_are_its_changes_from_the_first_list_with_no_histor
   bool found = false;
   for (const EdgeKey & edge : s->edgesOf(flxk)) {
     found = true;
-    CHECK(s->changes(edge).pct[static_cast<size_t>(Period::Week)] == -12.49 && s->changes(edge).pct[static_cast<size_t>(Period::Year3)] == 123.05);
+    CHECK(s->changes(edge).pct[static_cast<size_t>(Period::Week)] == -12.49 && s->changes(edge).pct[static_cast<size_t>(Period::Year3)] == 123.05 &&
+          s->changes(edge).pct[static_cast<size_t>(Period::Year10)] == 185.72);
   }
   CHECK(found);
 }

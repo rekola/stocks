@@ -25,8 +25,8 @@ struct NordnetListing {
   // The price block's last price, bid and ask with its tick time: the edge's quote. Absent where there is no last price or tick time.
   bool hasQuote = false;
   Quote quote;
-  // The returns the list gives (historical_returns_info: per cent over a day, a week, a month, three months, a year and three years; there
-  // are none for ten years): the edge's changes until it has history of its own.
+  // The returns the list gives (historical_returns_info: per cent over a day, a week, a month, three months, a year, three years and ten
+  // years, which it calls `yield_max`): the edge's changes until it has history of its own.
   Changes changes;
   // What else the row says about the instrument, as triples (the subject is the instrument, once it is made).
   std::vector<Attribute> attributes;
