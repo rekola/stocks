@@ -1,3 +1,4 @@
+#include "source/DatasetCodes.h"
 #include "TestFramework.h"
 
 #include "FakeHttp.h"
@@ -206,7 +207,7 @@ TEST(the_gold_estimate_is_made_in_euros_and_in_dollars_from_gold_api_com_and_bea
   InstrumentId usd = store->addInstrument("USD", "US dollar", InstrumentKind::Currency), eur = store->addInstrument("EUR", "Euro", InstrumentKind::Currency);
   InstrumentId kulta = store->addInstrument("GOLD", "Kulta", InstrumentKind::Commodity, "XC0009655157");
   MarketId none = store->addMarket(kNoMarket, "No market");
-  DatasetId nordnet = store->addDataset("nordnet");
+  DatasetId nordnet = store->addDataset(kNordnetDataset);
   const EdgeKey spot{kulta, usd, none, nordnet};
   const int64_t day = dayNumber(2026, 11, 24);
   store->appendCandles(spot, Resolution::Day, {{day, kUndefined, kUndefined, kUndefined, 3500, kUndefined}});

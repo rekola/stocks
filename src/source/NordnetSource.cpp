@@ -339,7 +339,7 @@ size_t NordnetSource::loadIndicators(const List & list, Store & store, Http & ht
   std::vector<size_t> refused;  // the rows left out, which the source does not keep
   // The whole list is one publication.
   store.batch([&](Batch & b) {
-    const DatasetId nordnet = b.addDataset(kNordnetDataset);
+    const DatasetId nordnet = b.addDataset(kNordnetDataset, "Nordnet");
     const DatasetId morningstar = b.addDataset(kMorningstarDataset, "Morningstar");
     // Indices, currency pairs and commodity prices of these lists are on no
     // market.
@@ -401,7 +401,7 @@ size_t NordnetSource::loadIndicators(const List & list, Store & store, Http & ht
 size_t NordnetSource::loadNews(const List & list, Store & store, Http & http, SourceListener & listener, bool & stop, bool first) {
   size_t stored = 0;
   const int pages = first ? 2 : 1;  // the first time a few hours back, then what is new since the last load
-  const DatasetId dataset = store.addDataset(kNordnetDataset);
+  const DatasetId dataset = store.addDataset(kNordnetDataset, "Nordnet");
   for (int page = 0; page < pages; page++) {
     if (listener.cancelled()) return stored;
     HttpResult r = http.get(list.url + "&offset=" + std::to_string(page * list.pageSize), nordnet::marketDataHeaders());
@@ -505,7 +505,7 @@ void NordnetSource::load(Store & store, Http & http, SourceListener & listener) 
       // One page is one publication.
       std::vector<size_t> refused;  // the rows left out, which the source does not keep
       store.batch([&](Batch & b) {
-        const DatasetId dataset = b.addDataset(kNordnetDataset);
+        const DatasetId dataset = b.addDataset(kNordnetDataset, "Nordnet");
         for (size_t i = 0; i < page.listings.size(); i++) {
           NordnetListing & l = page.listings[i];
           l.list = list.name;

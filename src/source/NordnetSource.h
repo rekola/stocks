@@ -45,7 +45,7 @@ struct NordnetIndicator {
 // Nordnet's unofficial search endpoints: no key and no login (a cookie is not needed). Discovery loads every instrument
 // of every list it knows (ETFs, certificates, ...) in the same way, whatever their type. Each is an instrument (a node,
 // with its ISIN and its own type) and its quote currency; and from the price block of its listing, today's daily bar,
-// under the dataset "nordnet", which is what makes the edge: an instrument with no bar has no edge and is not seen. An
+// under the dataset "NORDNET", which is what makes the edge: an instrument with no bar has no edge and is not seen. An
 // instrument listed on two markets is one instrument and two edges. The results go to the store a page at a time, as they
 // arrive, and discovery is repeated (every five minutes by default), each time replacing today's bar. History is the next
 // step.
