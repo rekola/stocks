@@ -72,7 +72,10 @@ TEST(the_returns_of_a_listing_are_its_changes_from_the_first_list_with_no_histor
   CHECK(NordnetSource::parsePage(fixture("etflist-1.json"), page, error));
   const Changes & c = page.listings[0].changes;  // FLXK
   CHECK(c.pct[0] == -8.2 && c.pct[1] == -12.49 && c.pct[2] == -18.37 && c.pct[3] == -22.26 && c.pct[4] == 59.31 && c.pct[5] == 123.05);
-  CHECK(c.pct[6] == 185.72);  // yield_max is the ten years
+  CHECK(!isDefined(c.pct[6]));  // FLXK has a `yield_max` (since the start) and no `yield_10y`
+  NordnetSource::Page old;
+  CHECK(NordnetSource::parsePage(fixture("etflist-1.json"), old, error));
+  CHECK(old.listings[1].changes.pct[6] == 266.61);  // XACT BULL: yield_10y, not its yield_max (1012.19)
   // Written with the edge: a table can sort by any of them at once.
   auto store = makeMemoryStore();
   FakeHttp http;
@@ -86,7 +89,7 @@ TEST(the_returns_of_a_listing_are_its_changes_from_the_first_list_with_no_histor
   for (const EdgeKey & edge : s->edgesOf(flxk)) {
     found = true;
     CHECK(s->changes(edge).pct[static_cast<size_t>(Period::Week)] == -12.49 && s->changes(edge).pct[static_cast<size_t>(Period::Year3)] == 123.05 &&
-          s->changes(edge).pct[static_cast<size_t>(Period::Year10)] == 185.72);
+          !isDefined(s->changes(edge).pct[static_cast<size_t>(Period::Year10)]));
   }
   CHECK(found);
 }
