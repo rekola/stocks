@@ -14,7 +14,7 @@ namespace {
 
 namespace fs = std::filesystem;
 
-constexpr int kFactsVersion = 6;  // 6: the codes of the nordnet and yahoo datasets are in capitals; 5: a value may be a link to a node (`tag` in place of `is_bool`); 4: private ISINs are a hash of the exact text
+constexpr int kFactsVersion = 5;  // 5: a value may be a link to a node (`tag` in place of `is_bool`); 4: private ISINs are a hash of the exact text
 // What a fact's value is beyond what SQLite says of it: an integer that is a truth value, or one that is the key of a node.
 constexpr int kPlain = 0, kBoolean = 1, kNode = 2;
 // SQLite's result codes for a damaged database and for a file that is none (kCorrupt, kNotADatabase): SQLiteCpp does
