@@ -12,6 +12,8 @@ using nlohmann::json;
 namespace {
 
 constexpr const char * kUrl = "https://ir.altusinvestor.com/clients/am/sifter/chart-html5-new/sifter/dataservice.php?id=SIFFDGLLXI";
+// The chart that asks for it: sifterfund.com/rahasto/ shows it in a frame from the same origin, in Finnish.
+constexpr const char * kChartPage = "https://ir.altusinvestor.com/clients/am/sifter/chart-html5-new/?option=SIFFDGLLXI&lang=fi&volatility=0";
 
 // A share class, and the member of a row that has its NAV.
 struct ShareClass {
@@ -81,7 +83,9 @@ bool SifterSource::parse(const std::string & body, Store & store, std::string & 
 
 void SifterSource::load(Store & store, Http & http, SourceListener & listener) {
   if (listener.cancelled()) return;
-  static const HttpHeaders headers = browserHeaders(kUrl);  // the chart page's own data call: same-origin
+  // As the chart's own data call: same-origin, from the chart's page.
+  static const HttpHeaders headers =
+      browserHeaders(kUrl, {{"Accept", "application/json"}, {"Accept-Language", "en-US,en;q=0.9,fi;q=0.8"}, {"Referer", kChartPage}});
   const HttpResult r = http.get(kUrl, headers);
   if (r.status == 429 || r.status == 403) {
     listener.message(r.status == 429 ? "sifter: rate limited, stopping" : "sifter: refused, stopping");

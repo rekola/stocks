@@ -1,9 +1,11 @@
 #include "TestFramework.h"
 
+#include "FakeHttp.h"
 #include "model/Dates.h"
 #include "source/SifterSource.h"
 
 #include <fstream>
+#include <map>
 #include <sstream>
 
 namespace {
@@ -59,4 +61,21 @@ TEST(an_answer_that_is_not_a_list_of_days_is_refused) {
   std::vector<std::string> notes;
   CHECK(!SifterSource::parse("<html>", *store, error, notes) && error == "not a list of days");
   CHECK(!SifterSource::parse("[]", *store, error, notes) && error == "no prices");
+}
+
+TEST(the_list_is_asked_for_as_the_charts_own_data_call) {
+  // As Chrome asks for it from the chart that sifterfund.com/rahasto/ shows in a frame.
+  FakeHttp http;
+  http.answer = [](const std::string &) { return ok(fixture()); };
+  auto store = makeMemoryStore();
+  Listener listener;
+  SifterSource().load(*store, http, listener);
+  CHECK(http.headers.size() == 1);
+  if (http.headers.size() != 1) return;
+  std::map<std::string, std::string> h(http.headers[0].begin(), http.headers[0].end());
+  CHECK(h["Referer"] == "https://ir.altusinvestor.com/clients/am/sifter/chart-html5-new/?option=SIFFDGLLXI&lang=fi&volatility=0");
+  CHECK(h["Sec-Fetch-Site"] == "same-origin" && h["Sec-Fetch-Mode"] == "cors" && h["Sec-Fetch-Dest"] == "empty");
+  CHECK(h["Accept"] == "application/json");
+  CHECK(h.count("Origin") == 0);  // a same-origin GET has none
+  CHECK(navs(*store->snapshot(), "LU0168736675").size() == 3);
 }
