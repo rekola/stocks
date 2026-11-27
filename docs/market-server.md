@@ -44,7 +44,7 @@ database. Check the login: `mariadb -umarket -p market -e 'select 1'`.
     {
       "database": { "type": "mariadb", "host": "localhost", "user": "market", "name": "market" },
       "datasets": { "histdata": { "cache_dir": "/var/lib/market/histdata" } },
-      "server":   { "listen": "192.168.2.10", "port": 8080, "refresh_seconds": 60 }
+      "server":   { "listen": "192.168.2.10", "port": 8080 }
     }
 
 The password is not in that file: the environment variable `MARKET_DB_PASSWORD` takes its place. Put it in a file only the service user and root can read:
@@ -59,8 +59,6 @@ on the local network, and open the port to that network only:
 
     sudo ufw allow from 192.168.2.0/24 to any port 8080 proto tcp     # if ufw is the firewall, and the network is 192.168.2.0/24
 
-`refresh_seconds` is how often the server reads again what the ingest has written since (1 or more).
-
 **5. Load a first instrument, to see that it works.** The ingest and the server are run as the `market` user, with the password from the file:
 
     sudo -u market bash -c 'set -a; . /etc/market/market.env; market-ingest histdata eurusd --level 5m --config /etc/market/market.json'
@@ -68,7 +66,7 @@ on the local network, and open the port to that network only:
 It downloads one file (the latest month of EURUSD, two requests and a pause of two seconds), keeps the zip in `/var/lib/market/histdata`, makes the
 instrument and its bars, and prints a line for each resolution (bars, first and last bar). The exit code is 0 only if nothing failed.
 
-**6. Load everything.** `all` is every pair HistData lists that has data this year (61 of 66 at the time of writing), at every resolution:
+**6. Load everything, with the server not running.** `all` is every pair HistData lists that has data this year (61 of 66 at the time of writing), at every resolution:
 
     sudo -u market bash -c 'set -a; . /etc/market/market.env; market-ingest histdata all --config /etc/market/market.json'
 
@@ -114,8 +112,7 @@ and from another machine of the network:
     sudo systemctl enable --now market-server.service
     systemctl status market-server; journalctl -u market-server -f
 
-The server reads the database again every `refresh_seconds`, so what an ingest run writes is served within that time, with no restart. An ingest run that ends with an
-exit code other than 0 failed in something it says (a period it could not get, a write that was lost, no pair with data at all).
+The server reads the database when it starts, and not again. An ingest run is made while the server is not running, so the order is always the same: stop the server, run the ingest, start the server. (Later the server keeps itself up to date by reading a realtime source, and writes that to the same database itself.) An ingest run that ends with an exit code other than 0 failed in something it says (a period it could not get, a write that was lost, no pair with data at all).
 
 **9. Back it up.** The cache is the only copy of the 1-minute data and nothing deletes from it; the database can be made again from it (an ingest of
 `all` then reads the cache and asks the site for little), but dump it anyway: `mariadb-dump market > market.sql`. If a new version of the program has another

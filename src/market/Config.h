@@ -7,9 +7,9 @@
 //   { "database": { "type": "mariadb", "host": "localhost", "port": 3306, "socket": "", "user": "market", "password": "", "name": "market" },
 //                    or { "type": "sqlite", "path": "market-data" } },
 //     "datasets": { "histdata": { "cache_dir": "cache/histdata" } },
-//     "server":   { "listen": "127.0.0.1", "port": 8080, "refresh_seconds": 60 } }
+//     "server":   { "listen": "127.0.0.1", "port": 8080 } }
 //
-// A port is 0 to 65535 (0: any free one, for a server) and refresh_seconds at least 1; anything else is refused. A relative path is relative to the directory of the file. The environment variable MARKET_DB_PASSWORD, when set, replaces the
+// A port is 0 to 65535 (0: any free one, for a server); anything else is refused. A relative path is relative to the directory of the file. The environment variable MARKET_DB_PASSWORD, when set, replaces the
 // database password, so that the file need not hold it.
 namespace market {
 
@@ -29,7 +29,6 @@ struct Config {
   std::string histdataCacheDir = "cache/histdata";
   std::string listen = "127.0.0.1";  // there is no authentication: only the local machine can reach it unless this says otherwise
   int port = 8080;
-  int refreshSeconds = 60;  // how often the server reads what the ingest wrote since: 1 or more (there is no "never": restart the server)
 };
 
 // Reads the file; false, with `error`, where it cannot be read or holds something else than the above.

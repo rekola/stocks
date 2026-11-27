@@ -1,6 +1,7 @@
 // market-server: the read-only HTTP API of the market data, for the desktop app. No authentication: it listens on the loopback address unless the
 // config says otherwise. It reads the application's own Store, restored from the database the ingest writes (the node attributes, the summaries
-// of the edges and their queues), and renews it every `refresh_seconds`, so that what the ingest wrote since is served.
+// of the edges and their queues) once, when it starts. The ingest is offline: it is run while the server is not, and what the server keeps up to date
+// afterwards it will write itself (from a realtime source, later).
 //
 //   market-server [--config FILE] [--port N] [--listen ADDRESS]
 //
@@ -9,17 +10,13 @@
 #include "market/Backends.h"
 #include "market/Config.h"
 
-#include <atomic>
 #include <charconv>
-#include <chrono>
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <memory>
-#include <mutex>
 #include <string>
-#include <thread>
 
 namespace {
 
@@ -70,7 +67,7 @@ int main(int argc, char ** argv) {
   if (!listen.empty()) config.listen = listen;
 
   const FactLog log = [](const std::string & line) { std::fprintf(stderr, "market-server: %s\n", line.c_str()); };
-  // A store as the database has it now, with its queues in memory.
+  // A store as the database has it, with its queues in memory.
   auto restore = [&]() {
     StoreOptions options = market::storeOptionsOf(config.database, log);
     auto store = std::shared_ptr<Store>(makeMemoryStore(std::move(options)));
@@ -79,12 +76,8 @@ int main(int argc, char ** argv) {
   };
 
   try {
-    std::mutex mutex;
-    std::shared_ptr<Store> current = restore();
-    market::ApiServer server([&] {
-      std::lock_guard lock(mutex);
-      return current;
-    });
+    const std::shared_ptr<Store> current = restore();
+    market::ApiServer server([&] { return current; });
     g_server = &server;
     std::signal(SIGINT, onSignal);
     std::signal(SIGTERM, onSignal);
@@ -92,26 +85,9 @@ int main(int argc, char ** argv) {
       std::fprintf(stderr, "market-server: %s\n", error.c_str());
       return 1;
     }
-    std::atomic<bool> stopping{false};
-    std::thread renew([&] {
-      for (int waited = 0; !stopping;) {
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-        if (++waited < config.refreshSeconds) continue;
-        waited = 0;
-        try {
-          auto fresh = restore();
-          std::lock_guard lock(mutex);
-          current = std::move(fresh);
-        } catch (const std::exception & e) {
-          log(std::string("could not read the database again: ") + e.what());
-        }
-      }
-    });
     std::fprintf(stderr, "market-server: listening on %s:%d\n", config.listen.c_str(), server.port());
     server.serve();
     g_server = nullptr;
-    stopping = true;
-    renew.join();
     return 0;
   } catch (const std::exception & e) {
     std::fprintf(stderr, "market-server: %s\n", e.what());

@@ -32,10 +32,7 @@ TEST(market_config_defaults_to_sqlite_which_every_build_has) {
   CHECK(errorOf(R"({"database": {"type": "mariadb"}})").empty());  // asking for it is allowed; a build without it says so when it opens it
 }
 
-TEST(market_config_refuses_a_refresh_that_never_comes_and_ports_that_are_none) {
-  CHECK(errorOf(R"({"server": {"refresh_seconds": 0}})").find("refresh_seconds") != std::string::npos);
-  CHECK(errorOf(R"({"server": {"refresh_seconds": -5}})").find("refresh_seconds") != std::string::npos);
-  CHECK(errorOf(R"({"server": {"refresh_seconds": 1}})").empty());
+TEST(market_config_refuses_ports_that_are_none) {
   CHECK(errorOf(R"({"server": {"port": 65536}})").find("server.port") != std::string::npos);
   CHECK(errorOf(R"({"server": {"port": -1}})").find("server.port") != std::string::npos);
   CHECK(errorOf(R"({"server": {"port": 0}})").empty());  // any free one
