@@ -69,6 +69,10 @@ std::string Positions::iconFallback(int r, int c) const {
   return c == ICON ? iconSymbolOf(*snapshot_, row(r).position.instrument) : std::string();
 }
 
+std::optional<cellui::Color> Positions::iconFallbackColor(int r, int c) const {
+  return c == ICON ? iconColorOf(*snapshot_, row(r).position.instrument) : std::nullopt;
+}
+
 std::string Positions::symbolOf(int r) const {
   if (const auto edge = priceEdge(r)) return snapshot_->symbol(*edge);
   return snapshot_->symbol(row(r).position.instrument);

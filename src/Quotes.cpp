@@ -178,6 +178,12 @@ std::string iconSymbolOf(const Snapshot & snapshot, InstrumentId instrument) {
   }
 }
 
+std::optional<cellui::Color> iconColorOf(const Snapshot & snapshot, InstrumentId instrument) {
+  if (auto color = snapshot.attribute(instrument, predicate::iconColor))
+    if (auto text = asText(*color); text && !text->empty()) return cellui::Color(*text);
+  return std::nullopt;
+}
+
 std::string Quotes::iconUrl(int r) const {
   auto url = snapshot_->attribute(edge(r).base, predicate::iconUrl);
   return url ? asText(*url).value_or("") : std::string();
@@ -190,6 +196,8 @@ std::shared_ptr<const cellui::TableIcon> Quotes::icon(int r, int c) const {
 }
 
 std::string Quotes::iconFallback(int r, int c) const { return c == ICON ? iconSymbolOf(*snapshot_, edge(r).base) : std::string(); }
+
+std::optional<cellui::Color> Quotes::iconFallbackColor(int r, int c) const { return c == ICON ? iconColorOf(*snapshot_, edge(r).base) : std::nullopt; }
 
 void Quotes::reset(std::shared_ptr<const Snapshot> snapshot, std::vector<EdgeKey> keys) {
   keys_ = std::move(keys);

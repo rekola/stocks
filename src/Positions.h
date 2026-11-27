@@ -45,6 +45,7 @@ class Positions : public cellui::TableModel {
   std::span<const float> traceLight(int r, int) const override;
   std::shared_ptr<const cellui::TableIcon> icon(int r, int c) const override;
   std::string iconFallback(int r, int c) const override;
+  std::optional<cellui::Color> iconFallbackColor(int r, int c) const override;
   std::optional<cellui::Color> color(int r, int c) const override;
   std::optional<double> number(int r, int c) const override;
 
