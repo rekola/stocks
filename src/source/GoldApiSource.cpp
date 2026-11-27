@@ -32,15 +32,16 @@ struct Known {
   const char * isin;
   const char * unit;  // what the instrument's price is for: it is tied to the ISIN (Nordnet's copper, which has the same ISIN, is per metric tonne)
   double factor;      // what the API's price is multiplied by to be for that unit: the answer does not say what its price is for, and copper is per pound
+  const char * sign = "";  // the instrument's own sign, put before the name the row shows ("₿ Bitcoin, per coin")
 };
 
-constexpr Known kKnown[] = {{"XAU", InstrumentKind::Commodity, "METAL", known_isin::kGold, "troy oz", 1},
-                            {"XAG", InstrumentKind::Commodity, "METAL", known_isin::kSilver, "troy oz", 1},
-                            {"XPT", InstrumentKind::Commodity, "METAL", known_isin::kPlatinum, "troy oz", 1},
-                            {"XPD", InstrumentKind::Commodity, "METAL", known_isin::kPalladium, "troy oz", 1},
-                            {"HG", InstrumentKind::Commodity, "METAL", known_isin::kCopper, "tonne", kPoundsPerTonne},  // the API quotes it per pound
-                            {"BTC", InstrumentKind::Other, "CRYPTO", known_isin::kBitcoin, "coin", 1},
-                            {"ETH", InstrumentKind::Other, "CRYPTO", known_isin::kEthereum, "coin", 1}};
+constexpr Known kKnown[] = {{"XAU", InstrumentKind::Commodity, "METAL", known_isin::kGold, "troy oz", 1, ""},
+                            {"XAG", InstrumentKind::Commodity, "METAL", known_isin::kSilver, "troy oz", 1, ""},
+                            {"XPT", InstrumentKind::Commodity, "METAL", known_isin::kPlatinum, "troy oz", 1, ""},
+                            {"XPD", InstrumentKind::Commodity, "METAL", known_isin::kPalladium, "troy oz", 1, ""},
+                            {"HG", InstrumentKind::Commodity, "METAL", known_isin::kCopper, "tonne", kPoundsPerTonne, ""},  // the API quotes it per pound
+                            {"BTC", InstrumentKind::Other, "CRYPTO", known_isin::kBitcoin, "coin", 1, "₿ "},
+                            {"ETH", InstrumentKind::Other, "CRYPTO", known_isin::kEthereum, "coin", 1, ""}};
 
 const Known * knownSymbol(const std::string & symbol) {
   for (const Known & k : kKnown)
@@ -172,7 +173,7 @@ void GoldApiSource::load(Store & store, Http & http, SourceListener & listener) 
         // In the unit of the instrument, so that this source's copper and another's, of one ISIN, are the same number.
         b.appendCandles(edge, Resolution::Day, {{p.day, kUndefined, kUndefined, kUndefined, p.price * (known ? known->factor : 1.0), kUndefined}});
         // The unit is in the name the row shows: a price of copper is for a tonne and one of gold for a troy ounce.
-        b.setListing({edge, s.symbol, "", "", known ? known->type : "SPOT", known ? s.name + ", per " + known->unit : s.name});
+        b.setListing({edge, s.symbol, "", "", known ? known->type : "SPOT", known ? std::string(known->sign) + s.name + ", per " + known->unit : s.name});
       }
     });
     listener.changed();
