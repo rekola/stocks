@@ -333,6 +333,42 @@ TEST(ingest_to_a_database_and_the_server_reads_it_back_whatever_the_database) {
   });
 }
 
+TEST(ingest_to_a_database_and_the_api_gives_an_index_bars_with_an_open_a_high_and_a_low_and_no_volume) {
+  forEachDatabase([](const market::DbConfig & db, const char * backend) {
+    std::printf("  %s\n", backend);
+    Fixture f;
+    f.site.step = 360;
+    {
+      f.store = makeMemoryStore(market::storeOptionsOf(db, {}));
+      CHECK(f.run(kAll, false, {"spxusd", "eurusd"}).complete());
+    }
+    auto server = std::shared_ptr<Store>(makeMemoryStore(market::storeOptionsOf(db, {})));
+    market::loadQueues(*server);
+    const auto snapshot = server->snapshot();
+    const auto edges = snapshot->quoteRowsSince(0);
+    CHECK(edges.size() == 2);
+    for (const EdgeKey & e : edges) {
+      const bool index = snapshot->kind(e.base) == InstrumentKind::Index;
+      const std::string id = text(NodeKey{e.base.value}) + "/" + text(NodeKey{e.quote.value}) + "/XXXX/HISTDATA";
+      CHECK(!index || id == std::string(known_isin::kSp500) + "/PTS/XXXX/HISTDATA");
+      const auto answer = nlohmann::json::parse(market::handleApi(*server, "/summary", {{"edge", id}}).body);
+      CHECK(answer["instruments"].size() == 1 && answer["missing"].empty());
+      if (answer["instruments"].size() != 1) continue;
+      const auto & queues = answer["instruments"][0]["queues"];
+      CHECK(queues.size() == 4);
+      for (auto q = queues.begin(); q != queues.end(); ++q) {
+        const auto & v = q.value();
+        CHECK(v["kind"] == "candle" && v["count"].get<size_t>() > 1);  // an index's bars are candles: its writer says so
+        for (size_t i = 0; i < v["keys"].size(); i++) {
+          CHECK(v["open"][i].is_number() && v["high"][i].is_number() && v["low"][i].is_number() && v["close"][i].is_number());
+          CHECK(v["volume"][i].is_null());
+          CHECK(v["high"][i].get<double>() >= v["low"][i].get<double>());
+        }
+      }
+    }
+  });
+}
+
 // ---- a month that was cached before it was over, a site that does not answer, a store that cannot write ----
 
 namespace {

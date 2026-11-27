@@ -4,7 +4,13 @@
 #   cpp-httplib  the server's HTTP (MIT, one header)
 #   miniz        reads the zip files a dataset downloads (MIT)
 set(HTTPLIB_USE_OPENSSL_IF_AVAILABLE OFF CACHE BOOL "" FORCE)
-set(HTTPLIB_USE_ZLIB_IF_AVAILABLE OFF CACHE BOOL "" FORCE)
+# gzip for the answers (a client sends Accept-Encoding: gzip): only where zlib is found, and it is not required.
+find_package(ZLIB QUIET)
+if(ZLIB_FOUND)
+  set(HTTPLIB_USE_ZLIB_IF_AVAILABLE ON CACHE BOOL "" FORCE)
+else()
+  set(HTTPLIB_USE_ZLIB_IF_AVAILABLE OFF CACHE BOOL "" FORCE)
+endif()
 set(HTTPLIB_USE_BROTLI_IF_AVAILABLE OFF CACHE BOOL "" FORCE)
 set(HTTPLIB_USE_ZSTD_IF_AVAILABLE OFF CACHE BOOL "" FORCE)
 set(HTTPLIB_COMPILE OFF CACHE BOOL "" FORCE)
@@ -33,6 +39,9 @@ add_library(market_lib STATIC Bars.cpp Zip.cpp RawCache.cpp Backends.cpp Config.
 target_include_directories(market_lib PUBLIC ${PROJECT_SOURCE_DIR}/src)
 target_compile_features(market_lib PUBLIC cxx_std_20)
 target_link_libraries(market_lib PUBLIC stocks_model stocks_nodes stocks_http miniz nlohmann_json::nlohmann_json httplib::httplib)
+# A request line of 100 edge ids (Api.h: the cap) is up to about 11.5 KB with every "/", "," and "#" of the longest ids sent as %XX, over the
+# library's 8 KB; the whole line is allowed 16 KB. Every file that includes httplib.h links this library, so they all see the same value.
+target_compile_definitions(market_lib PUBLIC CPPHTTPLIB_REQUEST_URI_MAX_LENGTH=16384)
 if(TARGET stocks_mariadb)
   target_link_libraries(market_lib PUBLIC stocks_mariadb)
   target_compile_definitions(market_lib PUBLIC MARKET_WITH_MARIADB)

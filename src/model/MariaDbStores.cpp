@@ -211,7 +211,7 @@ class MariaDbFactStore : public FactStore, private Base {
 
 // ---- the summaries ----
 
-constexpr int kSummariesVersion = 2;  // 2: the high and the low over each period of an edge, and queues of the kind their writer says
+constexpr int kSummariesVersion = 3;  // 3: a bar with no open says so in its record (SummaryRecords.h); 2: the high and the low over each period of an edge, and queues of the kind their writer says
 
 class MariaDbSummaryStore : public SummaryStore, private Base {
  public:

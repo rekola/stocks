@@ -9,7 +9,9 @@
 
 #include <nlohmann/json.hpp>
 
+#include <cctype>
 #include <cmath>
+#include <cstdio>
 #include <set>
 #include <thread>
 
@@ -42,7 +44,7 @@ struct Edges {
 
 // A store of two datasets (TESTDS, "Test", and OTHERDS, "Other set"):
 //   eurTest   EUR/USD in TESTDS, every resolution, the volume undefined (as HistData's), the close of a bar its key and a half
-//   eurOther  EUR/USD in OTHERDS (the same symbol), 1h and 1d with volumes, one bar of the day without a volume
+//   eurOther  EUR/USD in OTHERDS (the same symbol), 1h and 1d with volumes, one bar of the day without a volume (and, with `noOpen`, one without an open)
 //   gbpTest   GBP/USD in TESTDS, two daily bars
 //   fund      a fund by its ISIN in OTHERDS, three daily values (a scalar queue)
 //   chfTest   CHF/USD in TESTDS, a quote only
@@ -78,7 +80,7 @@ Edges seed(Store & store, bool noOpen = false) {
                     {{kDay - 2, 1.1, 1.2, 1.0, 1.15, 1000},
                      {kDay - 1, 1.15, 1.3, 1.1, 1.2, kUndefined},   // no volume
                      {kDay, noOpen ? kUndefined : 1.2, 1.3, 1.1, 1.25, 2000}});
-    b.appendCandles(e.fund, Resolution::Day, {{kDay - 2, 100.25, 100.25, 100.25, 100.25, kUndefined}, {kDay - 1, 101.5, 101.5, 101.5, 101.5, kUndefined}, {kDay, 99.75, 99.75, 99.75, 99.75, kUndefined}});
+    b.appendCandles(e.fund, Resolution::Day, {{kDay - 2, 100.25, 100.25, 100.25, 100.25, kUndefined}, {kDay - 1, 101.5, 101.5, 101.5, 101.5, kUndefined}, {kDay, 99.75, 99.75, 99.75, 99.75, kUndefined}}, QueueKind::Scalar);
     Quote q;
     q.last = 9.99;
     q.bid = 9.98;
@@ -138,6 +140,9 @@ void checkQueueAgainstStore(const Snapshot & s, const EdgeKey & edge, Resolution
   CHECK(queue["kind"] == (scalar ? "scalar" : "candle"));
   CHECK(queue["count"] == bars.size() && queue["first_key"] == bars.front().time && queue["last_key"] == bars.back().time);
   CHECK(queue["fetched"] == s.coverage(edge, r)->fetched);
+  char hash[17];
+  std::snprintf(hash, sizeof hash, "%016llx", static_cast<unsigned long long>(s.coverage(edge, r)->last_hash));
+  CHECK(queue["last_hash"] == hash);
   for (const char * column : {"keys", "open", "high", "low", "close", "volume"}) CHECK(queue[column].is_array() && queue[column].size() == bars.size());
   if (queue["keys"].size() != bars.size()) return;
   size_t i = 0;
@@ -276,7 +281,7 @@ TEST(api_gives_every_queue_as_the_store_holds_it_with_null_where_undefined) {
   });
 }
 
-TEST(api_writes_a_bar_with_no_open_as_the_store_holds_it_and_never_as_nan) {
+TEST(api_sends_a_bar_with_no_open_as_a_null_open_and_keeps_its_high_and_low) {
   const std::shared_ptr<Store> store = makeMemoryStore();
   const Edges edges = seed(*store, true);
   std::string body;
@@ -284,10 +289,9 @@ TEST(api_writes_a_bar_with_no_open_as_the_store_holds_it_and_never_as_nan) {
   CHECK(body.find("NaN") == std::string::npos && body.find("nan") == std::string::npos);
   const json & od = answer["instruments"][0]["queues"]["1d"];
   checkQueueAgainstStore(*store->snapshot(), edges.eurOther, Resolution::Day, od);
-  // the store takes the close as the base of such a bar and does not tell its high and low from it: those are null, the open is the close
-  CHECK(od["high"][2].is_null() && od["low"][2].is_null() && od["volume"][2] == 2000);
-  CHECK(od["open"][2].is_number() && od["open"][2] == od["close"][2] && std::fabs(od["close"][2].get<double>() - 1.25) < 1e-6);
-  CHECK(od["high"][1].is_number() && od["low"][1].is_number());
+  CHECK(od["open"][2].is_null() && od["open"][0].is_number() && od["open"][1].is_number());  // not the close, not a number made up
+  CHECK(std::fabs(od["close"][2].get<double>() - 1.25) < 1e-6 && std::fabs(od["high"][2].get<double>() - 1.3) < 1e-6 && std::fabs(od["low"][2].get<double>() - 1.1) < 1e-6);
+  CHECK(od["volume"][2] == 2000);
 }
 
 TEST(api_reports_a_scalar_queue_as_close_alone) {
@@ -310,7 +314,10 @@ TEST(api_leaves_out_a_resolution_that_is_not_in_memory) {
     Served served(db, false);  // the queues are on the disk
     const json eur = get(*served.store, "/summary", {{"edge", "EUR/USD/XXXX/TESTDS"}})["instruments"][0];
     CHECK(eur["queues"].is_object() && eur["queues"].empty());
-    CHECK(eur["last_bar_time"] == barStart(Resolution::Min5, barKey(Resolution::Min5, kLast)));  // the coverage is known all the same
+    CHECK(eur["last_bar_time"].is_null());  // no queue is sent
+    // the coverage is known all the same: the listing has it, and the queue is not "gone" but not loaded yet
+    const json listed = get(*served.store, "/instruments", {{"edge", "EUR/USD/XXXX/TESTDS"}});
+    CHECK(listed["instruments"][0]["last_bar_time"] == barStart(Resolution::Min5, barKey(Resolution::Min5, kLast)) && listed["missing"].empty());
     loadQueues(*served.store);
     CHECK(get(*served.store, "/summary", {{"edge", "EUR/USD/XXXX/TESTDS"}})["instruments"][0]["queues"].size() == 4);
   });
@@ -330,7 +337,7 @@ TEST(api_says_nothing_of_a_quote_a_previous_close_or_a_change) {
       CHECK(body.find(word) == std::string::npos);
     }
     const std::set<std::string> instrumentKeys = {"id", "edge", "dataset", "listing", "base", "last_bar_time", "queues"};
-    const std::set<std::string> queueKeys = {"kind", "first_key", "last_key", "count", "fetched", "keys", "open", "high", "low", "close", "volume"};
+    const std::set<std::string> queueKeys = {"kind", "first_key", "last_key", "count", "last_hash", "fetched", "keys", "open", "high", "low", "close", "volume"};
     for (const json & i : answer["instruments"]) {
       std::set<std::string> keys;
       for (auto it = i.begin(); it != i.end(); ++it) keys.insert(it.key());
@@ -344,76 +351,224 @@ TEST(api_says_nothing_of_a_quote_a_previous_close_or_a_change) {
   });
 }
 
+namespace {
+
+std::vector<std::string> idsOf(const json & answer) {
+  std::vector<std::string> out;
+  for (const json & i : answer["instruments"]) out.push_back(i["id"]);
+  return out;
+}
+
+std::vector<std::string> keysOf(const json & object) {
+  std::vector<std::string> out;
+  for (auto it = object.begin(); it != object.end(); ++it) out.push_back(it.key());
+  return out;
+}
+
+}  // namespace
+
 TEST(api_chooses_instruments_by_edge_and_dataset_and_refuses_what_it_cannot_read) {
   forEachDatabase([](const DbConfig & db, const char * backend) {
     std::printf("  %s\n", backend);
     Served served(db);
     Store & store = *served.store;
     int status = 0;
-    const auto ids = [&](const json & answer) {
-      std::vector<std::string> out;
-      for (const json & i : answer["instruments"]) out.push_back(i["id"]);
-      return out;
-    };
     // an edge, or several (in the listing's order, once each)
-    CHECK(ids(get(store, "/summary", {{"edge", "EUR/USD/XXXX/TESTDS"}})) == std::vector<std::string>{"EUR/USD/XXXX/TESTDS"});
-    CHECK(ids(get(store, "/instruments", {{"edge", "GBP/USD/XXXX/TESTDS,EUR/USD/XXXX/OTHERDS,GBP/USD/XXXX/TESTDS"}})) ==
+    CHECK(idsOf(get(store, "/summary", {{"edge", "EUR/USD/XXXX/TESTDS"}})) == std::vector<std::string>{"EUR/USD/XXXX/TESTDS"});
+    CHECK(idsOf(get(store, "/instruments", {{"edge", "GBP/USD/XXXX/TESTDS,EUR/USD/XXXX/OTHERDS,GBP/USD/XXXX/TESTDS"}})) ==
           (std::vector<std::string>{"EUR/USD/XXXX/OTHERDS", "GBP/USD/XXXX/TESTDS"}));
-    CHECK(ids(get(store, "/summary", {{"edge", "EUR/USD/XXXX/TESTDS"}, {"dataset", "TESTDS"}})) == std::vector<std::string>{"EUR/USD/XXXX/TESTDS"});
-    CHECK(get(store, "/summary", {{"edge", "EUR/USD/XXXX/TESTDS"}, {"dataset", "OTHERDS"}}, &status)["instruments"].empty() && status == 200);
+    CHECK(idsOf(get(store, "/summary", {{"edge", "EUR/USD/XXXX/TESTDS"}, {"dataset", "TESTDS"}})) == std::vector<std::string>{"EUR/USD/XXXX/TESTDS"});
     CHECK(get(store, "/summary", {{"dataset", "TESTDS"}})["instruments"].size() == 3);
+    // empty items are skipped, and an edge with no ids left is no filter
+    const std::vector<std::string> both = {"EUR/USD/XXXX/OTHERDS", "EUR/USD/XXXX/TESTDS"};
+    CHECK(idsOf(get(store, "/instruments", {{"edge", "EUR/USD/XXXX/TESTDS,"}})) == std::vector<std::string>{"EUR/USD/XXXX/TESTDS"});
+    CHECK(idsOf(get(store, "/instruments", {{"edge", ",EUR/USD/XXXX/TESTDS,,EUR/USD/XXXX/OTHERDS"}})) == both);
+    CHECK(get(store, "/instruments", {{"edge", ""}}, &status)["instruments"].size() == 5 && status == 200);
+    CHECK(get(store, "/instruments", {{"edge", ",,"}}, &status)["instruments"].size() == 5 && status == 200);
+    CHECK(get(store, "/instruments", {{"edge", ""}})["missing"].empty());
+    // one rule for what matches nothing: 200 and no instruments
+    CHECK(get(store, "/summary", {{"dataset", "NOSUCH"}}, &status)["instruments"] == json::array() && status == 200);
+    CHECK(get(store, "/instruments", {{"dataset", "NOSUCH"}}, &status)["instruments"] == json::array() && status == 200);
+    const json apart = get(store, "/summary", {{"edge", "EUR/USD/XXXX/TESTDS"}, {"dataset", "OTHERDS"}}, &status);
+    CHECK(apart["instruments"] == json::array() && apart["missing"] == json::array() && status == 200);  // in the store, not in that dataset: left out, not gone
+    // a well-formed id that is no instrument of the store is "missing", and the others are there
+    const json gone = get(store, "/summary", {{"edge", "EUR/USD/XXXX/TESTDS,EUR/GBP/XXXX/TESTDS,EUR/USD/XXXX/NODATA,EUR/GBP/XXXX/TESTDS"}}, &status);
+    CHECK(status == 200 && idsOf(gone) == std::vector<std::string>{"EUR/USD/XXXX/TESTDS"});
+    CHECK(gone["missing"] == json::array({"EUR/GBP/XXXX/TESTDS", "EUR/USD/XXXX/NODATA"}));
+    CHECK(get(store, "/instruments", {{"edge", "EUR/GBP/XXXX/TESTDS"}}, &status)["missing"] == json::array({"EUR/GBP/XXXX/TESTDS"}) && status == 200);
+    CHECK(get(store, "/summary", {{"edge", "ZZZ/USD/XXXX/TESTDS"}})["instruments"].empty());
     // what it refuses names what was wrong
-    const auto refused = [&](const std::map<std::string, std::string> & params, int expected, const std::string & mention, const std::string & path = "/summary") {
+    const auto refused = [&](const std::map<std::string, std::string> & params, const std::string & mention, const std::string & path = "/summary") {
       std::string body;
       const json answer = get(store, path, params, &status, &body);
-      const bool ok = status == expected && answer["error"].is_string() && answer["error"].get<std::string>().find(mention) != std::string::npos && !answer.contains("instruments");
-      if (!ok) std::fprintf(stderr, "  expected %d naming '%s', got %d %s\n", expected, mention.c_str(), status, body.c_str());
+      const bool ok = status == 400 && answer["error"].is_string() && answer["error"].get<std::string>().find(mention) != std::string::npos && !answer.contains("instruments");
+      if (!ok) std::fprintf(stderr, "  expected 400 naming '%s', got %d %s\n", mention.c_str(), status, body.c_str());
       CHECK(ok);
     };
-    refused({{"edge", "EUR/USD"}}, 400, "EUR/USD");
-    refused({{"edge", "EUR/USD/XXXX"}}, 400, "EUR/USD/XXXX");
-    refused({{"edge", "EUR/USD/XXXXX/TESTDS"}}, 400, "XXXXX");
-    refused({{"edge", "EUR/USD/XXXX/TEST DS"}}, 400, "TEST DS");
-    refused({{"edge", "EUR/USD/XXXX/TESTDS,x/y/z/w"}}, 400, "x/y/z/w");
-    refused({{"edge", "ABCDEFGHIJKL/USD/XXXX/TESTDS"}}, 400, "ABCDEFGHIJKL");      // twelve letters are no ISIN and too long for a code
-    refused({{"edge", "eur/usd/xxxx/testds"}}, 400, "eur/usd/xxxx/testds");        // only the id as it is returned
-    refused({{"edge", "EUR/USD/XXXX/testds"}}, 400, "EUR/USD/XXXX/TESTDS");
-    refused({{"edge", "US0378331006/EUR/XOFF/OTHERDS"}}, 400, "US0378331006");     // an ISIN with a wrong check digit
-    refused({{"edge", ""}}, 400, "edge id");
-    refused({{"edge", "EUR/USD/XXXX/NODATA"}}, 404, "EUR/USD/XXXX/NODATA");       // well formed, and not in the store
-    refused({{"edge", "EUR/GBP/XXXX/TESTDS"}}, 404, "EUR/GBP/XXXX/TESTDS");
-    refused({{"edge", "EUR/USD/XXXX/TESTDS,EUR/GBP/XXXX/TESTDS"}}, 404, "EUR/GBP/XXXX/TESTDS");
-    refused({{"dataset", "bad dataset!"}}, 400, "bad dataset!");
-    refused({{"dataset", ""}}, 400, "dataset");
-    refused({{"dataset", "NOSUCH"}}, 404, "NOSUCH");
-    refused({{"dataset", "testds"}}, 400, "TESTDS");
-    refused({{"edge", "EUR/USD"}}, 400, "EUR/USD", "/instruments");
-    refused({{"dataset", "NOSUCH"}}, 404, "NOSUCH", "/instruments");
+    refused({{"edge", "EUR/USD"}}, "EUR/USD");
+    refused({{"edge", "EUR/USD/XXXX"}}, "EUR/USD/XXXX");
+    refused({{"edge", "EUR/USD/XXXXX/TESTDS"}}, "XXXXX");
+    refused({{"edge", "EUR/USD/XXXX/TEST DS"}}, "TEST DS");
+    refused({{"edge", "EUR/USD/XXXX/TESTDS,x/y/z/w"}}, "x/y/z/w");
+    refused({{"edge", "ABCDEFGHIJKL/USD/XXXX/TESTDS"}}, "ABCDEFGHIJKL");  // twelve letters are no ISIN and too long for a code
+    refused({{"edge", "eur/usd/xxxx/testds"}}, "eur/usd/xxxx/testds");      // only the id as it is returned
+    refused({{"edge", "EUR/USD/XXXX/testds"}}, "EUR/USD/XXXX/TESTDS");
+    refused({{"edge", "US0378331006/EUR/XOFF/OTHERDS"}}, "US0378331006");  // an ISIN with a wrong check digit
+    refused({{"edge", "EUR/USD"}}, "EUR/USD", "/instruments");
+    refused({{"dataset", "bad dataset!"}}, "bad dataset!");
+    refused({{"dataset", ""}}, "dataset");
+    refused({{"dataset", "testds"}}, "TESTDS");
+    refused({{"dataset", "TESTDS,OTHERDS"}}, "dataset");  // one code, whether it is a repeated parameter or a comma
+    refused({{"dataset", "TESTDS,OTHERDS"}}, "dataset", "/instruments");
+    refused({{"resolution", "2x"}}, "2x");
+    refused({{"resolution", "1d,1y,1w"}}, "1y");
+    refused({{"resolution", "1D"}}, "1D");  // the model's names are cased (1m is a minute, 1M a month)
+    refused({{"resolution", "1d"}}, "resolution", "/instruments");
+    refused({{"resolution", ""}}, "resolution", "/instruments");
     // the old parameter is not read as no filter
-    refused({{"codes", "eurusd"}}, 400, "codes");
-    refused({{"edge", "EUR/USD/XXXX/TESTDS"}, {"foo", "1"}}, 400, "foo");
-    refused({{"dataset", "TESTDS"}}, 400, "dataset", "/health");
+    refused({{"codes", "eurusd"}}, "codes");
+    refused({{"edge", "EUR/USD/XXXX/TESTDS"}, {"foo", "1"}}, "foo");
+    refused({{"dataset", "TESTDS"}}, "dataset", "/health");
     CHECK(get(store, "/nowhere", {}, &status)["error"].is_string() && status == 404);
     CHECK(get(store, "/raw-bars", {}, &status)["error"].is_string() && status == 404);
   });
 }
 
-TEST(api_over_http_is_read_only_json) {
-  std::shared_ptr<Store> store = makeMemoryStore();
-  seed(*store);
-  ApiServer server([&] { return store; });
-  std::string error;
-  CHECK(server.bind("127.0.0.1", 0, error));
-  std::thread thread([&] { server.serve(); });
-  httplib::Client client("127.0.0.1", server.port());
+TEST(api_sends_only_the_resolutions_asked_for_and_last_bar_time_follows_what_is_sent) {
+  forEachDatabase([](const DbConfig & db, const char * backend) {
+    std::printf("  %s\n", backend);
+    Served served(db);
+    Store & store = *served.store;
+    const std::string eur = "EUR/USD/XXXX/TESTDS";
+    const auto queuesOf = [&](const std::map<std::string, std::string> & params) {
+      const json answer = get(store, "/summary", params);
+      return answer["instruments"].empty() ? std::vector<std::string>{"<none>"} : keysOf(answer["instruments"][0]["queues"]);
+    };
+    CHECK(queuesOf({{"edge", eur}}) == (std::vector<std::string>{"1d", "1h", "1w", "5m"}));
+    CHECK(queuesOf({{"edge", eur}, {"resolution", "1d"}}) == std::vector<std::string>{"1d"});
+    CHECK(queuesOf({{"edge", eur}, {"resolution", "1d,1w"}}) == (std::vector<std::string>{"1d", "1w"}));
+    CHECK(queuesOf({{"edge", eur}, {"resolution", ",1w,,1w,"}}) == std::vector<std::string>{"1w"});
+    CHECK(queuesOf({{"edge", eur}, {"resolution", ""}}) == (std::vector<std::string>{"1d", "1h", "1w", "5m"}));  // no names: no filter
+    // a resolution the edge has not is left out of it, not an error
+    int status = 0;
+    const json gbp = get(store, "/summary", {{"edge", "GBP/USD/XXXX/TESTDS"}, {"resolution", "1h,1w"}}, &status);
+    CHECK(status == 200 && gbp["instruments"].size() == 1 && gbp["instruments"][0]["queues"] == json::object());
+    CHECK(queuesOf({{"edge", "GBP/USD/XXXX/TESTDS"}, {"resolution", "1d,5m"}}) == std::vector<std::string>{"1d"});
+    CHECK(queuesOf({{"edge", eur}, {"resolution", "1M"}}).empty());  // a name of the model that this edge has no queue for
+    // the queue sent is the whole queue, whichever the others
+    const json one = get(store, "/summary", {{"edge", eur}, {"resolution", "1d"}})["instruments"][0];
+    CHECK(one["queues"]["1d"]["count"] == windowKeys(Resolution::Day).size());
+    // last_bar_time is the start of the latest bar of the queues sent; the listing says the store's
+    const Timestamp fiveMin = barStart(Resolution::Min5, barKey(Resolution::Min5, kLast));
+    CHECK(get(store, "/summary", {{"edge", eur}})["instruments"][0]["last_bar_time"] == fiveMin);
+    CHECK(one["last_bar_time"] == barStart(Resolution::Day, barKey(Resolution::Day, kLast)));
+    CHECK(get(store, "/summary", {{"edge", eur}, {"resolution", "1w"}})["instruments"][0]["last_bar_time"] == barStart(Resolution::Week, barKey(Resolution::Week, kLast)));
+    CHECK(get(store, "/summary", {{"edge", eur}, {"resolution", "1h,1w"}})["instruments"][0]["last_bar_time"] == barStart(Resolution::Hour1, barKey(Resolution::Hour1, kLast)));
+    CHECK(gbp["instruments"][0]["last_bar_time"].is_null());  // nothing sent
+    CHECK(get(store, "/instruments", {{"edge", eur}})["instruments"][0]["last_bar_time"] == fiveMin);
+    CHECK(get(store, "/instruments", {{"edge", "GBP/USD/XXXX/TESTDS"}})["instruments"][0]["last_bar_time"] == barStart(Resolution::Day, kDay));
+  });
+  // the queues that are not in memory are not sent, and do not count: the listing still has their coverage
+  forEachDatabase([](const DbConfig & db, const char * backend) {
+    std::printf("  %s\n", backend);
+    Served served(db, false);
+    const json eur = get(*served.store, "/summary", {{"edge", "EUR/USD/XXXX/TESTDS"}})["instruments"][0];
+    CHECK(eur["queues"].empty() && eur["last_bar_time"].is_null());
+    CHECK(get(*served.store, "/instruments", {{"edge", "EUR/USD/XXXX/TESTDS"}})["instruments"][0]["last_bar_time"] ==
+          barStart(Resolution::Min5, barKey(Resolution::Min5, kLast)));
+  });
+}
+
+TEST(api_gives_a_queue_the_marks_to_tell_whether_it_changed) {
+  const std::shared_ptr<Store> store = makeMemoryStore();
+  const Edges edges = seed(*store);
+  const auto read = [&] { return get(*store, "/summary", {{"edge", "GBP/USD/XXXX/TESTDS"}, {"resolution", "1d"}})["instruments"][0]["queues"]["1d"]; };
+  const json before = read();
+  CHECK(before["last_key"] == kDay && before["count"] == 2 && before["last_hash"].is_string() && before["last_hash"].get<std::string>().size() == 16);
+  // the last bar says another close: same key and count, another hash
+  store->batch([&](Batch & b) { b.appendCandles(edges.gbpTest, Resolution::Day, {{kDay, 1.25, 2, 1, 1.75, kUndefined}}); });
+  const json after = read();
+  CHECK(after["last_key"] == before["last_key"] && after["count"] == before["count"] && after["last_hash"] != before["last_hash"]);
+  // a new day: the key and the count move
+  store->batch([&](Batch & b) { b.appendCandles(edges.gbpTest, Resolution::Day, {{kDay + 1, 1.75, 2, 1, 1.8, kUndefined}}); });
+  CHECK(read()["last_key"] == kDay + 1 && read()["count"] == 3);
+}
+
+namespace {
+
+// The server over real HTTP on a free port, until it goes out of scope.
+struct Running {
+  std::shared_ptr<Store> store;
+  ApiServer server;
+  std::thread thread;
+  std::unique_ptr<httplib::Client> client;
+  explicit Running(std::shared_ptr<Store> s) : store(std::move(s)), server([this] { return store; }) {
+    std::string error;
+    CHECK(server.bind("127.0.0.1", 0, error));
+    thread = std::thread([this] { server.serve(); });
+    client = std::make_unique<httplib::Client>("127.0.0.1", server.port());
+  }
+  ~Running() {
+    server.stop();
+    thread.join();
+  }
+};
+
+// An edge id of the longest ids there are, which no store has (a currency's code of eleven characters, with the "#" the key allows): `n` is
+// in the letters of its base, so that the ids are all different.
+std::string longId(int n) {
+  std::string base = "AAAA#######";
+  base[0] = static_cast<char>('A' + n / 26 / 26 % 26);
+  base[1] = static_cast<char>('A' + n / 26 % 26);
+  base[2] = static_cast<char>('A' + n % 26);
+  return base + "/###########/ABCD/###########";
+}
+
+// The percent-encoding of a query value as a client sends it: everything but the unreserved characters.
+std::string encoded(const std::string & v) {
+  std::string out;
+  for (unsigned char c : v) {
+    if (std::isalnum(c) || c == '-' || c == '.' || c == '_' || c == '~') out.push_back(static_cast<char>(c));
+    else {
+      char hex[4];
+      std::snprintf(hex, sizeof hex, "%%%02X", c);
+      out += hex;
+    }
+  }
+  return out;
+}
+
+}  // namespace
+
+TEST(api_over_http_is_read_only_json_and_joins_a_parameter_given_again) {
+  Running run(makeMemoryStore());
+  seed(*run.store);
+  httplib::Client & client = *run.client;
   auto health = client.Get("/health");
   CHECK(health && health->status == 200 && health->get_header_value("Content-Type").find("application/json") == 0);
   auto summary = client.Get("/summary?edge=EUR/USD/XXXX/TESTDS,EUR/USD/XXXX/OTHERDS");
   CHECK(summary && summary->status == 200 && json::parse(summary->body)["instruments"].size() == 2);
+  // `edge` and `resolution` given again are joined, not dropped
+  auto again = client.Get("/summary?edge=EUR/USD/XXXX/TESTDS&edge=GBP/USD/XXXX/TESTDS&resolution=1d&resolution=1w");
+  CHECK(again && again->status == 200);
+  if (again && again->status == 200) {
+    const json answer = json::parse(again->body);
+    CHECK(idsOf(answer) == (std::vector<std::string>{"EUR/USD/XXXX/TESTDS", "GBP/USD/XXXX/TESTDS"}));
+    CHECK(keysOf(answer["instruments"][0]["queues"]) == (std::vector<std::string>{"1d", "1w"}));
+  }
+  auto twice = client.Get("/summary?edge=EUR/USD/XXXX/TESTDS&edge=&edge=GBP/USD/XXXX/TESTDS,");
+  CHECK(twice && twice->status == 200 && json::parse(twice->body)["instruments"].size() == 2);
+  // `dataset` given again is refused, and says so
+  auto datasets = client.Get("/summary?dataset=TESTDS&dataset=OTHERDS");
+  CHECK(datasets && datasets->status == 400 && json::parse(datasets->body)["error"].get<std::string>().find("dataset") != std::string::npos);
   auto byDataset = client.Get("/instruments?dataset=OTHERDS");
   CHECK(byDataset && byDataset->status == 200 && json::parse(byDataset->body)["instruments"].size() == 2);
+  auto empty = client.Get("/instruments?dataset=NOSUCH");
+  CHECK(empty && empty->status == 200 && json::parse(empty->body)["instruments"].empty());
   auto bad = client.Get("/summary?edge=nonsense");
   CHECK(bad && bad->status == 400 && json::parse(bad->body)["error"].get<std::string>().find("nonsense") != std::string::npos);
+  auto resolution = client.Get("/instruments?resolution=1d");
+  CHECK(resolution && resolution->status == 400);
   auto old = client.Get("/summary?codes=eurusd");
   CHECK(old && old->status == 400);
   auto post = client.Post("/summary", "x", "text/plain");
@@ -426,6 +581,72 @@ TEST(api_over_http_is_read_only_json) {
   CHECK(del && del->status == 405);
   auto missing = client.Get("/raw-bars");
   CHECK(missing && missing->status == 404);
-  server.stop();
-  thread.join();
 }
+
+TEST(api_over_http_takes_a_hundred_edge_ids_of_the_longest_kind_and_refuses_a_hundred_and_one) {
+  Running run(makeMemoryStore());
+  seed(*run.store);
+  const auto request = [&](int n, bool asOneParameter) {
+    std::string target = "/summary?resolution=5m%2C1h%2C1d%2C1w&dataset=TESTDS";
+    std::string all;
+    for (int i = 0; i < n; i++) {
+      const std::string id = encoded(longId(i));
+      if (asOneParameter) all += (i ? "%2C" : "") + id;
+      else target += "&edge=" + id;
+    }
+    if (asOneParameter) target += "&edge=" + all;
+    return std::pair<std::string, httplib::Result>(target, run.client->Get(target));
+  };
+  for (bool oneParameter : {true, false}) {
+    const auto [target, hundred] = request(100, oneParameter);
+    // the request line is longer than the library's own limit of 8 KB: the limit of the build holds it
+    CHECK(target.size() > 8192 && target.size() < 16384);
+    CHECK(hundred && hundred->status == 200);
+    if (hundred && hundred->status == 200) {
+      const json answer = json::parse(hundred->body);
+      CHECK(answer["instruments"].empty() && answer["missing"].size() == 100);  // well formed, and the store has none of them
+    }
+    const auto [target101, over] = request(101, oneParameter);
+    CHECK(over && over->status == 400);
+    if (over && over->status == 400) {
+      const std::string error = json::parse(over->body)["error"];
+      CHECK(error.find("100") != std::string::npos && error.find("101") != std::string::npos);
+    }
+  }
+}
+
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT
+#include <zlib.h>
+
+TEST(api_over_http_answers_gzip_to_a_client_that_asks_for_it_with_the_same_json) {
+  Running run(makeMemoryStore());
+  seed(*run.store);
+  const std::string target = "/summary?edge=EUR/USD/XXXX/TESTDS";
+  auto plain = run.client->Get(target, {{"Accept-Encoding", "identity"}});
+  CHECK(plain && plain->status == 200 && plain->get_header_value("Content-Encoding").empty());
+  httplib::Client raw("127.0.0.1", run.server.port());
+  raw.set_decompress(false);  // see the bytes on the wire
+  auto packed = raw.Get(target, {{"Accept-Encoding", "gzip"}});
+  CHECK(packed && packed->status == 200 && packed->get_header_value("Content-Encoding") == "gzip");
+  if (!packed || !plain) return;
+  CHECK(packed->body.size() < plain->body.size());
+  std::string inflated;
+  z_stream z{};
+  CHECK(inflateInit2(&z, 15 + 16) == Z_OK);  // gzip
+  z.next_in = reinterpret_cast<Bytef *>(packed->body.data());
+  z.avail_in = static_cast<uInt>(packed->body.size());
+  char buffer[16384];
+  int rc = Z_OK;
+  while (rc == Z_OK) {
+    z.next_out = reinterpret_cast<Bytef *>(buffer);
+    z.avail_out = sizeof buffer;
+    rc = inflate(&z, Z_NO_FLUSH);
+    inflated.append(buffer, sizeof buffer - z.avail_out);
+  }
+  inflateEnd(&z);
+  CHECK(rc == Z_STREAM_END && json::parse(inflated) == json::parse(plain->body));
+  // the library's own client decodes it too
+  auto decoded = run.client->Get(target, {{"Accept-Encoding", "gzip"}});
+  CHECK(decoded && json::parse(decoded->body) == json::parse(plain->body));
+}
+#endif

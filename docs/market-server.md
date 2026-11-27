@@ -15,7 +15,7 @@ in the application are SQLite files and on a server MariaDB (a schema of its own
 
     cp market.example.json market.json                             # database, raw file cache, listen address
     build/market-ingest histdata eurusd usdjpy --level 5m          # or: histdata all
-    build/market-server --config market.json                       # GET /health, /instruments, /summary[?edge=ID,..&dataset=CODE]
+    build/market-server --config market.json                       # GET /health, /instruments, /summary[?edge=ID,..&dataset=CODE&resolution=R,..]
 
 `market-ingest DATASET [CODE...|all] [--level 5m|1h|1d|1w|all] [--refresh] [--config FILE]` does everything for one
 dataset in one run: it finds the instruments, makes the missing nodes, gets the files (from the raw cache where they
@@ -126,7 +126,8 @@ and from another machine of the network:
 
     curl http://192.168.2.10:8080/health                       # {"instruments":61,"status":"ok"}
     curl http://192.168.2.10:8080/instruments
-    curl 'http://192.168.2.10:8080/summary?edge=EUR/USD/XXXX/HISTDATA'
+    curl 'http://192.168.2.10:8080/summary?edge=EUR/USD/XXXX/HISTDATA&resolution=1d'
+    curl --compressed 'http://192.168.2.10:8080/summary?edge=EUR/USD/XXXX/HISTDATA,GBP/USD/XXXX/HISTDATA&resolution=1d,1w'
 
 `--port` and `--listen` on the command line override the file. Anything but GET is refused (405), and there is no endpoint for raw bars.
 

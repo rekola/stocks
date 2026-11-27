@@ -11,6 +11,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <set>
 #include <chrono>
 #include <thread>
 #include <optional>
@@ -28,6 +30,9 @@ ApiResponse failure(int status, const std::string & message) { return reply(stat
 
 // A number as JSON: null where it is undefined (NaN is not JSON) or not finite.
 json number(double v) { return std::isfinite(v) ? json(v) : json(nullptr); }
+
+// The most edge ids a request names (the URI of a request of that many is within the server's limit: see ApiServer).
+constexpr size_t kMaxEdges = 100;
 
 std::string nodeText(uint64_t key) { return text(NodeKey{key}); }
 
@@ -132,20 +137,54 @@ json queueJson(const Snapshot & s, const EdgeKey & e, Resolution r, const QueueC
     close.push_back(number(bar.close));
     volume.push_back(scalar ? json(nullptr) : number(bar.volume));
   }
-  return {{"kind", scalar ? "scalar" : "candle"}, {"first_key", c.first_key}, {"last_key", c.last_key}, {"count", c.count}, {"fetched", c.fetched},
+  char hash[17];
+  std::snprintf(hash, sizeof hash, "%016llx", static_cast<unsigned long long>(c.last_hash));  // a string: a JSON number does not hold 64 bits
+  return {{"kind", scalar ? "scalar" : "candle"}, {"first_key", c.first_key}, {"last_key", c.last_key}, {"count", c.count}, {"last_hash", hash},
+          {"fetched", c.fetched},
           {"keys", std::move(keys)}, {"open", std::move(open)}, {"high", std::move(high)}, {"low", std::move(low)}, {"close", std::move(close)},
           {"volume", std::move(volume)}};
 }
 
-json summaryJson(const Snapshot & s, const EdgeKey & e) {
+// The queues of the edge that are in memory (those of `only`, where it is not empty), each whole. `last_bar_time` is that of the queues sent.
+json summaryJson(const Snapshot & s, const EdgeKey & e, const std::set<Resolution> & only) {
   json out = instrumentJson(s, e);
   json queues = json::object();
-  // The queues in memory, each whole: a resolution that is not in memory is left out.
+  Timestamp last = 0;
   for (Resolution r : s.queues(e)) {
+    if (!only.empty() && !only.count(r)) continue;
     const auto c = s.coverage(e, r);
-    if (c && c->count > 0 && s.queueResident(e, r)) queues[name(r)] = queueJson(s, e, r, *c);
+    if (!c || c->count == 0 || !s.queueResident(e, r)) continue;
+    queues[name(r)] = queueJson(s, e, r, *c);
+    last = std::max<Timestamp>(last, barStart(r, c->last_key));
   }
+  out["last_bar_time"] = last > 0 ? json(last) : json(nullptr);
   out["queues"] = std::move(queues);
+  return out;
+}
+
+// The resolutions that a list of names (the model's: 5m, 1h, 1d, 1w, ...) says; empty items are skipped. Empty with `bad` set to the first name that is none.
+std::set<Resolution> resolutionsOf(const std::vector<std::string> & names, std::string & bad) {
+  std::set<Resolution> out;
+  for (const std::string & n : names) {
+    bool found = false;
+    for (int r = 0; r <= static_cast<int>(Resolution::Quarter); r++)
+      if (n == name(static_cast<Resolution>(r))) found = true, out.insert(static_cast<Resolution>(r));
+    if (!found) {
+      bad = n;
+      return {};
+    }
+  }
+  return out;
+}
+
+// The items of a comma-separated list, empty ones skipped.
+std::vector<std::string> itemsOf(const std::string & list) {
+  std::vector<std::string> out;
+  std::string rest = list + ",";
+  for (size_t comma = rest.find(','); comma != std::string::npos; comma = rest.find(',')) {
+    if (comma > 0) out.push_back(rest.substr(0, comma));
+    rest.erase(0, comma + 1);
+  }
   return out;
 }
 
@@ -174,39 +213,53 @@ ApiResponse handleApi(Store & store, const std::string & path, const std::map<st
     const Snapshot & s = *snapshot;
     const bool listing = path == "/instruments", summary = path == "/summary";
     if (!listing && !summary && path != "/health") return failure(404, "no such path: " + path);
-    for (const auto & [key, value] : params)
-      if ((!listing && !summary) || (key != "edge" && key != "dataset")) return failure(400, "no such parameter: " + key + (listing || summary ? " (there are edge and dataset)" : ""));
+    for (const auto & [key, value] : params) {
+      if (!listing && !summary) return failure(400, "no such parameter: " + key + " (/health takes none)");
+      if (key == "resolution" && listing) return failure(400, "resolution is for /summary: there are no queues on /instruments");
+      if (key != "edge" && key != "dataset" && key != "resolution") return failure(400, "no such parameter: " + key + " (there are edge, dataset and resolution)");
+    }
     if (path == "/health") return reply(200, {{"status", "ok"}, {"instruments", s.quoteRowCount()}});
 
-    const std::vector<EdgeKey> all = listedEdges(s);
-    std::vector<EdgeKey> chosen = all;
-    // ?dataset=CODE: the edges that dataset wrote.
+    // ?dataset=CODE (one): the edges that dataset wrote.
+    std::optional<DatasetId> dataset;
     if (const auto it = params.find("dataset"); it != params.end()) {
-      const auto dataset = datasetKey(it->second);
-      if (!dataset || text(*dataset) != it->second) return failure(400, "not a dataset code: '" + it->second + "'" + (dataset ? " (the code is " + text(*dataset) + ")" : ""));
-      const auto of = [&](const EdgeKey & e) { return e.dataset.value == dataset->value; };
-      if (std::none_of(all.begin(), all.end(), of)) return failure(404, "no instruments of the dataset " + text(*dataset));
-      chosen.erase(std::remove_if(chosen.begin(), chosen.end(), [&](const EdgeKey & e) { return !of(e); }), chosen.end());
+      const auto key = datasetKey(it->second);
+      if (it->second.find(',') != std::string::npos) return failure(400, "dataset takes one code, not '" + it->second + "' (given more than once, or with a comma)");
+      if (!key || text(*key) != it->second) return failure(400, "not a dataset code: '" + it->second + "'" + (key ? " (the code is " + text(*key) + ")" : ""));
+      dataset = DatasetId{key->value};
     }
-    // ?edge=ID[,ID...]: those edges, each of which must be an instrument of the store (of the dataset too, if one is asked for: those that
-    // are not of it are left out).
-    if (const auto it = params.find("edge"); it != params.end()) {
-      std::vector<EdgeKey> wanted;
-      std::string rest = it->second + ",";
-      for (size_t comma = rest.find(','); comma != std::string::npos; comma = rest.find(',')) {
-        const std::string id = rest.substr(0, comma);
-        rest.erase(0, comma + 1);
-        std::string why;
-        const auto edge = parseEdgeId(id, why);
-        if (!edge) return failure(400, "'" + id + "' is not an edge id: " + why);
-        if (std::find(all.begin(), all.end(), *edge) == all.end()) return failure(404, "no instrument with the edge " + edgeId(*edge));
-        wanted.push_back(*edge);
-      }
-      chosen.erase(std::remove_if(chosen.begin(), chosen.end(), [&](const EdgeKey & e) { return std::find(wanted.begin(), wanted.end(), e) == wanted.end(); }), chosen.end());
+    // ?resolution=R[,R...] (/summary): only those queues.
+    std::set<Resolution> only;
+    if (const auto it = params.find("resolution"); it != params.end()) {
+      std::string bad;
+      only = resolutionsOf(itemsOf(it->second), bad);
+      if (!bad.empty()) return failure(400, "no such resolution: '" + bad + "' (the model's names: 5m, 1h, 1d, 1w, ...)");
+    }
+    // ?edge=ID[,ID...] (and the parameter given again): those edges, at most kMaxEdges of them; empty items are skipped, and none left is no filter.
+    std::vector<EdgeKey> wanted;
+    std::vector<std::string> ids;
+    if (const auto it = params.find("edge"); it != params.end()) ids = itemsOf(it->second);
+    if (ids.size() > kMaxEdges) return failure(400, "at most " + std::to_string(kMaxEdges) + " edge ids in a request, got " + std::to_string(ids.size()));
+    for (const std::string & id : ids) {
+      std::string why;
+      const auto edge = parseEdgeId(id, why);
+      if (!edge) return failure(400, "'" + id + "' is not an edge id: " + why);
+      if (std::find(wanted.begin(), wanted.end(), *edge) == wanted.end()) wanted.push_back(*edge);
+    }
+
+    const std::vector<EdgeKey> all = listedEdges(s);
+    json missing = json::array();  // well-formed ids that are no instrument of the store
+    std::vector<EdgeKey> chosen;
+    for (const EdgeKey & e : wanted)
+      if (std::find(all.begin(), all.end(), e) == all.end()) missing.push_back(edgeId(e));
+    for (const EdgeKey & e : all) {
+      if (dataset && e.dataset.value != dataset->value) continue;
+      if (!wanted.empty() && std::find(wanted.begin(), wanted.end(), e) == wanted.end()) continue;
+      chosen.push_back(e);
     }
     json list = json::array();
-    for (const EdgeKey & e : chosen) list.push_back(listing ? instrumentListJson(s, e) : summaryJson(s, e));
-    return reply(200, {{"instruments", list}});
+    for (const EdgeKey & e : chosen) list.push_back(listing ? instrumentListJson(s, e) : summaryJson(s, e, only));
+    return reply(200, {{"instruments", std::move(list)}, {"missing", std::move(missing)}});
   } catch (const std::exception & e) {
     return failure(503, std::string("the store failed: ") + e.what());
   }
@@ -229,7 +282,12 @@ ApiServer::ApiServer(std::function<std::shared_ptr<Store>()> current) : impl_(st
   });
   auto serve = [current](const httplib::Request & req, httplib::Response & res) {
     std::map<std::string, std::string> params;
-    for (const auto & [key, value] : req.params) params[key] = value;
+    // A parameter given again is not dropped: its values are joined with commas (handleApi refuses that where a parameter takes one value).
+    for (const auto & [key, value] : req.params) {
+      const auto at = params.find(key);
+      if (at == params.end()) params[key] = value;
+      else at->second += "," + value;
+    }
     const std::shared_ptr<Store> store = current();
     const ApiResponse answer = store ? handleApi(*store, req.path, params) : failure(503, "the store is not there yet");
     res.status = answer.status;

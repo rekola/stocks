@@ -121,6 +121,27 @@ TEST(a_candle_record_is_28_bytes_and_reads_back_as_the_bar_it_was_stored_from) {
   CHECK(summary::sameBar(summary::normalized(QueueKind::Candle, back[0]), back[0]));
 }
 
+TEST(a_bar_with_no_open_reads_back_with_no_open_and_keeps_its_high_low_and_volume) {
+  const Candle noOpen = bar(7'000, kUndefined, 12.5, 9.25, 10.5, 300);
+  const Candle onlyClose = bar(7'001, kUndefined, kUndefined, kUndefined, 11, kUndefined);
+  const Candle withOpen = bar(7'002, 10, 12, 9, 11, 5);
+  const std::string blob = summary::pack(QueueKind::Candle, {noOpen, onlyClose, withOpen});
+  CHECK(blob.size() == 2 + 3 * 28 && static_cast<uint8_t>(blob[0]) == 2);  // the record format after this change
+  QueueKind kind = QueueKind::Scalar;
+  std::vector<Candle> back;
+  CHECK(summary::unpack(blob, kind, back) && back.size() == 3);
+  if (back.size() != 3) return;
+  CHECK(!isDefined(back[0].open) && back[0].high == 12.5 && back[0].low == 9.25 && back[0].close == 10.5 && back[0].volume == 300);
+  CHECK(!isDefined(back[1].open) && !isDefined(back[1].high) && !isDefined(back[1].low) && back[1].close == 11 && !isDefined(back[1].volume));
+  CHECK(back[2].open == 10 && back[2].high == 12 && back[2].low == 9 && back[2].close == 11);
+  // normalized is the stored form, and the open stays undefined in it; a bar that has an open is not the same bar as one that has not
+  for (const Candle & c : {noOpen, onlyClose}) CHECK(!isDefined(summary::normalized(QueueKind::Candle, c).open));
+  CHECK(!summary::sameBar(summary::normalized(QueueKind::Candle, bar(7'000, 10.5, 12.5, 9.25, 10.5, 300)), back[0]));
+  CHECK(summary::hashOf(QueueKind::Candle, bar(7'000, 10.5, 12.5, 9.25, 10.5, 300)) != summary::hashOf(QueueKind::Candle, noOpen));
+  // the same bar again is the same bar
+  CHECK(summary::sameBar(back[0], summary::normalized(QueueKind::Candle, back[0])));
+}
+
 TEST(a_value_record_is_12_bytes_and_reads_back_as_a_bar_of_one_value) {
   const std::string blob = summary::pack(QueueKind::Scalar, {bar(20'000, 1, 5, 0, 123.456, 77)});
   CHECK(blob.size() == 2 + 12);
@@ -149,10 +170,10 @@ TEST(a_volume_of_zero_is_no_volume_a_larger_one_saturates_and_a_fraction_is_roun
   CHECK(volume(std::numeric_limits<double>::infinity()) == 4'294'967'295.0);
 }
 
-TEST(a_bar_with_no_open_takes_its_close_as_its_base_and_has_no_high_and_low) {
+TEST(a_bar_with_no_open_has_its_close_as_its_base_and_keeps_its_high_and_low_from_it) {
   const Candle read = summary::normalized(QueueKind::Candle, bar(100, kUndefined, 12, 8, 10.125, kUndefined));
-  CHECK(read.open == 10.125 && read.close == 10.125);
-  CHECK(!isDefined(read.high) && !isDefined(read.low));
+  CHECK(!isDefined(read.open) && read.close == 10.125);
+  CHECK(read.high == 12 && read.low == 8);
   CHECK(!isDefined(read.volume));
   const std::string blob = summary::pack(QueueKind::Candle, {bar(100, kUndefined, 12, 8, 10.125, kUndefined)});
   QueueKind kind;
@@ -173,8 +194,9 @@ TEST(an_undefined_delta_is_NaN_and_a_bar_without_a_close_or_a_key_that_fits_is_n
   CHECK(summary::unpack(summary::pack(QueueKind::Candle, {bar(1, 10, 11, 9, kUndefined, 5), bar(2, 10, 11, 9, 10, 5)}), kind, back));
   CHECK(back.size() == 1 && back[0].time == 2);
   CHECK(!summary::unpack("", kind, back));
-  CHECK(!summary::unpack(std::string("\x02\x00", 2), kind, back));         // another version
-  CHECK(!summary::unpack(std::string("\x01\x00" "abc", 5), kind, back));    // not a whole number of records
+  CHECK(!summary::unpack(std::string("\x03\x00", 2), kind, back));         // another version (the one before too: a file of it is started over)
+  CHECK(!summary::unpack(std::string("\x01\x00", 2), kind, back));
+  CHECK(!summary::unpack(std::string("\x02\x00" "abc", 5), kind, back));    // not a whole number of records
 }
 
 TEST(the_same_bar_is_decided_on_the_stored_form) {
