@@ -129,9 +129,9 @@ std::vector<InfoSection> buildInfo(const Snapshot & snapshot, const EdgeKey & ed
   const std::optional<Listing> l = snapshot.listing(edge);
   add("symbol", l && !l->symbol.empty() ? l->symbol : snapshot.symbol(edge));
   if (l) {
-    add("identifier", l->identifier);
-    add("order book", l->orderBook);
-    add("type", l->type);
+    add("provider identifier (not real data)", l->providerIdentifier);
+    add("Nordnet order book id (not real data)", l->nordnetOrderBookId);
+    add("provider type (not real data)", l->providerType);
     add("name", l->name);
   }
   add("dataset", snapshot.name(edge.dataset));

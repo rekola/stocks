@@ -181,8 +181,8 @@ TEST(api_names_each_instrument_by_its_edge_as_the_store_has_it) {
         CHECK(i["edge"]["market"] == text(NodeKey{e.market.value}) && i["edge"]["dataset"] == text(NodeKey{e.dataset.value}));
         CHECK(i["dataset"]["code"] == i["edge"]["dataset"] && i["dataset"]["name"] == s.name(e.dataset));
         const Listing listing = *s.listing(e);
-        CHECK(i["listing"]["symbol"] == listing.symbol && i["listing"]["identifier"] == listing.identifier && i["listing"]["order_book"] == listing.orderBook);
-        CHECK(i["listing"]["type"] == listing.type && i["listing"]["name"] == listing.name);
+        CHECK(i["listing"]["symbol"] == listing.symbol && i["listing"]["provider_identifier"] == listing.providerIdentifier && i["listing"]["nordnet_order_book_id"] == listing.nordnetOrderBookId);
+        CHECK(i["listing"]["provider_type"] == listing.providerType && i["listing"]["name"] == listing.name);
         CHECK(i["base"]["kind"] == kindName(s.kind(e.base)));
       }
     }
@@ -191,13 +191,13 @@ TEST(api_names_each_instrument_by_its_edge_as_the_store_has_it) {
     CHECK(!eur.is_null() && idOf(served.edges.eurTest) == "EUR/USD/XXXX/TESTDS");
     CHECK(eur["edge"] == json({{"base", "EUR"}, {"quote", "USD"}, {"market", "XXXX"}, {"dataset", "TESTDS"}}));
     CHECK(eur["dataset"] == json({{"code", "TESTDS"}, {"name", "Test"}}));
-    CHECK(eur["listing"] == json({{"symbol", "EURUSD"}, {"identifier", ""}, {"order_book", ""}, {"type", "CURRENCY"}, {"name", "EUR/USD"}}));
+    CHECK(eur["listing"] == json({{"symbol", "EURUSD"}, {"provider_identifier", ""}, {"nordnet_order_book_id", ""}, {"provider_type", "CURRENCY"}, {"name", "EUR/USD"}}));
     // a currency is its code alone; a fund is its ISIN, and what a client needs to make it
     CHECK(eur["base"] == json({{"kind", "currency"}, {"name", nullptr}, {"isin", nullptr}}));
     const json fund = instrumentWith(instruments, std::string(kFundIsin) + "/EUR/XOFF/OTHERDS");
     CHECK(!fund.is_null() && fund["edge"]["base"] == kFundIsin);
     CHECK(fund["base"] == json({{"kind", "fund"}, {"name", "Fund X"}, {"isin", kFundIsin}}));
-    CHECK(fund["listing"]["identifier"] == "fx-9" && fund["dataset"]["name"] == "Other set");
+    CHECK(fund["listing"]["provider_identifier"] == "fx-9" && fund["dataset"]["name"] == "Other set");
     // the first and last bars (the listing only), and null where there are no bars
     CHECK(eur["last_bar_time"] == barStart(Resolution::Min5, barKey(Resolution::Min5, kLast)));
     CHECK(eur["first_bar_time"] == barStart(Resolution::Week, windowKeys(Resolution::Week).front()));

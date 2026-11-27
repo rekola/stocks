@@ -778,8 +778,8 @@ TEST(an_instrument_listed_on_two_markets_is_one_node_with_an_edge_and_a_say_for_
   CHECK(s->symbol(onXetra) == "XAIX" && s->symbol(onStockholm) == "XAIX");
   CHECK(*s->findEdge("XAIX", xetra) == onXetra && *s->findEdge("XAIX", stockholm) == onStockholm);
   // Each market's own id for it, and the order book its history is asked for by.
-  CHECK(s->listing(onXetra)->identifier == "XAIX" && s->listing(onStockholm)->identifier == "419021");
-  CHECK(!s->listing(onXetra)->orderBook.empty() && s->listing(onXetra)->type == "UETF");
+  CHECK(s->listing(onXetra)->providerIdentifier == "XAIX" && s->listing(onStockholm)->providerIdentifier == "419021");
+  CHECK(!s->listing(onXetra)->nordnetOrderBookId.empty() && s->listing(onXetra)->providerType == "UETF");
   CHECK(s->symbol(xaix).empty());  // the instrument itself has none: a market gives it
 }
 
@@ -826,7 +826,7 @@ TEST(the_indicator_lists_make_indices_in_points_currency_pairs_and_commodities_i
   const EdgeKey onDax{dax, points, *s->findMarket("XXXX"), nordnet};
   CHECK(s->quote(onDax) && s->candles(onDax, Resolution::Day).candles.empty());
   CHECK(s->symbol(onDax) == "DAX");
-  CHECK(!s->listing(onDax)->orderBook.empty() && s->listing(onDax)->type == "INDEX");  // what its history is asked for by
+  CHECK(!s->listing(onDax)->nordnetOrderBookId.empty() && s->listing(onDax)->providerType == "INDEX");  // what its history is asked for by
   CHECK(asText(*s->attribute(dax, "country")) == "DE");
 
   // One with no ISIN has the one source/KnownIsins.h has for its symbol: the real one of the index and of

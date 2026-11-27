@@ -101,7 +101,7 @@ json instrumentJson(const Snapshot & s, const EdgeKey & e) {
   json out = {{"id", edgeId(e)},
               {"edge", {{"base", nodeText(e.base.value)}, {"quote", nodeText(e.quote.value)}, {"market", nodeText(e.market.value)}, {"dataset", nodeText(e.dataset.value)}}},
               {"dataset", {{"code", datasetCode(e.dataset)}, {"name", s.name(e.dataset)}}},
-              {"listing", {{"symbol", listing.symbol}, {"identifier", listing.identifier}, {"order_book", listing.orderBook}, {"type", listing.type}, {"name", listing.name}}},
+              {"listing", {{"symbol", listing.symbol}, {"provider_identifier", listing.providerIdentifier}, {"nordnet_order_book_id", listing.nordnetOrderBookId}, {"provider_type", listing.providerType}, {"name", listing.name}}},
               {"base", {{"kind", kindName(s.kind(e.base))}, {"name", isInstrument ? json(s.name(e.base)) : json(nullptr)}, {"isin", isInstrument ? json(s.isin(e.base)) : json(nullptr)}}},
               {"last_bar_time", nullptr}};
   if (const Timestamp last = lastBarTimeOf(s, e); last > 0) out["last_bar_time"] = last;

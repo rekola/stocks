@@ -141,7 +141,7 @@ std::vector<std::string> NordnetHistory::datasets() const { return {kNordnetData
 
 std::optional<HistoryProvider::Need> NordnetHistory::need(const Snapshot & snapshot, const EdgeKey & edge, Period period) const {
   auto listing = snapshot.listing(edge);
-  if (!listing || listing->orderBook.empty()) return std::nullopt;
+  if (!listing || listing->nordnetOrderBookId.empty()) return std::nullopt;
   if (options_.depth == Depth::Full) {
     // More than today's bar: the bars are there already (loaded before, or from elsewhere).
     return Need{Whole, snapshot.lastCandles(edge, Resolution::Day, 6).candles.size() >= 6, 0};
@@ -190,7 +190,7 @@ HistoryProvider::Outcome NordnetHistory::load(Store & store, Http & http, const 
   Outcome failure = Outcome::Ok;
   auto ask = [&](const std::string & period, const std::string & resolution) -> bool {  // false: stop for this edge
     Series series;
-    failure = fetch(http, listing->orderBook, period, resolution, nav, series);
+    failure = fetch(http, listing->nordnetOrderBookId, period, resolution, nav, series);
     if (failure != Outcome::Ok) return false;
     if (series.supported && !series.bars.empty()) {
       store.appendCandles(edge, series.resolution, series.bars, series.kind);

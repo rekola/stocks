@@ -172,7 +172,7 @@ TEST(the_funds_are_shown_at_once_from_the_list_alone) {
   CHECK(s->coverage(*edge, Resolution::Day)->kind == QueueKind::Scalar);
   auto previous = s->previousClose(*edge, dayNumber(2026, 11, 19));
   CHECK(previous && std::fabs(*previous - 3.3099 / (1 - 0.005887)) < 1e-9);
-  CHECK(s->listing(*edge)->identifier == "ALPHANORDIC");
+  CHECK(s->listing(*edge)->providerIdentifier == "ALPHANORDIC");
   CHECK(s->kind(*s->findInstrumentByIsin("FI0008810569")) == InstrumentKind::Fund);
   CHECK(edgeOf(*s, "LU0823428346", "XOFF", "alpha")
             .has_value()); // the ISIN in the id
@@ -630,7 +630,7 @@ TEST(a_real_discovery_answer_shows_the_funds_with_an_isin_and_a_new_nav_and_says
       std::optional<double> previous;
       for (MarketId market : snapshot->edgeMarkets())
         for (const EdgeKey & edge : snapshot->edges(market))
-          if (snapshot->listing(edge)->identifier == id) previous = snapshot->previousClose(edge, snapshot->candles(edge, Resolution::Day).candles.back().time);
+          if (snapshot->listing(edge)->providerIdentifier == id) previous = snapshot->previousClose(edge, snapshot->candles(edge, Resolution::Day).candles.back().time);
       CHECK(previous && std::fabs(*previous - close.get<double>()) < 0.005);
     }
     // The returns the list gives over longer periods are the edge's changes at once (a per annum return as the change over the years).
@@ -638,7 +638,7 @@ TEST(a_real_discovery_answer_shows_the_funds_with_an_isin_and_a_new_nav_and_says
       for (const auto & [id, periods] : expected["changes"].items())
         for (MarketId market : snapshot->edgeMarkets())
           for (const EdgeKey & edge : snapshot->edges(market))
-            if (snapshot->listing(edge)->identifier == id)
+            if (snapshot->listing(edge)->providerIdentifier == id)
               for (const auto & [name, value] : periods.items()) {
                 const Period p = name == "day" ? Period::Day : name == "month" ? Period::Month : name == "quarter" ? Period::Quarter
                                : name == "year" ? Period::Year : name == "year3" ? Period::Year3 : Period::Year10;
@@ -654,7 +654,7 @@ TEST(a_real_discovery_answer_shows_the_funds_with_an_isin_and_a_new_nav_and_says
       bool found = false;
       for (MarketId market : snapshot->edgeMarkets())
         for (const EdgeKey & edge : snapshot->edges(market))
-          if (edge.base == *instrument) found = snapshot->listing(edge)->identifier == id;
+          if (edge.base == *instrument) found = snapshot->listing(edge)->providerIdentifier == id;
       CHECK(found);
     }
   }

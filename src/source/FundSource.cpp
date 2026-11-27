@@ -543,7 +543,7 @@ void FundSource::load(Store & store, Http & http, SourceListener & listener) {
 
 std::optional<HistoryProvider::Need> FundHistory::need(const Snapshot & snapshot, const EdgeKey & edge, Period) const {
   auto listing = snapshot.listing(edge);
-  if (!listing || listing->identifier.empty()) return std::nullopt;
+  if (!listing || listing->providerIdentifier.empty()) return std::nullopt;
   const Covered covered = periodCovered(snapshot, edge, Period::Quarter);
   return Need{0, covered.covered, covered.fetched};
 }
@@ -561,8 +561,8 @@ void FundHistory::markDetailed(const std::string & id) {
 HistoryProvider::Outcome FundHistory::load(Store & store, Http & http, const EdgeKey & edge, int, const Wait & wait) {
   auto snapshot = store.snapshot();
   auto listing = snapshot->listing(edge);
-  if (!listing || listing->identifier.empty()) return Outcome::Missing;
-  const std::string id = listing->identifier;
+  if (!listing || listing->providerIdentifier.empty()) return Outcome::Missing;
+  const std::string id = listing->providerIdentifier;
   std::string token;
   bool detailed;
   {

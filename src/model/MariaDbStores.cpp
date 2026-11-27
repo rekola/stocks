@@ -211,7 +211,7 @@ class MariaDbFactStore : public FactStore, private Base {
 
 // ---- the summaries ----
 
-constexpr int kSummariesVersion = 3;  // 3: a bar with no open says so in its record (SummaryRecords.h); 2: the high and the low over each period of an edge, and queues of the kind their writer says
+constexpr int kSummariesVersion = 4;  // 4: the listing columns say they are the provider's (`provider_identifier`, `nordnet_order_book_id`, `provider_type`); 3: a bar with no open says so in its record (SummaryRecords.h); 2: the high and the low over each period of an edge, and queues of the kind their writer says
 
 class MariaDbSummaryStore : public SummaryStore, private Base {
  public:
@@ -223,8 +223,8 @@ class MariaDbSummaryStore : public SummaryStore, private Base {
       writer().exec(
           "CREATE TABLE IF NOT EXISTS summary_edges ("
           "id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY, dataset BIGINT NOT NULL, base BIGINT NOT NULL, quote BIGINT NOT NULL, market BIGINT NOT NULL, "
-          "symbol VARCHAR(190) NOT NULL DEFAULT '', identifier VARCHAR(190) NOT NULL DEFAULT '', order_book VARCHAR(190) NOT NULL DEFAULT '', "
-          "type VARCHAR(190) NOT NULL DEFAULT '', name VARCHAR(500) NOT NULL DEFAULT '', "
+          "symbol VARCHAR(190) NOT NULL DEFAULT '', provider_identifier VARCHAR(190) NOT NULL DEFAULT '', nordnet_order_book_id VARCHAR(190) NOT NULL DEFAULT '', "
+          "provider_type VARCHAR(190) NOT NULL DEFAULT '', name VARCHAR(500) NOT NULL DEFAULT '', "
           "last_price DOUBLE NULL, bid DOUBLE NULL, ask DOUBLE NULL, quote_time BIGINT NULL, previous_close DOUBLE NULL, previous_close_day BIGINT NULL, "
           "change_day DOUBLE NULL, change_week DOUBLE NULL, change_month DOUBLE NULL, change_quarter DOUBLE NULL, change_year DOUBLE NULL, "
           "change_year3 DOUBLE NULL, change_year10 DOUBLE NULL, "
@@ -249,7 +249,7 @@ class MariaDbSummaryStore : public SummaryStore, private Base {
     std::lock_guard lock(read_mutex_);
     try {
       maria::Statement q(reader(),
-                         "SELECT e.id, e.base, e.quote, e.market, e.symbol, e.identifier, e.order_book, e.type, e.name, "
+                         "SELECT e.id, e.base, e.quote, e.market, e.symbol, e.provider_identifier, e.nordnet_order_book_id, e.provider_type, e.name, "
                          "e.last_price, e.bid, e.ask, e.quote_time, e.previous_close, e.previous_close_day, "
                          "e.change_day, e.change_week, e.change_month, e.change_quarter, e.change_year, e.change_year3, e.change_year10, "
                          "e.high_day, e.high_week, e.high_month, e.high_quarter, e.high_year, e.high_year3, e.high_year10, e.low_day, e.low_week, e.low_month, e.low_quarter, e.low_year, e.low_year3, e.low_year10, "
@@ -265,9 +265,9 @@ class MariaDbSummaryStore : public SummaryStore, private Base {
           e.listing.key = EdgeKey{InstrumentId{static_cast<uint64_t>(q.getColumn(1).getInt64())}, InstrumentId{static_cast<uint64_t>(q.getColumn(2).getInt64())},
                                   MarketId{static_cast<uint64_t>(q.getColumn(3).getInt64())}, dataset_};
           e.listing.symbol = q.getColumn(4).getString();
-          e.listing.identifier = q.getColumn(5).getString();
-          e.listing.orderBook = q.getColumn(6).getString();
-          e.listing.type = q.getColumn(7).getString();
+          e.listing.providerIdentifier = q.getColumn(5).getString();
+          e.listing.nordnetOrderBookId = q.getColumn(6).getString();
+          e.listing.providerType = q.getColumn(7).getString();
           e.listing.name = q.getColumn(8).getString();
           e.quote.last = real(q.getColumn(9));
           e.quote.bid = real(q.getColumn(10));
@@ -356,11 +356,11 @@ class MariaDbSummaryStore : public SummaryStore, private Base {
 
   void putEdge(const StoredEdge & e) {
     maria::Statement put(writer(),
-                         "INSERT INTO summary_edges (dataset, base, quote, market, symbol, identifier, order_book, type, name, last_price, bid, ask, quote_time, "
+                         "INSERT INTO summary_edges (dataset, base, quote, market, symbol, provider_identifier, nordnet_order_book_id, provider_type, name, last_price, bid, ask, quote_time, "
                          "previous_close, previous_close_day, change_day, change_week, change_month, change_quarter, change_year, change_year3, change_year10, "
                          "high_day, high_week, high_month, high_quarter, high_year, high_year3, high_year10, low_day, low_week, low_month, low_quarter, low_year, low_year3, low_year10) "
                          "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
-                         "ON DUPLICATE KEY UPDATE symbol = VALUES(symbol), identifier = VALUES(identifier), order_book = VALUES(order_book), type = VALUES(type), "
+                         "ON DUPLICATE KEY UPDATE symbol = VALUES(symbol), provider_identifier = VALUES(provider_identifier), nordnet_order_book_id = VALUES(nordnet_order_book_id), provider_type = VALUES(provider_type), "
                          "name = VALUES(name), last_price = VALUES(last_price), bid = VALUES(bid), ask = VALUES(ask), quote_time = VALUES(quote_time), "
                          "previous_close = VALUES(previous_close), previous_close_day = VALUES(previous_close_day), change_day = VALUES(change_day), "
                          "change_week = VALUES(change_week), change_month = VALUES(change_month), change_quarter = VALUES(change_quarter), "
@@ -373,9 +373,9 @@ class MariaDbSummaryStore : public SummaryStore, private Base {
     put.bind(3, asInt(k.quote.value));
     put.bind(4, asInt(k.market.value));
     put.bind(5, e.listing.symbol);
-    put.bind(6, e.listing.identifier);
-    put.bind(7, e.listing.orderBook);
-    put.bind(8, e.listing.type);
+    put.bind(6, e.listing.providerIdentifier);
+    put.bind(7, e.listing.nordnetOrderBookId);
+    put.bind(8, e.listing.providerType);
     put.bind(9, e.listing.name);
     bindReal(put, 10, e.quote.last);
     bindReal(put, 11, e.quote.bid);

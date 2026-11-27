@@ -670,7 +670,7 @@ TEST(after_a_restart_every_edge_shows_its_price_bid_and_ask_and_a_portfolio_is_v
   CHECK(s->quote(elisa)->bid == 49 && s->quote(elisa)->ask == 51);
   CHECK(s->quote(fund) && s->quote(fund)->last == 109.5);  // a fund edge with no quote said keeps the one its newest bar gave
   const auto l = s->listing(nokia);
-  CHECK(l && l->symbol == "NOKIA" && l->identifier == "id-n" && l->orderBook == "book-n" && l->type == "STOCK" && l->name == "Nokia Oyj");
+  CHECK(l && l->symbol == "NOKIA" && l->providerIdentifier == "id-n" && l->nordnetOrderBookId == "book-n" && l->providerType == "STOCK" && l->name == "Nokia Oyj");
   CHECK(s->previousClose(nokia, kLast) == 5.25 && !s->previousClose(nokia, kLast + 1));
   CHECK(s->findEdge("NOKIA", *s->findMarket("XHEL")) == nokia);
   // Queues are on the disk only: coverage, no bars.
