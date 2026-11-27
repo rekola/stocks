@@ -120,8 +120,8 @@ The portfolios are kept in `portfolios.sqlite` (see [Where data is kept](#where-
 
 ## Lists and the Watchlist
 
-The **Watchlist** preset shows the rows you put on it. A list member is one row: Nokia from Nordnet on the list does
-not put Nokia from Yahoo there. Lists are kept in `portfolios.sqlite`, and `undo` takes a change back.
+The **Watchlist** preset shows the rows you put on it. A list member is one row: a share from one dataset on the list
+does not put the same share from another dataset there. Lists are kept in `portfolios.sqlite`, and `undo` takes a change back.
 
 To add another list, add a line to `kLists` and a preset in `src/Browser.cpp`; the menu entries and the
 `add-to-<list>` and `remove-from-<list>` commands follow.
@@ -142,9 +142,7 @@ name, or several separated by commas.
 
 | source | what it gives |
 |---|---|
-| `auto` | the market data: Nordnet, falling back to Yahoo for the rest of the session if Nordnet gives nothing (no network, a refusal) |
-| `nordnet` | market data from Nordnet only |
-| `yahoo` | market data from Yahoo only, for the instruments in the [instrument lists](#instrument-lists) |
+| `auto` | the market data: shares, indices, currencies and more. If the first provider gives nothing (no network, a refusal), it falls back to another, which uses the [instrument lists](#instrument-lists), for the rest of the session |
 | `spfb` | daily Euribor rates from the Bank of Finland |
 | `ecb` | the euro short-term rate (€STR) from the ECB |
 | `goldprice` | [spot prices](#spot-prices-of-metals) of gold, silver and copper |
@@ -172,7 +170,7 @@ Each row has seven fields:
 7. the market's code (ISO 10383, such as `XLON`), which puts the row on the market the other sources made for it.
    A row with no code is on no market (`XXXX`: an index, a currency pair).
 
-Yahoo asks for one instrument at a time, so loading all of them takes about a quarter of an hour and some
+The fallback asks for one instrument at a time, so loading all of them takes about a quarter of an hour and some
 40 MB. `--market MIC` (repeatable) loads one market only; `--source synthetic` loads none. `--lists DIR` reads
 another directory.
 
