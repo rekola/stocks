@@ -95,13 +95,13 @@ bool GoldApiSource::parsePrice(const std::string & body, Price & out, std::strin
     error = "no symbol or currency";
     return false;
   }
-  // "2026-11-24T14:19:44Z": the date is the first ten characters.
-  const auto day = dayNumberOfIsoDate(text(doc, "updatedAt").substr(0, 10));
-  if (!day) {
-    error = "no update date";
+  // "2026-11-24T14:19:44Z": the instant of the price, which is the time of its quote.
+  const auto time = instantOfIsoTimestamp(text(doc, "updatedAt"));
+  if (!time) {
+    error = "no update time";
     return false;
   }
-  out.day = *day;
+  out.time = *time;
   return true;
 }
 
@@ -173,7 +173,7 @@ void GoldApiSource::load(Store & store, Http & http, SourceListener & listener) 
         // history, which this API has none of: a live price written as a bar lands wherever the program happened to be open.
         Quote quote;
         quote.last = p.price * (known ? known->factor : 1.0);
-        quote.time = (p.day - kUnixEpochDayNumber) * 86400;
+        quote.time = p.time;
         b.setQuote(edge, quote);
         // The unit is in the name the row shows: a price of copper is for a tonne and one of gold for a troy ounce.
         b.setListing({edge, s.symbol, "", "", known ? known->type : "SPOT", known ? s.name + ", per " + known->unit : s.name});

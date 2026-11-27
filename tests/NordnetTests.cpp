@@ -170,11 +170,10 @@ TEST(loading_pages_through_every_list_and_stores_instruments_markets_and_edges) 
   DatasetId nordnet = *s->findDataset("nordnet");
   EdgeKey onXetra{xaix, *s->findInstrument("EUR"), xetra, nordnet};
   EdgeKey onStockholm{xaix, *s->findInstrument("SEK"), stockholm, nordnet};
-  // Each listing's price block is today's bar, in the daily series, keyed by its date (the tick was at 16:30 UTC on the 20th).
-  CandleSeries today = s->candles(onXetra, Resolution::Day);
-  CHECK(today.resolution == Resolution::Day && today.candles.size() == 1);
-  CHECK(today.candles[0].time == dayNumber(2026, 11, 20) && today.candles[0].open == 188.94 && today.candles[0].high == 189.56);
-  CHECK(today.candles[0].low == 184.42 && today.candles[0].close == 184.42 && today.candles[0].volume == 75161);
+  // Each listing's price block is its quote, at the time of the tick (16:30 UTC on the 20th), and no bar: the bars are the history's.
+  const auto today = s->quote(onXetra);
+  CHECK(today && today->last == 184.42 && today->time == 1795192200 && dayNumberOfInstant(today->time) == dayNumber(2026, 11, 20));
+  CHECK(s->candles(onXetra, Resolution::Day).candles.empty());
   bool a = false, b = false;
   for (const EdgeKey & k : s->edges(xetra)) a = a || k == onXetra;
   for (const EdgeKey & k : s->edges(stockholm)) b = b || k == onStockholm;
@@ -397,7 +396,7 @@ TEST(loading_again_replaces_todays_bars_and_a_new_day_adds_one) {
   CHECK(source.listings().size() == 8);
   MarketId xetra = *second->findMarket("XETR");
   CHECK(second->edges(xetra) == first->edges(xetra));
-  for (const EdgeKey & k : second->edges(xetra)) CHECK(second->candles(k, Resolution::Day).candles.size() == 1);
+  for (const EdgeKey & k : second->edges(xetra)) CHECK(second->quote(k) && second->candles(k, Resolution::Day).candles.empty());
 }
 
 TEST(the_requests_look_like_a_browsers_and_carry_no_cookie) {
@@ -509,8 +508,7 @@ TEST(a_new_day_adds_a_bar_to_the_series) {
   InstrumentId xaix = *s->findInstrumentByIsin("IE00BGV5VN51");
   EdgeKey onXetra{xaix, *s->findInstrument("EUR"), *s->findMarket("XETR"),
                   *s->findDataset("nordnet")};
-  CandleSeries c = s->candles(onXetra, Resolution::Day);
-  CHECK(c.candles.size() == 2 && c.candles[0].time == dayNumber(2026, 11, 20) && c.candles[1].time == dayNumber(2026, 11, 21));
+  CHECK(s->quote(onXetra) && s->quote(onXetra)->time == 1795278600 && s->candles(onXetra, Resolution::Day).candles.empty());
 }
 
 TEST(a_listing_without_a_price_is_a_node_and_has_no_edge) {
@@ -765,7 +763,7 @@ TEST(the_indicator_lists_make_indices_in_points_currency_pairs_and_commodities_i
   const InstrumentId points = *s->findInstrument("pts");
   CHECK(s->kind(points) == InstrumentKind::Unit);
   const EdgeKey onDax{dax, points, *s->findMarket("XXXX"), nordnet};
-  CHECK(s->lastCandles(onDax, Resolution::Day, 1).candles.size() == 1);
+  CHECK(s->quote(onDax) && s->candles(onDax, Resolution::Day).candles.empty());
   CHECK(s->symbol(onDax) == "DAX");
   CHECK(!s->listing(onDax)->orderBook.empty() && s->listing(onDax)->type == "INDEX");  // what its history is asked for by
   CHECK(asText(*s->attribute(dax, "country")) == "DE");
@@ -776,13 +774,10 @@ TEST(the_indicator_lists_make_indices_in_points_currency_pairs_and_commodities_i
   CHECK(s->findInstrumentByIsin(bric) && s->kind(*s->findInstrumentByIsin(bric)) == InstrumentKind::Index);
   CHECK(s->kind(*s->findInstrumentByIsin(leadIsin)) == InstrumentKind::Commodity);
 
-  // A metal the London exchange prices has only a last price: a bar with the high and the low undefined.
+  // A metal the London exchange prices has only a last price, and it is a quote.
   const InstrumentId lead = *s->findInstrumentByIsin(leadIsin);
-  CandleSeries leadBar = s->lastCandles(
-      {lead, *s->findInstrument("USD"), *s->findMarket("XXXX"), nordnet},
-      Resolution::Day, 1);
-  CHECK(leadBar.candles.size() == 1 && leadBar.candles[0].close == 1808.7);
-  CHECK(!isDefined(leadBar.candles[0].high) && !isDefined(leadBar.candles[0].low) && !isDefined(leadBar.candles[0].open));
+  const auto leadQuote = s->quote({lead, *s->findInstrument("USD"), *s->findMarket("XXXX"), nordnet});
+  CHECK(leadQuote && leadQuote->last == 1808.7);
   CHECK(s->listing(
              {lead, *s->findInstrument("USD"), *s->findMarket("XXXX"), nordnet})
             ->name == "Lyijy");
@@ -793,18 +788,15 @@ TEST(the_indicator_lists_make_indices_in_points_currency_pairs_and_commodities_i
             ->name == "EUR/USD");
   const EdgeKey eurusd{*s->findInstrument("EUR"), *s->findInstrument("USD"),
                        *s->findMarket("XXXX"), nordnet};
-  CHECK(s->lastCandles(eurusd, Resolution::Day, 1).candles.size() == 1 && s->symbol(eurusd) == "EURUSD");
+  CHECK(s->quote(eurusd) && s->symbol(eurusd) == "EURUSD");
 
   // A commodity with an ISIN, quoted in dollars; one with none has Nordnet's id.
   InstrumentId gold = *s->findInstrumentByIsin("XC0009655157");
   CHECK(s->kind(gold) == InstrumentKind::Commodity);
-  CHECK(s->lastCandles(
-             {gold, *s->findInstrument("USD"), *s->findMarket("XXXX"), nordnet},
-             Resolution::Day, 1)
-            .candles.size() == 1);
+  CHECK(s->quote({gold, *s->findInstrument("USD"), *s->findMarket("XXXX"), nordnet}));
   CHECK(listener.messages.size() == 1 && listener.messages[0].find("indices 4, currencies 2, commodities 3") != std::string::npos);
 
-  // Loading again replaces today's bars and makes nothing new.
+  // Loading again replaces the quotes and makes nothing new.
   const size_t instruments = s->nodeCount(NodeType::Instrument);
   FakeHttp again;
   again.answer = http.answer;

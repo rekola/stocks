@@ -96,7 +96,10 @@ TEST(every_symbol_is_priced_in_euros_and_in_dollars_as_edges_of_the_dataset) {
   const auto inEuros = s->quote({gold, eur, none, data}), inDollars = s->quote({gold, usd, none, data});
   CHECK(inEuros && inDollars);
   CHECK(std::abs(inEuros->last - 3240) < 1e-6 && std::abs(inDollars->last - 3600) < 1e-9);
-  CHECK(dayNumberOfInstant(inEuros->time) == dayNumber(2026, 11, 24));
+  CHECK(inEuros->time == (dayNumber(2026, 11, 24) - kUnixEpochDayNumber) * 86400 + 14 * 3600 + 19 * 60 + 44);  // the real time of the price
+  const int64_t noon = (dayNumber(2026, 11, 25) - kUnixEpochDayNumber) * 86400 + 12 * 3600;
+  CHECK(instantOfIsoTimestamp("2026-11-25T12:00:00Z") == noon && instantOfIsoTimestamp("2026-11-25T14:00:00.418143+02:00") == noon);
+  CHECK(!instantOfIsoTimestamp("2026-11-25") && !instantOfIsoTimestamp("2026-11-25T12:00:00") && !instantOfIsoTimestamp("2026-11-25T12:00:00+0200"));
   CHECK(s->candles({gold, eur, none, data}, Resolution::Day).candles.empty() && s->candles({gold, usd, none, data}, Resolution::Day).candles.empty());
   CHECK(s->symbol(EdgeKey{gold, eur, none, data}) == "XAU" && s->name(NodeRef(gold)) == "Gold");
   // What a price is for is in the name the row shows: the metals by the troy ounce, copper by the pound, a coin by the coin.
@@ -233,11 +236,11 @@ TEST(the_gold_estimate_is_made_in_euros_and_in_dollars_from_gold_api_com_and_bea
   CHECK(s->edges(off).size() == 4);  // the bar and the coin, each in euros and in dollars
   const DatasetId estimateData = *s->findDataset(kPhysicalDataset);
   const InstrumentId coin = *s->findInstrument("GOLDCOIN"), bar = *s->findInstrument("GOLDBAR");
-  const double inEuros = s->lastCandles({coin, eur, off, estimateData}, Resolution::Day, 1).candles.back().close;
-  const double inDollars = s->lastCandles({coin, usd, off, estimateData}, Resolution::Day, 1).candles.back().close;
+  const double inEuros = s->quote({coin, eur, off, estimateData})->last;
+  const double inDollars = s->quote({coin, usd, off, estimateData})->last;
   CHECK(std::abs(inEuros - 3240 * 0.98) < 1e-6);     // gold-api.com's euros
   CHECK(std::abs(inDollars - 3600 * 0.98) < 1e-6);   // and its dollars, not Nordnet's 3500
-  CHECK(std::abs(s->lastCandles({bar, eur, off, estimateData}, Resolution::Day, 1).candles.back().close - 3240 * 0.0321507466 * 0.97) < 1e-6);
+  CHECK(std::abs(s->quote({bar, eur, off, estimateData})->last - 3240 * 0.0321507466 * 0.97) < 1e-6);
   // A portfolio in euros holds the bar and values it in euros directly, with no pair needed.
   const PortfolioId p{portfolioKey(1)->value};
   const DatasetId user = store->addDataset(kUserDataset);
@@ -282,11 +285,11 @@ TEST(a_sample_of_physical_platinum_is_priced_from_the_platinum_spot_in_both_curr
   const InstrumentId bar = *s->findInstrument("PLATBAR"), eur = *s->findInstrument("EUR"), usd = *s->findInstrument("USD");
   CHECK(s->name(NodeRef(bar)) == "Platinum bar (1 g fine)" && s->kind(bar) == InstrumentKind::Commodity && portfolio::tradable(*s, EdgeKey{bar, eur, off, data}));
   const double gram = 0.0321507466;
-  CHECK(std::abs(s->lastCandles({bar, eur, off, data}, Resolution::Day, 1).candles.back().close - 1300 * 0.9 * gram * 0.93) < 1e-6);
-  CHECK(std::abs(s->lastCandles({bar, usd, off, data}, Resolution::Day, 1).candles.back().close - 1300 * gram * 0.93) < 1e-6);
+  CHECK(std::abs(s->quote({bar, eur, off, data})->last - 1300 * 0.9 * gram * 0.93) < 1e-6);
+  CHECK(std::abs(s->quote({bar, usd, off, data})->last - 1300 * gram * 0.93) < 1e-6);
   // The gold bar is the gold's, not the platinum's.
   const InstrumentId goldBar = *s->findInstrument("GOLDBAR");
-  CHECK(std::abs(s->lastCandles({goldBar, usd, off, data}, Resolution::Day, 1).candles.back().close - 3600 * gram * 0.97) < 1e-6);
+  CHECK(std::abs(s->quote({goldBar, usd, off, data})->last - 3600 * gram * 0.97) < 1e-6);
 }
 
 TEST(a_metal_has_the_isin_of_its_commodity_and_is_the_instrument_another_source_made_by_it) {

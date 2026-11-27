@@ -196,7 +196,7 @@ TEST(of_two_sources_of_one_spot_the_newest_bar_wins_and_on_the_same_day_the_row_
   const auto coin = [&](const char * currency) {
     const auto s = store->snapshot();
     const DatasetId data = *s->findDataset(kPhysicalDataset);
-    return s->lastCandles({*s->findInstrument("GOLDCOIN"), *s->findInstrument(currency), *s->findMarket(kOffExchange), data}, Resolution::Day, 1).candles.back().close;
+    return s->quote({*s->findInstrument("GOLDCOIN"), *s->findInstrument(currency), *s->findMarket(kOffExchange), data})->last;
   };
   estimate.load(*store, http, said);
   CHECK(std::abs(coin("USD") - 3479.11) < 1e-9);  // the same day: the first row of the file

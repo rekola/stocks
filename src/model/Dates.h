@@ -66,6 +66,30 @@ inline std::optional<int64_t> dayNumberOfIsoDate(const std::string & text) {
   return dayNumber(year, month, day);
 }
 
+// The instant, in UTC seconds, of a time written "2026-11-24T14:19:44Z" or "2026-11-25T14:22:01.418143+00:00" (the seconds may have a fraction, and
+// the zone is Z or an offset of hours and minutes), or none.
+inline std::optional<Timestamp> instantOfIsoTimestamp(const std::string & text) {
+  const auto day = text.size() >= 19 ? dayNumberOfIsoDate(text.substr(0, 10)) : std::nullopt;
+  unsigned hour = 0, minute = 0, second = 0;
+  char tail = 0;
+  if (!day || (text[10] != 'T' && text[10] != ' ') || std::sscanf(text.c_str() + 11, "%2u:%2u:%2u%c", &hour, &minute, &second, &tail) != 4) return std::nullopt;
+  if (hour > 23 || minute > 59 || second > 60) return std::nullopt;
+  size_t at = 19;
+  if (at < text.size() && text[at] == '.')
+    while (++at < text.size() && text[at] >= '0' && text[at] <= '9') {}
+  int offset = 0;  // seconds east of UTC
+  if (at < text.size() && text[at] == 'Z' && at + 1 == text.size()) {
+  } else if (at + 6 == text.size() && (text[at] == '+' || text[at] == '-')) {
+    unsigned h = 0, m = 0;
+    char end = 0;
+    if (std::sscanf(text.c_str() + at + 1, "%2u:%2u%c", &h, &m, &end) != 2 || h > 23 || m > 59) return std::nullopt;
+    offset = static_cast<int>(h * 3600 + m * 60) * (text[at] == '-' ? -1 : 1);
+  } else {
+    return std::nullopt;
+  }
+  return (*day - kUnixEpochDayNumber) * 86400 + hour * 3600 + minute * 60 + second - offset;
+}
+
 // The weekday of a day number, Monday 0 to Sunday 6 (1 January of the year 1 was a Monday).
 constexpr int weekday(int64_t number) { return static_cast<int>(((number - 1) % 7 + 7) % 7); }
 

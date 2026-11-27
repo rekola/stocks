@@ -15,9 +15,9 @@
 // minutes late, and the answer says no more of where they come from. A stale price is not stored.
 //
 // Each symbol is an instrument by the ISIN source/KnownIsins.h gives it, so the gold here is the gold of Nordnet and of GoldApiSource (another
-// dataset of the same instrument), priced on XXXX, one edge in each currency asked for (EUR and USD) in the dataset "GOLDPRICE": one daily bar on
-// the UTC date it was computed, whose close is the price in the instrument's unit (the answer's own unit is read, never assumed: copper per pound is
-// multiplied to be per tonne, a unit that is not known leaves the row out and says so), replaced at every load and added on a new day. The
+// dataset of the same instrument), priced on XXXX, one edge in each currency asked for (EUR and USD) in the dataset "GOLDPRICE": its quote, at the instant
+// it was computed, whose last price is the price in the instrument's unit (no bar: a live price is not history) (the answer's own unit is read, never assumed: copper per pound is
+// multiplied to be per tonne, a unit that is not known leaves the row out and says so), replaced at every load. The
 // history is the API's daily bars (GoldPriceHistory), which a key-less caller has for the last 30 days of gold in dollars only.
 class GoldPriceSource : public Source {
  public:
@@ -34,7 +34,7 @@ class GoldPriceSource : public Source {
   struct Price {
     std::string symbol, currency, unit;
     double price = 0;
-    int64_t day = 0;  // the UTC date it was computed, as a day number
+    Timestamp time = 0;  // when it was computed, in UTC seconds
     bool stale = false;
   };
   // The `/v1/prices` answer: false, with `error` set, when it is not a list of prices. A row without a symbol, a currency, a unit, a price above
