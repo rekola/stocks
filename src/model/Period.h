@@ -78,6 +78,8 @@ struct PeriodView {
   double span = 1.0;              // how much of the period the trace covers, 0 to 1: less than 1 only where the bars do not reach back far enough (no change then)
   bool dated = false;             // the bars are days or longer, so the times say a date and no time of day
   std::vector<float> light;       // how bright the trace is at each close, 0 to 1: the volume of its bar against the period's usual (see activity())
+  size_t sources = 1;             // how many datasets the view is made from (a group of several: Group.h)
+  std::vector<float> spread;      // how much those disagree at each close, as a fraction of it (0.01: typically one per cent off); empty for one source
   std::vector<double> volumes;    // the volume of each close's bar (undefined where there is none), one for each of `closes`; empty where no bar has one
   bool hasChange() const { return isDefined(base) && isDefined(last) && (rate || base != 0); }
   // For a rate in basis points, else in percent; undefined where there is no number.

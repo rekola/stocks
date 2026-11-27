@@ -326,7 +326,7 @@ TEST(the_keyboard_moves_between_the_table_and_the_tags_by_command_and_tab_is_the
   CHECK(f.app->input().focused() == &f.browser->table() && f.browser->context() == Context::Portfolio);
 }
 
-TEST(a_preset_shows_one_row_per_edge_with_its_dataset) {
+TEST(a_preset_shows_one_row_per_group_with_what_its_datasets_say_together) {
   Fixture f(false);
   InstrumentId eur = f.store->addInstrument("EUR", "Euro", InstrumentKind::Currency);
   InstrumentId usd = f.store->addInstrument("USD", "US dollar", InstrumentKind::Currency);
@@ -337,13 +337,16 @@ TEST(a_preset_shows_one_row_per_edge_with_its_dataset) {
   f.app->execute("show-currencies");
   f.app->execute("show-period-day");  // the bars are a hundred days apart: the day is the change since the previous bar
   Table & t = f.browser->table();
-  CHECK(t.model()->rowCount() == 2);  // the same pair on the same market from two datasets: two rows
-  t.sortBy(Quotes::DATASET, SortOrder::ASCENDING);
-  CHECK(t.model()->text(t.rowAt(0), Quotes::DATASET) == "PROVIDERA" && t.model()->text(t.rowAt(1), Quotes::DATASET) == "PROVIDERB");
-  CHECK(t.model()->text(t.rowAt(0), Quotes::BASE) == "EUR" && t.model()->text(t.rowAt(0), Quotes::QUOTE) == "USD");
-  CHECK(t.model()->text(t.rowAt(0), Quotes::PRICE) == "1.10" && t.model()->text(t.rowAt(0), Quotes::CHANGE) == "+10.00%");
-  CHECK(t.model()->text(t.rowAt(1), Quotes::PRICE) == "1.00" && t.model()->text(t.rowAt(1), Quotes::CHANGE) == "-50.00%");
-  CHECK(t.model()->trace(t.rowAt(1), Quotes::HISTORY).empty());  // no intraday bars: the day has no trace
+  CHECK(t.model()->rowCount() == 1);  // the same pair on the same market from two datasets: one row
+  CHECK(t.model()->text(0, Quotes::BASE) == "EUR" && t.model()->text(0, Quotes::QUOTE) == "USD");
+  CHECK(t.model()->text(0, Quotes::PRICE) == "1.05");     // the mean of two
+  CHECK(t.model()->text(0, Quotes::CHANGE) == "-20.00%");  // the mean of +10% and -50%
+  const auto & quotes = static_cast<const Quotes &>(*t.model());
+  CHECK(quotes.mix(0).used == 2 && quotes.members(0).size() == 2);
+  // A dataset switched off is left out: the row is the other's.
+  static_cast<Quotes &>(*t.model()).setFilter([b](DatasetId d) { return d != b; });
+  CHECK(t.model()->text(0, Quotes::PRICE) == "1.10" && t.model()->text(0, Quotes::CHANGE) == "+10.00%" && quotes.members(0).size() == 1);
+  CHECK(t.model()->trace(0, Quotes::HISTORY).empty());  // no intraday bars: the day has no trace
 }
 
 TEST(a_preset_whose_market_has_no_data_shows_no_rows_and_a_book_alone_is_not_a_row) {
@@ -370,7 +373,6 @@ TEST(the_made_up_data_fills_every_preset_with_what_the_lists_hold) {
     f.app->execute(command);
     CHECK(f.browser->table().model()->rowCount() > 0);
     CHECK(static_cast<size_t>(f.browser->table().model()->rowCount()) == count);
-    CHECK(f.browser->table().model()->text(f.browser->table().rowAt(0), Quotes::DATASET) == "Synthetic");
   }
 }
 
@@ -499,8 +501,8 @@ TEST(a_row_shows_what_the_dataset_calls_the_listing_so_the_rows_of_one_base_are_
   f.store->setListing({onHel, "XAIX", "", "", "UETF", "Fund (Helsinki)"});
   f.store->setListing({onSto, "XAIX", "", "", "UETF", ""});
   auto snapshot = f.store->snapshot();
-  CHECK(makeRows(*snapshot, hel)[0].name == "Fund (Helsinki)");
-  CHECK(makeRows(*snapshot, sto)[0].name == "Fund (instrument)");
+  CHECK(Quotes(snapshot, quoteEdges(*snapshot, hel)).text(0, Quotes::NAME) == "Fund (Helsinki)");
+  CHECK(Quotes(snapshot, quoteEdges(*snapshot, sto)).text(0, Quotes::NAME) == "Fund (instrument)");
 }
 
 TEST(the_table_keeps_its_scroll_position_when_the_store_changes) {
@@ -2241,7 +2243,7 @@ TEST(the_physical_preset_has_what_is_held_in_hand_and_not_the_funds_or_the_spot)
   CHECK(f.browser->context() == Context::Markets && f.browser->tags().tags()[static_cast<size_t>(f.browser->tags().selected())] == "Physical");
   const auto * quotes = dynamic_cast<const Quotes *>(f.browser->table().model().get());
   CHECK(quotes != nullptr && quotes->rowCount() == 1 && quotes->text(0, Quotes::BASE) == "GOLDCOIN");  // not the fund, nor the spot gold
-  CHECK(f.text().find("Estimate") != std::string::npos && f.text().find("Physical") != std::string::npos);
+  CHECK(f.text().find("Physical") != std::string::npos);  // the tag; the dataset is in the info dialog's Sources
   // From the Portfolio context the command goes to Markets first, as the other presets do.
   f.press(Key::Tab);
   f.app->execute("show-physical");
@@ -2250,7 +2252,7 @@ TEST(the_physical_preset_has_what_is_held_in_hand_and_not_the_funds_or_the_spot)
 }
 
 namespace {
-// Nokia on the Helsinki market from two datasets: two rows, which are two edges.
+// Nokia on the Helsinki market from two datasets: one row, a group of two edges.
 std::pair<EdgeKey, EdgeKey> addNokiaTwice(Store & store) {
   const EdgeKey one = addNokia(store);
   const DatasetId other = store.addDataset("yahoo", "Yahoo");
@@ -2261,36 +2263,38 @@ std::pair<EdgeKey, EdgeKey> addNokiaTwice(Store & store) {
 }
 }  // namespace
 
-TEST(a_row_is_put_on_the_watchlist_from_its_menu_and_only_that_row_not_the_instrument_on_its_other_dataset) {
+TEST(a_row_is_put_on_the_watchlist_from_its_menu_and_it_is_the_group_whichever_datasets_say_it_and_not_the_instrument_on_its_other_market) {
   Fixture f(false);
   const auto [one, two] = addNokiaTwice(*f.store);
+  const MarketId sto = f.store->addMarket("XSTO", "Nasdaq Stockholm");
+  const EdgeKey other{one.base, one.quote, sto, one.dataset};
+  f.store->appendCandles(other, Resolution::Day, {{dayNumber(2026, 1, 2), 1, 1, 1, 4.0, 1}, {dayNumber(2026, 1, 5), 1, 1, 1, 4.2, 1}});
   f.app->execute("show-nasdaq-helsinki");
   Table & table = f.browser->table();
-  CHECK(table.model()->rowCount() == 2);
-  auto & quotes = static_cast<Quotes &>(*table.model());
-  const int first = quotes.edge(0) == one ? 0 : 1;
-  table.select(first);
+  CHECK(table.model()->rowCount() == 1);  // the two datasets are one row
+  CHECK(groupOf(one) == groupOf(two));
+  table.select(0);
   std::string menu;
   // Show info, Buy, Sell, then the list: three Downs and Enter.
   f.inModal([&] { f.app->execute("row-menu"); },
             {[&] { menu = f.text(); }, [&] { f.press(Key::Down); f.press(Key::Down); f.press(Key::Down); f.press(Key::Enter); }, [&] { f.press(Key::Escape); }});
   CHECK(menu.find("Put on the Watchlist") != std::string::npos);
-  CHECK(f.store->snapshot()->onList("watchlist", one) && !f.store->snapshot()->onList("watchlist", two));
+  CHECK(f.store->snapshot()->onList("watchlist", groupOf(one)) && !f.store->snapshot()->onList("watchlist", groupOf(other)));
   CHECK(f.text().find("Put NOKIA on the Watchlist") != std::string::npos && f.browser->undoDepth() == 1);
   // The menu now offers the way back, and the preset shows that row alone.
-  table.select(first);
+  table.select(0);
   CHECK(menuOf(f).find("Take off the Watchlist") != std::string::npos);
   f.app->execute("show-watchlist");
-  CHECK(f.browser->table().model()->rowCount() == 1 && static_cast<Quotes &>(*f.browser->table().model()).edge(0) == one);
+  CHECK(f.browser->table().model()->rowCount() == 1 && groupOf(static_cast<Quotes &>(*f.browser->table().model()).edge(0)) == groupOf(one));
   CHECK(f.text().find("Nothing on the Watchlist") == std::string::npos);
   // Taking it off, from the list itself, leaves it empty and says what to do.
   f.browser->table().select(0);
   f.app->execute("remove-from-watchlist");
   CHECK(f.browser->table().model()->rowCount() == 0 && f.text().find("Nothing on the Watchlist yet") != std::string::npos);
-  CHECK(!f.store->snapshot()->onList("watchlist", one));
+  CHECK(!f.store->snapshot()->onList("watchlist", groupOf(one)));
   // Undo puts it back, and undo again takes it off, as for any change of hers.
   f.app->execute("undo");
-  CHECK(f.browser->table().model()->rowCount() == 1 && f.store->snapshot()->onList("watchlist", one));
+  CHECK(f.browser->table().model()->rowCount() == 1 && f.store->snapshot()->onList("watchlist", groupOf(one)));
   f.app->execute("undo");
   CHECK(f.browser->table().model()->rowCount() == 0 && f.browser->undoDepth() == 0 && f.browser->redoDepth() == 2);
   f.app->execute("redo");
@@ -2309,7 +2313,7 @@ TEST(a_row_already_on_the_watchlist_or_not_on_it_is_told_so_and_nothing_is_recor
   CHECK(f.text().find("is on the Watchlist already") != std::string::npos && f.browser->undoDepth() == 1);
 }
 
-TEST(a_list_is_of_edges_so_a_position_cannot_be_put_on_one) {
+TEST(a_list_is_of_groups_so_a_position_cannot_be_put_on_one) {
   Fixture f(false);
   addHoldings(*f.store);
   f.press(Key::Tab);

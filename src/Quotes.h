@@ -1,6 +1,7 @@
 #pragma once
 
 #include "icons/IconLoader.h"
+#include "model/Group.h"
 #include "model/Period.h"
 #include "model/Store.h"
 #include "portfolio/Portfolio.h"
@@ -12,32 +13,18 @@
 #include <span>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
-// One table row is one edge: what one unit of `base` costs in `quote`, as one dataset reports it on one market.
+// One table row is one group (model/Group.h): what one unit of `base` costs in `quote` on one market, as the datasets that report it say together.
 // The symbol that stands for an instrument's icon where there is no picture: the one it says itself (iconSymbol), else one of its
 // kind (an index 📈, a currency 💱: quoted in another, it is a currency pair); empty for none.
 std::string iconSymbolOf(const Snapshot & snapshot, InstrumentId instrument);
 // The colour the instrument says its symbol has (iconColor); none for the text colour.
 std::optional<cellui::Color> iconColorOf(const Snapshot & snapshot, InstrumentId instrument);
 
-struct QuoteRow {
-  EdgeKey key;
-  std::string base, quote, name, market, dataset;
-  std::string icon_url;  // of the base instrument; empty for none
-  double price = 0;
-  bool rate = false;           // the row is a rate (quoted in per cent): its change is in basis points
-  double change = kUndefined;  // over the period, in percent (basis points for a rate); undefined where the bars do not give one
-  std::vector<float> history;  // the period's closes, oldest first
-};
-
-// The rows of a market: one per edge that has candles, in the order the store lists them, with the change and the closes of
-// `period`.
-std::vector<QuoteRow> makeRows(const Snapshot & snapshot, MarketId market, Period period = kDefaultPeriod);
-// The rows of every market, in market order.
-std::vector<QuoteRow> makeAllRows(const Snapshot & snapshot, Period period = kDefaultPeriod);
-
-// The edges that have daily bars, in a market or in every market (in market order): what a table shows.
+// One edge for each group that has daily bars, in a market or in every market (in market order): what a table shows. The edge is the
+// group's first member, the one that stands for it where the datasets say the same (its base, quote and market).
 std::vector<EdgeKey>
 quoteEdges(const Snapshot &snapshot, MarketId market,
            KindSet kinds = {});
@@ -49,13 +36,13 @@ std::string fixed(double v, int decimals, bool sign = false);
 // The headings of the change and the trace columns name the period: "Change 1d", "1 day".
 std::string changeTitle(Period);
 
-// A list of edges as a table: base, quote, name, market, dataset, price, the change over a period and a trace of its closes. The rows are not
+// A list of groups as a table: base, quote, name, market, price, the change over a period and a trace of its closes. The rows are not
 // built: a cell is read from the snapshot when the table asks for it, which is for the rows in view, so the cost of
 // showing tens of thousands of rows, and of showing them again when the store changes, does not grow with their number.
 // Only a sort reads a whole column, once, and keeps it until the rows change.
 class Quotes : public cellui::TableModel {
  public:
-  enum Column { ICON, BASE, QUOTE, NAME, MARKET, DATASET, PRICE, CHANGE, HISTORY };
+  enum Column { ICON, BASE, QUOTE, NAME, MARKET, PRICE, CHANGE, HISTORY };
 
   // `icons` supplies the pictures of the icon column; without it the column is empty.
   Quotes(std::shared_ptr<const Snapshot> snapshot, std::vector<EdgeKey> keys, std::shared_ptr<IconLoader> icons = nullptr);
@@ -89,8 +76,17 @@ class Quotes : public cellui::TableModel {
 
   int rowCount() const override { return static_cast<int>(keys_.size()); }
   std::string text(int r, int c) const override;
-  // The edge a row shows: its identity.
+  // The edge that stands for a row: one member of its group, for what the members have in common (base, quote and market). Not its identity:
+  // that is `group`.
   const EdgeKey & edge(int r) const { return keys_[static_cast<size_t>(r)]; }
+  GroupKey group(int r) const { return groupOf(edge(r)); }
+  // What the datasets that count say of the row together, and which count (Group.h).
+  const Mix & mix(int r) const;
+  // The members of the row that count: the edges whose bars it is made from.
+  std::vector<EdgeKey> members(int r) const;
+  // Which datasets count; empty: all. The user's switches. The caches go.
+  void setFilter(DatasetFilter);
+  const DatasetFilter & filter() const { return filter_; }
   // The icon URL of a row's base instrument, empty for none.
   std::string iconUrl(int r) const;
   std::shared_ptr<const cellui::TableIcon> icon(int r, int c) const override;
@@ -111,14 +107,16 @@ class Quotes : public cellui::TableModel {
   double price(int r) const;
   double change(int r) const;  // over the period, in percent (basis points for a rate); undefined for no number
   const std::string & marketLabel(MarketId) const;
-  const std::string & datasetName(DatasetId) const;
 
   Period period_ = kDefaultPeriod;
   std::shared_ptr<IconLoader> icons_;
   std::shared_ptr<const Snapshot> snapshot_;
   std::vector<EdgeKey> keys_;
   size_t rows_seen_ = 0;  // how many of the store's rows (Snapshot::quoteRowCount()) the rows above are made from
-  mutable std::unordered_map<uint64_t, std::string> marketLabels_, datasetNames_;
+  mutable std::unordered_map<uint64_t, std::string> marketLabels_;
+  DatasetFilter filter_;
+  std::unordered_set<GroupKey> groups_;                  // the groups the rows are
+  mutable std::unordered_map<int, Mix> mixes_;           // the rows drawn or sorted lately
   const PeriodView & traceOf(int r) const;  // the row's period view with its trace, kept while it is drawn
   mutable std::unordered_map<int, PeriodView> traces_;  // the rows drawn lately, for the span trace() gives
   mutable std::vector<double> numbers_[2];                      // the sort keys of price and change

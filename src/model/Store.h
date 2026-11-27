@@ -136,12 +136,12 @@ class Snapshot {
   // The datasets that say anything of what a portfolio did. Sorted.
   std::vector<DatasetId> ledgers(PortfolioId) const;
 
-  // The user's lists. A list is a code (the application names them: "watchlist") and has the edges the user put on it, which are hers and
-  // no dataset's: an edge is a row, so a row is on a list or it is not, whatever else the instrument is on (another market, another
-  // dataset). They are kept in the user's own file, beside the portfolios. The members are sorted by key and are not checked to have
-  // data (an edge listed here that no source says anything of is not a row, and nothing selects it).
-  std::vector<EdgeKey> listMembers(const std::string & list) const;
-  bool onList(const std::string & list, const EdgeKey &) const;
+  // The user's lists. A list is a code (the application names them: "watchlist") and has the groups the user put on it, which are hers and
+  // no dataset's: a group is a row, so a row is on a list or it is not, whichever datasets say it and whatever else the instrument is on
+  // (another market). They are kept in the user's own file, beside the portfolios. The members are sorted by key and are not checked to
+  // have data (a group listed here that no source says anything of is not a row, and nothing selects it).
+  std::vector<GroupKey> listMembers(const std::string & list) const;
+  bool onList(const std::string & list, const GroupKey &) const;
 
   // The snapshots in `range`, oldest first.
   Seq<BookSnapshot> books(const EdgeKey &, TimeRange range = {}) const;
@@ -179,8 +179,8 @@ class Snapshot {
   void removePortfolio(PortfolioId);
   void appendTransactions(const LedgerKey &, const std::vector<portfolio::Transaction> &);
   void removeTransactions(const LedgerKey &, const std::vector<uint64_t> & ids);
-  void addToList(const std::string & list, const std::vector<EdgeKey> &);
-  void removeFromList(const std::string & list, const std::vector<EdgeKey> &);
+  void addToList(const std::string & list, const std::vector<GroupKey> &);
+  void removeFromList(const std::string & list, const std::vector<GroupKey> &);
 
   // For a store to make on its own copy, with the changes above. `setTime` is the time of the write in progress: what
   // `updated` becomes. `load` gives it what an earlier run said: the facts of nodes, which makes no version and no node but
@@ -279,7 +279,7 @@ class Snapshot {
   immer::map<InstrumentId, immer::set<EventKey>> eventsByInstrument_;
   immer::map<LedgerKey, Seq<portfolio::Transaction>> ledgers_;
   immer::map<PortfolioId, immer::set<DatasetId>> ledgersOf_;  // the datasets that have transactions
-  immer::map<std::string, immer::set<EdgeKey>> lists_;       // the user's lists: the edges on each
+  immer::map<std::string, immer::set<GroupKey>> lists_;      // the user's lists: the groups on each
   immer::set<PortfolioId> portfolios_;                        // those that anything is said of
   void settle(PortfolioId);                                   // lists or forgets the portfolio, by whether anything is said of it
   void forget(uint64_t node, const std::string * predicate);  // takes what is waiting for the disk of the node back
@@ -367,9 +367,9 @@ class StoreWrites {
   virtual void removeTransactions(const LedgerKey &, const std::vector<uint64_t> & ids) = 0;
   // Puts edges on a user's list, which is made by the first (a list is only its code, which is not empty); one that is on it already
   // stays. An edge with a part that is none is refused with std::invalid_argument and nothing of the call is written.
-  virtual void addToList(const std::string & list, const std::vector<EdgeKey> &) = 0;
+  virtual void addToList(const std::string & list, const std::vector<GroupKey> &) = 0;
   // Takes edges off it; ones that are not on it change nothing.
-  virtual void removeFromList(const std::string & list, const std::vector<EdgeKey> &) = 0;
+  virtual void removeFromList(const std::string & list, const std::vector<GroupKey> &) = 0;
 };
 
 // What `Store::batch()` gives its function: the writes above, applied to one copy of the store that nothing sees until the

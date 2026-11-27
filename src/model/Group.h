@@ -6,30 +6,11 @@
 #include <functional>
 #include <vector>
 
-// One instrument priced in one unit on one market is one *group*; the edges in it, one for each dataset that prices it, are its
+// One instrument priced in one unit on one market is one *group* (`GroupKey`, Types.h); the edges in it, one for each dataset that prices it, are its
 // *members*. A table shows a group as one row and reads every number of it from its members, so a row is what the datasets say together
 // and not what one of them says. The store keeps the edges apart, as they were written: nothing here is stored.
-//
 // The quote instrument is part of the group's key, so every member is priced in the same unit (a currency, or per cent for a rate):
 // the members can be compared and combined without any conversion, and a rate is never mixed with a price.
-struct GroupKey {
-  MarketId market;
-  InstrumentId base, quote;
-  friend bool operator==(const GroupKey &, const GroupKey &) = default;
-  friend bool operator<(const GroupKey & a, const GroupKey & b) {
-    return std::tie(a.market, a.base, a.quote) < std::tie(b.market, b.base, b.quote);
-  }
-};
-template <>
-struct std::hash<GroupKey> {
-  size_t operator()(const GroupKey & k) const {
-    size_t h = std::hash<InstrumentId>()(k.base);
-    h = hashCombine(h, std::hash<InstrumentId>()(k.quote));
-    return hashCombine(h, std::hash<MarketId>()(k.market));
-  }
-};
-
-inline GroupKey groupOf(const EdgeKey & e) { return {e.market, e.base, e.quote}; }
 
 // Which datasets count: the user's switches. Empty: every dataset does.
 using DatasetFilter = std::function<bool(DatasetId)>;
@@ -76,8 +57,10 @@ Mix mixOf(const Snapshot &, const GroupKey &, const DatasetFilter & filter = {})
 // The change of a group over a period, in the unit of `PeriodView::change()`: `combine` of the used members' own changes
 // (`Snapshot::changes`); undefined where none says one.
 double groupChange(const Snapshot &, const GroupKey &, Period, const DatasetFilter & filter = {});
+// The same from the mix of the group, which a reader that has worked it out already has.
+double groupChange(const Snapshot &, const Mix &, Period);
 
-// What a row shows for a period, from the used members: the trace is their closes made one, at each time any of them has a bar (a member
+// What a row shows for a period, from the used members: the trace is their closes made one (`spread`: how much they disagree at each), at each time any of them has a bar (a member
 // that has none at that time counts with its last close before it, and not at all before its first), and the base and the last price are the
 // members' made one. One used member: its own view, exactly. `mix`, where given, is the group's mix, so it is not worked out twice.
 PeriodView groupPeriodView(const Snapshot &, const GroupKey &, Period, bool withTrace, const DatasetFilter & filter = {}, const Mix * mix = nullptr);

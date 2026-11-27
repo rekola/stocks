@@ -1,5 +1,6 @@
 #include "TestFramework.h"
 
+#include "AttributeView.h"
 #include "model/Dates.h"
 #include "model/Group.h"
 
@@ -143,4 +144,25 @@ TEST(a_groups_change_is_the_combined_change_of_its_members) {
   CHECK(groupChange(*w.snap(), w.group(), Period::Month) == own(w.b));  // the median of the three
   CHECK(std::abs(groupChange(*w.snap(), w.group(), Period::Month, [&](DatasetId d) { return d != w.c; }) - (own(w.a) + own(w.b)) / 2) < 1e-9);
   CHECK(!isDefined(groupChange(*w.snap(), w.group(), Period::Month, [](DatasetId) { return false; })));
+}
+
+TEST(the_info_of_a_group_says_what_each_dataset_says_and_whether_it_counts) {
+  World w;
+  w.say(w.a, 100);
+  w.say(w.b, 102);
+  w.say(w.c, 90, kNow - 6 * 86400);
+  const Mix mix = mixOf(*w.snap(), w.group());
+  const std::vector<InfoSection> info = buildInfo(*w.snap(), w.key(w.a), &mix);
+  CHECK(!info.empty() && info[0].title == "Sources");
+  const auto row = [&](const std::string & name) {
+    for (const InfoRow & r : info[0].rows)
+      if (r.predicate == name) return r.value.text;
+    return std::string();
+  };
+  CHECK(row("combined").find("101") != std::string::npos && row("combined").find("mean of 2") != std::string::npos);
+  CHECK(row("DSA").find("100") != std::string::npos && row("DSC").find("left out: older") != std::string::npos);
+  bool own_sections = false;
+  for (const InfoSection & s : info) own_sections = own_sections || s.title == "Summary \xC2\xB7 DSB";
+  CHECK(own_sections);
+  CHECK(buildInfo(*w.snap(), w.key(w.a))[0].title == "Listing");  // no mix: as it was
 }

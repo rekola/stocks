@@ -1249,24 +1249,24 @@ void Snapshot::removeTransactions(const LedgerKey & k, const std::vector<uint64_
 }
 
 namespace {
-bool whole(const EdgeKey & k) { return k.base.valid() && k.quote.valid() && k.market.valid() && k.dataset.valid(); }
-StoredMember storedMember(const std::string & list, const EdgeKey & k) { return {list, k.base.value, k.quote.value, k.market.value, k.dataset.value}; }
+bool whole(const GroupKey & k) { return k.base.valid() && k.quote.valid() && k.market.valid(); }
+StoredMember storedMember(const std::string & list, const GroupKey & k) { return {list, k.base.value, k.quote.value, k.market.value}; }
 }  // namespace
 
-std::vector<EdgeKey> Snapshot::listMembers(const std::string & list) const { return sorted(lists_.find(list)); }
-bool Snapshot::onList(const std::string & list, const EdgeKey & k) const {
+std::vector<GroupKey> Snapshot::listMembers(const std::string & list) const { return sorted(lists_.find(list)); }
+bool Snapshot::onList(const std::string & list, const GroupKey & k) const {
   const auto * members = lists_.find(list);
   return members && members->count(k) > 0;
 }
 
-void Snapshot::addToList(const std::string & list, const std::vector<EdgeKey> & edges) {
+void Snapshot::addToList(const std::string & list, const std::vector<GroupKey> & edges) {
   if (list.empty()) throw std::invalid_argument("a list needs a code");
-  for (const EdgeKey & k : edges)
-    if (!whole(k)) throw std::invalid_argument("an edge on a list needs an instrument, a currency, a market and a dataset");
+  for (const GroupKey & k : edges)
+    if (!whole(k)) throw std::invalid_argument("a group on a list needs an instrument, a currency and a market");
   const auto * old = lists_.find(list);
-  immer::set<EdgeKey> members = old ? *old : immer::set<EdgeKey>{};
+  immer::set<GroupKey> members = old ? *old : immer::set<GroupKey>{};
   bool changed = false;
-  for (const EdgeKey & k : edges) {
+  for (const GroupKey & k : edges) {
     if (members.count(k)) continue;
     members = members.insert(k);
     changed = true;
@@ -1278,12 +1278,12 @@ void Snapshot::addToList(const std::string & list, const std::vector<EdgeKey> & 
   version_++;
 }
 
-void Snapshot::removeFromList(const std::string & list, const std::vector<EdgeKey> & edges) {
+void Snapshot::removeFromList(const std::string & list, const std::vector<GroupKey> & edges) {
   const auto * old = lists_.find(list);
   if (!old) return;
-  immer::set<EdgeKey> members = *old;
+  immer::set<GroupKey> members = *old;
   bool changed = false;
-  for (const EdgeKey & k : edges) {
+  for (const GroupKey & k : edges) {
     if (!members.count(k)) continue;
     members = members.erase(k);
     changed = true;
@@ -1297,10 +1297,10 @@ void Snapshot::removeFromList(const std::string & list, const std::vector<EdgeKe
 
 void Snapshot::loadMembers(const std::vector<StoredMember> & stored) {
   for (const StoredMember & m : stored) {
-    const EdgeKey k{InstrumentId{m.base}, InstrumentId{m.quote}, MarketId{m.market}, DatasetId{m.dataset}};
-    if (m.list.empty() || !whole(k) || NodeKey{m.market}.kind() != NodeKind::Market || NodeKey{m.dataset}.kind() != NodeKind::Dataset) continue;
+    const GroupKey k{MarketId{m.market}, InstrumentId{m.base}, InstrumentId{m.quote}};
+    if (m.list.empty() || !whole(k) || NodeKey{m.market}.kind() != NodeKind::Market) continue;
     const auto * old = lists_.find(m.list);
-    lists_ = lists_.set(m.list, (old ? *old : immer::set<EdgeKey>{}).insert(k));
+    lists_ = lists_.set(m.list, (old ? *old : immer::set<GroupKey>{}).insert(k));
   }
 }
 
@@ -1381,8 +1381,8 @@ class SnapshotBatch : public Batch {
   void removePortfolio(PortfolioId id) override { s_.removePortfolio(id); }
   void appendTransactions(const LedgerKey & k, const std::vector<portfolio::Transaction> & t) override { s_.appendTransactions(k, t); }
   void removeTransactions(const LedgerKey & k, const std::vector<uint64_t> & ids) override { s_.removeTransactions(k, ids); }
-  void addToList(const std::string & list, const std::vector<EdgeKey> & e) override { s_.addToList(list, e); }
-  void removeFromList(const std::string & list, const std::vector<EdgeKey> & e) override { s_.removeFromList(list, e); }
+  void addToList(const std::string & list, const std::vector<GroupKey> & e) override { s_.addToList(list, e); }
+  void removeFromList(const std::string & list, const std::vector<GroupKey> & e) override { s_.removeFromList(list, e); }
 
  private:
   Snapshot & s_;
@@ -1550,10 +1550,10 @@ class MemoryStore : public Store {
   void removeTransactions(const LedgerKey & k, const std::vector<uint64_t> & ids) override {
     write([&](Snapshot & s) { s.removeTransactions(k, ids); });
   }
-  void addToList(const std::string & list, const std::vector<EdgeKey> & e) override {
+  void addToList(const std::string & list, const std::vector<GroupKey> & e) override {
     write([&](Snapshot & s) { s.addToList(list, e); });
   }
-  void removeFromList(const std::string & list, const std::vector<EdgeKey> & e) override {
+  void removeFromList(const std::string & list, const std::vector<GroupKey> & e) override {
     write([&](Snapshot & s) { s.removeFromList(list, e); });
   }
 

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <optional>
 
 std::vector<EdgeKey> membersOf(const Snapshot & snapshot, const GroupKey & group) {
   std::vector<EdgeKey> out;
@@ -50,7 +51,7 @@ double disagreement(const std::vector<double> & values) {
 
 Mix mixOf(const Snapshot & snapshot, const GroupKey & group, const DatasetFilter & filter) {
   Mix mix;
-  Timestamp newest = 0;
+  std::optional<Timestamp> newest;  // of the members that say when
   for (const EdgeKey & e : membersOf(snapshot, group)) {
     Member m;
     m.edge = e;
@@ -63,13 +64,13 @@ Mix mixOf(const Snapshot & snapshot, const GroupKey & group, const DatasetFilter
     else if (!isDefined(m.price)) m.state = MemberState::NoPrice;
     else {
       m.state = MemberState::Used;
-      newest = std::max(newest, m.time);
+      if (m.time != 0) newest = newest ? std::max(*newest, m.time) : m.time;
     }
     mix.members.push_back(m);
   }
   std::vector<double> prices;
   for (Member & m : mix.members) {
-    if (m.state == MemberState::Used && m.time != 0 && newest - m.time > kStaleAfter) m.state = MemberState::Stale;  // a time of 0 is not known: not stale
+    if (m.state == MemberState::Used && m.time != 0 && newest && *newest - m.time > kStaleAfter) m.state = MemberState::Stale;  // a time of 0 is not known: not stale
     if (m.state == MemberState::Used) prices.push_back(m.price);
   }
   mix.used = prices.size();
@@ -81,7 +82,10 @@ Mix mixOf(const Snapshot & snapshot, const GroupKey & group, const DatasetFilter
 }
 
 double groupChange(const Snapshot & snapshot, const GroupKey & group, Period period, const DatasetFilter & filter) {
-  const Mix mix = mixOf(snapshot, group, filter);
+  return groupChange(snapshot, mixOf(snapshot, group, filter), period);
+}
+
+double groupChange(const Snapshot & snapshot, const Mix & mix, Period period) {
   std::vector<double> changes;
   for (const Member & m : mix.members)
     if (m.state == MemberState::Used) changes.push_back(snapshot.changes(m.edge).pct[static_cast<size_t>(period)]);
@@ -95,10 +99,11 @@ PeriodView groupPeriodView(const Snapshot & snapshot, const GroupKey & group, Pe
   for (const Member & m : mix.members)
     if (m.state == MemberState::Used) views.push_back(periodView(snapshot, m.edge, period, withTrace));
   if (views.empty()) return {};
-  if (views.size() == 1) return std::move(views[0]);
+  if (views.size() == 1) return std::move(views[0]);  // sources is 1, its own
 
   PeriodView out;
   out.rate = views[0].rate;  // one unit for the group
+  out.sources = views.size();
   out.dated = true;
   out.span = 0;
   std::vector<double> bases, lasts;
@@ -140,6 +145,8 @@ PeriodView groupPeriodView(const Snapshot & snapshot, const GroupKey & group, Pe
     }
     out.times.push_back(t);
     out.closes.push_back(static_cast<float>(combine(values)));
+    const double spread = disagreement(values);
+    out.spread.push_back(isDefined(spread) ? static_cast<float>(spread) : 0.0f);
     if (volumes) {
       double sum = 0;
       for (double x : traded) sum += x;

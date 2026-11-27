@@ -52,8 +52,11 @@ key. There are two keymaps: the terminal one (Emacs-like) and the desktop one.
 ## Markets
 
 The tags of Markets are presets: Commodities, Nasdaq Helsinki, Currencies (including the crypto coins), Indices, Funds, Physical, All and
-the Watchlist. Each row is one instrument on one market, from one dataset (see the
-[data model](../plans/data-model.md)), so the same share from two sources is two rows.
+the Watchlist. Each row is one instrument on one market in one unit (see the
+[data model](../plans/data-model.md)). The datasets that price it are its inputs and make one row: the price, the change and the trace
+are the median of their values (the mean where there are two), so a share from three sources is one row and one wrong source does not move it.
+A dataset that has said nothing for four days is left out. The info dialog (**Show info**) has a Sources section with what each dataset
+says and whether it counts, and the chart over the table says how many datasets make the line and how much they disagree at the cursor.
 
 The sources fill the table on a thread of their own. The table follows as the data arrives, a few times a second at
 most, and reads only the rows it draws, so it stays quick with tens of thousands of rows.
@@ -120,8 +123,8 @@ The portfolios are kept in `portfolios.sqlite` (see [Where data is kept](#where-
 
 ## Lists and the Watchlist
 
-The **Watchlist** preset shows the rows you put on it. A list member is one row: a share from one dataset on the list
-does not put the same share from another dataset there. Lists are kept in `portfolios.sqlite`, and `undo` takes a change back.
+The **Watchlist** preset shows the rows you put on it. A list member is one row, an instrument on a market in a unit, whichever datasets
+say it: it does not put the same share on another market there. Lists are kept in `portfolios.sqlite`, and `undo` takes a change back.
 
 To add another list, add a line to `kLists` and a preset in `src/Browser.cpp`; the menu entries and the
 `add-to-<list>` and `remove-from-<list>` commands follow.
