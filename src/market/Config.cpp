@@ -49,9 +49,12 @@ bool loadConfig(const std::string & path, Config & config, std::string & error) 
         !take(*db, "password", d.password, error, "database.") || !take(*db, "name", d.name, error, "database."))
       return false;
   }
-  if (const auto * datasets = section("datasets"))
+  if (const auto * datasets = section("datasets")) {
     if (auto it = datasets->find("histdata"); it != datasets->end() && it->is_object())
       if (!take(*it, "cache_dir", config.histdataCacheDir, error, "datasets.histdata.")) return false;
+    if (auto it = datasets->find("lme"); it != datasets->end() && it->is_object())
+      if (!take(*it, "cache_dir", config.lmeCacheDir, error, "datasets.lme.")) return false;
+  }
   if (const auto * server = section("server"))
     if (!take(*server, "listen", config.listen, error, "server.") || !take(*server, "port", config.port, error, "server.")) return false;
   if (const char * password = std::getenv("MARKET_DB_PASSWORD")) config.database.password = password;
@@ -74,9 +77,11 @@ bool loadConfig(const std::string & path, Config & config, std::string & error) 
     if (file.is_relative()) file = base / file;
     config.database.path = file.lexically_normal().string();
   }
-  std::filesystem::path cache = config.histdataCacheDir;
-  if (cache.is_relative()) cache = base / cache;
-  config.histdataCacheDir = cache.lexically_normal().string();
+  for (std::string * dir : {&config.histdataCacheDir, &config.lmeCacheDir}) {
+    std::filesystem::path cache = *dir;
+    if (cache.is_relative()) cache = base / cache;
+    *dir = cache.lexically_normal().string();
+  }
   return true;
 }
 

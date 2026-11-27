@@ -101,6 +101,7 @@ IngestReport runIngest(Dataset & dataset, Store & store, const IngestOptions & o
         if (!edge) return;
         b.setListing({*edge, spec.symbol, "", "", spec.type, spec.name});
         for (const Series & s : loaded.series) b.appendCandles(*edge, s.resolution, s.bars);
+        if (loaded.quote) b.setQuote(*edge, *loaded.quote);
       });
     } catch (const std::exception & e) {
       why = e.what();
