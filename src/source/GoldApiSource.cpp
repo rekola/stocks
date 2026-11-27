@@ -32,7 +32,7 @@ struct Known {
   const char * isin;
   const char * unit;  // what the instrument's price is for: it is tied to the ISIN (Nordnet's copper, which has the same ISIN, is per metric tonne)
   double factor;      // what the API's price is multiplied by to be for that unit: the answer does not say what its price is for, and copper is per pound
-  const char * sign = "";  // the instrument's own sign, put before the name the row shows ("₿ Bitcoin, per coin")
+  const char * icon_symbol = "";  // the symbol that stands for its icon where there is no picture ("₿"): the coins have no other
 };
 
 constexpr Known kKnown[] = {{"XAU", InstrumentKind::Commodity, "METAL", known_isin::kGold, "troy oz", 1, ""},
@@ -40,8 +40,8 @@ constexpr Known kKnown[] = {{"XAU", InstrumentKind::Commodity, "METAL", known_is
                             {"XPT", InstrumentKind::Commodity, "METAL", known_isin::kPlatinum, "troy oz", 1, ""},
                             {"XPD", InstrumentKind::Commodity, "METAL", known_isin::kPalladium, "troy oz", 1, ""},
                             {"HG", InstrumentKind::Commodity, "METAL", known_isin::kCopper, "tonne", kPoundsPerTonne, ""},  // the API quotes it per pound
-                            {"BTC", InstrumentKind::Crypto, "CRYPTO", known_isin::kBitcoin, "coin", 1, "₿ "},
-                            {"ETH", InstrumentKind::Crypto, "CRYPTO", known_isin::kEthereum, "coin", 1, "⟠ "}};
+                            {"BTC", InstrumentKind::Crypto, "CRYPTO", known_isin::kBitcoin, "coin", 1, "₿"},
+                            {"ETH", InstrumentKind::Crypto, "CRYPTO", known_isin::kEthereum, "coin", 1, "⟠"}};
 
 const Known * knownSymbol(const std::string & symbol) {
   for (const Known & k : kKnown)
@@ -166,6 +166,7 @@ void GoldApiSource::load(Store & store, Http & http, SourceListener & listener) 
         base = b.resolveInstrument({}, rest);
       }
       if (!base.valid()) return;
+      if (known && *known->icon_symbol) b.setAttribute(NodeRef(base), {predicate::iconSymbol, known->icon_symbol});
       for (const Price & p : prices) {
         const InstrumentId quote = currencyNode(b, p.currency);
         if (!quote.valid()) continue;
@@ -177,7 +178,7 @@ void GoldApiSource::load(Store & store, Http & http, SourceListener & listener) 
         spot.time = p.time;
         b.setQuote(edge, spot);
         // The unit is in the name the row shows: a price of copper is for a tonne and one of gold for a troy ounce.
-        b.setListing({edge, s.symbol, "", "", known ? known->type : "SPOT", known ? std::string(known->sign) + s.name + ", per " + known->unit : s.name});
+        b.setListing({edge, s.symbol, "", "", known ? known->type : "SPOT", known ? s.name + ", per " + known->unit : s.name});
       }
     });
     listener.changed();
