@@ -10,7 +10,7 @@
 A stock data browser for the terminal and a GTK window, built on
 [cellui](https://github.com/rekola/cellui).
 
-A row of preset tags (commodities, crypto, Nasdaq Helsinki, currencies, indices, funds, all of them, and your Watchlist) over a sortable,
+A row of preset tags (commodities, Nasdaq Helsinki, currencies, indices, funds, all of them, and your Watchlist) over a sortable,
 scrollable table with a price trace per row. The rows are the edges of a
 [data model](plans/data-model.md) that data sources fill on a thread of their
 own; the table follows as the data arrives, a few times a second at most, and reads
@@ -88,7 +88,7 @@ takes a change back. More lists are one line each (`kLists` and a preset in `src
 
 **Spot prices of metals.** Two sources give them, each a dataset of its own with its own row for the same instrument (the rows are never merged in the store; what reads a spot picks one, see below). `goldprice` ([goldprice.dev](https://goldprice.dev), no key; it runs by default) asks one request for the prices of gold, silver and copper (it stores euros and dollars) and has daily bars: the last 30 days of gold in dollars without a key, which the month shows as a trace. Its prices come 15 minutes late. `gold-api` ([gold-api.com](https://gold-api.com), no key; it runs by default) lists its
 symbols (gold, silver, platinum, palladium, copper, and Bitcoin and Ethereum) and asks the price of each in euros and in dollars: each is an
-instrument with a price in both currencies on the market of what is priced and not traded, in the Commodities preset (the metals), in the Crypto preset (the coins, whose icon is the sign ₿ or ⟠ on a terminal with no pictures; the ETCs that follow them are not coins and stay where their market puts them) and in
+instrument with a price in both currencies on the market of what is priced and not traded, in the Commodities preset (the metals), in the Currencies preset (the coins, beside the currency pairs, whose icon is the sign ₿ or ⟠ on a terminal with no pictures; the ETCs that follow them are not coins and stay where their market puts them) and in
 All. They are spot prices and cannot be bought, and a live price is a quote only: it writes no bar (a bar is history, and this API has none). The API takes them from several data providers (another answers when one is down) and cross-checks them, but does not guarantee them: verify a price before a financial decision. A price is for the unit its row's name says: the metals by the troy ounce (`Gold, per troy oz`), copper by the metric tonne (`Copper, per tonne`: the API quotes it per pound and it is converted, so it is the same number as another source's copper of the same ISIN), a coin by the coin.
 
 **Physical metals.** `physical` is a source (it runs beside the default one) that estimates the metals held in hand, off exchange (XOFF),

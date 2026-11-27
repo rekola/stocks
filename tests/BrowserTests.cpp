@@ -1188,6 +1188,24 @@ TEST(the_presets_can_still_be_chosen_by_a_click_and_by_the_keyboard) {
   CHECK(onTag(f, "Currencies"));
 }
 
+TEST(the_currencies_preset_shows_the_coins_beside_the_currency_pairs_and_no_commodity) {
+  Fixture f(false);
+  Rows rows = periodWorld(*f.store);
+  InstrumentId coin = f.store->addInstrument("BTC", "Bitcoin", InstrumentKind::Crypto, "XTV15WLZJMF0");
+  InstrumentId gold = f.store->addInstrument("XAU", "Gold", InstrumentKind::Commodity, "XC0009655157");
+  for (InstrumentId base : {coin, gold})
+    f.store->appendCandles({base, rows.riseFall.quote, rows.riseFall.market, rows.riseFall.dataset}, Resolution::Day, {{kToday, 1, 1, 1, 60000, 1}});
+  f.app->execute("show-currencies");
+  bool euro = false, bitcoin = false, metal = false;
+  for (int r = 0; r < f.browser->table().model()->rowCount(); r++) {
+    const std::string name = f.browser->table().model()->text(f.browser->table().rowAt(r), Quotes::NAME);
+    euro = euro || name == "Euro";
+    bitcoin = bitcoin || name == "Bitcoin";
+    metal = metal || name == "Gold";
+  }
+  CHECK(euro && bitcoin && !metal);
+}
+
 namespace {
 // One edge quoted in `unit` ("pct": a rate, "pts": an index) with daily bars from `first` (90 days ago) to `last` (today).
 struct RateWorld {
