@@ -32,13 +32,13 @@ struct Preset {
 };
 constexpr Preset kPresets[] = {
     {"Commodities", "show-commodities", kNoMarket, InstrumentKind::Commodity},
-    {"Crypto", "show-crypto", kNoMarket, InstrumentKind::Crypto},
     {"Nasdaq Helsinki", "show-nasdaq-helsinki", "XHEL"},
     {"Currencies", "show-currencies", kNoMarket, InstrumentKind::Currency},
     {"Indices", "show-indices", kNoMarket, InstrumentKind::Index},
     {"Funds", "show-funds", nullptr, InstrumentKind::Fund},  // of every market, whoever lists them
     // What is held in hand and traded off exchange: the estimated gold bar and coin now, platinum and scrap gold when they come. Commodities on XOFF.
     {"Physical", "show-physical", kOffExchange, InstrumentKind::Commodity},
+    {"Crypto", "show-crypto", kNoMarket, InstrumentKind::Crypto},
     {"All", "show-all"},
     {"Watchlist", "show-watchlist", nullptr, std::nullopt, "watchlist"}};
 

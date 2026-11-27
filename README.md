@@ -8,7 +8,7 @@
 A stock data browser for the terminal and a GTK window, built on
 [cellui](https://github.com/rekola/cellui).
 
-A row of preset tags (commodities, crypto, Nasdaq Helsinki, currencies, indices, funds, all of them, and your Watchlist) over a sortable,
+A row of preset tags (commodities, Nasdaq Helsinki, currencies, indices, funds, physical metals, crypto, all of them, and your Watchlist) over a sortable,
 scrollable table with a price trace per row. The rows are the edges of a
 [data model](plans/data-model.md) that data sources fill on a thread of their
 own; the table follows as the data arrives, a few times a second at most, and reads
