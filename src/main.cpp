@@ -108,7 +108,9 @@ constexpr const char * kSourceNames = "auto, nordnet, yahoo, spfb, ecb, goldpric
 
 int main(int argc, char ** argv) {
   std::string error;
-  auto app = cellui::Application::open(argc, argv, &error);
+  cellui::ApplicationOptions app_options;
+  app_options.title = "stocks";
+  auto app = cellui::Application::open(argc, argv, std::move(app_options), &error);
   if (!app) {
     std::fprintf(stderr, "stocks: %s\n", error.c_str());
     return 1;
