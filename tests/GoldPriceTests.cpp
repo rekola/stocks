@@ -5,6 +5,7 @@
 #include "source/GoldApiSource.h"
 #include "source/GoldPriceHistory.h"
 #include "source/GoldPriceSource.h"
+#include "source/MetalUnits.h"
 #include "model/Period.h"
 #include "source/PhysicalSource.h"
 
@@ -146,6 +147,23 @@ TEST(the_bars_of_an_edge_are_asked_by_its_symbol_and_currency_for_the_days_the_p
   const auto s = edge.store->snapshot();
   CHECK(!history.need(*s, edge.key, Period::Day) && !history.need(*s, edge.key, Period::Week));
   CHECK(history.need(*s, edge.key, Period::Month) && history.need(*s, edge.key, Period::Quarter) && history.need(*s, edge.key, Period::Year));
+}
+
+TEST(copper_bars_are_asked_as_xcu_and_the_pounds_are_a_tonne) {
+  auto store = makeMemoryStore();
+  FakeHttp http;
+  http.answer = [](const std::string &) { return ok(fixture("prices.json")); };
+  Said said;
+  GoldPriceSource().load(*store, http, said);
+  const auto s = store->snapshot();
+  const EdgeKey copper{*s->findInstrument("HG"), *s->findInstrument("USD"), *s->findMarket(kNoMarket), *s->findDataset(kGoldPriceDataset)};
+  http.answer = [](const std::string &) { return ok(R"({"bars":[{"bar_start":"2026-11-24T00:00:00Z","open":"5","high":"6","low":"4","close":"5.5"}],"next_cursor":null})"); };
+  http.urls.clear();
+  GoldPriceHistory history;
+  CHECK(history.load(*store, http, copper, 0, [] { return true; }) == HistoryProvider::Outcome::Ok);
+  CHECK(http.urls.size() == 1 && http.urls[0].rfind("https://api.goldprice.dev/v1/bars?symbol=XCU/USD&", 0) == 0);
+  const auto bars = store->snapshot()->candles(copper, Resolution::Day).candles;
+  CHECK(bars.size() == 1 && std::abs(bars[0].close - 5.5 * kPoundsPerTonne) < 1e-6 && std::abs(bars[0].low - 4 * kPoundsPerTonne) < 1e-6);
 }
 
 TEST(a_page_with_a_cursor_is_followed_and_what_the_plan_refuses_is_missing_not_refused) {
