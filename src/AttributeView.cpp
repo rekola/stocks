@@ -131,7 +131,7 @@ std::vector<InfoSection> buildInfo(const Snapshot & snapshot, const EdgeKey & ed
   if (l) {
     add("provider identifier (not real data)", l->providerIdentifier);
     add("Nordnet order book id (not real data)", l->nordnetOrderBookId);
-    add("provider type (not real data)", l->providerType);
+    add("provider type (own vocabulary per provider, not real data)", l->providerType);
     add("name", l->name);
   }
   add("dataset", snapshot.name(edge.dataset));

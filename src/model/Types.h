@@ -257,7 +257,7 @@ struct Listing {
   std::string symbol;      // what the market calls the instrument
   std::string providerIdentifier;  // the provider's own id for it; provider-specific, not real market data
   std::string nordnetOrderBookId;  // Nordnet's own order book id: what Nordnet's price history is asked for by; not real market data
-  std::string providerType;  // the provider's own type for it: not real market data
+  std::string providerType;  // the provider's own type for it, in its own vocabulary (Nordnet's "UETF" is not Yahoo's "ETF"), not comparable across providers; not real market data
   std::string name;        // what the dataset calls it there ("EUR/USD", a fund's name on that market): what a row shows
   friend bool operator==(const Listing &, const Listing &) = default;
 };
