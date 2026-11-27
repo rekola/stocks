@@ -1,0 +1,239 @@
+{
+ "instruments": [
+  {
+   "base": {
+    "isin": null,
+    "kind": "currency",
+    "name": null
+   },
+   "dataset": {
+    "code": "HISTDATA",
+    "name": "HistData.com"
+   },
+   "edge": {
+    "base": "EUR",
+    "dataset": "HISTDATA",
+    "market": "XXXX",
+    "quote": "USD"
+   },
+   "id": "EUR/USD/XXXX/HISTDATA",
+   "last_bar_time": 1794603600,
+   "listing": {
+    "identifier": "",
+    "name": "EUR/USD",
+    "order_book": "",
+    "symbol": "EURUSD",
+    "type": "CURRENCY"
+   },
+   "queues": {
+    "1h": {
+     "close": [
+      1.0199999999974738,
+      1.0439999999974738,
+      1.0679999999974739,
+      1.0919999999974739,
+      1.0182999999974738
+     ],
+     "count": 5,
+     "fetched": 1795819902357,
+     "first_key": 498485,
+     "high": [
+      1.0202000000142493,
+      1.0442000000142493,
+      1.0682000000142493,
+      1.0922000000142493,
+      1.0185000000142492
+     ],
+     "keys": [
+      498485,
+      498489,
+      498493,
+      498497,
+      498501
+     ],
+     "kind": "candle",
+     "last_hash": "17ba837ba213d153",
+     "last_key": 498501,
+     "low": [
+      1.0197000000050525,
+      1.0437000000050525,
+      1.0677000000050525,
+      1.0917000000050525,
+      1.0180000000050524
+     ],
+     "open": [
+      1.0199,
+      1.0439,
+      1.0679,
+      1.0919,
+      1.0182
+     ],
+     "volume": [
+      null,
+      null,
+      null,
+      null,
+      null
+     ]
+    }
+   }
+  },
+  {
+   "base": {
+    "isin": "US78378X1072",
+    "kind": "index",
+    "name": "S&P 500"
+   },
+   "dataset": {
+    "code": "HISTDATA",
+    "name": "HistData.com"
+   },
+   "edge": {
+    "base": "US78378X1072",
+    "dataset": "HISTDATA",
+    "market": "XXXX",
+    "quote": "PTS"
+   },
+   "id": "US78378X1072/PTS/XXXX/HISTDATA",
+   "last_bar_time": 1794603600,
+   "listing": {
+    "identifier": "",
+    "name": "SPX/USD",
+    "order_book": "",
+    "symbol": "SPXUSD",
+    "type": "INDEX"
+   },
+   "queues": {
+    "1h": {
+     "close": [
+      1.0199999999974738,
+      1.0439999999974738,
+      1.0679999999974739,
+      1.0919999999974739,
+      1.0182999999974738
+     ],
+     "count": 5,
+     "fetched": 1795819902633,
+     "first_key": 498485,
+     "high": [
+      1.0202000000142493,
+      1.0442000000142493,
+      1.0682000000142493,
+      1.0922000000142493,
+      1.0185000000142492
+     ],
+     "keys": [
+      498485,
+      498489,
+      498493,
+      498497,
+      498501
+     ],
+     "kind": "candle",
+     "last_hash": "17ba837ba213d153",
+     "last_key": 498501,
+     "low": [
+      1.0197000000050525,
+      1.0437000000050525,
+      1.0677000000050525,
+      1.0917000000050525,
+      1.0180000000050524
+     ],
+     "open": [
+      1.0199,
+      1.0439,
+      1.0679,
+      1.0919,
+      1.0182
+     ],
+     "volume": [
+      null,
+      null,
+      null,
+      null,
+      null
+     ]
+    }
+   }
+  },
+  {
+   "base": {
+    "isin": "XC0009655157",
+    "kind": "commodity",
+    "name": "Gold"
+   },
+   "dataset": {
+    "code": "HISTDATA",
+    "name": "HistData.com"
+   },
+   "edge": {
+    "base": "XC0009655157",
+    "dataset": "HISTDATA",
+    "market": "XXXX",
+    "quote": "USD"
+   },
+   "id": "XC0009655157/USD/XXXX/HISTDATA",
+   "last_bar_time": 1794603600,
+   "listing": {
+    "identifier": "",
+    "name": "XAU/USD",
+    "order_book": "",
+    "symbol": "XAUUSD",
+    "type": "METAL"
+   },
+   "queues": {
+    "1h": {
+     "close": [
+      1.0199999999974738,
+      1.0439999999974738,
+      1.0679999999974739,
+      1.0919999999974739,
+      1.0182999999974738
+     ],
+     "count": 5,
+     "fetched": 1795819902490,
+     "first_key": 498485,
+     "high": [
+      1.0202000000142493,
+      1.0442000000142493,
+      1.0682000000142493,
+      1.0922000000142493,
+      1.0185000000142492
+     ],
+     "keys": [
+      498485,
+      498489,
+      498493,
+      498497,
+      498501
+     ],
+     "kind": "candle",
+     "last_hash": "17ba837ba213d153",
+     "last_key": 498501,
+     "low": [
+      1.0197000000050525,
+      1.0437000000050525,
+      1.0677000000050525,
+      1.0917000000050525,
+      1.0180000000050524
+     ],
+     "open": [
+      1.0199,
+      1.0439,
+      1.0679,
+      1.0919,
+      1.0182
+     ],
+     "volume": [
+      null,
+      null,
+      null,
+      null,
+      null
+     ]
+    }
+   }
+  }
+ ],
+ "missing": []
+}

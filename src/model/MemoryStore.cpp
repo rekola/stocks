@@ -609,6 +609,16 @@ void Snapshot::putListing(const Listing & l, bool fromDisk) {
   version_++;
 }
 
+void Snapshot::addRow(const EdgeKey & k) {
+  require(k);
+  if (rows_.count(k)) return;
+  addEdge(k);
+  rows_ = rows_.insert(k);
+  quoteRows_ = quoteRows_.push_back(k);
+  dirtyEdges_.insert(k);
+  version_++;
+}
+
 void Snapshot::appendCandles(const EdgeKey & k, Resolution r, const std::vector<Candle> & in, QueueKind kind) {
   require(k);
   if (in.empty())
@@ -1422,6 +1432,7 @@ class SnapshotBatch : public Batch {
   void setAttribute(NodeRef n, const Attribute & a) override { s_.setAttribute(n, a); }
   void setAttributes(NodeRef n, const std::vector<Attribute> & a) override { s_.setAttributes(n, a); }
   void setListing(const Listing & l) override { s_.setListing(l); }
+  void addRow(const EdgeKey & k) override { s_.addRow(k); }
   DatasetId addDataset(const std::string & code, const std::string & name) override { return s_.addDataset(code, name); }
   void appendCandles(const EdgeKey & k, Resolution r, const std::vector<Candle> & c, QueueKind kind) override { s_.appendCandles(k, r, c, kind); }
   void setPreviousClose(const EdgeKey & k, int64_t day, double close) override { s_.setPreviousClose(k, day, close); }
@@ -1539,6 +1550,9 @@ class MemoryStore : public Store {
   }
   void setListing(const Listing & l) override {
     write([&](Snapshot & s) { s.setListing(l); });
+  }
+  void addRow(const EdgeKey & k) override {
+    write([&](Snapshot & s) { s.addRow(k); });
   }
   void setAttribute(NodeRef n, const Attribute & a) override {
     write([&](Snapshot & s) { s.setAttribute(n, a); });

@@ -5,6 +5,7 @@
 #include <mutex>
 #include <stdexcept>
 #include <thread>
+#include <unordered_map>
 
 // The history loader: it queues what is wanted, paces, retries and remembers, and names no provider. These tests give it a fake one;
 // Nordnet's own is in NordnetHistoryTests.cpp.
@@ -418,4 +419,200 @@ TEST(a_provider_waits_the_loaders_pause_between_the_requests_of_one_load_and_is_
     CHECK(inWait);
   }
   CHECK(told);  // the destructor cut the wait short
+}
+
+// ---- Batches: a provider that answers for several edges in one call
+
+namespace {
+
+// A provider that batches: it keeps each batch it was given, with the request, and answers each edge as the test says. Its request is
+// the edge's base number modulo `requests`, so that edges of one dataset can ask for different requests.
+struct BatchProvider : FakeProvider {
+  size_t size = 3;
+  int requests = 1;
+  std::function<Outcome(const EdgeKey &, int asked)> answerOf = [](const EdgeKey &, int) { return Outcome::Ok; };
+  struct Batch {
+    std::vector<EdgeKey> edges;
+    int request = 0;
+  };
+  std::vector<Batch> batches;
+  std::unordered_map<EdgeKey, int> asked;
+  bool throws = false;
+
+  std::optional<Need> need(const Snapshot &, const EdgeKey & e, Period) const override { return Need{static_cast<int>(e.base.value % static_cast<uint64_t>(requests)), false}; }
+  size_t batchSize() const override { return size; }
+  std::vector<Outcome> loadBatch(Store &, Http & http, const std::vector<EdgeKey> & edges, int request, const Wait &) override {
+    std::lock_guard lock(mutex);
+    batches.push_back({edges, request});
+    if (throws) throw std::runtime_error("the answer was no summary");
+    http.get("fake://batch");
+    std::vector<Outcome> outcomes;
+    for (const EdgeKey & e : edges) outcomes.push_back(answerOf(e, asked[e]++));
+    return outcomes;
+  }
+};
+
+std::vector<EdgeKey> edgesOf(World & w, int n, bool mainData = false) {
+  std::vector<EdgeKey> out;
+  for (int i = 0; i < n; i++) out.push_back(w.edge(InstrumentKind::Fund, "", mainData));
+  return out;
+}
+
+}  // namespace
+
+TEST(a_batch_is_the_next_wanted_edges_in_the_order_they_are_wanted_so_that_the_screen_comes_first) {
+  World w;
+  const auto edges = edgesOf(w, 7);
+  FakeHttp http;
+  http.answer = [](const std::string &) { return ok(""); };
+  HistoryLoader loader(w.store, borrow(http), quickly(), [] {});
+  auto p = std::make_shared<BatchProvider>();
+  loader.addProvider(p);
+  // The screen is the first two; the margin follows.
+  loader.want(edges);
+  loader.waitIdle();
+  CHECK(p->batches.size() == 3);
+  CHECK(p->batches[0].edges == (std::vector<EdgeKey>{edges[0], edges[1], edges[2]}));
+  CHECK(p->batches[1].edges == (std::vector<EdgeKey>{edges[3], edges[4], edges[5]}));
+  CHECK(p->batches[2].edges == (std::vector<EdgeKey>{edges[6]}));
+  CHECK(http.urls.size() == 3);  // a request for each batch, not for each edge
+  // Once each: wanted again, nothing is asked.
+  loader.want(edges);
+  loader.waitIdle();
+  CHECK(p->batches.size() == 3);
+}
+
+TEST(a_batch_never_mixes_two_requests_or_two_providers) {
+  World w;
+  FakeHttp http;
+  http.answer = [](const std::string &) { return ok(""); };
+  HistoryLoader loader(w.store, borrow(http), quickly(), [] {});
+  auto a = std::make_shared<BatchProvider>();
+  a->size = 4;
+  a->requests = 2;
+  auto b = std::make_shared<BatchProvider>();
+  b->code = "third";
+  b->size = 4;
+  b->requests = 2;
+  loader.addProvider(a);
+  loader.addProvider(b);
+  std::vector<EdgeKey> edges;
+  for (int i = 0; i < 12; i++) {
+    EdgeKey e = w.edge(InstrumentKind::Fund, "", false);
+    if (i % 2) {
+      e.dataset = w.store->addDataset("third");
+      w.store->setListing({e, "SYM", "", "", "ESH", "Instrument"});
+    }
+    edges.push_back(e);
+  }
+  loader.want(edges);
+  loader.waitIdle();
+  size_t seen = 0;
+  for (const auto & p : {a, b})
+    for (const auto & batch : p->batches) {
+      CHECK(!batch.edges.empty() && batch.edges.size() <= 4);
+      for (const EdgeKey & e : batch.edges) {
+        CHECK(datasetCode(e.dataset) == (p == a ? "OTHER" : "THIRD"));
+        CHECK(static_cast<int>(e.base.value % 2) == batch.request);
+        seen++;
+      }
+    }
+  CHECK(seen == 12);  // each edge in exactly one batch
+}
+
+TEST(a_batch_has_an_outcome_for_each_edge_and_each_is_remembered_retried_or_done_on_its_own) {
+  World w;
+  const auto edges = edgesOf(w, 4);
+  FakeHttp http;
+  http.answer = [](const std::string &) { return ok(""); };
+  HistoryLoader loader(w.store, borrow(http), quickly(), [] {});
+  auto p = std::make_shared<BatchProvider>();
+  p->size = 4;
+  // [0] done, [1] missing, [2] no answer the first time, [3] done
+  p->answerOf = [&](const EdgeKey & e, int asked) {
+    if (e == edges[1]) return HistoryProvider::Outcome::Missing;
+    if (e == edges[2] && asked == 0) return HistoryProvider::Outcome::Offline;
+    return HistoryProvider::Outcome::Ok;
+  };
+  loader.addProvider(p);
+  loader.want(edges);
+  loader.waitIdle();
+  CHECK(p->asked[edges[0]] == 1 && p->asked[edges[1]] == 1 && p->asked[edges[3]] == 1);
+  CHECK(p->asked[edges[2]] == 2);  // asked again after the pause, alone
+  CHECK(p->batches.size() == 2 && p->batches[1].edges == std::vector<EdgeKey>{edges[2]});
+  loader.want(edges);
+  loader.waitIdle();
+  CHECK(p->batches.size() == 2);  // the done, the missing and the retried are not asked again
+}
+
+TEST(a_refusal_of_a_batch_stops_that_provider_and_the_edges_it_still_has_queued_and_not_the_others) {
+  World w;
+  FakeHttp http;
+  http.answer = [](const std::string &) { return ok(""); };
+  std::vector<std::string> said;
+  HistoryLoader loader(w.store, borrow(http), quickly(), [] {}, [&](std::string m) { said.push_back(m); });
+  auto refusing = std::make_shared<BatchProvider>();
+  refusing->size = 2;
+  refusing->answerOf = [](const EdgeKey &, int) { return HistoryProvider::Outcome::Refused; };
+  auto fine = std::make_shared<BatchProvider>();
+  fine->code = "third";
+  fine->size = 2;
+  loader.addProvider(refusing);
+  loader.addProvider(fine);
+  const auto others = edgesOf(w, 5);  // dataset "other": refused
+  std::vector<EdgeKey> thirds;
+  for (int i = 0; i < 3; i++) {
+    EdgeKey e = w.edge(InstrumentKind::Fund, "", false);
+    e.dataset = w.store->addDataset("third");
+    w.store->setListing({e, "SYM", "", "", "ESH", "Instrument"});
+    thirds.push_back(e);
+  }
+  std::vector<EdgeKey> wanted = others;
+  wanted.insert(wanted.end(), thirds.begin(), thirds.end());
+  loader.want(wanted);
+  loader.waitIdle();
+  CHECK(refusing->batches.size() == 1);  // the rest of its edges were not asked
+  CHECK(loader.refused());
+  CHECK(fine->batches.size() == 2 && fine->asked.size() == 3);
+  CHECK(said.size() == 1 && said[0].find("refused") != std::string::npos);
+}
+
+TEST(a_batch_that_throws_is_said_once_and_counts_every_edge_of_it_as_missing) {
+  World w;
+  const auto edges = edgesOf(w, 4);
+  FakeHttp http;
+  http.answer = [](const std::string &) { return ok(""); };
+  std::vector<std::string> said;
+  HistoryLoader loader(w.store, borrow(http), quickly(), [] {}, [&](std::string m) { said.push_back(m); });
+  auto p = std::make_shared<BatchProvider>();
+  p->size = 4;
+  p->throws = true;
+  loader.addProvider(p);
+  loader.want(edges);
+  loader.waitIdle();
+  loader.want(edges);
+  loader.waitIdle();
+  CHECK(p->batches.size() == 1);
+  CHECK(said.size() == 1 && said[0].find("the answer was no summary") != std::string::npos);
+}
+
+TEST(a_provider_that_does_not_batch_is_given_one_edge_at_a_time_as_before) {
+  World w;
+  const auto edges = edgesOf(w, 4);
+  FakeHttp http;
+  http.answer = [](const std::string &) { return ok(""); };
+  HistoryLoader loader(w.store, borrow(http), quickly(), [] {});
+  auto p = provider(loader);  // batchSize() 1, loadBatch() the default
+  CHECK(p->batchSize() == 1);
+  loader.want(edges);
+  loader.waitIdle();
+  CHECK(p->loads == 4);
+  CHECK(p->order == edges);  // one by one, in the order they are wanted
+  // The default batch is its loads in order, and a refusal ends it.
+  Store & store = *w.store;
+  FakeProvider fake;
+  fake.behave = [](Http &, const EdgeKey & e, int load) { return load == 1 ? HistoryProvider::Outcome::Refused : HistoryProvider::Outcome::Ok; };
+  const auto out = fake.loadBatch(store, http, {edges[0], edges[1], edges[2]}, 0, [] { return true; });
+  CHECK((out == std::vector<HistoryProvider::Outcome>{HistoryProvider::Outcome::Ok, HistoryProvider::Outcome::Refused, HistoryProvider::Outcome::Refused}));
+  CHECK(fake.loads == 2);
 }

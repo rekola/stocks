@@ -15,10 +15,10 @@ std::string labelOf(const Snapshot & snapshot, MarketId id) {
   return marketCode(id);
 }
 
-// The price of a row is the last price of its quote; none: 0.
+// The price of a row is the last price of its quote; none (a row whose bars are not loaded yet): undefined, which the table shows as nothing.
 double priceOf(const Snapshot & snapshot, const EdgeKey & key) {
   const auto quote = snapshot.quote(key);
-  return quote && isDefined(quote->last) ? quote->last : 0;
+  return quote && isDefined(quote->last) ? quote->last : kUndefined;
 }
 
 // A currency is its code ("EUR" of EUR/USD); anything else what the market calls it.
@@ -275,7 +275,10 @@ std::string Quotes::text(int r, int c) const {
     case NAME: return nameOf(*snapshot_, edge(r));
     case MARKET: return marketLabel(edge(r).market);
     case DATASET: return datasetName(edge(r).dataset);
-    case PRICE: return priceText(r, price(r));
+    case PRICE: {
+      const double v = price(r);
+      return isDefined(v) ? priceText(r, v) : "";  // no price yet: nothing, not a zero
+    }
     case HIGH:
     case LOW: {
       const double v = c == HIGH ? high(r) : low(r);
@@ -316,9 +319,8 @@ std::optional<cellui::Color> Quotes::color(int r, int c) const {
 
 std::optional<double> Quotes::number(int r, int c) const {
   c = own(c);
-  if (c == PRICE) return price(r);
-  if (c == CHANGE || c == HIGH || c == LOW) {
-    const double v = c == CHANGE ? change(r) : c == HIGH ? high(r) : low(r);
+  if (c == PRICE || c == CHANGE || c == HIGH || c == LOW) {
+    const double v = c == PRICE ? price(r) : c == CHANGE ? change(r) : c == HIGH ? high(r) : low(r);
     return isDefined(v) ? std::optional<double>(v) : std::nullopt;
   }
   return std::nullopt;

@@ -1,0 +1,365 @@
+{
+ "instruments": [
+  {
+   "base": {
+    "isin": null,
+    "kind": "currency",
+    "name": null
+   },
+   "dataset": {
+    "code": "HISTDATA",
+    "name": "HistData.com"
+   },
+   "edge": {
+    "base": "EUR",
+    "dataset": "HISTDATA",
+    "market": "XXXX",
+    "quote": "USD"
+   },
+   "id": "EUR/USD/XXXX/HISTDATA",
+   "last_bar_time": 1794603600,
+   "listing": {
+    "identifier": "",
+    "name": "EUR/USD",
+    "order_book": "",
+    "symbol": "EURUSD",
+    "type": "CURRENCY"
+   },
+   "queues": {
+    "1d": {
+     "close": [
+      1.0285000000404194,
+      1.0747999992012978,
+      1.0233999992012976,
+      1.0696999992012977,
+      1.0182999993920325
+     ],
+     "count": 5,
+     "fetched": 1795819902357,
+     "first_key": 739929,
+     "high": [
+      1.078400001770258,
+      1.0766999996989965,
+      1.0972999984622,
+      1.0956000017702578,
+      1.0939000000142491
+     ],
+     "keys": [
+      739929,
+      739930,
+      739931,
+      739932,
+      739933
+     ],
+     "kind": "candle",
+     "last_hash": "6c8e99adc29d3583",
+     "last_key": 739933,
+     "low": [
+      1.004199999293685,
+      1.0025000009477139,
+      1.0008000000050523,
+      1.0213999992936849,
+      1.0180000017642974
+     ],
+     "open": [
+      1.0301,
+      1.0524,
+      1.001,
+      1.0473,
+      1.0936
+     ],
+     "volume": [
+      null,
+      null,
+      null,
+      null,
+      null
+     ]
+    }
+   }
+  },
+  {
+   "base": {
+    "isin": null,
+    "kind": "currency",
+    "name": null
+   },
+   "dataset": {
+    "code": "OTHERDS",
+    "name": "Other set"
+   },
+   "edge": {
+    "base": "EUR",
+    "dataset": "OTHERDS",
+    "market": "XXXX",
+    "quote": "USD"
+   },
+   "id": "EUR/USD/XXXX/OTHERDS",
+   "last_bar_time": 1713916800,
+   "listing": {
+    "identifier": "eu-1",
+    "name": "Euro / Dollar",
+    "order_book": "book-1",
+    "symbol": "EURUSD",
+    "type": "FX"
+   },
+   "queues": {
+    "1d": {
+     "close": [
+      1.1500000007450581,
+      1.250000001490116
+     ],
+     "count": 2,
+     "fetched": 1795819902635,
+     "first_key": 738999,
+     "high": [
+      1.2000000014901162,
+      1.3000000059604644
+     ],
+     "keys": [
+      738999,
+      739000
+     ],
+     "kind": "candle",
+     "last_hash": "ba3462251e6f44bf",
+     "last_key": 739000,
+     "low": [
+      0.999999998509884,
+      1.0999999992549419
+     ],
+     "open": [
+      1.1,
+      1.15
+     ],
+     "volume": [
+      1000.0,
+      null
+     ]
+    }
+   }
+  },
+  {
+   "base": {
+    "isin": "US0378331005",
+    "kind": "fund",
+    "name": "Fund X"
+   },
+   "dataset": {
+    "code": "OTHERDS",
+    "name": "Other set"
+   },
+   "edge": {
+    "base": "US0378331005",
+    "dataset": "OTHERDS",
+    "market": "XOFF",
+    "quote": "EUR"
+   },
+   "id": "US0378331005/EUR/XOFF/OTHERDS",
+   "last_bar_time": 1713916800,
+   "listing": {
+    "identifier": "fx-9",
+    "name": "Fund X (A)",
+    "order_book": "",
+    "symbol": "FUNDX",
+    "type": "FUND"
+   },
+   "queues": {
+    "1d": {
+     "close": [
+      100.5,
+      101.25,
+      101.0
+     ],
+     "count": 3,
+     "fetched": 1795819902635,
+     "first_key": 738998,
+     "high": [
+      null,
+      null,
+      null
+     ],
+     "keys": [
+      738998,
+      738999,
+      739000
+     ],
+     "kind": "scalar",
+     "last_hash": "c59c708ef35cd20f",
+     "last_key": 739000,
+     "low": [
+      null,
+      null,
+      null
+     ],
+     "open": [
+      null,
+      null,
+      null
+     ],
+     "volume": [
+      null,
+      null,
+      null
+     ]
+    }
+   }
+  },
+  {
+   "base": {
+    "isin": "US78378X1072",
+    "kind": "index",
+    "name": "S&P 500"
+   },
+   "dataset": {
+    "code": "HISTDATA",
+    "name": "HistData.com"
+   },
+   "edge": {
+    "base": "US78378X1072",
+    "dataset": "HISTDATA",
+    "market": "XXXX",
+    "quote": "PTS"
+   },
+   "id": "US78378X1072/PTS/XXXX/HISTDATA",
+   "last_bar_time": 1794603600,
+   "listing": {
+    "identifier": "",
+    "name": "SPX/USD",
+    "order_book": "",
+    "symbol": "SPXUSD",
+    "type": "INDEX"
+   },
+   "queues": {
+    "1d": {
+     "close": [
+      1.0285000000404194,
+      1.0747999992012978,
+      1.0233999992012976,
+      1.0696999992012977,
+      1.0182999993920325
+     ],
+     "count": 5,
+     "fetched": 1795819902633,
+     "first_key": 739929,
+     "high": [
+      1.078400001770258,
+      1.0766999996989965,
+      1.0972999984622,
+      1.0956000017702578,
+      1.0939000000142491
+     ],
+     "keys": [
+      739929,
+      739930,
+      739931,
+      739932,
+      739933
+     ],
+     "kind": "candle",
+     "last_hash": "6c8e99adc29d3583",
+     "last_key": 739933,
+     "low": [
+      1.004199999293685,
+      1.0025000009477139,
+      1.0008000000050523,
+      1.0213999992936849,
+      1.0180000017642974
+     ],
+     "open": [
+      1.0301,
+      1.0524,
+      1.001,
+      1.0473,
+      1.0936
+     ],
+     "volume": [
+      null,
+      null,
+      null,
+      null,
+      null
+     ]
+    }
+   }
+  },
+  {
+   "base": {
+    "isin": "XC0009655157",
+    "kind": "commodity",
+    "name": "Gold"
+   },
+   "dataset": {
+    "code": "HISTDATA",
+    "name": "HistData.com"
+   },
+   "edge": {
+    "base": "XC0009655157",
+    "dataset": "HISTDATA",
+    "market": "XXXX",
+    "quote": "USD"
+   },
+   "id": "XC0009655157/USD/XXXX/HISTDATA",
+   "last_bar_time": 1794603600,
+   "listing": {
+    "identifier": "",
+    "name": "XAU/USD",
+    "order_book": "",
+    "symbol": "XAUUSD",
+    "type": "METAL"
+   },
+   "queues": {
+    "1d": {
+     "close": [
+      1.0285000000404194,
+      1.0747999992012978,
+      1.0233999992012976,
+      1.0696999992012977,
+      1.0182999993920325
+     ],
+     "count": 5,
+     "fetched": 1795819902490,
+     "first_key": 739929,
+     "high": [
+      1.078400001770258,
+      1.0766999996989965,
+      1.0972999984622,
+      1.0956000017702578,
+      1.0939000000142491
+     ],
+     "keys": [
+      739929,
+      739930,
+      739931,
+      739932,
+      739933
+     ],
+     "kind": "candle",
+     "last_hash": "6c8e99adc29d3583",
+     "last_key": 739933,
+     "low": [
+      1.004199999293685,
+      1.0025000009477139,
+      1.0008000000050523,
+      1.0213999992936849,
+      1.0180000017642974
+     ],
+     "open": [
+      1.0301,
+      1.0524,
+      1.001,
+      1.0473,
+      1.0936
+     ],
+     "volume": [
+      null,
+      null,
+      null,
+      null,
+      null
+     ]
+    }
+   }
+  }
+ ],
+ "missing": []
+}

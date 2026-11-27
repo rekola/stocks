@@ -105,7 +105,7 @@ void HistoryLoader::want(const std::vector<EdgeKey> & edges, Period period) {
       auto need = provider->need(*snapshot, k, period);
       if (!need) continue;
       const Ask ask{k, need->request};
-      if (failed_.count(ask) || loading_ == ask || !seen.insert(ask).second) continue;
+      if (failed_.count(ask) || loading_.count(ask) || !seen.insert(ask).second) continue;
       // Loaded before: not again until it has expired (then the store's bars are the old ones, so they do not count).
       const auto loaded = done_.find(ask);
       if (loaded != done_.end() && !expired(ask, loaded->second)) continue;
@@ -115,6 +115,12 @@ void HistoryLoader::want(const std::vector<EdgeKey> & edges, Period period) {
     }
   }
   wake_.notify_all();
+}
+
+bool HistoryLoader::settled(const Ask & ask) const {
+  if (failed_.count(ask)) return true;
+  const auto loaded = done_.find(ask);
+  return loaded != done_.end() && !expired(ask, loaded->second);
 }
 
 void HistoryLoader::run() {
@@ -127,22 +133,34 @@ void HistoryLoader::run() {
       wake_.wait_until(lock, offline_until_, [&] { return stop_; });
       continue;
     }
-    const Ask ask = queue_.front();
+    const Ask head = queue_.front();
     queue_.pop_front();
     // Queued before its answer came: not asked again. A done one that has expired was queued by want() for that: it is loaded.
-    const auto loaded = done_.find(ask);
-    if (failed_.count(ask) || (loaded != done_.end() && !expired(ask, loaded->second))) {
+    if (settled(head)) {
       if (queue_.empty()) idle_.notify_all();
       continue;
     }
+    // The batch: the head, and the next wanted asks of the same provider and request, in the order they are wanted.
+    std::vector<Ask> batch{head};
+    const auto provider = providerOf(datasetCode(head.edge.dataset));
+    const size_t limit = provider ? std::max<size_t>(1, provider->batchSize()) : 1;
+    for (auto it = queue_.begin(); it != queue_.end() && batch.size() < limit;) {
+      if (it->request == head.request && providerOf(datasetCode(it->edge.dataset)) == provider && !settled(*it)) {
+        batch.push_back(*it);
+        it = queue_.erase(it);
+      } else {
+        ++it;
+      }
+    }
     busy_ = true;
-    loading_ = ask;  // want() leaves it out until it is done or failed
+    loading_.insert(batch.begin(), batch.end());  // want() leaves them out until they are done or failed
     lock.unlock();
     bool network = false;
     bool wrote = false;
+    std::vector<Ask> retries;
     std::string thrown;
     try {
-      wrote = load(ask, network);
+      wrote = loadBatch(batch, network, retries);
     } catch (const std::exception & e) {
       thrown = e.what();
     } catch (...) {
@@ -152,17 +170,16 @@ void HistoryLoader::run() {
       // Counted as missing: not asked for again this session, and the queue goes on.
       if (message_) message_("history: " + thrown);
       std::lock_guard failed(mutex_);
-      failed_.insert(ask);
+      failed_.insert(batch.begin(), batch.end());
     }
     if (wrote && changed_) changed_();
     lock.lock();
-    loading_.reset();
-    if (retry_) {
-      // No answer: first in the queue, for after the pause. Here and not in load(), so that a want() meanwhile, which left it
-      // out as the one being loaded, does not drop it; and only once.
-      retry_ = false;
-      std::erase(queue_, ask);
-      queue_.push_front(ask);
+    for (const Ask & ask : batch) loading_.erase(ask);
+    // No answer: first in the queue, in their order, for after the pause. Here and not in loadBatch(), so that a want() meanwhile, which left
+    // them out as the ones being loaded, does not drop them; and only once.
+    for (auto it = retries.rbegin(); it != retries.rend(); ++it) {
+      std::erase(queue_, *it);
+      queue_.push_front(*it);
     }
     busy_ = false;
     if (network) {
@@ -173,16 +190,19 @@ void HistoryLoader::run() {
   }
 }
 
-bool HistoryLoader::load(const Ask & wanted, bool & network) {
+bool HistoryLoader::loadBatch(const std::vector<Ask> & wanted, bool & network, std::vector<Ask> & retries) {
   extra_pause_ = std::chrono::milliseconds(0);  // a provider's own is set again by its asks
   auto snapshot = store_->snapshot();
-  const std::string dataset = datasetCode(wanted.edge.dataset);
+  const EdgeKey & first = wanted.front().edge;
+  const std::string dataset = datasetCode(first.dataset);
   std::shared_ptr<HistoryProvider> provider;
   {
     std::lock_guard lock(mutex_);
     if (!dataset.empty()) provider = providerOf(dataset);
   }
   if (!provider) return false;
+  std::vector<EdgeKey> edges;
+  for (const Ask & ask : wanted) edges.push_back(ask.edge);
   const int before = counted_->requests();
   // Between two requests of one load: the loader's pause, cut short when it stops.
   const HistoryProvider::Wait wait = [this] {
@@ -190,45 +210,52 @@ bool HistoryLoader::load(const Ask & wanted, bool & network) {
     if (options_.pause.count() > 0) wake_.wait_for(lock, options_.pause, [&] { return stop_; });
     return !stop_;
   };
-  HistoryProvider::Outcome outcome;
+  std::vector<HistoryProvider::Outcome> outcomes;
   try {
-    outcome = provider->load(*store_, *counted_, wanted.edge, wanted.request, wait);
-  } catch (const std::exception & e) {  // as missing: the edge is not asked for again
-    if (message_) message_("history: " + snapshot->name(wanted.edge.dataset) + ": " + e.what());
-    outcome = HistoryProvider::Outcome::Missing;
+    outcomes = provider->loadBatch(*store_, *counted_, edges, wanted.front().request, wait);
+  } catch (const std::exception & e) {  // as missing: the edges are not asked for again
+    if (message_) message_("history: " + snapshot->name(first.dataset) + ": " + e.what());
+    outcomes.clear();
   } catch (...) {
-    if (message_) message_("history: " + snapshot->name(wanted.edge.dataset) + ": failed");
-    outcome = HistoryProvider::Outcome::Missing;
+    if (message_) message_("history: " + snapshot->name(first.dataset) + ": failed");
+    outcomes.clear();
   }
+  outcomes.resize(wanted.size(), HistoryProvider::Outcome::Missing);  // a provider that said too few, or threw: the rest are missing
   // Pause after a load that made a request, and only then: one that returned at once (nothing to ask) is followed by the next.
   network = counted_->requests() > before;
   if (network) extra_pause_ = provider->pause();
-  switch (outcome) {
-    case HistoryProvider::Outcome::Refused: {
-      {
-        std::lock_guard lock(mutex_);
-        blocked_.insert(dataset);
-        // Its edges still in the queue are not asked for.
-        std::erase_if(queue_, [&](const Ask & a) { return datasetCode(a.edge.dataset) == dataset; });
-      }
-      if (message_) message_("history: " + snapshot->name(wanted.edge.dataset) + " refused the request, stopping it");
-      idle_.notify_all();
-      return false;
+  bool wrote = false, refused = false;
+  std::unique_lock lock(mutex_);
+  for (size_t i = 0; i < wanted.size(); i++) {
+    const Ask & ask = wanted[i];
+    switch (outcomes[i]) {
+      case HistoryProvider::Outcome::Refused:
+        refused = true;
+        break;
+      case HistoryProvider::Outcome::Offline:
+        offline_until_ = std::chrono::steady_clock::now() + options_.offline_pause;
+        retries.push_back(ask);  // again afterwards
+        break;
+      case HistoryProvider::Outcome::Missing:
+        failed_.insert(ask);
+        break;
+      case HistoryProvider::Outcome::Ok:
+        done_[ask] = std::chrono::steady_clock::now();
+        wrote = true;
+        break;
     }
-    case HistoryProvider::Outcome::Offline: {
-      std::lock_guard lock(mutex_);
-      offline_until_ = std::chrono::steady_clock::now() + options_.offline_pause;
-      retry_ = true;  // again afterwards
-      return false;
-    }
-    case HistoryProvider::Outcome::Missing: {
-      std::lock_guard lock(mutex_);
-      failed_.insert(wanted);
-      return false;
-    }
-    case HistoryProvider::Outcome::Ok: break;
   }
-  std::lock_guard lock(mutex_);
-  done_[wanted] = std::chrono::steady_clock::now();
-  return true;
+  if (refused) {
+    // The provider stops, for every dataset it serves; what is still queued for them is not asked.
+    std::unordered_set<std::string> stopped;
+    for (const std::string & code : provider->datasets())
+      if (const auto key = datasetKey(code)) stopped.insert(text(*key));
+    stopped.insert(dataset);
+    for (const std::string & code : stopped) blocked_.insert(code);
+    std::erase_if(queue_, [&](const Ask & a) { return stopped.count(datasetCode(a.edge.dataset)) > 0; });
+    idle_.notify_all();
+    lock.unlock();
+    if (message_) message_("history: " + snapshot->name(first.dataset) + " refused the request, stopping it");
+  }
+  return wrote;
 }

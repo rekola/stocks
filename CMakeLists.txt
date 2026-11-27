@@ -94,6 +94,13 @@ add_library(stocks_http STATIC src/source/Http.cpp)
 target_include_directories(stocks_http PUBLIC src)
 target_link_libraries(stocks_http PUBLIC httpclient::httpclient)
 
+# The client of the market-data server (src/source/MarketServer*): its sources and its history provider, apart from the browser so that the server's
+# own tests can load from a server they run.
+add_library(stocks_market_client STATIC src/source/MarketServerSource.cpp src/source/MarketServerHistory.cpp)
+target_compile_features(stocks_market_client PUBLIC cxx_std_20)
+target_include_directories(stocks_market_client PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_link_libraries(stocks_market_client PUBLIC stocks_model stocks_nodes stocks_http PRIVATE nlohmann_json::nlohmann_json)
+
 # How the sources make the nodes of the store (the currency, the instrument by its ISIN, the unit a price is in, the markets by their MIC) and where
 # the data directory is: apart from the browser, so that the market-data server makes its instruments in exactly the same way as the application.
 add_library(stocks_nodes STATIC src/source/InstrumentLists.cpp src/source/KnownMarkets.cpp src/source/DataDirectory.cpp)
@@ -104,7 +111,7 @@ target_compile_definitions(stocks_nodes PUBLIC STOCKS_DATA_DIR="${CMAKE_CURRENT_
 add_library(stocks_lib STATIC src/Browser.cpp src/BrowserPortfolio.cpp src/Positions.cpp src/News.cpp src/AttributeView.cpp src/TransactionsView.cpp src/Quotes.cpp src/Synthetic.cpp src/icons/IconLoader.cpp src/history/HistoryLoader.cpp src/source/NordnetHistory.cpp src/source/YahooSource.cpp src/source/YahooHistory.cpp src/source/NordnetSource.cpp src/source/SourceRunner.cpp src/source/DatasetCodes.cpp src/source/AutoSource.cpp
   src/source/FundRows.cpp src/source/FundSource.cpp src/source/NordnetDetails.cpp src/source/Countries.cpp src/source/NordnetNews.cpp src/source/SuomenPankkiSource.cpp src/source/EcbSource.cpp src/source/PhysicalSource.cpp src/source/GoldApiSource.cpp src/source/GoldPriceSource.cpp src/source/GoldPriceHistory.cpp src/source/SifterSource.cpp)
 target_include_directories(stocks_lib PUBLIC src)
-target_link_libraries(stocks_lib PUBLIC cellui stocks_model stocks_nodes stocks_http httpclient::httpclient nlohmann_json::nlohmann_json pugixml::pugixml)
+target_link_libraries(stocks_lib PUBLIC cellui stocks_model stocks_nodes stocks_http stocks_market_client httpclient::httpclient nlohmann_json::nlohmann_json pugixml::pugixml)
 target_compile_definitions(stocks_lib PUBLIC STOCKS_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
   STOCKS_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")
 
@@ -168,7 +175,7 @@ endif()
 # The browser on a test display: keys in, what it shows out. cellui's test display
 # (TestBackend) is built where there is a POSIX event loop, so not on Windows.
 if(NOT WIN32)
-  add_executable(stocks_tests tests/test_main.cpp tests/BrowserTests.cpp tests/ModelTests.cpp tests/SourceTests.cpp tests/InstrumentListsTests.cpp tests/NordnetTests.cpp tests/HistoryTests.cpp tests/NordnetHistoryTests.cpp tests/DatesTests.cpp tests/IconTests.cpp tests/FundTests.cpp tests/DataDirectoryTests.cpp tests/FactTests.cpp tests/NodeKeyTests.cpp tests/NordnetDetailsTests.cpp tests/NordnetNewsTests.cpp tests/SuomenPankkiTests.cpp tests/EcbTests.cpp tests/PortfolioTests.cpp tests/PortfolioFileTests.cpp tests/PhysicalTests.cpp tests/KnownIsinsTests.cpp tests/GoldApiTests.cpp tests/GoldPriceTests.cpp tests/SifterTests.cpp tests/SummaryTests.cpp tests/SummaryStoreTests.cpp tests/BarStoreTests.cpp)
+  add_executable(stocks_tests tests/test_main.cpp tests/BrowserTests.cpp tests/ModelTests.cpp tests/SourceTests.cpp tests/InstrumentListsTests.cpp tests/NordnetTests.cpp tests/HistoryTests.cpp tests/NordnetHistoryTests.cpp tests/DatesTests.cpp tests/IconTests.cpp tests/FundTests.cpp tests/DataDirectoryTests.cpp tests/FactTests.cpp tests/NodeKeyTests.cpp tests/NordnetDetailsTests.cpp tests/NordnetNewsTests.cpp tests/SuomenPankkiTests.cpp tests/EcbTests.cpp tests/PortfolioTests.cpp tests/PortfolioFileTests.cpp tests/PhysicalTests.cpp tests/KnownIsinsTests.cpp tests/GoldApiTests.cpp tests/GoldPriceTests.cpp tests/SifterTests.cpp tests/SummaryTests.cpp tests/SummaryStoreTests.cpp tests/BarStoreTests.cpp tests/MarketServerTests.cpp)
   target_link_libraries(stocks_tests PRIVATE stocks_lib SQLiteCpp)  # the tests of the file make an old one with it
   if(TARGET stocks_mariadb)
     target_sources(stocks_tests PRIVATE tests/MariaDbStoreTests.cpp)
@@ -210,7 +217,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
       endif()
     endforeach()
   endforeach()
-  foreach(t stocks_model stocks_lib stocks stocks_frame_bench stocks_period_bench stocks_restore_bench stocks_tests)
+  foreach(t stocks_model stocks_market_client stocks_lib stocks stocks_frame_bench stocks_period_bench stocks_restore_bench stocks_tests)
     if(TARGET ${t})
       target_compile_options(${t} PRIVATE ${STOCKS_WARNING_FLAGS})
     endif()

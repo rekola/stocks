@@ -62,8 +62,8 @@ set_target_properties(market-ingest market-server PROPERTIES RUNTIME_OUTPUT_DIRE
 # where MARKET_TEST_DB_USER is set (see tests/MarketTestSupport.h).
 set(MARKET_TESTS ${PROJECT_SOURCE_DIR}/tests)
 add_executable(market_tests ${MARKET_TESTS}/test_main.cpp ${MARKET_TESTS}/MarketBarsTests.cpp ${MARKET_TESTS}/MarketZipTests.cpp
-  ${MARKET_TESTS}/HistDataTests.cpp ${MARKET_TESTS}/MarketIngestTests.cpp ${MARKET_TESTS}/MarketApiTests.cpp ${MARKET_TESTS}/MarketConfigTests.cpp)
-target_link_libraries(market_tests PRIVATE market_lib market_offline)
+  ${MARKET_TESTS}/HistDataTests.cpp ${MARKET_TESTS}/MarketIngestTests.cpp ${MARKET_TESTS}/MarketApiTests.cpp ${MARKET_TESTS}/MarketConfigTests.cpp ${MARKET_TESTS}/MarketClientTests.cpp)
+target_link_libraries(market_tests PRIVATE market_lib market_offline stocks_market_client)
 add_test(NAME market_tests COMMAND market_tests)
 set_tests_properties(market_tests PROPERTIES TIMEOUT 120)
 

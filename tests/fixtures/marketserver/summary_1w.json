@@ -1,0 +1,293 @@
+{
+ "instruments": [
+  {
+   "base": {
+    "isin": null,
+    "kind": "currency",
+    "name": null
+   },
+   "dataset": {
+    "code": "HISTDATA",
+    "name": "HistData.com"
+   },
+   "edge": {
+    "base": "EUR",
+    "dataset": "HISTDATA",
+    "market": "XXXX",
+    "quote": "USD"
+   },
+   "id": "EUR/USD/XXXX/HISTDATA",
+   "last_bar_time": 1794603600,
+   "listing": {
+    "identifier": "",
+    "name": "EUR/USD",
+    "order_book": "",
+    "symbol": "EURUSD",
+    "type": "CURRENCY"
+   },
+   "queues": {
+    "1w": {
+     "close": [
+      1.0159999997645617,
+      1.0469999997645616,
+      1.0779999997645617,
+      1.0112999980926514,
+      1.0182999995559454
+     ],
+     "count": 5,
+     "fetched": 1795819902357,
+     "first_key": 739901,
+     "high": [
+      1.0967000005126,
+      1.096900000679493,
+      1.0900999996989966,
+      1.0971000000142492,
+      1.0972999976038933
+     ],
+     "keys": [
+      739901,
+      739908,
+      739915,
+      739922,
+      739929
+     ],
+     "kind": "candle",
+     "last_hash": "7140c4d4cfb51253",
+     "last_key": 739929,
+     "low": [
+      1.0002000000618398,
+      1.000399998831749,
+      1.0056999996483327,
+      1.0110000004649162,
+      1.0007999994814396
+     ],
+     "open": [
+      1.0038,
+      1.0348,
+      1.0658,
+      1.0968,
+      1.0301
+     ],
+     "volume": [
+      null,
+      null,
+      null,
+      null,
+      null
+     ]
+    }
+   }
+  },
+  {
+   "base": {
+    "isin": null,
+    "kind": "currency",
+    "name": null
+   },
+   "dataset": {
+    "code": "OTHERDS",
+    "name": "Other set"
+   },
+   "edge": {
+    "base": "EUR",
+    "dataset": "OTHERDS",
+    "market": "XXXX",
+    "quote": "USD"
+   },
+   "id": "EUR/USD/XXXX/OTHERDS",
+   "last_bar_time": 1713916800,
+   "listing": {
+    "identifier": "eu-1",
+    "name": "Euro / Dollar",
+    "order_book": "book-1",
+    "symbol": "EURUSD",
+    "type": "FX"
+   },
+   "queues": {
+    "1w": {
+     "close": [
+      1.2500000059604646
+     ],
+     "count": 1,
+     "fetched": 1795819902635,
+     "first_key": 738994,
+     "high": [
+      1.3000000029802323
+     ],
+     "keys": [
+      738994
+     ],
+     "kind": "candle",
+     "last_hash": "2dabed43c9359877",
+     "last_key": 738994,
+     "low": [
+      0.999999998509884
+     ],
+     "open": [
+      1.1
+     ],
+     "volume": [
+      5000.0
+     ]
+    }
+   }
+  },
+  {
+   "base": {
+    "isin": "US78378X1072",
+    "kind": "index",
+    "name": "S&P 500"
+   },
+   "dataset": {
+    "code": "HISTDATA",
+    "name": "HistData.com"
+   },
+   "edge": {
+    "base": "US78378X1072",
+    "dataset": "HISTDATA",
+    "market": "XXXX",
+    "quote": "PTS"
+   },
+   "id": "US78378X1072/PTS/XXXX/HISTDATA",
+   "last_bar_time": 1794603600,
+   "listing": {
+    "identifier": "",
+    "name": "SPX/USD",
+    "order_book": "",
+    "symbol": "SPXUSD",
+    "type": "INDEX"
+   },
+   "queues": {
+    "1w": {
+     "close": [
+      1.0159999997645617,
+      1.0469999997645616,
+      1.0779999997645617,
+      1.0112999980926514,
+      1.0182999995559454
+     ],
+     "count": 5,
+     "fetched": 1795819902633,
+     "first_key": 739901,
+     "high": [
+      1.0967000005126,
+      1.096900000679493,
+      1.0900999996989966,
+      1.0971000000142492,
+      1.0972999976038933
+     ],
+     "keys": [
+      739901,
+      739908,
+      739915,
+      739922,
+      739929
+     ],
+     "kind": "candle",
+     "last_hash": "7140c4d4cfb51253",
+     "last_key": 739929,
+     "low": [
+      1.0002000000618398,
+      1.000399998831749,
+      1.0056999996483327,
+      1.0110000004649162,
+      1.0007999994814396
+     ],
+     "open": [
+      1.0038,
+      1.0348,
+      1.0658,
+      1.0968,
+      1.0301
+     ],
+     "volume": [
+      null,
+      null,
+      null,
+      null,
+      null
+     ]
+    }
+   }
+  },
+  {
+   "base": {
+    "isin": "XC0009655157",
+    "kind": "commodity",
+    "name": "Gold"
+   },
+   "dataset": {
+    "code": "HISTDATA",
+    "name": "HistData.com"
+   },
+   "edge": {
+    "base": "XC0009655157",
+    "dataset": "HISTDATA",
+    "market": "XXXX",
+    "quote": "USD"
+   },
+   "id": "XC0009655157/USD/XXXX/HISTDATA",
+   "last_bar_time": 1794603600,
+   "listing": {
+    "identifier": "",
+    "name": "XAU/USD",
+    "order_book": "",
+    "symbol": "XAUUSD",
+    "type": "METAL"
+   },
+   "queues": {
+    "1w": {
+     "close": [
+      1.0159999997645617,
+      1.0469999997645616,
+      1.0779999997645617,
+      1.0112999980926514,
+      1.0182999995559454
+     ],
+     "count": 5,
+     "fetched": 1795819902490,
+     "first_key": 739901,
+     "high": [
+      1.0967000005126,
+      1.096900000679493,
+      1.0900999996989966,
+      1.0971000000142492,
+      1.0972999976038933
+     ],
+     "keys": [
+      739901,
+      739908,
+      739915,
+      739922,
+      739929
+     ],
+     "kind": "candle",
+     "last_hash": "7140c4d4cfb51253",
+     "last_key": 739929,
+     "low": [
+      1.0002000000618398,
+      1.000399998831749,
+      1.0056999996483327,
+      1.0110000004649162,
+      1.0007999994814396
+     ],
+     "open": [
+      1.0038,
+      1.0348,
+      1.0658,
+      1.0968,
+      1.0301
+     ],
+     "volume": [
+      null,
+      null,
+      null,
+      null,
+      null
+     ]
+    }
+   }
+  }
+ ],
+ "missing": []
+}

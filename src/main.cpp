@@ -11,6 +11,10 @@
 //                          bar by the gram, a gold coin by the ounce, a platinum bar, estimated from the spot prices another
 //                          source gives; it runs beside the default), sifter (the Sifter Fund's share classes), funds:SCHEMA (a fund company: a
 //                          schema in data/funds, or a schema file) or synthetic
+//   stocks --source market-server   the market-data server (src/market) is the whole supply of data: every instrument and bar it has,
+//                          under the datasets that wrote them, and nothing from the providers; it runs alone (--source market-server
+//                          with another source is refused, and it replaces the default set)
+//   stocks --market-server URL  where that server is (default http://127.0.0.1:8080; else the environment variable STOCKS_MARKET_SERVER)
 //   stocks --lists DIR     the instrument lists of the yahoo and synthetic
 //   sources (default: data/lists) stocks --facts FILE    where what the sources
 //   said of instruments, markets and datasets is kept between runs (default:
@@ -39,6 +43,7 @@
 #include "source/EcbSource.h"
 #include "source/GoldApiSource.h"
 #include "source/GoldPriceSource.h"
+#include "source/MarketServerSource.h"
 #include "source/PhysicalSource.h"
 #include "source/SifterSource.h"
 #include "source/SuomenPankkiSource.h"
@@ -50,6 +55,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <functional>
 #include <memory>
@@ -61,7 +67,7 @@ namespace {
 // The adapters there are, by the name the user picks them with. One runs at a time: "auto" is Nordnet, and Yahoo if Nordnet
 // gives nothing.
 // `funds:NAME` is the fund adapter with the schema NAME (data/funds/NAME.json) or the schema file NAME; `error` says what is wrong with a schema.
-std::unique_ptr<Source> makeSource(const std::string & name, const ListSpec & lists, std::string & error) {
+std::unique_ptr<Source> makeSource(const std::string & name, const ListSpec & lists, const std::string & market_server_url, std::string & error) {
   if (name.rfind("funds:", 0) == 0) {
     FundSchema schema;
     if (!FundSchema::load(name.substr(6), schema, error)) return nullptr;
@@ -80,6 +86,11 @@ std::unique_ptr<Source> makeSource(const std::string & name, const ListSpec & li
       return nullptr;
     }
     return std::make_unique<PhysicalSource>(std::move(table));
+  }
+  if (name == "market-server") {
+    MarketServerSource::Options options;
+    options.url = market_server_url;
+    return std::make_unique<MarketServerSource>(std::move(options));
   }
   if (name == "sifter") return std::make_unique<SifterSource>();
   if (name == "spfb") return std::make_unique<SuomenPankkiSource>();
@@ -102,7 +113,7 @@ std::string defaultSources() {
   return names;
 }
 
-constexpr const char * kSourceNames = "auto, nordnet, yahoo, spfb, ecb, goldprice, gold-api, physical, sifter, funds:SCHEMA, synthetic";
+constexpr const char * kSourceNames = "auto, nordnet, yahoo, spfb, ecb, goldprice, gold-api, physical, sifter, market-server, funds:SCHEMA, synthetic";
 
 }  // namespace
 
@@ -130,6 +141,8 @@ int main(int argc, char ** argv) {
   bool keep_portfolios = true;
   std::string summaries_directory;
   bool keep_summaries = true;
+  // Where the market-data server is: --market-server, else the environment, else the server's own default.
+  std::string market_server_url;
   const auto & args = app->arguments();
   for (size_t i = 0; i < args.size(); i++) {
     if (args[i] == "--source" && i + 1 < args.size()) source_name = args[++i];
@@ -145,6 +158,8 @@ int main(int argc, char ** argv) {
     else if (args[i] == "--summaries" && i + 1 < args.size()) summaries_directory = args[++i];
     else if (args[i].rfind("--summaries=", 0) == 0) summaries_directory = args[i].substr(12);
     else if (args[i] == "--no-summaries") keep_summaries = false;
+    else if (args[i] == "--market-server" && i + 1 < args.size()) market_server_url = args[++i];
+    else if (args[i].rfind("--market-server=", 0) == 0) market_server_url = args[i].substr(16);
     else if (args[i] == "--lists" && i + 1 < args.size()) list_directory = args[++i];
     else if (args[i].rfind("--lists=", 0) == 0) list_directory = args[i].substr(8);
     else {
@@ -154,12 +169,15 @@ int main(int argc, char ** argv) {
               " [--ui auto|terminal|window] [--theme original|dark|light] "
               "[--source " +
               kSourceNames +
-              "] [--facts FILE | --no-facts] [--portfolios FILE | --no-portfolios] [--summaries DIR | --no-summaries] [--lists DIR] [--market MIC]...");
+              "] [--facts FILE | --no-facts] [--portfolios FILE | --no-portfolios] [--summaries DIR | --no-summaries] [--lists DIR] [--market MIC]... [--market-server URL]");
     }
   }
   // One source, for now: the instrument lists are the yahoo source's own (and the synthetic one follows them); each reads
   // them when it loads.
   if (source_name.empty()) source_name = defaultSources();
+  if (market_server_url.empty())
+    if (const char * env = std::getenv("STOCKS_MARKET_SERVER"); env && *env) market_server_url = env;
+  if (market_server_url.empty()) market_server_url = MarketServerSource::kDefaultUrl;
   ListSpec lists{list_directory, market_names};
   // --source takes one name or several, separated by commas ("nordnet,funds:NAME"): they run at once, each on a thread of its own.
   std::vector<std::unique_ptr<Source>> sources;
@@ -168,12 +186,14 @@ int main(int argc, char ** argv) {
     if (comma == std::string::npos) comma = source_name.size();
     const std::string one = source_name.substr(from, comma - from);
     std::string schema_error;
-    std::unique_ptr<Source> source = makeSource(one, lists, schema_error);
+    std::unique_ptr<Source> source = makeSource(one, lists, market_server_url, schema_error);
     if (!source) return fail(2, "stocks: " + (schema_error.empty() ? "unknown --source " + one + " (there are " + std::string(kSourceNames) + ")" : schema_error));
     sources.push_back(std::move(source));
     from = comma + 1;
   }
   if (const std::string clash = datasetCodeClash(sources); !clash.empty()) return fail(2, "stocks: " + clash);
+  // The server supplies all data: where it is one of the sources it is the only one.
+  if (const std::string alone = suppliesAllDataClash(sources); !alone.empty()) return fail(2, "stocks: " + alone);
 
   // What the sources said of the nodes is read from the file before they run. What goes wrong with the file is a message on
   // the status line once the display is up.

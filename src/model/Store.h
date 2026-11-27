@@ -163,6 +163,7 @@ class Snapshot {
   InstrumentId addInstrument(const std::string & symbol, const std::string & name, InstrumentKind, const std::string & isin, const std::string & type);
   InstrumentId resolveInstrument(const std::vector<Attribute> & identifying, const std::vector<Attribute> & rest);
   void setListing(const Listing &);
+  void addRow(const EdgeKey &);
   MarketId addMarket(const std::string &mic, const std::string &name);
   void setAttribute(NodeRef, const Attribute &);
   void setAttributes(NodeRef, const std::vector<Attribute> &);
@@ -321,6 +322,10 @@ class StoreWrites {
   virtual void setAttribute(NodeRef, const Attribute &) = 0;
   // The listing of an edge, replacing the one it had.
   virtual void setListing(const Listing &) = 0;
+  // The edge is a row of the table before it has any data: for a source that knows its instruments (a server's list) and has their bars
+  // loaded later, when they are wanted. The row has no price, change or trace until bars (or a quote) are written; its place in the order of
+  // the rows does not change when they are. Said again: nothing changes. The key must be whole, as for any write to an edge.
+  virtual void addRow(const EdgeKey &) = 0;
   // Says several things of a node in one write (an adapter's whole row), each as setAttribute does.
   virtual void setAttributes(NodeRef, const std::vector<Attribute> &) = 0;
   // The dataset with this code, made if it is new; `name` is what a person reads (the code until one is said), and one already said
