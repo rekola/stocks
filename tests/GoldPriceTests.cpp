@@ -39,7 +39,7 @@ TEST(the_prices_answer_is_read_with_its_strings_and_what_is_not_a_spot_price_is_
   std::vector<GoldPriceSource::Price> prices;
   std::string error;
   CHECK(GoldPriceSource::parsePrices(fixture("prices.json"), prices, error) && prices.size() == 5);
-  CHECK(prices[0].symbol == "HG" && prices[0].unit == "pound" && std::abs(prices[0].price - 5.2595) < 1e-12 && prices[0].day == dayNumber(2026, 11, 25) && !prices[0].stale);
+  CHECK(prices[0].symbol == "HG" && prices[0].unit == "pound" && std::abs(prices[0].price - 5.2595) < 1e-12 && prices[0].time == (dayNumber(2026, 11, 25) - kUnixEpochDayNumber) * 86400 + 14 * 3600 + 22 * 60 + 1 && !prices[0].stale);
   const std::string body = "{\"symbols\":[" + row("XAU", "USD", "troy_ounce", "10") + "," + row("XAU", "EUR", "troy_ounce", "0") + "," + row("XAU", "GBP", "troy_ounce", "x") + "," +
                            row("XAU", "SEK", "", "5") + "," + row("XAU", "NOK", "troy_ounce", "5", false, "yesterday") + "," + row("GC", "USD", "troy_ounce", "9", false, "2026-11-25T00:00:00+00:00", "future") +
                            "," + row("XAG", "USD", "troy_ounce", "30", true) + ",5]}";
@@ -61,16 +61,17 @@ TEST(the_prices_are_one_request_and_the_metals_are_stored_in_the_unit_of_their_i
   CHECK(s->name(NodeRef(data)) == "goldprice.dev" && s->edges(none).size() == 4);  // XAU in EUR and USD (not SEK: it was not asked for), XAG and HG in USD
   const InstrumentId gold = *s->findInstrument("XAU"), eur = *s->findInstrument("EUR"), usd = *s->findInstrument("USD");
   CHECK(!s->findInstrument("SEK"));
-  const auto last = [&](InstrumentId base, InstrumentId quote) { return s->lastCandles({base, quote, none, data}, Resolution::Day, 1).candles.back(); };
-  CHECK(std::abs(last(gold, eur).close - 3179.04) < 1e-9 && std::abs(last(gold, usd).close - 3479.11) < 1e-9);
-  CHECK(last(gold, eur).time == dayNumber(2026, 11, 25) && !isDefined(last(gold, eur).open));
+  // A live price is a quote and no bar: the bars are the history's.
+  const auto last = [&](InstrumentId base, InstrumentId quote) { return *s->quote({base, quote, none, data}); };
+  CHECK(std::abs(last(gold, eur).last - 3179.04) < 1e-9 && std::abs(last(gold, usd).last - 3479.11) < 1e-9);
+  CHECK(dayNumberOfInstant(last(gold, eur).time) == dayNumber(2026, 11, 25) && s->candles({gold, eur, none, data}, Resolution::Day).candles.empty());
   // Copper: the answer says "pound", and the instrument (the ISIN Nordnet's copper has) is per tonne.
-  CHECK(std::abs(last(*s->findInstrument("HG"), usd).close - 5.2595 * 1000 / 0.45359237) < 1e-6);
+  CHECK(std::abs(last(*s->findInstrument("HG"), usd).last - 5.2595 * 1000 / 0.45359237) < 1e-6);
   CHECK(s->listing({*s->findInstrument("HG"), usd, none, data})->name == "Copper, per tonne" && s->listing({gold, eur, none, data})->name == "Gold, per troy oz");
   CHECK(s->isin(gold) == "XC0009655157" && s->isin(*s->findInstrument("HG")) == "XC0005705501" && s->kind(gold) == InstrumentKind::Commodity);
-  // A second load replaces the day's bar, not adds one.
+  // A second load leaves no bar either.
   source.load(*store, http, said);
-  CHECK(store->snapshot()->candles({gold, eur, none, data}, Resolution::Day).candles.size() == 1);
+  CHECK(store->snapshot()->candles({gold, eur, none, data}, Resolution::Day).candles.empty());
 }
 
 TEST(a_stale_price_is_not_stored_and_a_unit_it_does_not_know_is_said) {
@@ -140,7 +141,7 @@ TEST(the_bars_of_an_edge_are_asked_by_its_symbol_and_currency_for_the_days_the_p
   http.answer = [](const std::string &) { return ok(fixture("bars-XAU-USD.json")); };
   CHECK(history.load(*edge.store, http, edge.key, 0, [] { return true; }) == HistoryProvider::Outcome::Ok);
   CHECK(http.urls.size() == 1 && http.urls[0].rfind("https://api.goldprice.dev/v1/bars?symbol=XAU/USD&interval=1d&from=", 0) == 0);
-  CHECK(edge.store->snapshot()->candles(edge.key, Resolution::Day).candles.size() == 4);  // the three days and today's spot bar
+  CHECK(edge.store->snapshot()->candles(edge.key, Resolution::Day).candles.size() == 3);  // the three days: the spot is a quote and no bar
   // The day and the week are intraday, which the plan has none of; the others read daily bars.
   const auto s = edge.store->snapshot();
   CHECK(!history.need(*s, edge.key, Period::Day) && !history.need(*s, edge.key, Period::Week));
@@ -159,7 +160,7 @@ TEST(a_page_with_a_cursor_is_followed_and_what_the_plan_refuses_is_missing_not_r
     return ok(R"({"bars":[{"bar_start":"2026-11-23T00:00:00Z","close":"4"}],"next_cursor":null})");
   };
   CHECK(history.load(*edge.store, http, edge.key, 0, [] { return true; }) == HistoryProvider::Outcome::Ok && n == 2);
-  CHECK(edge.store->snapshot()->candles(edge.key, Resolution::Day).candles.size() == 3);
+  CHECK(edge.store->snapshot()->candles(edge.key, Resolution::Day).candles.size() == 2);
   using Outcome = HistoryProvider::Outcome;
   for (auto [answer, outcome] : {std::pair{failed(403), Outcome::Missing}, {failed(404), Outcome::Missing}, {ok(R"({"bars":[],"next_cursor":null})"), Outcome::Missing},
                                  {ok("not json"), Outcome::Missing}, {failed(429), Outcome::Refused}, {failed(0), Outcome::Offline}, {failed(503), Outcome::Offline}}) {
@@ -179,7 +180,7 @@ TEST(of_two_sources_of_one_spot_the_newest_bar_wins_and_on_the_same_day_the_row_
   GoldPriceSource().load(*store, http, said);
   const auto day = [&](const char * dataset) {
     const auto s = store->snapshot();
-    return s->lastCandles({*s->findInstrument("XAU"), *s->findInstrument("USD"), *s->findMarket(kNoMarket), *s->findDataset(dataset)}, Resolution::Day, 1).candles.back().time;
+    return dayNumberOfInstant(s->quote({*s->findInstrument("XAU"), *s->findInstrument("USD"), *s->findMarket(kNoMarket), *s->findDataset(dataset)})->time);
   };
   CHECK(day(kGoldPriceDataset) == dayNumber(2026, 11, 25));
   http.answer = [](const std::string & url) {
@@ -195,7 +196,7 @@ TEST(of_two_sources_of_one_spot_the_newest_bar_wins_and_on_the_same_day_the_row_
   const auto coin = [&](const char * currency) {
     const auto s = store->snapshot();
     const DatasetId data = *s->findDataset(kPhysicalDataset);
-    return s->lastCandles({*s->findInstrument("GOLDCOIN"), *s->findInstrument(currency), *s->findMarket(kOffExchange), data}, Resolution::Day, 1).candles.back().close;
+    return s->quote({*s->findInstrument("GOLDCOIN"), *s->findInstrument(currency), *s->findMarket(kOffExchange), data})->last;
   };
   estimate.load(*store, http, said);
   CHECK(std::abs(coin("USD") - 3479.11) < 1e-9);  // the same day: the first row of the file

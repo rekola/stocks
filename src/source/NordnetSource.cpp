@@ -390,7 +390,7 @@ size_t NordnetSource::loadIndicators(const List & list, Store & store, Http & ht
       if (row.hasBar) {
         // Whose price it is: the source the row names, where the program has a dataset for it; Nordnet's own otherwise.
         const EdgeKey edge{base, quote, market, row.priceSource == "MORNINGSTAR" ? morningstar : nordnet};
-        b.appendCandles(edge, Resolution::Day, {row.bar});
+        // The quote, which makes the edge: the realtime price is no bar (a bar is history, and written at random days it misleads).
         if (row.hasQuote) b.setQuote(edge, row.quote);
         b.setListing({edge, row.symbol, "", row.orderBookId, row.type, row.name});
       }
@@ -545,11 +545,10 @@ void NordnetSource::load(Store & store, Http & http, SourceListener & listener) 
           // What Nordnet says of the instrument itself: thin edges, of the types it has.
           b.setAttributes(base, l.attributes);
           if (!l.nnxId.empty()) b.setAttribute(base, {nordnet::kInstrumentId, l.nnxId});  // what the news refers to it by
-          // Today's bar makes the edge; a listing with none stays a node nothing selects.
+          // Today's quote makes the edge; a listing with none stays a node nothing selects.
           if (l.hasBar) {
             const EdgeKey edge{base, quote, market, dataset};
-            b.appendCandles(edge, Resolution::Day, {l.bar});
-            if (l.hasQuote) b.setQuote(edge, l.quote);
+            if (l.hasQuote) b.setQuote(edge, l.quote);  // the realtime price is a quote and no bar: the bars are the history's
             b.setChanges(edge, l.changes);
             // What the market says of it: what it calls it, its own id for it and the order book its history is asked for by.
             b.setListing({edge, l.symbol, l.identifier, l.bookId, l.type, l.name});
