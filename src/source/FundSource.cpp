@@ -593,8 +593,8 @@ HistoryProvider::Outcome FundHistory::load(Store & store, Http & http, const Edg
       store.batch([&](Batch & b) {
         b.setAttributes(edge.base, said);
         if (bars) {
-          b.appendCandles(edge, Resolution::Day, *bars);
-          b.appendCandles(edge, Resolution::Week, weeks);
+          b.appendCandles(edge, Resolution::Day, *bars, QueueKind::Scalar);  // a NAV: one value a day
+          b.appendCandles(edge, Resolution::Week, weeks, QueueKind::Scalar);
         }
       });
     if (answered) {

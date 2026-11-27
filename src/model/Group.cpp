@@ -92,6 +92,16 @@ double groupChange(const Snapshot & snapshot, const Mix & mix, Period period) {
   return combine(changes);
 }
 
+double groupRange(const Snapshot & snapshot, const Mix & mix, Period period, bool high) {
+  std::vector<double> values;
+  for (const Member & m : mix.members)
+    if (m.state == MemberState::Used) {
+      const Ranges r = snapshot.ranges(m.edge);
+      values.push_back((high ? r.high : r.low)[static_cast<size_t>(period)]);
+    }
+  return combine(values);
+}
+
 PeriodView groupPeriodView(const Snapshot & snapshot, const GroupKey & group, Period period, bool withTrace, const DatasetFilter & filter, const Mix * given) {
   const Mix own = given ? Mix{} : mixOf(snapshot, group, filter);
   const Mix & mix = given ? *given : own;
@@ -106,16 +116,20 @@ PeriodView groupPeriodView(const Snapshot & snapshot, const GroupKey & group, Pe
   out.sources = views.size();
   out.dated = true;
   out.span = 0;
-  std::vector<double> bases, lasts;
+  std::vector<double> bases, lasts, highs, lows;
   for (const PeriodView & v : views) {
     out.primary = out.primary || v.primary;
     out.dated = out.dated && v.dated;
     out.span = std::max(out.span, v.span);
     bases.push_back(v.base);
     lasts.push_back(v.last);
+    highs.push_back(v.high);
+    lows.push_back(v.low);
   }
   out.base = combine(bases);
   out.last = combine(lasts);
+  out.high = combine(highs);
+  out.low = combine(lows);
   if (!withTrace) return out;
 
   // The trace: at each time any member has a bar, the members' closes made one.

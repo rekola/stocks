@@ -465,6 +465,35 @@ TEST(yahoo_keeps_its_own_type_on_the_edge) {
   CHECK(s->kind(*s->findInstrumentByIsin(kGold)) == InstrumentKind::Commodity);
 }
 
+TEST(yahoos_day_and_52_week_range_are_stored_and_shown_before_history_and_bars_that_cover_a_period_override_them) {
+  // A short answer: 30 daily bars with the real meta. Only the session is covered: the year is what Yahoo says.
+  nlohmann::json doc = nlohmann::json::parse(fixture("nokia.json"));
+  auto & result = doc["chart"]["result"][0];
+  const size_t n = result["timestamp"].size(), keep = 30;
+  result["timestamp"] = nlohmann::json(std::vector<nlohmann::json>(result["timestamp"].begin() + static_cast<std::ptrdiff_t>(n - keep), result["timestamp"].end()));
+  for (const char * column : {"open", "high", "low", "close", "volume"}) {
+    auto & c = result["indicators"]["quote"][0][column];
+    c = nlohmann::json(std::vector<nlohmann::json>(c.begin() + static_cast<std::ptrdiff_t>(n - keep), c.end()));
+  }
+  auto store = makeMemoryStore();
+  std::string error;
+  CHECK(YahooSource::parse(doc.dump(), entry("NOKIA.HE"), *store, error));
+  auto s = store->snapshot();
+  const EdgeKey k = edgeOf(*s, kNokia, "EUR", "XHEL", kYahooDataset);
+  const Ranges r = s->ranges(k);
+  CHECK(r.high[static_cast<size_t>(Period::Year)] == 14.995 && r.low[static_cast<size_t>(Period::Year)] == 5.072);  // fiftyTwoWeekHigh and Low
+  CHECK(!isDefined(r.high[static_cast<size_t>(Period::Year3)]) && !isDefined(r.low[static_cast<size_t>(Period::Year10)]));
+  // The last daily bar covers the day, and it overrides regularMarketDayHigh and Low (which are the same numbers here).
+  CHECK(r.high[static_cast<size_t>(Period::Day)] == s->queue(k, Resolution::Day).back().high && r.low[static_cast<size_t>(Period::Day)] == s->queue(k, Resolution::Day).back().low);
+  // What the provider says of a year the bars do cover is not kept over them: the whole answer has two years of days.
+  auto full = makeMemoryStore();
+  CHECK(YahooSource::parse(fixture("nokia.json"), entry("NOKIA.HE"), *full, error));
+  auto f = full->snapshot();
+  const EdgeKey fk = edgeOf(*f, kNokia, "EUR", "XHEL", kYahooDataset);
+  const PeriodView year = periodView(*f, fk, Period::Year, false);
+  CHECK(isDefined(year.high) && f->ranges(fk).high[static_cast<size_t>(Period::Year)] == year.high && f->ranges(fk).low[static_cast<size_t>(Period::Year)] == year.low);
+}
+
 #include "source/AutoSource.h"
 #include "source/NordnetSource.h"
 

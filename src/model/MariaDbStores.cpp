@@ -211,7 +211,7 @@ class MariaDbFactStore : public FactStore, private Base {
 
 // ---- the summaries ----
 
-constexpr int kSummariesVersion = 1;
+constexpr int kSummariesVersion = 3;  // 3: a bar with no open says so in its record (SummaryRecords.h); 2: the high and the low over each period of an edge, and queues of the kind their writer says
 
 class MariaDbSummaryStore : public SummaryStore, private Base {
  public:
@@ -227,7 +227,9 @@ class MariaDbSummaryStore : public SummaryStore, private Base {
           "type VARCHAR(190) NOT NULL DEFAULT '', name VARCHAR(500) NOT NULL DEFAULT '', "
           "last_price DOUBLE NULL, bid DOUBLE NULL, ask DOUBLE NULL, quote_time BIGINT NULL, previous_close DOUBLE NULL, previous_close_day BIGINT NULL, "
           "change_day DOUBLE NULL, change_week DOUBLE NULL, change_month DOUBLE NULL, change_quarter DOUBLE NULL, change_year DOUBLE NULL, "
-          "change_year3 DOUBLE NULL, change_year10 DOUBLE NULL, UNIQUE KEY by_edge (dataset, base, quote, market)) ENGINE=InnoDB");
+          "change_year3 DOUBLE NULL, change_year10 DOUBLE NULL, "
+          "high_day DOUBLE NULL, high_week DOUBLE NULL, high_month DOUBLE NULL, high_quarter DOUBLE NULL, high_year DOUBLE NULL, high_year3 DOUBLE NULL, high_year10 DOUBLE NULL, "
+          "low_day DOUBLE NULL, low_week DOUBLE NULL, low_month DOUBLE NULL, low_quarter DOUBLE NULL, low_year DOUBLE NULL, low_year3 DOUBLE NULL, low_year10 DOUBLE NULL, UNIQUE KEY by_edge (dataset, base, quote, market)) ENGINE=InnoDB");
       writer().exec(
           "CREATE TABLE IF NOT EXISTS queues ("
           "edge BIGINT NOT NULL, resolution INT NOT NULL, kind INT NOT NULL, fetched BIGINT NOT NULL, count BIGINT NOT NULL, "
@@ -250,6 +252,7 @@ class MariaDbSummaryStore : public SummaryStore, private Base {
                          "SELECT e.id, e.base, e.quote, e.market, e.symbol, e.identifier, e.order_book, e.type, e.name, "
                          "e.last_price, e.bid, e.ask, e.quote_time, e.previous_close, e.previous_close_day, "
                          "e.change_day, e.change_week, e.change_month, e.change_quarter, e.change_year, e.change_year3, e.change_year10, "
+                         "e.high_day, e.high_week, e.high_month, e.high_quarter, e.high_year, e.high_year3, e.high_year10, e.low_day, e.low_week, e.low_month, e.low_quarter, e.low_year, e.low_year3, e.low_year10, "
                          "q.resolution, q.kind, q.fetched, q.count, q.first_key, q.last_key, q.last_hash "
                          "FROM summary_edges e LEFT JOIN queues q ON q.edge = e.id WHERE e.dataset = ? ORDER BY e.id, q.resolution");
       q.bind(1, asInt(dataset_.value));
@@ -272,19 +275,23 @@ class MariaDbSummaryStore : public SummaryStore, private Base {
           e.quote.time = q.getColumn(12).isNull() ? 0 : q.getColumn(12).getInt64();
           e.previous_close = real(q.getColumn(13));
           e.previous_close_day = q.getColumn(14).isNull() ? 0 : q.getColumn(14).getInt64();
-          for (size_t i = 0; i < kChangeCount; i++) e.changes.pct[i] = real(q.getColumn(15 + static_cast<unsigned>(i)));
+          for (size_t i = 0; i < kChangeCount; i++) {
+            e.changes.pct[i] = real(q.getColumn(15 + static_cast<unsigned>(i)));
+            e.ranges.high[i] = real(q.getColumn(22 + static_cast<unsigned>(i)));
+            e.ranges.low[i] = real(q.getColumn(29 + static_cast<unsigned>(i)));
+          }
           out.push_back(std::move(e));
         }
-        if (!q.getColumn(22).isNull()) {
-          const int resolution = q.getColumn(22).getInt();
+        if (!q.getColumn(36).isNull()) {
+          const int resolution = q.getColumn(36).getInt();
           if (resolution < 0 || resolution > static_cast<int>(Resolution::Quarter)) continue;
           QueueCoverage c;
-          c.kind = q.getColumn(23).getInt() == static_cast<int>(QueueKind::Scalar) ? QueueKind::Scalar : QueueKind::Candle;
-          c.fetched = q.getColumn(24).getInt64();
-          c.count = static_cast<uint32_t>(q.getColumn(25).getInt64());
-          c.first_key = q.getColumn(26).getInt64();
-          c.last_key = q.getColumn(27).getInt64();
-          c.last_hash = static_cast<uint64_t>(q.getColumn(28).getInt64());
+          c.kind = q.getColumn(37).getInt() == static_cast<int>(QueueKind::Scalar) ? QueueKind::Scalar : QueueKind::Candle;
+          c.fetched = q.getColumn(38).getInt64();
+          c.count = static_cast<uint32_t>(q.getColumn(39).getInt64());
+          c.first_key = q.getColumn(40).getInt64();
+          c.last_key = q.getColumn(41).getInt64();
+          c.last_hash = static_cast<uint64_t>(q.getColumn(42).getInt64());
           out.back().queues.emplace_back(static_cast<Resolution>(resolution), c);
         }
       }
@@ -350,13 +357,16 @@ class MariaDbSummaryStore : public SummaryStore, private Base {
   void putEdge(const StoredEdge & e) {
     maria::Statement put(writer(),
                          "INSERT INTO summary_edges (dataset, base, quote, market, symbol, identifier, order_book, type, name, last_price, bid, ask, quote_time, "
-                         "previous_close, previous_close_day, change_day, change_week, change_month, change_quarter, change_year, change_year3, change_year10) "
-                         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                         "previous_close, previous_close_day, change_day, change_week, change_month, change_quarter, change_year, change_year3, change_year10, "
+                         "high_day, high_week, high_month, high_quarter, high_year, high_year3, high_year10, low_day, low_week, low_month, low_quarter, low_year, low_year3, low_year10) "
+                         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
                          "ON DUPLICATE KEY UPDATE symbol = VALUES(symbol), identifier = VALUES(identifier), order_book = VALUES(order_book), type = VALUES(type), "
                          "name = VALUES(name), last_price = VALUES(last_price), bid = VALUES(bid), ask = VALUES(ask), quote_time = VALUES(quote_time), "
                          "previous_close = VALUES(previous_close), previous_close_day = VALUES(previous_close_day), change_day = VALUES(change_day), "
                          "change_week = VALUES(change_week), change_month = VALUES(change_month), change_quarter = VALUES(change_quarter), "
-                         "change_year = VALUES(change_year), change_year3 = VALUES(change_year3), change_year10 = VALUES(change_year10)");
+                         "change_year = VALUES(change_year), change_year3 = VALUES(change_year3), change_year10 = VALUES(change_year10), "
+                         "high_day = VALUES(high_day), high_week = VALUES(high_week), high_month = VALUES(high_month), high_quarter = VALUES(high_quarter), high_year = VALUES(high_year), high_year3 = VALUES(high_year3), high_year10 = VALUES(high_year10), "
+                         "low_day = VALUES(low_day), low_week = VALUES(low_week), low_month = VALUES(low_month), low_quarter = VALUES(low_quarter), low_year = VALUES(low_year), low_year3 = VALUES(low_year3), low_year10 = VALUES(low_year10)");
     const EdgeKey & k = e.listing.key;
     put.bind(1, asInt(dataset_.value));
     put.bind(2, asInt(k.base.value));
@@ -375,7 +385,11 @@ class MariaDbSummaryStore : public SummaryStore, private Base {
     bindReal(put, 14, e.previous_close);
     if (isDefined(e.previous_close)) put.bind(15, e.previous_close_day);
     else put.bind(15);
-    for (size_t i = 0; i < kChangeCount; i++) bindReal(put, 16 + static_cast<int>(i), e.changes.pct[i]);
+    for (size_t i = 0; i < kChangeCount; i++) {
+      bindReal(put, 16 + static_cast<int>(i), e.changes.pct[i]);
+      bindReal(put, 23 + static_cast<int>(i), e.ranges.high[i]);
+      bindReal(put, 30 + static_cast<int>(i), e.ranges.low[i]);
+    }
     put.exec();
   }
 
@@ -423,7 +437,7 @@ class MariaDbSummaryStore : public SummaryStore, private Base {
       if (old.executeStep()) {
         QueueKind kind = in.kind;
         std::vector<Candle> kept;
-        if (summary::unpack(old.getColumn(0).getBlob(), kind, kept)) bars = std::move(kept);
+        if (summary::unpack(old.getColumn(0).getBlob(), kind, kept) && kind == in.kind) bars = std::move(kept);  // a queue of the other kind is not mixed in
       }
       old.reset();
       for (const Candle & c : in.bars) summary::put(bars, c);

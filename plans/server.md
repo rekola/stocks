@@ -21,7 +21,17 @@ resolution), and hands what changed to its stores. The server restores a store f
 - **Instruments.** An FX pair is an edge between two currency nodes (no ISIN); gold and silver are the commodity by the ISINs the sources share;
   oil and the indices are instruments by their ISINs (given by the owner), an index quoted in points as everywhere in the application. The
   dataset is `HISTDATA`, the market XXXX. A pair with no data in the current year is not carried.
-- **API.** `/health`, `/instruments` and `/summary` (see `src/market/Api.h`), unversioned for now, the periods named as the application's.
+- **API.** `/health`, `/instruments` and `/summary` (see `src/market/Api.h`, which has the contract), unversioned for now. An instrument is its
+  edge: `BASE/QUOTE/MARKET/DATASET`, the four keys as NodeKey text (`EUR/USD/XXXX/HISTDATA`), which is the one id the API returns and takes
+  (`?edge=ID[,ID]`, at most 100 ids, repeatable, empty items skipped; `?dataset=CODE`; `?resolution=R[,R]` on `/summary`); never its symbol, which two
+  datasets can share. Each instrument carries its edge, its dataset's code and name, its listing and what a client needs to make the base node
+  (its kind, and its name and ISIN where it is an instrument). `/summary` gives each queue the store keeps for the sparklines as it holds it: for
+  each resolution in memory ("5m", "1h", "1d", "1w") the columns `keys`, `open`, `high`, `low`, `close`, `volume`, oldest first, with null for what
+  is undefined (a bar with no open has a null open; a scalar queue is its value as `close`, `"kind": "scalar"`) and the queue's coverage
+  (`first_key`, `last_key`, `count`, `last_hash`; `fetched` is when the store last confirmed the queue, not a change marker). No quote, previous
+  close or change is sent, and the bars are not cut into the app's periods. The server does not combine datasets: every edge is under the dataset
+  that wrote it, and the median across datasets is the client's. The client reads `/instruments` for its rows and loads `/summary` in batches of the
+  edges on screen, one resolution at a time. Answers are gzip-compressed for a client that asks, where zlib was found.
 
 How to set it up (the database, the ingest, the server on the local network) is in [docs/market-server.md](../docs/market-server.md).
 
@@ -33,7 +43,25 @@ Where it differs from the plan above, and why:
   The plan's insert-only history is a later change.
 - **Intraday bars are built from the 1-minute quotes, not loaded as the provider gives them** (the plan says nothing is derived from another
   interval): HistData has only 1-minute data, so this is the one dataset where that is how it has to be.
-- **No `/v1` prefix and no columnar chunks yet**: the paths are the task's, and a period is JSON columns (`keys`, `close`).
+- **No `/v1` prefix and no columnar chunks yet**: the paths are the task's, and a queue is JSON columns (`keys`, `open`, `high`, `low`, `close`,
+  `volume`).
+- **An instrument is chosen by its edge id, not by `/v1/series/{base}/{quote}/{market}/{dataset}`'s path** (that is for bars, which the API does
+  not serve yet): `?edge=` and `?dataset=` on the summary, and the market is its MIC, as the model has it.
+- **The summary is the store's queues, not the plan's "latest bar, change and a short trace"**: the latest bar is the last of a queue, and the
+  change and the trace are what the client works out from the bars (the app's rule, `Period.h`); the server sends neither, nor a quote.
+- **An edge the store does not have is not an error**: a batch of 100 edges must not fail whole for one that is gone, so the answer lists the others
+  and names the id in `"missing"`. Anything else that matches nothing (a dataset with no instruments, an edge outside the dataset asked for) is a 200
+  with no instruments; only input that cannot be read is a 400.
+- **The size is bounded by the client's batches, not by the server.** The summary of all 66 HistData pairs, every queue whole, is about 6.0 MB of
+  JSON (1.8 MB gzipped), which no client asks for; a request is capped at 100 edges, and `?resolution=` takes one queue at a time. Measured (66
+  pairs, windows full, synthetic prices; bytes, plain / gzip): all resolutions 6,022,738 / 1,848,183; 5m 1,483,337 / 302,177; 1h 636,093 / 158,284;
+  1d 1,340,568 / 374,072; 1w 2,629,754 / 905,609; 1d and 1w 3,947,984 / 1,313,109; one pair, all resolutions 92,059 / 27,514; 30 pairs at 1d
+  607,987 / 170,255 and at 1w 1,189,720 / 409,409; `/instruments` 23,460 / 1,432. About 75 bytes a bar: most of it the digits of doubles that went
+  through the store's single-precision deltas (`2.2168699999558927`), which are sent as the store holds them, not rounded.
+- **The server's HTTP library is given a longer request line (16 KB, `CPPHTTPLIB_REQUEST_URI_MAX_LENGTH`)** than its 8 KB: 100 of the longest edge
+  ids, percent-encoded as a client sends them, are 10.7 KB.
+- **A bar with no open keeps that in the queue's record** (the summary schema is bumped: SQLite 6, MariaDB 3, record format 2): the open is
+  undefined, not the close, and the bar keeps its high and low.
 
 ## Goals and constraints
 

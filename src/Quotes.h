@@ -33,8 +33,10 @@ std::vector<EdgeKey> allQuoteEdges(const Snapshot & snapshot);
 // A number with `decimals` places and a decimal point whatever the locale, with a sign when `sign`.
 std::string fixed(double v, int decimals, bool sign = false);
 
-// The headings of the change and the trace columns name the period: "Change 1d", "1 day".
+// The headings of the change and the trace columns name the period: "Change 1d", "1 day"; the low and the high columns: "1d low", "1d high".
 std::string changeTitle(Period);
+std::string highTitle(Period);
+std::string lowTitle(Period);
 
 // A list of groups as a table: base, quote, name, market, price, the change over a period and a trace of its closes. The rows are not
 // built: a cell is read from the snapshot when the table asks for it, which is for the rows in view, so the cost of
@@ -42,7 +44,7 @@ std::string changeTitle(Period);
 // Only a sort reads a whole column, once, and keeps it until the rows change.
 class Quotes : public cellui::TableModel {
  public:
-  enum Column { ICON, BASE, QUOTE, NAME, MARKET, PRICE, CHANGE, HISTORY };
+  enum Column { ICON, BASE, QUOTE, NAME, MARKET, PRICE, CHANGE, LOW, HIGH, HISTORY };
 
   // `icons` supplies the pictures of the icon column; without it the column is empty.
   Quotes(std::shared_ptr<const Snapshot> snapshot, std::vector<EdgeKey> keys, std::shared_ptr<IconLoader> icons = nullptr);
@@ -50,6 +52,12 @@ class Quotes : public cellui::TableModel {
   // the sort and the scroll position are the table's, which is told with modelChanged().
   void setPeriod(Period);
   Period period() const { return period_; }
+  // A narrow display hides the high and the low columns: the table then has no such columns, and its column `c` from LOW on is this model's column
+  // `c + 2` (Browser sets the headings with it). Every call of the table takes the columns it has; the constants above are this model's own.
+  void setNarrow(bool narrow) { narrow_ = narrow; }
+  bool narrow() const { return narrow_; }
+  // The table's column for a model column, or -1 where it is hidden; and the model's column for the table's.
+  int tableColumn(int column) const { return !narrow_ || column < LOW ? column : column <= HIGH ? -1 : column - 2; }
   // Which edges a table shows: every market's, or one market's (not found yet: none, and what came meanwhile is read once it is).
   struct Scope {
     bool all = false;
@@ -106,8 +114,13 @@ class Quotes : public cellui::TableModel {
  private:
   double price(int r) const;
   double change(int r) const;  // over the period, in percent (basis points for a rate); undefined for no number
+  double high(int r) const;    // the highest and the lowest price of the period, in the row's price unit; undefined for no number
+  double low(int r) const;
+  std::string priceText(int r, double) const;  // a price as the Price column shows it: a rate in per cent
   const std::string & marketLabel(MarketId) const;
 
+  int own(int c) const { return narrow_ && c >= LOW ? c + 2 : c; }
+  bool narrow_ = false;
   Period period_ = kDefaultPeriod;
   std::shared_ptr<IconLoader> icons_;
   std::shared_ptr<const Snapshot> snapshot_;
@@ -119,7 +132,7 @@ class Quotes : public cellui::TableModel {
   mutable std::unordered_map<int, Mix> mixes_;           // the rows drawn or sorted lately
   const PeriodView & traceOf(int r) const;  // the row's period view with its trace, kept while it is drawn
   mutable std::unordered_map<int, PeriodView> traces_;  // the rows drawn lately, for the span trace() gives
-  mutable std::vector<double> numbers_[2];                      // the sort keys of price and change
+  mutable std::vector<double> numbers_[4];                      // the sort keys of price, change, high and low
   mutable std::vector<std::string> texts_[HISTORY];             // and of the text columns, in lower case
   mutable bool built_[HISTORY + 1] = {};
   void build(int column) const;

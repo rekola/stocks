@@ -43,6 +43,12 @@ each reload, so a history exists only from when it is recorded: the first writer
 quote endpoint is said to carry them and is not checked. Crypto exchanges' public order books are free and keyless (`data-model.md`,
 "Not done"). Each adapter alone knows its endpoint and fields (CLAUDE.md, "Providers"): nothing here names one.
 
+**Not here: the period's high and low.** The same price block (and Yahoo's meta) also says the session's high and low, and Yahoo the 52 weeks'.
+They are not quotes and not bars: they are the summary's per-period highs and lows (`data-model.md`, `Ranges`, written with `setRanges`),
+which the bars override where they cover a period. A series of quotes does not feed them. And the summary's queues are of the kind their writer
+says (`QueueKind`): a source that gives one value per bar (Euribor, the €STR, a NAV) writes `Scalar`; the quote series here is another series,
+and takes no part in that.
+
 **Valuation.** A holding is marked at the **bid**, what could be realised, and a purchase is offered at the **ask**; a mid price
 overstates what a holder has, most for what is sold at a premium. Where there is no quote, the last close, as now, shown as such.
 `portfolio::latestPrice` gets a rule for it; the Positions table gets a column for what the price is (bid, last).

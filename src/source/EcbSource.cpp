@@ -79,7 +79,7 @@ bool EcbSource::parse(const std::string & xml, Store & store, std::string & erro
       if (it == bars.end()) continue;
       const InstrumentId base = addInstrumentUnlessSaid(b, "", w.name, InstrumentKind::Index, w.isin);
       const EdgeKey edge{base, quoteNode(b, w.quote), market, dataset};
-      b.appendCandles(edge, Resolution::Day, it->second);
+      b.appendCandles(edge, Resolution::Day, it->second, QueueKind::Scalar);  // a rate and an index value: one value a day
       b.setListing({edge, w.symbol, "", "", "", w.name});
     }
   });

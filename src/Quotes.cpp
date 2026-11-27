@@ -232,21 +232,40 @@ double Quotes::price(int r) const {
 // history is loaded, and the bars keep it up to date.
 double Quotes::change(int r) const { return groupChange(*snapshot_, mix(r), period_); }
 
+// The highest and the lowest price of the period (Summary.h `Ranges`), kept like the change.
+double Quotes::high(int r) const { return groupRange(*snapshot_, mix(r), period_, true); }
+double Quotes::low(int r) const { return groupRange(*snapshot_, mix(r), period_, false); }
+
 void Quotes::setPeriod(Period period) {
   period_ = period;
   traces_.clear();
-  built_[CHANGE] = false;  // the change is another number; every other sort key stands
+  built_[CHANGE] = built_[HIGH] = built_[LOW] = false;  // other numbers; every other sort key stands
 }
 
+namespace {
+bool isNumeric(int column) { return column == Quotes::PRICE || column == Quotes::CHANGE || column == Quotes::HIGH || column == Quotes::LOW; }
+size_t numberSlot(int column) { return column == Quotes::PRICE ? 0 : column == Quotes::CHANGE ? 1 : column == Quotes::HIGH ? 2 : 3; }
+}  // namespace
+
 std::string changeTitle(Period period) { return std::string("Change ") + info(period).label; }
+std::string highTitle(Period period) { return std::string(info(period).label) + " high"; }
+std::string lowTitle(Period period) { return std::string(info(period).label) + " low"; }
+
+std::string Quotes::priceText(int r, double v) const { return isRate(*snapshot_, edge(r)) ? fixed(v, 3) + "%" : fixed(v, 2); }
 
 std::string Quotes::text(int r, int c) const {
+  c = own(c);
   switch (c) {
     case BASE: return baseOf(*snapshot_, edge(r));
     case QUOTE: return quoteOf(*snapshot_, edge(r));
     case NAME: return nameOf(*snapshot_, edge(r));
     case MARKET: return marketLabel(edge(r).market);
-    case PRICE: return isRate(*snapshot_, edge(r)) ? fixed(price(r), 3) + "%" : fixed(price(r), 2);
+    case PRICE: return priceText(r, price(r));
+    case HIGH:
+    case LOW: {
+      const double v = c == HIGH ? high(r) : low(r);
+      return isDefined(v) ? priceText(r, v) : "";  // not known: nothing, not a zero
+    }
     case CHANGE: {
       const double v = change(r);
       if (!isDefined(v)) return "";  // no number yet: nothing, not a zero
@@ -273,6 +292,7 @@ const PeriodView & Quotes::traceOf(int r) const {
 
 // The change and the trace beside it are one colour, the sign of the period's change (trendUp: the only place the rule is).
 std::optional<cellui::Color> Quotes::color(int r, int c) const {
+  c = own(c);
   if (c != CHANGE && c != HISTORY) return std::nullopt;
   const std::optional<bool> up = trendUp(change(r));
   if (!up) return std::nullopt;
@@ -280,9 +300,10 @@ std::optional<cellui::Color> Quotes::color(int r, int c) const {
 }
 
 std::optional<double> Quotes::number(int r, int c) const {
+  c = own(c);
   if (c == PRICE) return price(r);
-  if (c == CHANGE) {
-    const double v = change(r);
+  if (c == CHANGE || c == HIGH || c == LOW) {
+    const double v = c == CHANGE ? change(r) : c == HIGH ? high(r) : low(r);
     return isDefined(v) ? std::optional<double>(v) : std::nullopt;
   }
   return std::nullopt;
@@ -291,11 +312,11 @@ std::optional<double> Quotes::number(int r, int c) const {
 // A sort asks for the same column of every row many times: the column is read once and kept.
 void Quotes::build(int column) const {
   const int n = rowCount();
-  if (column == PRICE || column == CHANGE) {
-    std::vector<double> & v = numbers_[column == PRICE ? 0 : 1];
+  if (isNumeric(column)) {
+    std::vector<double> & v = numbers_[numberSlot(column)];
     v.resize(static_cast<size_t>(n));
     for (int r = 0; r < n; r++) {
-      v[static_cast<size_t>(r)] = column == PRICE ? price(r) : change(r);
+      v[static_cast<size_t>(r)] = column == PRICE ? price(r) : column == CHANGE ? change(r) : column == HIGH ? high(r) : low(r);
     }
   } else if (column < HISTORY) {
     std::vector<std::string> & v = texts_[column];
@@ -310,10 +331,11 @@ void Quotes::build(int column) const {
 }
 
 int Quotes::compare(int a, int b, int column) const {
+  column = own(column);
   if (column <= ICON || column >= HISTORY) return 0;  // the icon and the trace sort as equal
   if (!built_[column]) build(column);
-  if (column == PRICE || column == CHANGE) {
-    const std::vector<double> & v = numbers_[column == PRICE ? 0 : 1];
+  if (isNumeric(column)) {
+    const std::vector<double> & v = numbers_[numberSlot(column)];
     const double x = v[static_cast<size_t>(a)], y = v[static_cast<size_t>(b)];
     if (!isDefined(x) || !isDefined(y)) return isDefined(x) - isDefined(y);  // rows with no number sort before every number
     return x < y ? -1 : x > y ? 1 : 0;

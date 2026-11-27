@@ -28,6 +28,9 @@ struct NordnetListing {
   // The returns the list gives (historical_returns_info: per cent over a day, a week, a month, three months, a year, three years and ten
   // years: a listing younger than that has none): the edge's changes until it has history of its own.
   Changes changes;
+  // The day's highest and lowest price (price_info: high, low), for the day period; a fund has none. Nothing else in the answer is a range: the
+  // returns above are percentages, and no 52-week or other high or low is given.
+  Ranges ranges;
   // What else the row says about the instrument, as triples (the subject is the instrument, once it is made).
   std::vector<Attribute> attributes;
 };
@@ -43,6 +46,7 @@ struct NordnetIndicator {
   Candle bar;
   bool hasQuote = false;
   Quote quote;
+  Ranges ranges;  // the day's high and low where the row has them (the price block's `high` and `low`)
 };
 
 // Nordnet's unofficial search endpoints: no key and no login (a cookie is not needed). Discovery loads every instrument

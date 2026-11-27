@@ -169,6 +169,7 @@ TEST(the_funds_are_shown_at_once_from_the_list_alone) {
   auto bars = s->candles(*edge, Resolution::Day).candles;
   CHECK(bars.size() == 1);  // the latest NAV: a close and nothing else
   CHECK(bars[0].time == dayNumber(2026, 11, 19) && bars[0].close == 3.3099 && !isDefined(bars[0].open) && !isDefined(bars[0].volume));
+  CHECK(s->coverage(*edge, Resolution::Day)->kind == QueueKind::Scalar);
   auto previous = s->previousClose(*edge, dayNumber(2026, 11, 19));
   CHECK(previous && std::fabs(*previous - 3.3099 / (1 - 0.005887)) < 1e-9);
   CHECK(s->listing(*edge)->identifier == "ALPHANORDIC");
@@ -211,6 +212,7 @@ TEST(the_history_of_a_fund_is_loaded_when_it_is_wanted_and_once) {
   auto bars = s->candles(*edge, Resolution::Day).candles;
   CHECK(bars.size() == 5);  // the history's four (the later of two on one day stands) and the list's NAV of the day
   CHECK(bars[2].close == 10.25 && bars[0].time == dayNumber(2025, 12, 30) && bars[4].time == dayNumber(2026, 11, 19));
+  CHECK(s->coverage(*edge, Resolution::Day)->kind == QueueKind::Scalar && s->coverage(*edge, Resolution::Week)->kind == QueueKind::Scalar);  // a NAV: one value a day
   CHECK(changes >= 1);
   // The details came with it: the fees, beside what the list said.
   auto base = *s->findInstrumentByIsin("FI0008810569");

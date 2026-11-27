@@ -97,6 +97,27 @@ TEST(wanting_an_edge_loads_the_last_three_months_daily_in_one_request_and_writes
   CHECK(http.urls.size() == 1);
 }
 
+TEST(an_index_from_nordnet_keeps_its_open_high_and_low_and_a_funds_nav_is_a_value_queue) {
+  World w;
+  EdgeKey index = w.edge(InstrumentKind::Index, "book-i");
+  EdgeKey fund = w.edge(InstrumentKind::Fund, "book-f");
+  FakeHttp http;
+  http.answer = [](const std::string & url) { return ok(url.find("book-f") != std::string::npos ? fixture("history-fund-nav.json") : intraday("MIN_5", 3, 300, 9)); };
+  HistoryLoader loader(w.store, borrow(http), quickly(), [] {});
+  loader.addProvider(std::make_shared<NordnetHistory>());
+  loader.want({index, fund});
+  loader.waitIdle();
+  const auto s = w.store->snapshot();
+  // The index's points have an open, a high and a low (1, 2, 1) beside the last: bars, whatever the instrument is.
+  const auto bars = s->queue(index, Resolution::Min5);
+  CHECK(s->coverage(index, Resolution::Min5)->kind == QueueKind::Candle && bars.size() == 3);
+  CHECK(bars.size() == 3 && bars[1].open == 1 && bars[1].high == 2 && bars[1].low == 1 && bars[1].close == 11);
+  // The fund's answer is a value for each point: a value queue.
+  const auto nav = s->coverage(fund, Resolution::Week);
+  CHECK(nav && nav->kind == QueueKind::Scalar);
+  for (const Candle & c : s->queue(fund, Resolution::Week)) CHECK(c.high == c.close && c.low == c.close && c.open == c.close);
+}
+
 TEST(a_fund_is_asked_for_its_nav) {
   World w;
   EdgeKey k = w.edge(InstrumentKind::Fund, "book-f");

@@ -59,6 +59,8 @@ Mix mixOf(const Snapshot &, const GroupKey &, const DatasetFilter & filter = {})
 double groupChange(const Snapshot &, const GroupKey &, Period, const DatasetFilter & filter = {});
 // The same from the mix of the group, which a reader that has worked it out already has.
 double groupChange(const Snapshot &, const Mix &, Period);
+// The highest (or the lowest) price of the period: `combine` of the used members' own (`Snapshot::ranges`); undefined where none says one.
+double groupRange(const Snapshot &, const Mix &, Period, bool high);
 
 // What a row shows for a period, from the used members: the trace is their closes made one (`spread`: how much they disagree at each), at each time any of them has a bar (a member
 // that has none at that time counts with its last close before it, and not at all before its first), and the base and the last price are the

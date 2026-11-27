@@ -6,6 +6,8 @@
 #include "model/SqliteSummaryStore.h"
 #include "model/Store.h"
 
+#include <SQLiteCpp/SQLiteCpp.h>
+
 #include <unistd.h>
 
 #include <cstdlib>
@@ -149,6 +151,17 @@ void summaryCases(SummaryStores & stores) {
   read = store->readQueue(edge(), Resolution::Day);
   CHECK(read.has_value() && read->bars.size() == 3 && read->bars[1].open == 20 && read->bars[2].time == 102);
   CHECK(stores.datasets() == std::vector<std::string>{"TESTDS"} || stores.datasets().empty());
+  // a bar with no open comes back with no open (not the close), and keeps its high, its low and its volume; a bar with an open is as it was
+  SummaryBatch noOpen;
+  noOpen.queues.push_back(queue(Resolution::Hour1, {{50, 1, 2, 0.5, 1.5, 10}, {51, kUndefined, 3, 1, 2, 20}, {52, kUndefined, kUndefined, kUndefined, 2.5, kUndefined}}));
+  store->apply(noOpen);
+  read = store->readQueue(edge(), Resolution::Hour1);
+  CHECK(read.has_value() && read->bars.size() == 3);
+  if (read && read->bars.size() == 3) {
+    CHECK(read->bars[0].open == 1 && read->bars[0].close == 1.5 && read->bars[0].volume == 10);
+    CHECK(!isDefined(read->bars[1].open) && read->bars[1].high == 3 && read->bars[1].low == 1 && read->bars[1].close == 2 && read->bars[1].volume == 20);
+    CHECK(!isDefined(read->bars[2].open) && !isDefined(read->bars[2].high) && !isDefined(read->bars[2].low) && read->bars[2].close == 2.5 && !isDefined(read->bars[2].volume));
+  }
 }
 
 void barCases(BarStore & store) {
@@ -193,6 +206,50 @@ TEST(mariadb_summaries_keep_what_the_sqlite_ones_do_queues_as_blobs) {
   ScratchSchema schema;
   if (!schema.available) return skipped();
   summaryCases(*openMariaDbSummaries(schema.config));
+}
+
+TEST(a_summary_store_of_the_schema_before_the_open_was_kept_as_undefined_starts_over) {
+  const auto write = [](SummaryStores & stores) {
+    auto store = stores.open("TESTDS");
+    StoredEdge e;
+    e.listing.key = edge();
+    e.listing.symbol = "EURUSD";
+    e.quote.last = 1.25;
+    e.quote.time = 1000;
+    SummaryBatch batch;
+    batch.edges.push_back(e);
+    batch.queues.push_back(queue(Resolution::Day, {{100, 1, 2, 0.5, 1.5, kUndefined}}));
+    store->apply(batch);
+  };
+  const auto edgesOf = [](SummaryStores & stores) { return stores.open("TESTDS")->loadEdges().size(); };
+  {  // SQLite: a file of the version before (5) is emptied
+    TempDir dir;
+    { auto stores = openSqliteSummaries(dir.path); write(*stores); CHECK(edgesOf(*stores) == 1); }
+    { auto stores = openSqliteSummaries(dir.path); CHECK(edgesOf(*stores) == 1); }  // the same version keeps it
+    {
+      SQLite::Database db((dir.path / "TESTDS.sqlite").string(), SQLite::OPEN_READWRITE);
+      db.exec("PRAGMA user_version = 5");
+    }
+    std::vector<std::string> log;
+    auto stores = openSqliteSummaries(dir.path, [&](const std::string & l) { log.push_back(l); });
+    CHECK(edgesOf(*stores) == 0 && !stores->open("TESTDS")->readQueue(edge(), Resolution::Day).has_value());
+    CHECK(log.size() == 1 && log[0].find("starting over") != std::string::npos);
+  }
+  ScratchSchema schema;  // MariaDB: the table of the version before (2) is dropped
+  if (!schema.available) return skipped();
+  {
+    auto stores = openMariaDbSummaries(schema.config);
+    write(*stores);
+    CHECK(edgesOf(*stores) == 1);
+  }
+  {
+    maria::Connection db(schema.config);
+    db.exec("UPDATE store_versions SET version = 2 WHERE store = 'summaries'");
+  }
+  std::vector<std::string> log;
+  auto stores = openMariaDbSummaries(schema.config, [&](const std::string & l) { log.push_back(l); });
+  CHECK(edgesOf(*stores) == 0 && !stores->open("TESTDS")->readQueue(edge(), Resolution::Day).has_value());
+  CHECK(log.size() == 1 && log[0].find("starting over") != std::string::npos);
 }
 
 TEST(a_mariadb_bar_store_keeps_what_the_sqlite_one_does) {

@@ -72,6 +72,10 @@ The **Change** column and the trace beside it always show the same period, and t
 the program runs, and starts at three months.
 
 - The change is the last price against the period's first (for the day, the previous close).
+- Beside the change are the period's **low** and **high** (`10y low`, `10y high`), in the row's price unit (a rate in per cent), sortable and
+  blank where not known. They come from the bars of the period where there are some (with the last price, so the price is always inside them), and
+  before that from what a provider says (the day's range, Yahoo's 52 weeks for the year). On a display narrower than 110 cells the two columns
+  are hidden, and the other columns are narrower; from 140 cells the Market and the trace are wider.
 - For a rate (a row quoted in per cent, such as Euribor or €STR), the change is the difference in basis points.
 - The colour is the sign of the change.
 - A row with no bars for the period shows no number and no trace.
@@ -194,8 +198,11 @@ Two sources give them, each as its own dataset with its own row for the same ins
 what reads a spot price picks one (see [Physical metals](#physical-metals)).
 
 - **`goldprice`** ([goldprice.dev](https://goldprice.dev), no key) asks for gold, silver and copper in one request,
-  in euros and dollars. It also has daily bars: the last 30 days of gold in dollars, which the month period shows
-  as a trace. Its prices are 15 minutes late.
+  in euros and dollars. It also has daily bars: the last 30 days of gold, silver and copper in dollars (the free plan has no
+  more, and none in other currencies), which the month and quarter periods show as a trace. The 1, 3 and 10 years read weekly
+  bars, which the API has none of: they are made of the daily bars the store keeps, so the history grows with every load
+  (load at least once a month, or a gap is left), and a longer history from another source or a paid plan joins it. Its prices
+  are 15 minutes late.
 - **`gold-api`** ([gold-api.com](https://gold-api.com), no key) lists its symbols (gold, silver, platinum, palladium,
   copper, Bitcoin and Ethereum) and asks the price of each in euros and dollars. The metals are in the Commodities
   preset and the coins in Currencies, beside the currency pairs (on a terminal without pictures their icon is ₿ or ⟠); all are in All. Its prices

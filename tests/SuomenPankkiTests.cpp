@@ -52,6 +52,7 @@ TEST(the_report_gives_each_rate_as_daily_bars_in_per_cent_oldest_first) {
   CHECK(bars[0].time == dayNumber(2021, 1, 4) && bars[0].close == -0.579);
   CHECK(bars[3].time == dayNumber(2026, 11, 20) && bars[3].close == 2.390);
   CHECK(std::isnan(bars[3].open) && std::isnan(bars[3].volume));
+  CHECK(s->coverage(*edge, Resolution::Day)->kind == QueueKind::Scalar);  // a fixing: one value a day
 }
 
 TEST(a_day_without_a_rate_is_left_out_and_the_ended_eonia_is_not_a_rate_of_ours) {

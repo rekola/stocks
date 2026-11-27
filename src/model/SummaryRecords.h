@@ -8,13 +8,14 @@
 
 // The records a queue is kept as, and the rules for a queue's bars. Little-endian, whatever the machine.
 //
-//   a candle record (everything except a fund and an index), 28 bytes:
+//   a candle record (a queue of the kind Candle), 28 bytes:
 //       uint32 slot       the bar's key: a slot number for an intraday resolution, a day number for a date resolution
 //       double open
 //       float  high, low, close   each as the difference from the open
 //       uint32 volume     0 is no volume; a larger one saturates at the maximum; fractions are rounded
-//     A bar with no open takes its close as its base, with its high and low deltas undefined (NaN).
-//   a value record (a fund's NAV, an index's value of the day), 12 bytes:
+//     A bar with no open takes its close as its base: its high and low are the differences from the close and its close delta is NaN, which
+//     says that the open is undefined (any other bar has a defined close delta). An undefined high or low is NaN.
+//   a value record (one value per bar, as its writer says: a fund's NAV, a rate's fixing), 12 bytes:
 //       uint32 slot, double value
 //     decoded as a bar whose open, high, low and close are that value and whose volume is undefined.
 //
@@ -22,7 +23,7 @@
 // what one of them reads back as, so that "the same bar again" is decided on the stored form.
 namespace summary {
 
-inline constexpr uint8_t kFormat = 1;
+inline constexpr uint8_t kFormat = 2;  // 2: a bar with no open says so (its close delta is NaN) and keeps its high and low; 1: the close was its open
 inline constexpr size_t kCandleRecordBytes = 28, kValueRecordBytes = 12;
 inline constexpr uint32_t kMaxVolume = 0xFFFFFFFFu;
 

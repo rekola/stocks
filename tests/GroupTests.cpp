@@ -166,3 +166,22 @@ TEST(the_info_of_a_group_says_what_each_dataset_says_and_whether_it_counts) {
   CHECK(own_sections);
   CHECK(buildInfo(*w.snap(), w.key(w.a))[0].title == "Listing");  // no mix: as it was
 }
+
+TEST(a_groups_high_and_low_are_the_combined_highs_and_lows_of_its_members) {
+  World w;
+  w.say(w.a, 100);
+  w.say(w.b, 102);
+  w.say(w.c, 101);
+  const auto range = [&](DatasetId d, double high, double low) {
+    Ranges r;
+    r.high[static_cast<size_t>(Period::Month)] = high;
+    r.low[static_cast<size_t>(Period::Month)] = low;
+    w.store->setRanges(w.key(d), r);
+  };
+  range(w.a, 110, 90);
+  range(w.b, 130, 95);
+  range(w.c, 112, 92);
+  const Mix mix = mixOf(*w.snap(), w.group());
+  CHECK(groupRange(*w.snap(), mix, Period::Month, true) == 112 && groupRange(*w.snap(), mix, Period::Month, false) == 92);  // the medians
+  CHECK(!isDefined(groupRange(*w.snap(), mix, Period::Week, true)));
+}
