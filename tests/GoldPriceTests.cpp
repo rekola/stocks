@@ -160,7 +160,7 @@ TEST(a_page_with_a_cursor_is_followed_and_what_the_plan_refuses_is_missing_not_r
     return ok(R"({"bars":[{"bar_start":"2026-11-23T00:00:00Z","close":"4"}],"next_cursor":null})");
   };
   CHECK(history.load(*edge.store, http, edge.key, 0, [] { return true; }) == HistoryProvider::Outcome::Ok && n == 2);
-  CHECK(edge.store->snapshot()->candles(edge.key, Resolution::Day).candles.size() == 3);
+  CHECK(edge.store->snapshot()->candles(edge.key, Resolution::Day).candles.size() == 2);
   using Outcome = HistoryProvider::Outcome;
   for (auto [answer, outcome] : {std::pair{failed(403), Outcome::Missing}, {failed(404), Outcome::Missing}, {ok(R"({"bars":[],"next_cursor":null})"), Outcome::Missing},
                                  {ok("not json"), Outcome::Missing}, {failed(429), Outcome::Refused}, {failed(0), Outcome::Offline}, {failed(503), Outcome::Offline}}) {

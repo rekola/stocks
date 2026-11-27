@@ -88,7 +88,7 @@ TEST(wanting_an_edge_loads_the_last_three_months_daily_in_one_request_and_writes
     cookie = cookie || n == "Cookie";
   }
   CHECK(locale && !cookie);
-  CHECK(w.days(k).candles.size() == 7);  // the history only: the discovery's price is a quote
+  CHECK(w.days(k).candles.size() == 7 + 1);  // the history, and today's bar that the world gives the edge (another date)
   CHECK(changes >= 1);
 
   // Done: wanted again, it is not asked for again.
@@ -129,7 +129,7 @@ TEST(a_full_load_asks_for_the_whole_period_and_where_it_comes_back_weekly_the_lo
         http.urls[2].find("/period/YEAR_5/") != std::string::npos);
   auto s = w.store->snapshot();
   CHECK(s->candles(k, Resolution::Week).candles.size() == 7);   // back to 1997
-  CHECK(s->candles(k, Resolution::Day).candles.size() == 7);  // the last five years
+  CHECK(s->candles(k, Resolution::Day).candles.size() == 7 + 1);  // the last five years, and the edge's own bar
   CHECK((s->resolutions(k) == std::vector<Resolution>{Resolution::Day, Resolution::Week}));
 }
 
