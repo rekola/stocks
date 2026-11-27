@@ -51,7 +51,13 @@ set_target_properties(market-ingest market-server PROPERTIES RUNTIME_OUTPUT_DIRE
 # where MARKET_TEST_DB_USER is set (see tests/MarketTestSupport.h).
 set(MARKET_TESTS ${PROJECT_SOURCE_DIR}/tests)
 add_executable(market_tests ${MARKET_TESTS}/test_main.cpp ${MARKET_TESTS}/MarketBarsTests.cpp ${MARKET_TESTS}/MarketZipTests.cpp
-  ${MARKET_TESTS}/HistDataTests.cpp ${MARKET_TESTS}/MarketIngestTests.cpp ${MARKET_TESTS}/MarketApiTests.cpp)
+  ${MARKET_TESTS}/HistDataTests.cpp ${MARKET_TESTS}/MarketIngestTests.cpp ${MARKET_TESTS}/MarketApiTests.cpp ${MARKET_TESTS}/MarketConfigTests.cpp)
 target_link_libraries(market_tests PRIVATE market_lib market_offline)
 add_test(NAME market_tests COMMAND market_tests)
 set_tests_properties(market_tests PROPERTIES TIMEOUT 120)
+
+# The server reads its port strictly: the whole text is a number from 0 to 65535 (it would otherwise listen somewhere else, or nowhere).
+add_test(NAME market_server_rejects_a_port_that_is_not_one COMMAND market-server --port 80x)
+set_tests_properties(market_server_rejects_a_port_that_is_not_one PROPERTIES PASS_REGULAR_EXPRESSION "--port is a number from 0 to 65535")
+add_test(NAME market_server_rejects_a_port_out_of_range COMMAND market-server --port 65536)
+set_tests_properties(market_server_rejects_a_port_out_of_range PROPERTIES PASS_REGULAR_EXPRESSION "--port is a number from 0 to 65535")

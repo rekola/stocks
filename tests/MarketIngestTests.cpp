@@ -71,8 +71,8 @@ struct Fixture {
     site.lastBar = kLast;
     site.step = 120;
   }
-  market::IngestReport run(std::vector<Resolution> resolutions, bool refresh = false, std::vector<std::string> codes = {"eurusd"}) {
-    HistData adapter(site, market::RawCache(dir.path), fastSettings());
+  market::IngestReport run(std::vector<Resolution> resolutions, bool refresh = false, std::vector<std::string> codes = {"eurusd"}, Timestamp now = kTestNow) {
+    HistData adapter(site, market::RawCache(dir.path), fastSettings(now));
     market::IngestOptions options;
     options.codes = codes;
     options.resolutions = resolutions;
@@ -299,4 +299,113 @@ TEST(ingest_to_a_database_and_the_server_reads_it_back_whatever_the_database) {
     const EdgeKey edge = onlyEdge(*server);
     CHECK(!server->snapshot()->queue(edge, Resolution::Day).empty());
   });
+}
+
+// ---- a month that was cached before it was over, a site that does not answer, a store that cannot write ----
+
+namespace {
+
+int postsFor(const FakeSite & site, const std::string & period) {
+  int n = 0;
+  for (const auto & r : site.requests)
+    if (r.rfind("POST", 0) == 0 && r.size() > period.size() && r.compare(r.size() - period.size(), period.size(), period) == 0) n++;
+  return n;
+}
+
+}  // namespace
+
+TEST(ingest_asks_again_once_for_a_month_that_was_cached_before_it_was_over_and_fills_the_gap) {
+  Fixture f;
+  f.site.step = 360;
+  // November, with only its first days on the site, and the clock in the middle of it
+  f.site.lastBar = utcOfEst(2026, 11, 9, 12, 0, 0);
+  f.run({Resolution::Day}, false, {"eurusd"}, utcOfEst(2026, 11, 10, 12, 0, 0));
+  const EdgeKey edge = onlyEdge(*f.store);
+  const auto lastDay = [&] { return f.store->snapshot()->queue(edge, Resolution::Day).back().time; };
+  CHECK(lastDay() == market::barKey(Resolution::Day, utcOfEst(2026, 11, 9, 12, 0, 0)));
+  const int64_t day20 = market::barKey(Resolution::Day, utcOfEst(2026, 11, 20, 12, 0, 0));
+  CHECK(keysOf(f.store->snapshot()->queue(edge, Resolution::Day)).back() < day20);  // the gap
+
+  // The month is over and the site has all of it. The clock is in December, where there is no file yet.
+  f.site.lastBar = utcOfEst(2026, 11, 30, 12, 0, 0);
+  f.site.requests.clear();
+  const Timestamp december = utcOfEst(2026, 12, 2, 12, 0, 0);
+  const auto report = f.run({Resolution::Day}, false, {"eurusd"}, december);
+  CHECK(report.complete());
+  CHECK(postsFor(f.site, "202611") == 1);  // asked for again, though it is in the cache
+  CHECK(postsFor(f.site, "202610") == 0 && postsFor(f.site, "202601") == 0);  // the months that were over when they were fetched are final
+  CHECK(lastDay() == market::barKey(Resolution::Day, utcOfEst(2026, 11, 30, 12, 0, 0)));
+  const auto keys = keysOf(f.store->snapshot()->queue(edge, Resolution::Day));
+  CHECK(std::find(keys.begin(), keys.end(), day20) != keys.end());  // the gap is filled
+
+  // And once: it was fetched after the month was over, so it is final.
+  f.site.requests.clear();
+  f.run({Resolution::Day}, false, {"eurusd"}, december);
+  CHECK(postsFor(f.site, "202611") == 0);
+}
+
+TEST(ingest_a_shorter_download_never_replaces_a_longer_cached_month) {
+  Fixture f;
+  f.site.step = 360;
+  f.site.lastBar = utcOfEst(2026, 11, 20, 12, 0, 0);
+  f.run({Resolution::Day});
+  const EdgeKey edge = onlyEdge(*f.store);
+  const int64_t last = f.store->snapshot()->queue(edge, Resolution::Day).back().time;
+  f.site.lastBar = utcOfEst(2026, 11, 5, 12, 0, 0);  // the site now gives less
+  f.store = plainStore();
+  f.run({Resolution::Day}, /*refresh=*/true);
+  CHECK(f.store->snapshot()->queue(onlyEdge(*f.store), Resolution::Day).back().time == last);
+  const auto cached = market::RawCache(f.dir.path).read("DAT_ASCII_EURUSD_M1_202611.zip");
+  CHECK(cached.has_value() && cached->size() > 0);
+}
+
+TEST(ingest_a_page_with_no_token_is_a_failure_that_is_tried_again_and_not_a_pair_that_stopped) {
+  Fixture f;
+  f.site.tokens = false;  // a challenge or error page for every request
+  const auto report = f.run({Resolution::Min5});
+  CHECK(report.inactive == 0);
+  CHECK(!report.complete());
+  CHECK(report.instruments.size() == 1 && !report.instruments[0].inactive && !report.instruments[0].failed.empty());
+  int gets = 0, posts = 0;
+  for (const auto & r : f.site.requests) (r.rfind("GET", 0) == 0 ? gets : posts)++;
+  CHECK(gets == 4 && posts == 0);  // the list page, then the file's page three times
+  CHECK(f.store->snapshot()->quoteRowCount() == 0);
+}
+
+TEST(ingest_a_run_in_which_every_instrument_came_out_inactive_is_not_complete) {
+  Fixture f;
+  f.site.lastBar = utcOfEst(2025, 6, 13, 16, 0, 0);
+  const auto report = f.run({Resolution::Min5});  // no unknown code, nothing failed: one instrument, and it is inactive
+  CHECK(report.unknownCodes.empty() && report.instruments.size() == 1 && report.instruments[0].failed.empty());
+  CHECK(report.inactive == 1);
+  CHECK(!report.complete());
+  CHECK(market::formatReport(report).find("may not be answering") != std::string::npos);
+  // but one that is left out beside the others that were loaded is only a pair that stopped
+  Fixture g;
+  g.site.step = 360;
+  const auto mixed = g.run({Resolution::Day}, false, {"eurusd"});
+  CHECK(mixed.complete());
+}
+
+namespace {
+
+struct FullBars : BarStore {
+  void apply(const BarBatch &) override { throw std::runtime_error("the medium is full"); }
+  void read(const EdgeKey &, Resolution, int64_t, int64_t, const std::function<void(const Candle &)> &) override {}
+};
+
+}  // namespace
+
+TEST(ingest_says_so_when_the_store_could_not_write_what_it_was_given) {
+  Fixture f;
+  StoreOptions options;
+  options.invent_isins = false;
+  options.bars = std::make_shared<FullBars>();
+  options.bar_writer.delay = std::chrono::milliseconds(0);
+  f.store = makeMemoryStore(std::move(options));
+  const auto report = f.run({Resolution::Min5});
+  CHECK(report.failedWrites >= 1);
+  CHECK(!report.complete());
+  CHECK(market::formatReport(report).find("writes to the database failed") != std::string::npos);
+  CHECK(report.instruments[0].failed.empty());  // the loading itself went well
 }

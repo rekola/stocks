@@ -48,6 +48,10 @@ bool listZip(std::string_view zip, std::vector<ZipEntry> & entries, std::string 
 
 bool readZipEntry(std::string_view zip, const ZipEntry & entry, std::string & data, std::string & error) {
   data.clear();
+  if (entry.size > kMaxZipEntryBytes) {
+    error = entry.name + " says it is " + std::to_string(entry.size) + " bytes, more than the " + std::to_string(kMaxZipEntryBytes) + " that are read";
+    return false;
+  }
   Reader reader(zip, error);
   if (!reader.open) return false;
   data.resize(entry.size);

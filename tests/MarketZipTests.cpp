@@ -45,3 +45,28 @@ TEST(market_raw_cache_stores_whole_files_and_reads_them_back) {
   for (const auto & e : std::filesystem::directory_iterator(dir.path / "sub")) files += e.is_regular_file();
   CHECK(files == 1);  // no temporary file left
 }
+
+namespace {
+
+// The zip of one file whose central directory says the file is `size` bytes.
+std::string zipSaying(uint32_t size) {
+  std::string zip = makeZip({{"a.csv", "hello"}}, false);
+  const size_t central = zip.find(std::string("PK\x01\x02", 4));
+  for (int i = 0; i < 4; i++) zip[central + 24 + static_cast<size_t>(i)] = static_cast<char>((size >> (8 * i)) & 0xff);  // the size of the file
+  return zip;
+}
+
+}  // namespace
+
+TEST(market_zip_does_not_trust_the_size_an_entry_says_it_has) {
+  const std::string zip = zipSaying(0xFFFFFFFFu);  // four gigabytes less one, of five bytes
+  std::vector<ZipEntry> entries;
+  std::string error, data;
+  CHECK(listZip(zip, entries, error));
+  CHECK(entries.size() == 1 && entries[0].size == 0xFFFFFFFFu);
+  CHECK(entries.size() == 1 && !readZipEntry(zip, entries[0], data, error));
+  CHECK(error.find("more than") != std::string::npos && data.empty());
+  // under the cap but wrong: miniz refuses it, with no more than the size it was told allocated
+  const std::string small = zipSaying(1000);
+  CHECK(listZip(small, entries, error) && !readZipEntry(small, entries[0], data, error));
+}

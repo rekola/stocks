@@ -10,6 +10,7 @@
 
 #include <cstdlib>
 #include <filesystem>
+#include <map>
 
 // The MariaDB stores against the SQLite ones: the same cases on each. They run where MARKET_TEST_DB_USER names a user that may make and drop
 // schemas named stocks_test_* (with MARKET_TEST_DB_PASSWORD, _HOST, _PORT and _SOCKET as needed), and say so where it is not set.
@@ -70,20 +71,39 @@ void factCases(FactStore & store) {
   batch.changed.push_back({node, "issuer", NodeKey{currencyKey("USD")->value}, 100});
   batch.changed.push_back({node, "note", std::monostate{}, 100});
   batch.changed.push_back({currencyKey("USD")->value, "name", std::string("Dollar \xC3\xA4"), 100});
+  // Texts longer than what a row is first read into (256 bytes), one after another and a short one after them: each is read back whole, and
+  // the ones after a long one are not read into the room of the one before.
+  std::map<std::string, std::string> longTexts;
+  for (const auto & [predicate, size] : std::vector<std::pair<std::string, size_t>>{{"long1", 300}, {"long2", 1000}, {"long3", 70000}, {"long4", 513}, {"zshort", 3}}) {
+    std::string text(size, 'a');
+    for (size_t i = 0; i < size; i++) text[i] = static_cast<char>('a' + (i * 7 + size) % 26);
+    longTexts[predicate] = text;
+    batch.changed.push_back({node, predicate, text, 100});
+  }
   store.apply(batch);
   FactBatch later;
   later.changed.push_back({node, "name", std::string("Euro again"), 200});
   store.apply(later);
   auto all = store.loadAll();
-  CHECK(all.size() == 7);
+  CHECK(all.size() == 12);
   std::map<std::string, StoredFact> byName;
   for (const StoredFact & f : store.loadNodes({node})) byName[f.predicate] = f;
-  CHECK(byName.size() == 6);
+  CHECK(byName.size() == 11);
   CHECK(std::get<std::string>(byName["name"].value) == "Euro again" && byName["name"].updated == 200);
   CHECK(std::get<int64_t>(byName["decimals"].value) == 2);
   CHECK(std::get<double>(byName["rate"].value) == 1.0 / 3.0);  // exactly
   CHECK(std::get<bool>(byName["tradable"].value) == true);
   CHECK(std::get<NodeKey>(byName["issuer"].value).value == currencyKey("USD")->value);
+  for (const auto & [predicate, text] : longTexts) {
+    const auto * read = std::get_if<std::string>(&byName[predicate].value);
+    CHECK(read && *read == text);
+  }
+  // and all at once, in the order the rows come
+  std::map<std::string, std::string> allTexts;
+  for (const StoredFact & f : all)
+    if (f.node == node)
+      if (const auto * t = std::get_if<std::string>(&f.value)) allTexts[f.predicate] = *t;
+  for (const auto & [predicate, text] : longTexts) CHECK(allTexts[predicate] == text);
 }
 
 StoredQueue queue(Resolution r, std::vector<Candle> bars) {
@@ -160,7 +180,7 @@ TEST(a_mariadb_fact_store_keeps_what_the_sqlite_one_does) {
   FactBatch gone;
   gone.removed.push_back({currencyKey("EUR")->value, "note"});
   maria->apply(gone);
-  CHECK(maria->loadAll().size() == 6);
+  CHECK(maria->loadAll().size() == 11);
   FactBatch nodes;
   nodes.removed_nodes.push_back(currencyKey("EUR")->value);
   maria->apply(nodes);
@@ -202,4 +222,67 @@ TEST(a_mariadb_store_of_another_schema_version_starts_over) {
   bars->read(edge(), Resolution::Day, 0, 100, [&](const Candle & c) { out.push_back(c); });
   CHECK(out.empty());
   CHECK(log.size() == 1 && log[0].find("starting over") != std::string::npos);
+}
+
+namespace {
+
+// Ends every connection of the schema but the one asking (what a server restart, a timeout or an administrator does).
+void killTheOthers(const maria::Config & config) {
+  maria::Connection admin(config);
+  std::vector<int64_t> ids;
+  {
+    maria::Statement q(admin, "SELECT id FROM information_schema.processlist WHERE db = ? AND id <> CONNECTION_ID()");
+    q.bind(1, config.database);
+    while (q.executeStep()) ids.push_back(q.getColumn(0).getInt64());
+  }
+  for (int64_t id : ids) admin.exec("KILL " + std::to_string(id));
+}
+
+}  // namespace
+
+TEST(a_lost_mariadb_connection_is_an_error_and_not_a_silent_reconnect_in_autocommit) {
+  ScratchSchema schema;
+  if (!schema.available) return skipped();
+  maria::Connection db(schema.config);
+  db.exec("CREATE TABLE t (k INT NOT NULL PRIMARY KEY)");
+  maria::Connection other(schema.config);
+  {
+    maria::Transaction transaction(db);
+    db.exec("INSERT INTO t VALUES (1)");
+    killTheOthers(schema.config);  // ends `db` and `other`, and with them the transaction
+    bool failed = false;
+    try {
+      db.exec("INSERT INTO t VALUES (2)");  // a reconnecting client would run this one in autocommit mode, outside the transaction
+    } catch (const maria::Error &) {
+      failed = true;
+    }
+    CHECK(failed);
+  }
+  maria::Connection check(schema.config);
+  maria::Statement count(check, "SELECT COUNT(*) FROM t");
+  CHECK(count.executeStep() && count.getColumn(0).getInt64() == 0);  // nothing of the half batch was committed
+}
+
+TEST(a_mariadb_store_whose_connection_was_lost_fails_that_batch_whole_and_reconnects_on_the_next_call) {
+  ScratchSchema schema;
+  if (!schema.available) return skipped();
+  auto bars = openMariaDbBarStore(schema.config);
+  auto batchOf = [](int64_t first) {
+    BarBatch batch;
+    batch.series.push_back({edge(), Resolution::Day, {{first, 1, 1, 1, 1, kUndefined}, {first + 1, 2, 2, 2, 2, kUndefined}}});
+    return batch;
+  };
+  bars->apply(batchOf(10));
+  killTheOthers(schema.config);
+  bool failed = false;
+  try {
+    bars->apply(batchOf(20));
+  } catch (const std::exception &) {
+    failed = true;
+  }
+  CHECK(failed);  // the batch is not applied, and says so
+  bars->apply(batchOf(30));  // a new connection
+  std::vector<int64_t> keys;
+  bars->read(edge(), Resolution::Day, 0, 100, [&](const Candle & c) { keys.push_back(c.time); });
+  CHECK(keys == (std::vector<int64_t>{10, 11, 30, 31}));  // nothing of the lost batch, not half of it
 }

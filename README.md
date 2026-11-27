@@ -164,6 +164,8 @@ The market regime embeddings are planned in [plans/embeddings.md](plans/embeddin
 
 ## Market-data server
 
+A step-by-step guide to making the database and setting up the ingest and the server for the local network is in [plans/server.md](plans/server.md#setting-it-up-step-by-step).
+
 Two programs (see [plans/server.md](plans/server.md)): `market-ingest` loads external datasets, and `market-server` serves what it holds to the
 desktop app over a read-only HTTP API (JSON, no key: it listens on the loopback address unless the config says otherwise). Both run on the
 application's own `Store`: the ingest creates its instruments with the same calls and helpers as the sources do (`addInstrument`,

@@ -14,8 +14,8 @@ Connection::Connection(const Config & config) : impl_(std::make_unique<Impl>()) 
   impl_->mysql = mysql_init(nullptr);
   if (!impl_->mysql) throw Error("mariadb: cannot start the client");
   mysql_options(impl_->mysql, MYSQL_SET_CHARSET_NAME, "utf8mb4");
-  const bool reconnect = true;
-  mysql_options(impl_->mysql, MYSQL_OPT_RECONNECT, &reconnect);
+  // No MYSQL_OPT_RECONNECT: a connection that is made again silently inside a transaction is in autocommit mode, and what was done before it
+  // would be committed half. A connection that is lost is an error of the statement; whoever holds the Connection makes a new one.
   const bool local = config.host.empty() || config.host == "localhost";
   if (!mysql_real_connect(impl_->mysql, config.host.c_str(), config.user.c_str(), config.password.c_str(),
                           config.database.empty() ? nullptr : config.database.c_str(), static_cast<unsigned>(config.port),
@@ -215,7 +215,9 @@ bool Statement::executeStep() {
   if (status == MYSQL_NO_DATA) return false;
   if (status == 1) fail(s.stmt, "cannot fetch");
   if (status == MYSQL_DATA_TRUNCATED) {
-    // A column longer than what was ready for it: read again into room of its size.
+    // A column longer than what was ready for it: read again into room of its size, and keep that room for the rows after it. The bind of the
+    // column must then point at the new buffer (the old one is freed by the resize), or the next row is written into freed memory.
+    bool grown = false;
     for (size_t i = 0; i < s.cells.size(); i++) {
       Cell & cell = s.cells[i];
       if (cell.kind != Cell::Bytes || cell.isNull || cell.length <= cell.bytes.size()) continue;
@@ -227,7 +229,11 @@ bool Statement::executeStep() {
       unsigned long length = 0;
       one.length = &length;
       if (mysql_stmt_fetch_column(s.stmt, &one, static_cast<unsigned>(i), 0) != 0) fail(s.stmt, "cannot fetch a long column");
+      s.results[i].buffer = cell.bytes.data();
+      s.results[i].buffer_length = static_cast<unsigned long>(cell.bytes.size());
+      grown = true;
     }
+    if (grown && mysql_stmt_bind_result(s.stmt, s.results.data()) != 0) fail(s.stmt, "cannot bind the result again");
   }
   return true;
 }

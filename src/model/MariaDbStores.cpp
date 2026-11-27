@@ -64,15 +64,24 @@ class Base {
     if (log_) log_(name_ + ": " + text);
     else std::fprintf(stderr, "stocks: %s: %s\n", name_.c_str(), text.c_str());
   }
+  // The connections are made when they are first wanted, and again after one that failed: a connection that has an error is dropped (what it had
+  // open in a transaction is rolled back by the server) and the next call makes a new one, which is the only reconnect there is.
+  maria::Connection & writer() {
+    if (!db_) db_ = std::make_unique<maria::Connection>(config_);
+    return *db_;
+  }
   maria::Connection & reader() {
     if (!reader_) reader_ = std::make_unique<maria::Connection>(config_);
     return *reader_;
   }
+  void dropWriter() { db_.reset(); }
+  void dropReader() { reader_.reset(); }
 
   maria::Config config_;
   FactLog log_;
   std::string name_;
   std::unique_ptr<maria::Connection> db_, reader_;
+  bool usable_ = false;  // the tables are there: what cannot be made stays out of use, with a line in the log
   std::mutex write_mutex_, read_mutex_;
 };
 
@@ -85,14 +94,15 @@ class MariaDbFactStore : public FactStore, private Base {
  public:
   MariaDbFactStore(const maria::Config & config, FactLog log) : Base(config, std::move(log), "facts") {
     try {
-      db_ = std::make_unique<maria::Connection>(config_);
-      ensureVersion(*db_, "facts", kFactsVersion, {"facts"}, [this](const std::string & t) { say(t); });
-      db_->exec(
+      ensureVersion(writer(), "facts", kFactsVersion, {"facts"}, [this](const std::string & t) { say(t); });
+      writer().exec(
           "CREATE TABLE IF NOT EXISTS facts ("
           "node_key BIGINT NOT NULL, predicate VARCHAR(190) NOT NULL, kind TINYINT NOT NULL, text_value LONGTEXT NULL, "
           "int_value BIGINT NULL, real_value DOUBLE NULL, updated BIGINT NOT NULL, PRIMARY KEY (node_key, predicate)) ENGINE=InnoDB");
+      usable_ = true;
     } catch (const std::exception & e) {
       db_.reset();
+      usable_ = false;
       say(std::string("cannot open the database: ") + e.what() + "; facts are not kept");
     }
   }
@@ -107,11 +117,11 @@ class MariaDbFactStore : public FactStore, private Base {
   }
 
   void apply(const FactBatch & batch) override {
-    if (!db_ || batch.empty()) return;
+    if (!usable_ || batch.empty()) return;
     std::lock_guard lock(write_mutex_);
     try {
-      maria::Transaction transaction(*db_);
-      maria::Statement put(*db_,
+      maria::Transaction transaction(writer());
+      maria::Statement put(writer(),
                            "INSERT INTO facts (node_key, predicate, kind, text_value, int_value, real_value, updated) VALUES (?, ?, ?, ?, ?, ?, ?) "
                            "ON DUPLICATE KEY UPDATE kind = VALUES(kind), text_value = VALUES(text_value), int_value = VALUES(int_value), "
                            "real_value = VALUES(real_value), updated = VALUES(updated)");
@@ -144,26 +154,28 @@ class MariaDbFactStore : public FactStore, private Base {
           put.exec();
         }
       for (uint64_t node : batch.removed_nodes) {
-        maria::Statement gone(*db_, "DELETE FROM facts WHERE node_key = ?");
+        maria::Statement gone(writer(), "DELETE FROM facts WHERE node_key = ?");
         gone.bind(1, asInt(node));
         gone.exec();
       }
       for (const auto & [node, predicate] : batch.removed) {
-        maria::Statement gone(*db_, "DELETE FROM facts WHERE node_key = ? AND predicate = ?");
+        maria::Statement gone(writer(), "DELETE FROM facts WHERE node_key = ? AND predicate = ?");
         gone.bind(1, asInt(node));
         gone.bind(2, predicate);
         gone.exec();
       }
       transaction.commit();
     } catch (const std::exception & e) {
+      dropWriter();  // the batch is not written, whole: the server rolls back what the connection had open when it ends
       say(std::string("cannot write: ") + e.what());
+      throw;  // the writer that called counts it (Store::failedWrites), and the ingest says so
     }
   }
 
  private:
   std::vector<StoredFact> load(std::optional<uint64_t> node) {
     std::vector<StoredFact> out;
-    if (!db_) return out;
+    if (!usable_) return out;
     std::lock_guard lock(read_mutex_);
     try {
       maria::Statement q(reader(), node ? "SELECT node_key, predicate, kind, text_value, int_value, real_value, updated FROM facts WHERE node_key = ?"
@@ -189,6 +201,7 @@ class MariaDbFactStore : public FactStore, private Base {
         out.push_back(std::move(f));
       }
     } catch (const std::exception & e) {
+      dropReader();
       say(std::string("cannot read: ") + e.what());
       out.clear();
     }
@@ -206,9 +219,8 @@ class MariaDbSummaryStore : public SummaryStore, private Base {
       : Base(config, std::move(log), "summaries"), dataset_(dataset) {
     try {
       std::lock_guard lock(*setup);  // the stores of the datasets make the same tables
-      db_ = std::make_unique<maria::Connection>(config_);
-      ensureVersion(*db_, "summaries", kSummariesVersion, {"queues", "summary_edges"}, [this](const std::string & t) { say(t); });
-      db_->exec(
+      ensureVersion(writer(), "summaries", kSummariesVersion, {"queues", "summary_edges"}, [this](const std::string & t) { say(t); });
+      writer().exec(
           "CREATE TABLE IF NOT EXISTS summary_edges ("
           "id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY, dataset BIGINT NOT NULL, base BIGINT NOT NULL, quote BIGINT NOT NULL, market BIGINT NOT NULL, "
           "symbol VARCHAR(190) NOT NULL DEFAULT '', identifier VARCHAR(190) NOT NULL DEFAULT '', order_book VARCHAR(190) NOT NULL DEFAULT '', "
@@ -216,20 +228,22 @@ class MariaDbSummaryStore : public SummaryStore, private Base {
           "last_price DOUBLE NULL, bid DOUBLE NULL, ask DOUBLE NULL, quote_time BIGINT NULL, previous_close DOUBLE NULL, previous_close_day BIGINT NULL, "
           "change_day DOUBLE NULL, change_week DOUBLE NULL, change_month DOUBLE NULL, change_quarter DOUBLE NULL, change_year DOUBLE NULL, "
           "change_year3 DOUBLE NULL, change_year10 DOUBLE NULL, UNIQUE KEY by_edge (dataset, base, quote, market)) ENGINE=InnoDB");
-      db_->exec(
+      writer().exec(
           "CREATE TABLE IF NOT EXISTS queues ("
           "edge BIGINT NOT NULL, resolution INT NOT NULL, kind INT NOT NULL, fetched BIGINT NOT NULL, count BIGINT NOT NULL, "
           "first_key BIGINT NOT NULL, last_key BIGINT NOT NULL, last_hash BIGINT NOT NULL, data LONGBLOB NOT NULL, "
           "PRIMARY KEY (edge, resolution)) ENGINE=InnoDB");
+      usable_ = true;
     } catch (const std::exception & e) {
       db_.reset();
+      usable_ = false;
       say(std::string("cannot open the database: ") + e.what() + "; summaries are not kept");
     }
   }
 
   std::vector<StoredEdge> loadEdges() override {
     std::vector<StoredEdge> out;
-    if (!db_) return out;
+    if (!usable_) return out;
     std::lock_guard lock(read_mutex_);
     try {
       maria::Statement q(reader(),
@@ -275,6 +289,7 @@ class MariaDbSummaryStore : public SummaryStore, private Base {
         }
       }
     } catch (const std::exception & e) {
+      dropReader();
       say(std::string("cannot read: ") + e.what());
       out.clear();
     }
@@ -282,7 +297,7 @@ class MariaDbSummaryStore : public SummaryStore, private Base {
   }
 
   std::optional<StoredQueue> readQueue(const EdgeKey & edge, Resolution resolution) override {
-    if (!db_) return std::nullopt;
+    if (!usable_) return std::nullopt;
     std::lock_guard lock(read_mutex_);
     try {
       maria::Statement q(reader(),
@@ -304,21 +319,24 @@ class MariaDbSummaryStore : public SummaryStore, private Base {
       }
       return out;
     } catch (const std::exception & e) {
+      dropReader();
       say(std::string("cannot read: ") + e.what());
       return std::nullopt;
     }
   }
 
   void apply(const SummaryBatch & batch) override {
-    if (!db_ || batch.empty()) return;
+    if (!usable_ || batch.empty()) return;
     std::lock_guard lock(write_mutex_);
     try {
-      maria::Transaction transaction(*db_);
+      maria::Transaction transaction(writer());
       for (const StoredEdge & e : batch.edges) putEdge(e);
       for (const StoredQueue & q : batch.queues) putQueue(q);
       transaction.commit();
     } catch (const std::exception & e) {
+      dropWriter();  // the batch is not written, whole: the server rolls back what the connection had open when it ends
       say(std::string("cannot write: ") + e.what());
+      throw;  // the writer that called counts it (Store::failedWrites), and the ingest says so
     }
   }
 
@@ -330,7 +348,7 @@ class MariaDbSummaryStore : public SummaryStore, private Base {
   }
 
   void putEdge(const StoredEdge & e) {
-    maria::Statement put(*db_,
+    maria::Statement put(writer(),
                          "INSERT INTO summary_edges (dataset, base, quote, market, symbol, identifier, order_book, type, name, last_price, bid, ask, quote_time, "
                          "previous_close, previous_close_day, change_day, change_week, change_month, change_quarter, change_year, change_year3, change_year10) "
                          "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
@@ -364,14 +382,14 @@ class MariaDbSummaryStore : public SummaryStore, private Base {
   // The row of an edge, made bare where it has none.
   int64_t edgeId(const EdgeKey & k) {
     {
-      maria::Statement q(*db_, "SELECT id FROM summary_edges WHERE dataset = ? AND base = ? AND quote = ? AND market = ?");
+      maria::Statement q(writer(), "SELECT id FROM summary_edges WHERE dataset = ? AND base = ? AND quote = ? AND market = ?");
       q.bind(1, asInt(dataset_.value));
       q.bind(2, asInt(k.base.value));
       q.bind(3, asInt(k.quote.value));
       q.bind(4, asInt(k.market.value));
       if (q.executeStep()) return q.getColumn(0).getInt64();
     }
-    maria::Statement make(*db_, "INSERT INTO summary_edges (dataset, base, quote, market) VALUES (?, ?, ?, ?)");
+    maria::Statement make(writer(), "INSERT INTO summary_edges (dataset, base, quote, market) VALUES (?, ?, ?, ?)");
     make.bind(1, asInt(dataset_.value));
     make.bind(2, asInt(k.base.value));
     make.bind(3, asInt(k.quote.value));
@@ -382,7 +400,7 @@ class MariaDbSummaryStore : public SummaryStore, private Base {
 
   void putQueue(const StoredQueue & in) {
     if (in.merge && in.bars.empty()) {
-      maria::Statement touch(*db_,
+      maria::Statement touch(writer(),
                              "UPDATE queues SET fetched = ? WHERE resolution = ? AND edge = "
                              "(SELECT id FROM summary_edges WHERE dataset = ? AND base = ? AND quote = ? AND market = ?)");
       touch.bind(1, static_cast<int64_t>(in.fetched));
@@ -398,7 +416,7 @@ class MariaDbSummaryStore : public SummaryStore, private Base {
     StoredQueue q = in;
     if (in.merge) {
       // Into what the database has: read here, on the thread that writes, so that the store never has to read it to say a bar.
-      maria::Statement old(*db_, "SELECT data FROM queues WHERE edge = ? AND resolution = ?");
+      maria::Statement old(writer(), "SELECT data FROM queues WHERE edge = ? AND resolution = ?");
       old.bind(1, edge);
       old.bind(2, static_cast<int>(in.resolution));
       std::vector<Candle> bars;
@@ -414,14 +432,14 @@ class MariaDbSummaryStore : public SummaryStore, private Base {
     }
     std::erase_if(q.bars, [](const Candle & c) { return !summary::fits(c); });
     if (q.bars.empty()) {
-      maria::Statement gone(*db_, "DELETE FROM queues WHERE edge = ? AND resolution = ?");
+      maria::Statement gone(writer(), "DELETE FROM queues WHERE edge = ? AND resolution = ?");
       gone.bind(1, edge);
       gone.bind(2, static_cast<int>(in.resolution));
       gone.exec();
       return;
     }
     const std::string blob = summary::pack(q.kind, q.bars);
-    maria::Statement put(*db_,
+    maria::Statement put(writer(),
                          "INSERT INTO queues (edge, resolution, kind, fetched, count, first_key, last_key, last_hash, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
                          "ON DUPLICATE KEY UPDATE kind = VALUES(kind), fetched = VALUES(fetched), count = VALUES(count), first_key = VALUES(first_key), "
                          "last_key = VALUES(last_key), last_hash = VALUES(last_hash), data = VALUES(data)");
@@ -494,25 +512,26 @@ class MariaDbBarStore : public BarStore, private Base {
  public:
   MariaDbBarStore(const maria::Config & config, FactLog log) : Base(config, std::move(log), "bars") {
     try {
-      db_ = std::make_unique<maria::Connection>(config_);
-      ensureVersion(*db_, "bars", kBarsVersion, {"bars"}, [this](const std::string & t) { say(t); });
-      db_->exec(
+      ensureVersion(writer(), "bars", kBarsVersion, {"bars"}, [this](const std::string & t) { say(t); });
+      writer().exec(
           "CREATE TABLE IF NOT EXISTS bars ("
           "base BIGINT NOT NULL, quote BIGINT NOT NULL, market BIGINT NOT NULL, dataset BIGINT NOT NULL, resolution INT NOT NULL, "
           "time BIGINT NOT NULL, open DOUBLE NOT NULL, high DOUBLE NOT NULL, low DOUBLE NOT NULL, close DOUBLE NOT NULL, volume DOUBLE NULL, "
           "PRIMARY KEY (base, quote, market, dataset, resolution, time)) ENGINE=InnoDB");
+      usable_ = true;
     } catch (const std::exception & e) {
       db_.reset();
+      usable_ = false;
       say(std::string("cannot open the database: ") + e.what() + "; bars are not kept");
     }
   }
 
   void apply(const BarBatch & batch) override {
-    if (!db_) return;
+    if (!usable_) return;
     std::lock_guard lock(write_mutex_);
     try {
-      maria::Transaction transaction(*db_);
-      maria::Statement put(*db_,
+      maria::Transaction transaction(writer());
+      maria::Statement put(writer(),
                            "INSERT INTO bars (base, quote, market, dataset, resolution, time, open, high, low, close, volume) "
                            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
                            "ON DUPLICATE KEY UPDATE open = VALUES(open), high = VALUES(high), low = VALUES(low), close = VALUES(close), volume = VALUES(volume)");
@@ -534,33 +553,40 @@ class MariaDbBarStore : public BarStore, private Base {
         }
       transaction.commit();
     } catch (const std::exception & e) {
+      dropWriter();
       say(std::string("cannot write: ") + e.what());
       throw;
     }
   }
 
   void read(const EdgeKey & edge, Resolution resolution, int64_t first, int64_t last, const std::function<void(const Candle &)> & each) override {
-    if (!db_) return;
+    if (!usable_) return;
     std::lock_guard lock(read_mutex_);
-    maria::Statement q(reader(),
-                       "SELECT time, open, high, low, close, volume FROM bars "
-                       "WHERE base = ? AND quote = ? AND market = ? AND dataset = ? AND resolution = ? AND time BETWEEN ? AND ? ORDER BY time");
-    q.bind(1, asInt(edge.base.value));
-    q.bind(2, asInt(edge.quote.value));
-    q.bind(3, asInt(edge.market.value));
-    q.bind(4, asInt(edge.dataset.value));
-    q.bind(5, static_cast<int>(resolution));
-    q.bind(6, first);
-    q.bind(7, last);
-    while (q.executeStep()) {
-      Candle c;
-      c.time = q.getColumn(0).getInt64();
-      c.open = q.getColumn(1).getDouble();
-      c.high = q.getColumn(2).getDouble();
-      c.low = q.getColumn(3).getDouble();
-      c.close = q.getColumn(4).getDouble();
-      c.volume = q.getColumn(5).isNull() ? kUndefined : q.getColumn(5).getDouble();
-      each(c);
+    try {
+      maria::Statement q(reader(),
+                         "SELECT time, open, high, low, close, volume FROM bars "
+                         "WHERE base = ? AND quote = ? AND market = ? AND dataset = ? AND resolution = ? AND time BETWEEN ? AND ? ORDER BY time");
+      q.bind(1, asInt(edge.base.value));
+      q.bind(2, asInt(edge.quote.value));
+      q.bind(3, asInt(edge.market.value));
+      q.bind(4, asInt(edge.dataset.value));
+      q.bind(5, static_cast<int>(resolution));
+      q.bind(6, first);
+      q.bind(7, last);
+      while (q.executeStep()) {
+        Candle c;
+        c.time = q.getColumn(0).getInt64();
+        c.open = q.getColumn(1).getDouble();
+        c.high = q.getColumn(2).getDouble();
+        c.low = q.getColumn(3).getDouble();
+        c.close = q.getColumn(4).getDouble();
+        c.volume = q.getColumn(5).isNull() ? kUndefined : q.getColumn(5).getDouble();
+        each(c);
+      }
+    } catch (const std::exception & e) {
+      dropReader();
+      say(std::string("cannot read: ") + e.what());
+      throw;
     }
   }
 };

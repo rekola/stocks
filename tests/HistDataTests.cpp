@@ -263,3 +263,26 @@ TEST(histdata_pauses_between_requests) {
   adapter.load(eurusd(), {{Resolution::Min5}, false}, kQuiet);
   CHECK(site.requests.size() == 2 && sleeps == 1 && slept.count() > 1900 && slept.count() <= 2000);  // not before the first
 }
+
+TEST(histdata_a_cached_file_that_is_not_what_it_says_is_a_failed_period_and_not_an_exception) {
+  FakeSite site;
+  site.lastBar = utcOfEst(2026, 11, 13, 16, 0, 0);
+  TempDir dir;
+  // a zip whose CSV says it is four gigabytes, in the place of the latest month
+  std::string zip = market::makeZip({{"DAT_ASCII_EURUSD_M1_202611.csv", "x"}}, false);
+  const size_t central = zip.find(std::string("PK\x01\x02", 4));
+  for (int i = 0; i < 4; i++) zip[central + 24 + static_cast<size_t>(i)] = static_cast<char>(0xff);
+  std::string error;
+  CHECK(market::RawCache(dir.path).store("DAT_ASCII_EURUSD_M1_202611.zip", zip, error));
+  HistData adapter = makeAdapter(site, dir);
+  market::LoadResult result;
+  bool threw = false;
+  try {
+    result = adapter.load(eurusd(), {{Resolution::Min5}, false}, kQuiet);
+  } catch (...) {
+    threw = true;
+  }
+  CHECK(!threw);
+  CHECK(result.failed.size() == 1 && result.series.empty() && !result.inactive);
+  CHECK(site.downloads() == 0);  // it is in the cache, so nothing is asked for
+}

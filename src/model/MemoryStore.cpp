@@ -1458,6 +1458,10 @@ class MemoryStore : public Store {
     if (bars_) bars_->flush();
   }
 
+  uint64_t failedWrites() const override {
+    return (writer_ ? writer_->failed() : 0) + (summary_ ? summary_->failed() : 0) + (bars_ ? bars_->failed() : 0);
+  }
+
   std::shared_ptr<const Snapshot> snapshot() const override { return current_.load(); }
 
   void batch(const std::function<void(Batch &)> & change) override {

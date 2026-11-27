@@ -85,6 +85,7 @@ class FakeSite : public Http {
   Timestamp lastBar = 0;  // the last quote of the site, UTC seconds
   int step = 60;          // minutes between rows
   int firstYear = 2000;
+  bool tokens = true;       // the page of a file has a token (a challenge or an error page has none)
   bool pairsOnPage = true;  // the list page has pairs (two of them), else none
   int failDownloads = 0;  // POSTs to answer with a 500 before one works
   std::vector<std::string> requests;  // "GET url" and "POST url datemonth"
@@ -95,7 +96,9 @@ class FakeSite : public Http {
     requests.push_back("GET " + url);
     HttpResult r;
     r.status = 200;
-    if (url.find("/1-minute-bar-quotes/") != std::string::npos && url.find("/20") != std::string::npos) {
+    if (!tokens && url.find("/20") != std::string::npos) {
+      r.body = "<html>Just a moment...</html>";
+    } else if (url.find("/1-minute-bar-quotes/") != std::string::npos && url.find("/20") != std::string::npos) {
       // .../eurusd/2026/11: a token for any period, in the order the real page has (a form with the token, twice)
       const std::string token = "0123456789abcdef0123456789abcdef";
       r.body = "<html><form id=\"file_down\"><input type=\"hidden\" name=\"tk\" id=\"tk\" value=\"" + token +

@@ -10,6 +10,7 @@
 #include "market/Config.h"
 
 #include <atomic>
+#include <charconv>
 #include <chrono>
 #include <csignal>
 #include <cstdio>
@@ -37,7 +38,17 @@ int main(int argc, char ** argv) {
   for (int i = 1; i < argc; i++) {
     const std::string arg = argv[i];
     if (arg == "--config" && i + 1 < argc) configPath = argv[++i], explicitConfig = true;
-    else if (arg == "--port" && i + 1 < argc) port = std::atoi(argv[++i]);
+    else if (arg == "--port" && i + 1 < argc) {
+      // The whole of the text is the number, and it is a port: atoi would take "80x" for 80 and "x" for 0.
+      const std::string text = argv[++i];
+      int value = -1;
+      const auto parsed = std::from_chars(text.data(), text.data() + text.size(), value);
+      if (text.empty() || parsed.ec != std::errc() || parsed.ptr != text.data() + text.size() || value < 0 || value > 65535) {
+        std::fprintf(stderr, "market-server: --port is a number from 0 to 65535, not \"%s\"\n", text.c_str());
+        return 2;
+      }
+      port = value;
+    }
     else if (arg == "--listen" && i + 1 < argc) listen = argv[++i];
     else {
       std::fprintf(stderr, "usage: market-server [--config FILE] [--port N] [--listen ADDRESS]\n");

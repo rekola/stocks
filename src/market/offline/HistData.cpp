@@ -346,7 +346,12 @@ HistData::Got HistData::download(const std::string & code, Period period, const 
       continue;
     }
     const std::string token = extractToken(page.body);
-    if (token.empty()) return {Fetch::NoData, {}, "no download token"};
+    if (token.empty()) {
+      // A page with no token is not an answer about the period (a period with no data still has one): a challenge or an error page, which is asked
+      // for again, and a failure if it stays.
+      got.why = "the page has no download token";
+      continue;
+    }
     pace();
     const HttpResult answer = http_.post(kGetUrl, formBody(token, code, period), {{"Referer", url}, {"Origin", kOrigin}});
     if (!answer.ok()) {
@@ -377,10 +382,34 @@ uint64_t csvSizeOf(const std::string & zip) {
 
 }  // namespace
 
+Timestamp HistData::fetchedAt(const std::string & fileName) const {
+  const auto note = cache_.read(fileName + ".fetched");
+  if (!note) return 0;
+  char * end = nullptr;
+  const long long value = std::strtoll(note->c_str(), &end, 10);
+  return end != note->c_str() ? static_cast<Timestamp>(value) : 0;
+}
+
+void HistData::noteFetched(const std::string & fileName) {
+  std::string error;
+  cache_.store(fileName + ".fetched", std::to_string(settings_.now()) + "\n", error);  // a note that cannot be kept only makes the file asked for again
+}
+
 HistData::Got HistData::obtain(const std::string & code, Period period, bool refresh, int currentYear, market::LoadResult & result,
                                const market::Log & log) {
   const std::string name = fileName(code, period);
-  const bool again = refresh && !period.yearly() && period.year == currentYear;  // only a month still being filled grows
+  const bool asked = refresh && !period.yearly() && period.year == currentYear;  // only a month still being filled grows
+  // A month's file is final only if it was downloaded after the month was over (in EST, which is what the files are in). One that was fetched
+  // while the month was still being filled has a gap from there to its end, and is asked for again once the month is over. When each file was
+  // fetched is kept in a note beside it in the cache (`noteFetched`); a file with no note (one from before there were notes) is not known to be
+  // final. A month that is still going on is read from the cache as it is, until a refresh asks for it.
+  bool unfinished = false;
+  if (!period.yearly() && cache_.has(name)) {
+    const Timestamp monthEnd = period.month == 12 ? utcOfEst(period.year + 1, 1, 1, 0, 0, 0) : utcOfEst(period.year, static_cast<unsigned>(period.month) + 1, 1, 0, 0, 0);
+    unfinished = settings_.now() >= monthEnd && fetchedAt(name) < monthEnd;
+    if (unfinished) log("histdata: " + name + ": it was fetched before the month was over; asking again");
+  }
+  const bool again = asked || unfinished;
   if (cache_.has(name) && !again) {
     if (auto bytes = cache_.read(name)) {
       result.cached++;
@@ -407,6 +436,7 @@ HistData::Got HistData::obtain(const std::string & code, Period period, bool ref
     const auto old = cache_.read(name);
     if (old && csvSizeOf(*old) > csvSizeOf(got.bytes)) {
       log("histdata: " + name + ": the new file is shorter than the cached one; keeping the cached one");
+      noteFetched(name);  // it was asked for now, and this is all the site has
       result.cached++;
       return {Fetch::Ok, *old, {}};
     }
@@ -414,6 +444,8 @@ HistData::Got HistData::obtain(const std::string & code, Period period, bool ref
   std::string error;
   if (!cache_.store(name, got.bytes, error)) {
     log("histdata: " + name + ": not cached: " + error);  // the data is still used this time
+  } else {
+    noteFetched(name);
   }
   return got;
 }
@@ -432,11 +464,17 @@ market::LoadResult HistData::load(const market::InstrumentSpec & instrument, con
       why = "the zip has no CSV";
       return false;
     }
-    std::string text;
-    if (!market::readZipEntry(got.bytes, *csv, text, why)) return false;
-    CsvResult parsed = parseCsv(text);
-    if (parsed.badLines > 0) log("histdata: " + fileName(code, period) + ": " + std::to_string(parsed.badLines) + " lines are not rows and were left out");
-    minutes = std::move(parsed.minutes);
+    try {
+      std::string text;
+      if (!market::readZipEntry(got.bytes, *csv, text, why)) return false;
+      CsvResult parsed = parseCsv(text);
+      if (parsed.badLines > 0) log("histdata: " + fileName(code, period) + ": " + std::to_string(parsed.badLines) + " lines are not rows and were left out");
+      minutes = std::move(parsed.minutes);
+    } catch (const std::exception & e) {
+      // A file that is not what it says (a size that cannot be allocated, a damaged zip) is a failed period, not an end of the program.
+      why = std::string("the file cannot be read: ") + e.what();
+      return false;
+    }
     return true;
   };
 

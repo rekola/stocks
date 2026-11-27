@@ -35,6 +35,8 @@ class FactWriter {
   void post(FactBatch);
   // Returns when everything posted before the call has been handed to the FactStore.
   void flush();
+  // How many batches the FactStore threw on (a store that cannot write says so by throwing; it is counted here, and nothing else is done).
+  uint64_t failed() const;
 
  private:
   using Clock = std::chrono::steady_clock;
@@ -43,7 +45,7 @@ class FactWriter {
 
   std::shared_ptr<FactStore> facts_;
   Options options_;
-  std::mutex mutex_;
+  mutable std::mutex mutex_;
   std::condition_variable wake_, written_;
   // The waiting facts, one per (node, predicate).
   std::map<std::pair<uint64_t, std::string>, StoredFact> waiting_;

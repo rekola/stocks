@@ -84,6 +84,9 @@ class HistData : public market::Dataset {
     std::string bytes, why;
   };
   void reportDifferences(const std::vector<market::InstrumentSpec> & found, const market::Log & log);
+  // When the cached file was fetched (UTC seconds), from the note beside it; 0 where there is none.
+  Timestamp fetchedAt(const std::string & fileName) const;
+  void noteFetched(const std::string & fileName);
   void pace();
   // One file from the site, with the retries; never from the cache.
   Got download(const std::string & code, Period, const market::Log & log);

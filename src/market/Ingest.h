@@ -38,7 +38,9 @@ struct IngestReport {
   std::vector<InstrumentReport> instruments;
   std::vector<std::string> unknownCodes;  // asked for and not in the dataset
   int inactive = 0;                       // instruments left out for having no data this year
-  // Whether everything asked for was done: no code unknown, no period that failed, no resolution skipped.
+  uint64_t failedWrites = 0;              // batches that the store's own stores (facts, summaries, bars) threw on: what was said did not all get kept
+  // Whether everything asked for was done: no code unknown, no period that failed, no resolution skipped, no write lost, and not every
+  // instrument left out for having no data (that is more likely a site that does not answer than a market that stopped).
   bool complete() const;
 };
 

@@ -56,6 +56,18 @@ bool loadConfig(const std::string & path, Config & config, std::string & error) 
     if (!take(*server, "listen", config.listen, error, "server.") || !take(*server, "port", config.port, error, "server.") || !take(*server, "refresh_seconds", config.refreshSeconds, error, "server.")) return false;
   if (const char * password = std::getenv("MARKET_DB_PASSWORD")) config.database.password = password;
 
+  if (config.database.port < 0 || config.database.port > 65535) {
+    error = "database.port is 0 to 65535, not " + std::to_string(config.database.port);
+    return false;
+  }
+  if (config.port < 0 || config.port > 65535) {
+    error = "server.port is 0 to 65535, not " + std::to_string(config.port);
+    return false;
+  }
+  if (config.refreshSeconds < 1) {
+    error = "server.refresh_seconds is 1 or more, not " + std::to_string(config.refreshSeconds);
+    return false;
+  }
   if (config.database.type != "mariadb" && config.database.type != "sqlite") {
     error = "database.type is \"mariadb\" or \"sqlite\", not \"" + config.database.type + "\"";
     return false;

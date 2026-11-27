@@ -92,3 +92,76 @@ TEST(the_store_writes_every_bar_it_is_given_to_its_bar_store_and_only_the_ones_t
   CHECK(all.size() == 1001);
   CHECK(all.size() == 1001 && all[999].time == 734999 && all[999].open == 9 && all[1000].time == 735000);
 }
+
+namespace {
+
+struct ThrowingBars : BarStore {
+  void apply(const BarBatch &) override { throw std::runtime_error("the medium is full"); }
+  void read(const EdgeKey &, Resolution, int64_t, int64_t, const std::function<void(const Candle &)> &) override {}
+};
+
+struct ThrowingFacts : FactStore {
+  std::vector<StoredFact> loadAll() override { return {}; }
+  void apply(const FactBatch &) override { throw std::runtime_error("the medium is full"); }
+};
+
+struct ThrowingSummary : SummaryStore {
+  std::vector<StoredEdge> loadEdges() override { return {}; }
+  std::optional<StoredQueue> readQueue(const EdgeKey &, Resolution) override { return std::nullopt; }
+  void apply(const SummaryBatch &) override { throw std::runtime_error("the medium is full"); }
+};
+
+struct ThrowingSummaries : SummaryStores {
+  std::vector<std::string> datasets() override { return {}; }
+  std::shared_ptr<SummaryStore> open(const std::string &) override { return std::make_shared<ThrowingSummary>(); }
+};
+
+void sayABar(Store & store) {
+  store.batch([&](Batch & b) {
+    const DatasetId dataset = b.addDataset("TESTDS", "Test");
+    const MarketId market = b.addMarket("XXXX", "none");
+    const InstrumentId base = b.addInstrument("EUR", "Euro", InstrumentKind::Currency);
+    const InstrumentId quote = b.addInstrument("USD", "US dollar", InstrumentKind::Currency);
+    const EdgeKey e{base, quote, market, dataset};
+    b.setListing({e, "EURUSD", "", "", "", "EUR/USD"});
+    b.appendCandles(e, Resolution::Day, {{734000, 1, 2, 0.5, 1.5, kUndefined}});
+  });
+  store.flush();
+}
+
+}  // namespace
+
+TEST(a_store_counts_the_batches_its_bar_summary_and_fact_stores_throw_on) {
+  {
+    StoreOptions options;
+    options.bar_writer.delay = std::chrono::milliseconds(0);
+    auto healthy = makeMemoryStore(options);
+    sayABar(*healthy);
+    CHECK(healthy->failedWrites() == 0);
+  }
+  {
+    StoreOptions options;
+    options.bars = std::make_shared<ThrowingBars>();
+    options.bar_writer.delay = std::chrono::milliseconds(0);
+    auto store = makeMemoryStore(options);
+    sayABar(*store);
+    CHECK(store->failedWrites() >= 1);
+  }
+  {
+    StoreOptions options;
+    options.summaries = std::make_shared<ThrowingSummaries>();
+    options.summary_writer.delay = std::chrono::milliseconds(0);
+    options.summary_writer.queue_delay = std::chrono::milliseconds(0);
+    auto store = makeMemoryStore(options);
+    sayABar(*store);
+    CHECK(store->failedWrites() >= 1);
+  }
+  {
+    StoreOptions options;
+    options.facts = std::make_shared<ThrowingFacts>();
+    options.writer.changed_delay = std::chrono::milliseconds(0);
+    auto store = makeMemoryStore(options);
+    sayABar(*store);
+    CHECK(store->failedWrites() >= 1);
+  }
+}

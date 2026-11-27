@@ -5,8 +5,9 @@
 #include <string>
 
 // The raw files an adapter downloads, kept exactly as they came: the only copy of the finest data there is (the 1-minute quotes
-// are not stored in the database), kept for training later. Files are only ever added; the one file that is replaced is a
-// month still being filled, with a longer one (see `store`'s `replace`). Nothing in here deletes.
+// are not stored in the database), kept for training later. `store()` always overwrites what is there under the name; when a file may be
+// replaced (a month that was fetched before it was over, by a file that is not shorter) is the adapter's to decide, and it does not call
+// `store()` otherwise. Nothing in here deletes.
 namespace market {
 
 class RawCache {

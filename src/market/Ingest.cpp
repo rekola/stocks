@@ -37,7 +37,8 @@ std::optional<EdgeKey> makeEdge(Batch & b, const Dataset & dataset, const Instru
 }  // namespace
 
 bool IngestReport::complete() const {
-  if (!unknownCodes.empty()) return false;
+  if (!unknownCodes.empty() || failedWrites > 0) return false;
+  if (!instruments.empty() && static_cast<size_t>(inactive) == instruments.size()) return false;
   for (const InstrumentReport & r : instruments)
     if (!r.failed.empty() || !r.skipped.empty()) return false;
   return true;
@@ -72,6 +73,7 @@ IngestReport runIngest(Dataset & dataset, Store & store, const IngestOptions & o
   }
   for (const std::string & code : report.unknownCodes) log(dataset.code() + ": no instrument " + code);
 
+  const uint64_t failedBefore = store.failedWrites();
   size_t index = 0;
   for (const InstrumentSpec & spec : chosen) {
     index++;
@@ -118,6 +120,8 @@ IngestReport runIngest(Dataset & dataset, Store & store, const IngestOptions & o
     report.instruments.push_back(std::move(out));
   }
   store.flush();
+  report.failedWrites = store.failedWrites() - failedBefore;
+  if (report.failedWrites > 0) log(dataset.code() + ": " + std::to_string(report.failedWrites) + " writes to the database failed");
   return report;
 }
 
@@ -153,7 +157,9 @@ std::string formatReport(const IngestReport & report) {
     }
   for (const std::string & c : report.unknownCodes) text += "unknown instrument: " + c + "\n";
   if (report.inactive) text += std::to_string(report.inactive) + " instruments left out for having no data this year\n";
-  if (!any && report.unknownCodes.empty()) text += "no failed periods\n";
+  if (!report.instruments.empty() && static_cast<size_t>(report.inactive) == report.instruments.size()) text += "every instrument came out inactive: the site may not be answering\n";
+  if (report.failedWrites) text += std::to_string(report.failedWrites) + " writes to the database failed: what was loaded is not all kept\n";
+  if (!any && report.unknownCodes.empty() && !report.failedWrites) text += "no failed periods\n";
   return text;
 }
 

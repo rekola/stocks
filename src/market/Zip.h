@@ -17,6 +17,9 @@ struct ZipEntry {
 
 // The files of a zip (not its directories), in order. False, with `error`, where `zip` is not a zip.
 bool listZip(std::string_view zip, std::vector<ZipEntry> & entries, std::string & error);
+// The largest entry that is read: what a zip says of the size of an entry is not trusted (a damaged file, or one made to be big), so an entry
+// that says more than this is refused with an error and nothing is allocated for it.
+inline constexpr uint64_t kMaxZipEntryBytes = uint64_t{1} << 30;
 // The contents of an entry.
 bool readZipEntry(std::string_view zip, const ZipEntry & entry, std::string & data, std::string & error);
 // The first entry whose name ends in `suffix` (compared without case); nullptr for none.

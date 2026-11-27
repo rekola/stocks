@@ -45,6 +45,11 @@ void FactWriter::flush() {
   written_.wait(lock, [&] { return done_ >= until; });
 }
 
+uint64_t FactWriter::failed() const {
+  std::lock_guard lock(mutex_);
+  return failed_;
+}
+
 void FactWriter::run() {
   std::unique_lock lock(mutex_);
   for (;;) {

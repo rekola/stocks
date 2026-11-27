@@ -404,6 +404,9 @@ class Store : public StoreWrites {
   // Returns when what has been said of the nodes and the summaries is on its way to where it is kept (the disk, if a FactStore and a
   // SummaryStores were given).
   virtual void flush() {}
+  // How many batches the stores behind the store (facts, summaries, bars) threw on, all told since it was made: a write that the disk or the
+  // server did not take. Nothing is retried; a program that keeps things for others (the ingest) asks after `flush()` and says so.
+  virtual uint64_t failedWrites() const { return 0; }
 
   // The queues that are wanted now (the rows on screen and a margin), most wanted first, which replaces what was wanted before: those not in
   // memory are read from the disk on a thread of its own and published into the store (a version, nothing written back), and those wanted
