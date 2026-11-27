@@ -843,7 +843,7 @@ TEST(the_indicator_lists_make_indices_in_points_currency_pairs_and_commodities_i
 }
 
 // The object of a predicate among the facts a parsed row has.
-const Value * said(const NordnetListing & l, const char * predicate) {
+static const Value * said(const NordnetListing & l, const char * predicate) {
   for (const Attribute & a : l.attributes)
     if (a.predicate == predicate) return &a.value;
   return nullptr;

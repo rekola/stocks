@@ -265,7 +265,7 @@ class MariaDbSummaryStore : public SummaryStore, private Base {
           const int resolution = q.getColumn(22).getInt();
           if (resolution < 0 || resolution > static_cast<int>(Resolution::Quarter)) continue;
           QueueCoverage c;
-          c.kind = q.getColumn(23).getInt() == static_cast<int>(QueueKind::Value) ? QueueKind::Value : QueueKind::Candle;
+          c.kind = q.getColumn(23).getInt() == static_cast<int>(QueueKind::Scalar) ? QueueKind::Scalar : QueueKind::Candle;
           c.fetched = q.getColumn(24).getInt64();
           c.count = static_cast<uint32_t>(q.getColumn(25).getInt64());
           c.first_key = q.getColumn(26).getInt64();

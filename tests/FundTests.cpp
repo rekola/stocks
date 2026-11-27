@@ -621,7 +621,7 @@ TEST(a_real_discovery_answer_shows_the_funds_with_an_isin_and_a_new_nav_and_says
     CHECK(edges == expected["shown"].get<size_t>());
     for (const std::string & url : http.urls) CHECK(url == listUrl || url == pageUrl || url.find("details") != std::string::npos);
     CHECK(said(listener, std::to_string(expected["stale"].get<int>()) + " left out for an old NAV"));
-    for (const std::string & id : expected["noIsin"]) CHECK(said(listener, "no ISIN for " + id + " ("));
+    for (const std::string id : expected["noIsin"]) CHECK(said(listener, "no ISIN for " + id + " ("));
     CHECK(http.urls.size() == requests + expected["noIsin"].size());  // the page and the list, and the details of each of those
     // The change the list gives is the NAV before the latest, which the history of the day before says too.
     for (const auto & [id, close] : expected["previousClose"].items()) {
