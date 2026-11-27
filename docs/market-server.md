@@ -1,6 +1,6 @@
 # Market-data server: setting it up
 
-`market-ingest` loads external datasets (now HistData.com's 1-minute quotes) into a database, and `market-server` serves what it holds over a read-only HTTP
+`market-ingest` loads external datasets (now HistData.com's 1-minute quotes, as the history) into a database, by hand, and `market-server` serves what it holds over a read-only HTTP
 API for the desktop application. What they are and how they work is in the README ("Market-data server") and, as planned, in
 [plans/server.md](../plans/server.md); this is how to set them up on a machine, step by step.
 
@@ -72,10 +72,14 @@ instrument and its bars, and prints a line for each resolution (bars, first and 
 
     sudo -u market bash -c 'set -a; . /etc/market/market.env; market-ingest histdata all --config /etc/market/market.json'
 
-The first run downloads about 1,400 files at two seconds a request and takes more than an hour; start it where a closed terminal does not end it
-(`sudo systemctl start market-ingest.service` once step 8 is done, which runs it in the background; `journalctl -fu market-ingest` follows it). It can be stopped and started again: what was downloaded is in the cache, and what was written
-is not written twice. A later run of the same command makes no request for a file it has, and only asks again for the month that was not over when it was
-fetched (once it is over) and for the months of this year that `--refresh` names.
+The first run downloads about 1,400 files at two seconds a request and takes more than an hour, so run it where a closed terminal does not end it (`tmux`, or
+`sudo systemd-run --uid=market --property=EnvironmentFile=/etc/market/market.env market-ingest histdata all --config /etc/market/market.json`, whose output is
+in `journalctl`). It can be stopped and started again: what was downloaded is in the cache, and what was written is not written twice. A later run of the same command
+makes no request for a file it has, and only asks again for the month that was not over when it was fetched (once it is over) and for the months of this year that
+`--refresh` names.
+
+The ingest is **not scheduled**: the history is loaded by hand, once (and again only if you want what HistData has published since), and the new data comes from
+another source. Nothing in this guide starts it by itself.
 
 **7. Start the server and look at it.**
 
@@ -89,7 +93,7 @@ and from another machine of the network:
 
 `--port` and `--listen` on the command line override the file. Anything but GET is refused (405), and there is no endpoint for raw bars.
 
-**8. Keep them running.** Two units, `/etc/systemd/system/market-server.service`:
+**8. Keep the server running.** A unit for it, `/etc/systemd/system/market-server.service`:
 
     [Unit]
     Description=Market data API
@@ -106,38 +110,12 @@ and from another machine of the network:
     [Install]
     WantedBy=multi-user.target
 
-and the ingest, a service that runs once and a timer that starts it, `/etc/systemd/system/market-ingest.service`:
-
-    [Unit]
-    Description=Load HistData into the market data
-    After=network-online.target mariadb.service
-
-    [Service]
-    Type=oneshot
-    User=market
-    EnvironmentFile=/etc/market/market.env
-    ExecStart=/usr/local/bin/market-ingest histdata all --refresh --config /etc/market/market.json
-
-and `/etc/systemd/system/market-ingest.timer`:
-
-    [Unit]
-    Description=Load HistData every week
-
-    [Timer]
-    OnCalendar=Sun 03:00
-    Persistent=true
-
-    [Install]
-    WantedBy=timers.target
-
     sudo systemctl daemon-reload
-    sudo systemctl enable --now market-server.service market-ingest.timer
+    sudo systemctl enable --now market-server.service
     systemctl status market-server; journalctl -u market-server -f
-    journalctl -u market-ingest                                  # what the last run said, and the table it ended with
 
-HistData's files lag by a couple of weeks and a month's file grows until the month is over, so the weekly run asks again for this year's months (`--refresh`;
-about 650 files, most of an hour); drop `--refresh` for a daily run that only costs the time to read the cache (some minutes). A run that ends with an
-exit code other than 0 failed in something it says (a period it could not get, a write that was lost, no pair with data at all): the unit shows as failed.
+The server reads the database again every `refresh_seconds`, so what an ingest run writes is served within that time, with no restart. An ingest run that ends with an
+exit code other than 0 failed in something it says (a period it could not get, a write that was lost, no pair with data at all).
 
 **9. Back it up.** The cache is the only copy of the 1-minute data and nothing deletes from it; the database can be made again from it (an ingest of
 `all` then reads the cache and asks the site for little), but dump it anyway: `mariadb-dump market > market.sql`. If a new version of the program has another
