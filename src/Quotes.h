@@ -40,7 +40,7 @@ std::vector<QuoteRow> makeAllRows(const Snapshot & snapshot, Period period = kDe
 // The edges that have daily bars, in a market or in every market (in market order): what a table shows.
 std::vector<EdgeKey>
 quoteEdges(const Snapshot &snapshot, MarketId market,
-           std::optional<InstrumentKind> kind = std::nullopt);
+           KindSet kinds = {});
 std::vector<EdgeKey> allQuoteEdges(const Snapshot & snapshot);
 
 // A number with `decimals` places and a decimal point whatever the locale, with a sign when `sign`.
@@ -67,12 +67,11 @@ class Quotes : public cellui::TableModel {
   struct Scope {
     bool all = false;
     std::optional<MarketId> market; // only this market's edges, where set
-    std::optional<InstrumentKind>
-        kind; // only edges whose base is of this kind, where set
+    KindSet kinds; // only edges whose base is of one of these kinds, where set
     bool resolved() const { return all || market.has_value(); }
     bool has(const Snapshot &snapshot, const EdgeKey &key) const {
       return (all || (market && key.market == *market)) &&
-             (!kind || snapshot.kind(key.base) == *kind);
+             kinds.admits(snapshot.kind(key.base));
     }
   };
   // Whether the store has rows this model has not looked at: one comparison, so a refresh that brings only new bars for the rows

@@ -8,6 +8,7 @@
 #include <tuple>
 #include <functional>
 #include <immer/flex_vector.hpp>
+#include <initializer_list>
 #include <optional>
 #include <string>
 #include <variant>
@@ -175,6 +176,20 @@ inline const char * kindName(InstrumentKind k) {
   }
   return "other";
 }
+// The kinds an instrument may be of to be in a selection; none given is any kind.
+class KindSet {
+ public:
+  constexpr KindSet() = default;
+  constexpr KindSet(InstrumentKind kind) : bits_(1u << static_cast<unsigned>(kind)) {}
+  constexpr KindSet(std::initializer_list<InstrumentKind> kinds) {
+    for (InstrumentKind kind : kinds) bits_ |= 1u << static_cast<unsigned>(kind);
+  }
+  constexpr bool admits(InstrumentKind kind) const { return bits_ == 0 || ((bits_ >> static_cast<unsigned>(kind)) & 1u) != 0; }
+
+ private:
+  unsigned bits_ = 0;
+};
+
 inline InstrumentKind kindOfName(const std::string & s) {
   for (InstrumentKind k : {InstrumentKind::Company, InstrumentKind::Currency, InstrumentKind::Commodity, InstrumentKind::Index,
                            InstrumentKind::Etf, InstrumentKind::Certificate, InstrumentKind::Fund, InstrumentKind::Unit, InstrumentKind::Crypto})

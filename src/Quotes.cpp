@@ -85,12 +85,10 @@ std::vector<QuoteRow> makeAllRows(const Snapshot & snapshot, Period period) {
 }
 
 std::vector<EdgeKey> quoteEdges(const Snapshot &snapshot, MarketId market,
-                                std::optional<InstrumentKind> kind) {
+                                KindSet kinds) {
   std::vector<EdgeKey> keys;
   appendEdges(snapshot, market, keys);
-  if (kind)
-    std::erase_if(
-        keys, [&](const EdgeKey &k) { return snapshot.kind(k.base) != *kind; });
+  std::erase_if(keys, [&](const EdgeKey &k) { return !kinds.admits(snapshot.kind(k.base)); });
   return keys;
 }
 
