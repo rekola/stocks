@@ -121,10 +121,17 @@ ShownValue showValue(const Snapshot & snapshot, const std::string & predicate, c
   return std::visit(ValueText{snapshot, predicate}, value);
 }
 
-std::vector<InfoSection> buildInfo(const Snapshot & snapshot, const EdgeKey & edge) {
-  std::vector<InfoSection> out;
+namespace {
 
-  InfoSection listing{"Listing", {}};
+// "2026-11-27 12:00 UTC" of a time in seconds.
+std::string instantText(Timestamp t) {
+  const int64_t second = t - (dayNumberOfInstant(t) - kUnixEpochDayNumber) * 86400;
+  return dateText(dayNumberOfInstant(t)) + " " + twoDigits(static_cast<int>(second / 3600)) + ":" + twoDigits(static_cast<int>(second % 3600 / 60)) + " UTC";
+}
+
+// What one edge says of itself: its listing, the series it has, and its summary. `suffix` is added to the titles where the row has several.
+void edgeSections(const Snapshot & snapshot, const EdgeKey & edge, const std::string & suffix, bool withDataset, std::vector<InfoSection> & out) {
+  InfoSection listing{"Listing" + suffix, {}};
   auto add = [&](const char * predicate, std::string text) { listing.rows.push_back({predicate, {std::move(text), std::nullopt}}); };
   const std::optional<Listing> l = snapshot.listing(edge);
   add("symbol", l && !l->symbol.empty() ? l->symbol : snapshot.symbol(edge));
@@ -134,21 +141,14 @@ std::vector<InfoSection> buildInfo(const Snapshot & snapshot, const EdgeKey & ed
     add("type", l->type);
     add("name", l->name);
   }
-  add("dataset", snapshot.name(edge.dataset));
+  if (withDataset) add("dataset", snapshot.name(edge.dataset));
   add("market", snapshot.name(edge.market));
   if (snapshot.known(NodeRef(edge.quote))) add("quote currency", snapshot.symbol(edge.quote));
   out.push_back(std::move(listing));
+}
 
-
-  out.push_back({"Instrument", attributeRows(snapshot, NodeRef(edge.base), {predicate::isin, predicate::name, predicate::kind})});
-  out.push_back(
-      {"Market", attributeRows(snapshot, NodeRef(edge.market),
-                               {predicate::name, predicate::mic,
-                                predicate::country, predicate::timezone})});
-  if (auto rows = attributeRows(snapshot, NodeRef(edge.quote), {predicate::isin, predicate::name, predicate::kind}); !rows.empty())
-    out.push_back({"Quote currency", std::move(rows)});
-
-  InfoSection series{"Series", {}};
+void seriesSections(const Snapshot & snapshot, const EdgeKey & edge, const std::string & suffix, std::vector<InfoSection> & out) {
+  InfoSection series{"Series" + suffix, {}};
   for (Resolution r : snapshot.resolutions(edge)) {
     const CandleSeries bars = snapshot.candles(edge, r);
     if (bars.candles.empty()) continue;
@@ -158,15 +158,12 @@ std::vector<InfoSection> buildInfo(const Snapshot & snapshot, const EdgeKey & ed
   out.push_back(std::move(series));
 
   // The summary of the edge, which is not the data (the series above): what the table shows and what is kept between runs.
-  InfoSection summary{"Summary", {}};
+  InfoSection summary{"Summary" + suffix, {}};
   if (const auto q = snapshot.quote(edge)) {
     if (isDefined(q->last)) summary.rows.push_back({"last", {realText(q->last), std::nullopt}});
     if (isDefined(q->bid)) summary.rows.push_back({"bid", {realText(q->bid), std::nullopt}});
     if (isDefined(q->ask)) summary.rows.push_back({"ask", {realText(q->ask), std::nullopt}});
-    if (q->time != 0) {
-      const int64_t second = q->time - (dayNumberOfInstant(q->time) - kUnixEpochDayNumber) * 86400;
-      summary.rows.push_back({"quote time", {dateText(dayNumberOfInstant(q->time)) + " " + twoDigits(static_cast<int>(second / 3600)) + ":" + twoDigits(static_cast<int>(second % 3600 / 60)) + " UTC", std::nullopt}});
-    }
+    if (q->time != 0) summary.rows.push_back({"quote time", {instantText(q->time), std::nullopt}});
   }
   for (Resolution r : snapshot.queues(edge)) {
     const auto c = snapshot.coverage(edge, r);
@@ -180,7 +177,57 @@ std::vector<InfoSection> buildInfo(const Snapshot & snapshot, const EdgeKey & ed
     summary.rows.push_back({std::string("queue ") + name(r), {std::move(text), std::nullopt}});
   }
   if (!summary.rows.empty()) out.push_back(std::move(summary));
+}
 
+// What the datasets say together, and what each says and whether it counts.
+InfoSection sourcesSection(const Snapshot & snapshot, const Mix & mix) {
+  InfoSection sources{"Sources", {}};
+  auto row = [&](std::string predicate, std::string text) { sources.rows.push_back({std::move(predicate), {std::move(text), std::nullopt}}); };
+  if (isDefined(mix.price)) {
+    const char * rule = mix.used >= 3 ? "median of " : mix.used == 2 ? "mean of " : "";
+    row("combined", realText(mix.price) + (mix.used > 1 ? std::string(" (") + rule + std::to_string(mix.used) + " datasets)" : " (one dataset)"));
+  }
+  if (isDefined(mix.disagreement)) row("disagreement", fixed(mix.disagreement * 100, 2) + "% (the typical distance of a dataset from the combined price)");
+  for (const Member & m : mix.members) {
+    std::string text = isDefined(m.price) ? realText(m.price) : std::string("no price");
+    if (isDefined(m.offset) && m.state == MemberState::Used && mix.used > 1) text += "  " + fixed(m.offset * 100, 2, true) + "%";
+    if (m.time != 0) text += "  " + instantText(m.time);
+    switch (m.state) {
+      case MemberState::Used: break;
+      case MemberState::Stale: text += "  left out: older than the others"; break;
+      case MemberState::Off: text += "  left out: switched off"; break;
+      case MemberState::NoPrice: text += "  left out"; break;
+    }
+    row(snapshot.name(m.edge.dataset), std::move(text));
+  }
+  return sources;
+}
+
+}  // namespace
+
+std::vector<InfoSection> buildInfo(const Snapshot & snapshot, const EdgeKey & edge, const Mix * mix) {
+  std::vector<InfoSection> out;
+  const bool grouped = mix && !mix->members.empty();
+  if (grouped) out.push_back(sourcesSection(snapshot, *mix));
+  else edgeSections(snapshot, edge, "", true, out);
+
+  out.push_back({"Instrument", attributeRows(snapshot, NodeRef(edge.base), {predicate::isin, predicate::name, predicate::kind})});
+  out.push_back(
+      {"Market", attributeRows(snapshot, NodeRef(edge.market),
+                               {predicate::name, predicate::mic,
+                                predicate::country, predicate::timezone})});
+  if (auto rows = attributeRows(snapshot, NodeRef(edge.quote), {predicate::isin, predicate::name, predicate::kind}); !rows.empty())
+    out.push_back({"Quote currency", std::move(rows)});
+
+  if (grouped) {
+    for (const Member & m : mix->members) {
+      const std::string suffix = " · " + snapshot.name(m.edge.dataset);
+      edgeSections(snapshot, m.edge, suffix, false, out);
+      seriesSections(snapshot, m.edge, suffix, out);
+    }
+  } else {
+    seriesSections(snapshot, edge, "", out);
+  }
 
   // The latest news of the instrument, of its market and of the market's country: a few headlines, newest first.
   {

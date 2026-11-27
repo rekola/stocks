@@ -103,10 +103,10 @@ Today a preset is one market by name (or All), the simplest selection, and it wi
 - **A filter** on the edges of those markets: by the base instrument's kind or type (every commodity, wherever it trades), by the
   country of the market, by the dataset.
 - **The user's own preset: the edges she follows.** Built as **lists**: a list is a code (`watchlist`; the application's `kLists`
-  names them) and the edges she put on it, kept as `(list, base, quote, market, dataset)` rows in the user's own file
-  (`portfolios.sqlite`, table `list_members`), beside the portfolios and never in the cache. The membership is of the **edge**, the
-  row she sees, and not of the instrument: NOKIA from Nordnet on the watchlist does not put NOKIA from Yahoo, or on another market,
-  there; an edge can be on any number of lists; and no source, which says what a dataset says of a listing, can write over it. (An
+  names them) and the groups she put on it, kept as `(list, base, quote, market)` rows in the user's own file
+  (`portfolios.sqlite`, table `list_members`), beside the portfolios and never in the cache. The membership is of the **group** (`GroupKey`: market, base,
+  quote, whichever datasets say it), the row she sees, and not of the instrument: NOKIA on the watchlist puts every dataset's NOKIA
+  on that market there, and does not put NOKIA on another market; a group can be on any number of lists; and no source, which says what a dataset says of a listing, can write over it. (An
   `is-on-list` fact on the instrument would show every market and dataset of it, take a predicate per list because a node has one
   value per predicate, and live in the cache, which starts over with the schema; a list on the `Listing` would be a dataset's
   word for what is hers.) A row is put on a list, or taken off, from the menu button at the end of the row (`add-to-<code>`,
@@ -124,7 +124,8 @@ question in `server.md`.
 
 A row needs the instrument's symbol and name, the dataset, the latest price (the edge's quote) and
 the change over the period shown and the trace of recent closes (both from the edge's queue: see "The summary"). An edge is
-a row once it has a last price or a daily queue, and one restored from disk with none of its data in memory is a row. So the table gets a Dataset column. The row's identity is the edge key.
+a row once it has a last price or a daily queue, and one restored from disk with none of its data in memory is a row. A row is a **group**: the edges that differ only in their dataset (`GroupKey`, `model/Group.h`), with the price, the change and the
+trace made from the members that count (the median of three or more, the mean of two; a member that has said nothing for four days, or whose dataset is switched off, does not count). The store keeps the edges apart; only the readers combine. The row's identity is the group key.
 
 ## Store and snapshots
 

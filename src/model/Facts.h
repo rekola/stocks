@@ -31,10 +31,10 @@ struct StoredEvent {
   std::string body;
 };
 
-// One edge on one of the user's lists as it is kept: the list's code (a name the application gives it) and the four keys of the edge.
+// One group on one of the user's lists as it is kept: the list's code (a name the application gives it) and the three keys of the group.
 struct StoredMember {
   std::string list;
-  uint64_t base = 0, quote = 0, market = 0, dataset = 0;
+  uint64_t base = 0, quote = 0, market = 0;
   friend bool operator==(const StoredMember &, const StoredMember &) = default;
 };
 

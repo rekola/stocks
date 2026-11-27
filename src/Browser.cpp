@@ -85,11 +85,12 @@ Quotes::Scope scopeOf(const Snapshot & snapshot, const Preset & preset) {
   return {.market = snapshot.findMarket(preset.mic), .kinds = preset.kinds};
 }
 
-// The edges of a preset: a list's (those that are rows), a market's, or everything.
+// The edges of a preset, one for each group that is a row: a list's, a market's, or everything.
 std::vector<EdgeKey> edgesOf(const Snapshot & snapshot, const Preset & preset) {
   if (preset.list) {
-    std::vector<EdgeKey> keys = snapshot.listMembers(preset.list);
-    std::erase_if(keys, [&](const EdgeKey & k) { return !snapshot.listed(k); });
+    std::vector<EdgeKey> keys;
+    for (const GroupKey & group : snapshot.listMembers(preset.list))
+      if (const std::vector<EdgeKey> members = membersOf(snapshot, group); !members.empty()) keys.push_back(members.front());
     return keys;
   }
   if (!preset.mic) {
@@ -102,12 +103,15 @@ std::vector<EdgeKey> edgesOf(const Snapshot & snapshot, const Preset & preset) {
                 : std::vector<EdgeKey>{};
 }
 
-// Whether two lists of edges have the same ones, in any order.
-bool sameEdges(std::vector<EdgeKey> a, std::vector<EdgeKey> b) {
+// Whether two lists of edges stand for the same groups, in any order.
+bool sameEdges(const std::vector<EdgeKey> & a, const std::vector<EdgeKey> & b) {
   if (a.size() != b.size()) return false;
-  std::sort(a.begin(), a.end());
-  std::sort(b.begin(), b.end());
-  return a == b;
+  std::vector<GroupKey> x, y;
+  for (const EdgeKey & k : a) x.push_back(groupOf(k));
+  for (const EdgeKey & k : b) y.push_back(groupOf(k));
+  std::sort(x.begin(), x.end());
+  std::sort(y.begin(), y.end());
+  return x == y;
 }
 
 // The room the presets are given beside the period tags before those go: the tags wrap onto lines, and the period tags come only where
@@ -215,18 +219,17 @@ void Browser::setColumns() {
     return;
   }
   if (context_ == Context::Markets) {
-    // Three steps by the width of the display (Fit). The longest market labels the app shows are 25 cells ("Spotlight Stock Market DK"; most are under 24) and
-    // the dataset names 21 ("European Central Bank"; the rest 13 or less), so the wide ones are cut: no width fits them with a Name left over.
-    //   narrow (80)   no Low and High columns (the table has 10): icon 2, Base 7, Quote 5, Market 8, Dataset 8, Price 9, Change 10, trace 10, menu 1 and 9 gaps
-    //                 leave the Name 10 cells at 80 columns (the scrollbar has the last one);
-    //   medium (110)  all 12: Base 8, Quote 6, Market 10, Dataset 9, Price 9, Change 11, Low 9, High 9, trace 12, menu 1 and 11 gaps leave the Name 12 at 110;
-    //   wide (140)    Market 16, Dataset 13 and trace 16: the Name has 28 at 140.
+    // Three steps by the width of the display (Fit). The longest market labels the app shows are 25 cells ("Spotlight Stock Market DK"; most are under 24),
+    // so the wide ones are cut: no width fits them with a Name left over. There is no column for the dataset: a row is what its datasets say together.
+    //   narrow (80)   no Low and High columns (the table has 9): icon 2, Base 7, Quote 5, Market 8, Price 9, Change 10, trace 10, menu 1 and 8 gaps
+    //                 leave the Name 19 cells at 80 columns (the scrollbar has the last one);
+    //   medium (110)  all 11: Base 8, Quote 6, Market 10, Price 9, Change 11, Low 9, High 9, trace 12, menu 1 and 10 gaps leave the Name 22 at 110;
+    //   wide (140)    Market 16 and trace 16: the Name has 38 at 140.
     std::vector<cellui::TableColumn> columns = {{.title = "", .width = 2, .sortable = false, .icon = true, .icon_fallback = true},
                                                 {.title = "Base", .width = fit_ == Fit::Narrow ? 7 : 8},
                                                 {.title = "Quote", .width = fit_ == Fit::Narrow ? 5 : 6},
                                                 {.title = "Name", .width = 0},
                                                 {.title = "Market", .width = fit_ == Fit::Narrow ? 8 : fit_ == Fit::Medium ? 10 : 16},
-                                                {.title = "Dataset", .width = fit_ == Fit::Narrow ? 8 : fit_ == Fit::Medium ? 9 : 13},
                                                 {.title = "Price", .width = 9, .align = Align::RIGHT},
                                                 {.title = changeTitle(period_), .width = fit_ == Fit::Narrow ? 10 : 11, .align = Align::RIGHT}};
     if (fit_ != Fit::Narrow) {
@@ -324,7 +327,9 @@ void Browser::requestHistory() {
   auto add = [&](int position) {
     const int row = table_.rowAt(position);
     if (row < 0) return;
-    if (quotes) edges.push_back(quotes->edge(row));
+    if (quotes) {
+      for (const EdgeKey & member : quotes->members(row)) edges.push_back(member);  // every dataset's bars make the row's
+    }
     else if (const auto edge = positions->priceEdge(row)) edges.push_back(*edge);  // the edges of the positions on screen
   };
   // Each is a request a second: what is on screen, then the screen after and the one before.
@@ -379,7 +384,7 @@ void Browser::refresh() {
   // The row that was selected is selected still, wherever it is now.
   int row = quotes->rowCount() > 0 ? 0 : -1;
   for (int r = 0; selected && r < quotes->rowCount(); r++)
-    if (quotes->edge(r) == *selected) row = r;
+    if (groupOf(quotes->edge(r)) == groupOf(*selected)) row = r;
   if (row >= 0) table_.reselect(row);  // the view stays where it is
   showEmptyHint();
 }
@@ -538,7 +543,8 @@ void Browser::showChart() {
     return;
   }
   auto snapshot = store_->snapshot();
-  const PeriodView view = periodView(*snapshot, *found, period_, true);
+  const PeriodView view = quotes ? groupPeriodView(*snapshot, quotes->group(row), period_, true, quotes->filter(), &quotes->mix(row))
+                                 : periodView(*snapshot, *found, period_, true);
   if (view.closes.size() < 2) {
     status_.setMessage("No history over this period to chart");
     return;
@@ -548,13 +554,17 @@ void Browser::showChart() {
   const bool rate = view.rate;
   cellui::ChartData data;
   data.title = label + "  " + info(period_).trace;
+  if (view.sources > 1) data.title += "  " + std::to_string(view.sources) + " datasets";
   data.values = view.closes;
   data.light = view.light;  // the volume traded at each point, as how bright the line is there, as in the table
   // The volume is each point's note: read after the value at the cursor.
   for (size_t i = 0; i < view.times.size(); i++) {
     data.labels.push_back(timeLabel(view.times[i], view.dated));
     const bool traded = i < view.volumes.size() && isDefined(view.volumes[i]) && view.volumes[i] > 0;
-    data.notes.push_back(traded ? "vol " + volumeText(view.volumes[i]) : std::string());
+    std::string note = traded ? "vol " + volumeText(view.volumes[i]) : std::string();
+    // How much the datasets disagree at this point: the typical distance of one from the combined value.
+    if (i < view.spread.size() && view.sources > 1) note += std::string(note.empty() ? "" : "  ") + "spread " + fixed(view.spread[i] * 100, 2) + "%";
+    data.notes.push_back(std::move(note));
   }
   // Decimals enough that the labels at the bottom, middle and top of the axis differ: a narrow range (a currency pair) needs more
   // than the usual two (three for a rate).
@@ -614,7 +624,8 @@ void Browser::showInfo() {
   std::string label = snapshot->symbol(edge);
   if (label.empty()) label = snapshot->name(edge.base);
   std::string title = "Info: " + label;
-  AttributeModal modal(app_.widgets(), app_.root(), app_.backend().eventLoop(), std::move(title), snapshot, buildInfo(*snapshot, edge));
+  AttributeModal modal(app_.widgets(), app_.root(), app_.backend().eventLoop(), std::move(title), snapshot,
+                     buildInfo(*snapshot, edge, quotes ? &quotes->mix(row) : nullptr));
   // The input that got us here does not return until the modal closes, so no frame follows it: ask for the one that shows
   // the new selection and the dialog.
   app_.requestFrame();
@@ -664,7 +675,7 @@ std::optional<EdgeKey> Browser::selectedKey() const {
 int Browser::rowOfKey(const EdgeKey & key) const {
   if (auto * quotes = dynamic_cast<const Quotes *>(table_.model().get())) {
     for (int r = 0; r < quotes->rowCount(); r++)
-      if (quotes->edge(r) == key) return r;
+      if (groupOf(quotes->edge(r)) == groupOf(key)) return r;
   } else if (auto * positions = dynamic_cast<const Positions *>(table_.model().get())) {
     for (int r = 0; r < positions->rowCount(); r++)
       if (positions->key(r) == key) return r;
@@ -845,10 +856,10 @@ void Browser::openMenu(int row) {
     entries.push_back({"Buy", "buy"});
     entries.push_back({"Sell", "sell"});
   }
-  // The lists are of edges, which only Markets has: a position is of no dataset.
+  // The lists are of groups, which only Markets has: a position is of no dataset.
   if (quotes) {
     for (const UserList & list : kLists) {
-      const bool on = snapshot->onList(list.code, quotes->edge(row));
+      const bool on = snapshot->onList(list.code, quotes->group(row));
       entries.push_back({std::string(on ? "Take off the " : "Put on the ") + list.name, std::string(on ? "remove-from-" : "add-to-") + list.code});
     }
   }
@@ -875,14 +886,14 @@ void Browser::changeList(size_t index, bool add) {
   const int row = action_row_.value_or(table_.selectedRow());
   auto quotes = std::dynamic_pointer_cast<Quotes>(table_.model());
   if (!quotes) {
-    status_.setMessage(std::string("Only a row of Markets can be put on the ") + list.name + ": it is a list of edges");
+    status_.setMessage(std::string("Only a row of Markets can be put on the ") + list.name + ": it is a list of groups");
     return;
   }
   if (row < 0 || row >= quotes->rowCount()) {
     status_.setMessage("No row selected");
     return;
   }
-  const EdgeKey edge = quotes->edge(row);
+  const GroupKey edge = quotes->group(row);
   const std::string label = rowLabel(row), code = list.code, name = list.name;
   const bool on = store_->snapshot()->onList(code, edge);
   if (add == on) {

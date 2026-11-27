@@ -1,5 +1,6 @@
 #pragma once
 
+#include "model/Group.h"
 #include "model/Store.h"
 
 #include <cellui/ModalDialog.h>
@@ -50,8 +51,9 @@ struct InfoSection {
 };
 
 // The row's listing, its base instrument, its market (and quote currency, if it says anything) and the series the edge has.
-// Reads only what the one row needs.
-std::vector<InfoSection> buildInfo(const Snapshot & snapshot, const EdgeKey & edge);
+// Reads only what the one row needs. With the mix of a group (Group.h), the row is the group: a section says what the datasets say together
+// and what each says and whether it counts (Sources), and the listing, the series and the summary are each dataset's own, under its name.
+std::vector<InfoSection> buildInfo(const Snapshot & snapshot, const EdgeKey & edge, const Mix * mix = nullptr);
 
 // An item of news: what it says and where it is from, whom it is about (as links), and its text.
 std::vector<InfoSection> buildNewsInfo(const Snapshot & snapshot, const NewsItem & item);

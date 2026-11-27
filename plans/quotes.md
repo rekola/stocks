@@ -78,7 +78,7 @@ plus what a dealer pays: collector value is not modelled.
    does the currency) divided by 31.1035 for the bar (grams), times a bid and an ask factor read from a data file, `data/gold.csv`
    (item, unit, bid factor, ask factor: for example a coin sells for a few per cent under spot plus and buys for a few above, the real figures to be
    found from dealers). It writes a daily bar (the close at the ask side) and the quote (bid and ask) each time the spot moves, on XOFF. The
-   estimate is labelled as one in the table's dataset column and in the info dialog, and its factors are the one place the guess lives.
+   estimate is labelled as one in the info dialog's Sources, and its factors are the one place the guess lives.
 2. **A dealer's price list**, scraped (a source of its own, its own dataset, one adapter, nothing else names it): the same two items, or a
    product, with the dealer's real bid and ask. Where an item has an edge from a dealer dataset it is the price (`latestPrice`: a
    dataset that gives quotes beats an estimating one; among dealers the best bid for a holding, the best ask for a purchase: open).
