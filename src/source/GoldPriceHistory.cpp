@@ -2,6 +2,7 @@
 
 #include "model/Dates.h"
 #include "source/GoldPriceSource.h"
+#include "source/MetalUnits.h"
 
 #include <cellui/NumberParse.h>
 #include <nlohmann/json.hpp>
@@ -35,6 +36,15 @@ std::string isoDate(int64_t day) {
   std::snprintf(buffer, sizeof buffer, "%04d-%02u-%02u", d.year, d.month, d.day);
   return buffer;
 }
+
+// The bars name some metals otherwise than the prices do, and quote them in the API's unit, not the instrument's: copper is `HG` in the prices (per
+// pound) and `XCU` in the bars (per pound too), while the instrument is per tonne.
+struct BarsName {
+  const char * symbol;  // the prices' (the listing's)
+  const char * bars;    // the bars'
+  double factor;        // bars' unit to the instrument's
+};
+constexpr BarsName kBarsNames[] = {{"HG", "XCU", kPoundsPerTonne}};
 
 }  // namespace
 
@@ -83,7 +93,14 @@ HistoryProvider::Outcome GoldPriceHistory::load(Store & store, Http & http, cons
   const std::string quote = snapshot->symbol(edge.quote);
   if (!listing || listing->symbol.empty() || quote.empty()) return Outcome::Missing;
   const int64_t today = dayNumberOfInstant(static_cast<Timestamp>(std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count()));
-  const std::string symbol = listing->symbol + "/" + quote;
+  std::string name = listing->symbol;
+  double factor = 1;
+  for (const BarsName & n : kBarsNames)
+    if (name == n.symbol) {
+      name = n.bars;
+      factor = n.factor;
+    }
+  const std::string symbol = name + "/" + quote;
   std::string cursor;
   std::vector<Candle> all;
   for (int page = 0; page < 20; page++) {  // a month is one page: the bound is for a cursor that does not end
@@ -104,6 +121,11 @@ HistoryProvider::Outcome GoldPriceHistory::load(Store & store, Http & http, cons
   }
   if (all.empty()) return Outcome::Missing;  // the plan has no bars of this symbol and currency
   std::sort(all.begin(), all.end(), [](const Candle & a, const Candle & b) { return a.time < b.time; });
+  if (factor != 1)
+    for (Candle & c : all) {  // an undefined price stays undefined: it is not a number to scale
+      for (double * v : {&c.open, &c.high, &c.low, &c.close})
+        if (isDefined(*v)) *v *= factor;
+    }
   store.appendCandles(edge, Resolution::Day, all);
   return Outcome::Ok;
 }

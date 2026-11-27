@@ -8,7 +8,7 @@
 
 // goldprice.dev's daily bars (`/v1/bars?symbol=XAU/USD&from=...&to=...`: open, high, low and close as strings, the bar's UTC start, newest first, a
 // cursor to the page after). One request gives the bars of the month, the quarter and the year (it asks for what the plan allows: 30 days
-// without a key, so only the month is covered whole). The API has bars for gold in dollars only on that plan: an empty answer or a 403 `plan_gated` (the
+// without a key, so only the month is covered whole). The API has bars for gold, silver and copper in dollars only on that plan (copper is `XCU` there, `HG` in the prices, and per pound: the instrument's tonne is converted): an empty answer or a 403 `plan_gated` (the
 // edge is not on the plan) is Missing, a 429 Refused, no answer or a 5xx Offline. Bars of the day and the week would be intraday, which a plan
 // without a key has none of, so they are not asked for.
 class GoldPriceHistory : public HistoryProvider {
