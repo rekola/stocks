@@ -7,7 +7,7 @@ in [data-model.md](data-model.md); this is the other end of it.
 ## The MVP as built
 
 `market-ingest` and `market-server` (`src/market/`; the HistData adapter is in `src/market/offline/`, apart from the realtime sources of
-`src/source/`); how to run them is in the README. Both run on the application's own `Store` (`src/model`): the ingest is a source that runs on
+`src/source/`); how to run them is in docs/market-server.md. Both run on the application's own `Store` (`src/model`): the ingest is a source that runs on
 request. It makes its nodes with the helpers the sources use (`currencyNode`, `quoteNode`, `addInstrumentUnlessSaid`; ISINs from
 `source/KnownIsins.h`), sets a listing and writes `appendCandles`; the store derives the summaries (quote and queues, with the retention of each
 resolution), and hands what changed to its stores. The server restores a store from the same stores and answers from its snapshot.
