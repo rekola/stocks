@@ -139,6 +139,13 @@ struct Fixture {
 // The menu button at the end of a row: the hamburger.
 constexpr const char * kMenuGlyphText = "\xE2\x89\xA1";
 
+// Whether the selected tag is the one named: the presets are not tested by their order, which will be configurable.
+bool onTag(Fixture & f, const std::string & name) {
+  const auto & tags = f.browser->tags().tags();
+  const int i = f.browser->tags().selected();
+  return i >= 0 && static_cast<size_t>(i) < tags.size() && tags[static_cast<size_t>(i)] == name;
+}
+
 // Where `needle` first is on the screen, in cells: {row, column}, or {-1, -1}.
 std::pair<int, int> cellOf(const std::string & screen, const std::string & needle) {
   int row = 0, col = 0;
@@ -185,7 +192,7 @@ TEST(meta_x_opens_the_palette_and_a_chosen_command_runs) {
   CHECK(f.text().find("show-currencies") != std::string::npos && f.text().find("show-commodities") == std::string::npos);
   f.press(Key::Enter);
   CHECK(!f.app->commandPaletteOpen());
-  CHECK(f.browser->tags().selected() == 2);
+  CHECK(onTag(f, "Currencies"));
 }
 
 TEST(ctrl_shift_p_opens_the_palette_on_a_desktop) {
@@ -230,13 +237,13 @@ TEST(preset_commands_choose_the_tag_and_fill_the_table) {
   Fixture f;
   CHECK(f.browser->tags().selected() == 0);
   CHECK(f.app->execute("show-currencies"));
-  CHECK(f.browser->tags().selected() == 2);
+  CHECK(onTag(f, "Currencies"));
   bool euro = false;  // the rows come in the store's order, not a hand-written one
   for (int r = 0; r < f.browser->table().model()->rowCount(); r++)
     euro = euro || f.browser->table().model()->text(f.browser->table().rowAt(r), Quotes::NAME) == "Euro";
   CHECK(euro);
   CHECK(f.app->execute("previous-preset"));
-  CHECK(f.browser->tags().selected() == 1);
+  CHECK(!onTag(f, "Currencies"));
   CHECK(!f.app->execute("no-such-command"));
 }
 
@@ -1173,12 +1180,12 @@ TEST(the_presets_can_still_be_chosen_by_a_click_and_by_the_keyboard) {
   Fixture f(true, 100);
   auto [line, col] = cellOf(f.text(), "Currencies");
   f.click(line, col + 2);
-  CHECK(f.browser->tags().selected() == 2);
+  CHECK(onTag(f, "Currencies"));
   f.app->execute("focus-tags");
   f.press(Key::Left);
-  CHECK(f.browser->tags().selected() == 1);
+  CHECK(!onTag(f, "Currencies"));
   f.press(Key::Right);
-  CHECK(f.browser->tags().selected() == 2);
+  CHECK(onTag(f, "Currencies"));
 }
 
 namespace {
@@ -1407,7 +1414,7 @@ TEST(each_context_keeps_its_own_tag_sort_and_scroll_position_for_the_session) {
   CHECK(table.sortColumn() == Positions::SYMBOL && table.sortOrder() == SortOrder::ASCENDING);
   // A preset command from the Portfolio context is of Markets: it goes there.
   f.app->execute("show-indices");
-  CHECK(f.browser->context() == Context::Markets && f.browser->tags().selected() == 3);
+  CHECK(f.browser->context() == Context::Markets && onTag(f, "Indices"));
 }
 
 TEST(the_period_tags_stay_and_apply_to_both_contexts) {

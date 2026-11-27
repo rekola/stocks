@@ -100,7 +100,7 @@ TEST(every_symbol_is_priced_in_euros_and_in_dollars_as_edges_of_the_dataset) {
   CHECK(s->symbol(EdgeKey{gold, eur, none, data}) == "XAU" && s->name(NodeRef(gold)) == "Gold");
   // What a price is for is in the name the row shows: the metals by the troy ounce, copper by the pound, a coin by the coin.
   for (auto [symbol, shown] : {std::pair{"XAU", "Gold, per troy oz"}, {"XAG", "Silver, per troy oz"}, {"XPT", "Platinum, per troy oz"},
-                               {"XPD", "Palladium, per troy oz"}, {"HG", "Copper, per tonne"}, {"BTC", "Bitcoin, per coin"}, {"ETH", "Ethereum, per coin"}})
+                               {"XPD", "Palladium, per troy oz"}, {"HG", "Copper, per tonne"}, {"BTC", "₿ Bitcoin, per coin"}, {"ETH", "⟠ Ethereum, per coin"}})
     for (const InstrumentId currency : {eur, usd}) CHECK(s->listing({*s->findInstrument(symbol), currency, none, data})->name == shown);
   // Copper is quoted per pound by the API and is kept per metric tonne, the unit of the instrument (another source's copper has the same ISIN).
   CHECK(std::abs(s->lastCandles({*s->findInstrument("HG"), usd, none, data}, Resolution::Day, 1).candles.back().close - 5 * 1000 / 0.45359237) < 1e-6);
@@ -108,7 +108,7 @@ TEST(every_symbol_is_priced_in_euros_and_in_dollars_as_edges_of_the_dataset) {
   CHECK(std::abs(s->lastCandles({*s->findInstrument("XAG"), usd, none, data}, Resolution::Day, 1).candles.back().close - 45) < 1e-9);  // the others as they come
   // The metals are commodities (so in the Commodities preset), the coins are of no kind.
   for (const char * metal : {"XAU", "XAG", "XPT", "XPD", "HG"}) CHECK(s->kind(*s->findInstrument(metal)) == InstrumentKind::Commodity);
-  for (const char * coin : {"BTC", "ETH"}) CHECK(s->kind(*s->findInstrument(coin)) == InstrumentKind::Other);
+  for (const char * coin : {"BTC", "ETH"}) CHECK(s->kind(*s->findInstrument(coin)) == InstrumentKind::Crypto);
   CHECK(s->name(NodeRef(*s->findInstrument("XPT"))) == "Platinum" && std::string(s->said(NodeRef(gold), predicate::type)) == "METAL");
   // Not tradable: a spot price is priced and not bought.
   CHECK(!portfolio::tradable(*s, EdgeKey{gold, eur, none, data}));
