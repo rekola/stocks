@@ -217,9 +217,9 @@ void Browser::setColumns() {
   if (context_ == Context::Markets) {
     // Three steps by the width of the display (Fit). The longest market labels the app shows are 25 cells ("Spotlight Stock Market DK"; most are under 24) and
     // the dataset names 21 ("European Central Bank"; the rest 13 or less), so the wide ones are cut: no width fits them with a Name left over.
-    //   narrow (80)   no High and Low columns (the table has 10): icon 2, Base 7, Quote 5, Market 8, Dataset 8, Price 9, Change 10, trace 10, menu 1 and 9 gaps
+    //   narrow (80)   no Low and High columns (the table has 10): icon 2, Base 7, Quote 5, Market 8, Dataset 8, Price 9, Change 10, trace 10, menu 1 and 9 gaps
     //                 leave the Name 10 cells at 80 columns (the scrollbar has the last one);
-    //   medium (110)  all 12: Base 8, Quote 6, Market 10, Dataset 9, Price 9, Change 11, High 9, Low 9, trace 12, menu 1 and 11 gaps leave the Name 12 at 110;
+    //   medium (110)  all 12: Base 8, Quote 6, Market 10, Dataset 9, Price 9, Change 11, Low 9, High 9, trace 12, menu 1 and 11 gaps leave the Name 12 at 110;
     //   wide (140)    Market 16, Dataset 13 and trace 16: the Name has 28 at 140.
     std::vector<cellui::TableColumn> columns = {{.title = "", .width = 2, .sortable = false, .icon = true, .icon_fallback = true},
                                                 {.title = "Base", .width = fit_ == Fit::Narrow ? 7 : 8},
@@ -230,8 +230,8 @@ void Browser::setColumns() {
                                                 {.title = "Price", .width = 9, .align = Align::RIGHT},
                                                 {.title = changeTitle(period_), .width = fit_ == Fit::Narrow ? 10 : 11, .align = Align::RIGHT}};
     if (fit_ != Fit::Narrow) {
-      columns.push_back({.title = highTitle(period_), .width = 9, .align = Align::RIGHT});
       columns.push_back({.title = lowTitle(period_), .width = 9, .align = Align::RIGHT});
+      columns.push_back({.title = highTitle(period_), .width = 9, .align = Align::RIGHT});
     }
     columns.push_back({.title = info(period_).trace, .width = fit_ == Fit::Narrow ? 10 : fit_ == Fit::Medium ? 12 : 16, .sortable = false, .trace = true});
     columns.push_back({.title = "", .buttons = {kMenuGlyph}});
@@ -463,7 +463,7 @@ void Browser::layout(int rows, int cols) {
     const SortOrder order = table_.sortOrder();
     if (moves) {
       // The columns the table has change: the sort follows its column, and one by a column that is hidden now is dropped.
-      const int own = column < 0 ? -1 : quotes->narrow() && column >= Quotes::HIGH ? column + 2 : column;
+      const int own = column < 0 ? -1 : quotes->narrow() && column >= Quotes::LOW ? column + 2 : column;
       quotes->setNarrow(hide);
       column = own < 0 ? -1 : quotes->tableColumn(own);
     }
