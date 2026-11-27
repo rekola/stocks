@@ -4,6 +4,7 @@
 #include "Quotes.h"
 #include "portfolio/Portfolio.h"
 
+#include <cellui/DialogPanel.h>
 #include <cellui/Input.h>
 #include <cellui/Utf8.h>
 
@@ -128,18 +129,14 @@ void TransactionsModal::layout(Plane & screen, int rows, int cols) {
   body_.setCount(static_cast<int>(table_.rows.size()));
 
   if (!plane_) {
-    plane_ = screen.createChild();
-    plane_->setMouseCursor(MouseCursor::DEFAULT);
-    plane_->setElevation(screen.getStyles().theme.elevation.modal);
-    plane_->setCornerRadius(screen.getStyles().theme.dialog_radius_px);
+    plane_ = cellui::dialog::create(screen, screen.getStyles().theme.elevation.modal);
   }
   plane_->resize(height, width);
+  cellui::dialog::style(*plane_);
   const StyleProvider & styles = plane_->getStyles();
   const Color bg = styles.picker_bg_color, fg = styles.window_fg_color, strong = styles.window_accent_fg_color, quiet = styles.theme.text_secondary;
-  auto paint = [&](const Color & foreground) {
-    plane_->setFgColor(foreground);
-    plane_->setBgColor(bg);
-  };
+  // The box is glass where the display blurs pixels, like every dialog's.
+  auto paint = [&](const Color & foreground) { cellui::dialog::ink(*plane_, foreground); };
   paint(fg);
   for (int y = 0; y < height; y++) plane_->putstr(y, 0, std::string(static_cast<size_t>(width), ' '));
   paint(strong);
