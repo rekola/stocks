@@ -185,7 +185,7 @@ TEST(meta_x_opens_the_palette_and_a_chosen_command_runs) {
   CHECK(f.text().find("show-currencies") != std::string::npos && f.text().find("show-commodities") == std::string::npos);
   f.press(Key::Enter);
   CHECK(!f.app->commandPaletteOpen());
-  CHECK(f.browser->tags().selected() == 2);
+  CHECK(f.browser->tags().selected() == 3);
 }
 
 TEST(ctrl_shift_p_opens_the_palette_on_a_desktop) {
@@ -230,13 +230,13 @@ TEST(preset_commands_choose_the_tag_and_fill_the_table) {
   Fixture f;
   CHECK(f.browser->tags().selected() == 0);
   CHECK(f.app->execute("show-currencies"));
-  CHECK(f.browser->tags().selected() == 2);
+  CHECK(f.browser->tags().selected() == 3);
   bool euro = false;  // the rows come in the store's order, not a hand-written one
   for (int r = 0; r < f.browser->table().model()->rowCount(); r++)
     euro = euro || f.browser->table().model()->text(f.browser->table().rowAt(r), Quotes::NAME) == "Euro";
   CHECK(euro);
   CHECK(f.app->execute("previous-preset"));
-  CHECK(f.browser->tags().selected() == 1);
+  CHECK(f.browser->tags().selected() == 2);
   CHECK(!f.app->execute("no-such-command"));
 }
 
@@ -1173,12 +1173,12 @@ TEST(the_presets_can_still_be_chosen_by_a_click_and_by_the_keyboard) {
   Fixture f(true, 100);
   auto [line, col] = cellOf(f.text(), "Currencies");
   f.click(line, col + 2);
-  CHECK(f.browser->tags().selected() == 2);
+  CHECK(f.browser->tags().selected() == 3);
   f.app->execute("focus-tags");
   f.press(Key::Left);
-  CHECK(f.browser->tags().selected() == 1);
-  f.press(Key::Right);
   CHECK(f.browser->tags().selected() == 2);
+  f.press(Key::Right);
+  CHECK(f.browser->tags().selected() == 3);
 }
 
 namespace {
@@ -1407,7 +1407,7 @@ TEST(each_context_keeps_its_own_tag_sort_and_scroll_position_for_the_session) {
   CHECK(table.sortColumn() == Positions::SYMBOL && table.sortOrder() == SortOrder::ASCENDING);
   // A preset command from the Portfolio context is of Markets: it goes there.
   f.app->execute("show-indices");
-  CHECK(f.browser->context() == Context::Markets && f.browser->tags().selected() == 3);
+  CHECK(f.browser->context() == Context::Markets && f.browser->tags().selected() == 4);
 }
 
 TEST(the_period_tags_stay_and_apply_to_both_contexts) {
