@@ -70,8 +70,9 @@ the program runs, and starts at three months.
 
 - The change is the last price against the period's first (for the day, the previous close).
 - Beside the change are the period's **high** and **low** (`10y high`, `10y low`), in the row's price unit (a rate in per cent), sortable and
-  blank where not known. They come from the bars of the period where there are some, and before that from what a provider says (the day's
-  range, Yahoo's 52 weeks for the year).
+  blank where not known. They come from the bars of the period where there are some (with the last price, so the price is always inside them), and
+  before that from what a provider says (the day's range, Yahoo's 52 weeks for the year). On a display narrower than 110 cells the two columns
+  are hidden, and the other columns are narrower; from 140 cells the Market and the trace are wider.
 - For a rate (a row quoted in per cent, such as Euribor or €STR), the change is the difference in basis points.
 - The colour is the sign of the change.
 - A row with no bars for the period shows no number and no trace.

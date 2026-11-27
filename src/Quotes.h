@@ -65,6 +65,12 @@ class Quotes : public cellui::TableModel {
   // the sort and the scroll position are the table's, which is told with modelChanged().
   void setPeriod(Period);
   Period period() const { return period_; }
+  // A narrow display hides the high and the low columns: the table then has no such columns, and its column `c` from HIGH on is this model's column
+  // `c + 2` (Browser sets the headings with it). Every call of the table takes the columns it has; the constants above are this model's own.
+  void setNarrow(bool narrow) { narrow_ = narrow; }
+  bool narrow() const { return narrow_; }
+  // The table's column for a model column, or -1 where it is hidden; and the model's column for the table's.
+  int tableColumn(int column) const { return !narrow_ || column < HIGH ? column : column <= LOW ? -1 : column - 2; }
   // Which edges a table shows: every market's, or one market's (not found yet: none, and what came meanwhile is read once it is).
   struct Scope {
     bool all = false;
@@ -118,6 +124,8 @@ class Quotes : public cellui::TableModel {
   const std::string & marketLabel(MarketId) const;
   const std::string & datasetName(DatasetId) const;
 
+  int own(int c) const { return narrow_ && c >= HIGH ? c + 2 : c; }
+  bool narrow_ = false;
   Period period_ = kDefaultPeriod;
   std::shared_ptr<IconLoader> icons_;
   std::shared_ptr<const Snapshot> snapshot_;

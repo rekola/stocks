@@ -268,6 +268,7 @@ std::string lowTitle(Period period) { return std::string(info(period).label) + "
 std::string Quotes::priceText(int r, double v) const { return isRate(*snapshot_, edge(r)) ? fixed(v, 3) + "%" : fixed(v, 2); }
 
 std::string Quotes::text(int r, int c) const {
+  c = own(c);
   switch (c) {
     case BASE: return baseOf(*snapshot_, edge(r));
     case QUOTE: return quoteOf(*snapshot_, edge(r));
@@ -306,6 +307,7 @@ const PeriodView & Quotes::traceOf(int r) const {
 
 // The change and the trace beside it are one colour, the sign of the period's change (trendUp: the only place the rule is).
 std::optional<cellui::Color> Quotes::color(int r, int c) const {
+  c = own(c);
   if (c != CHANGE && c != HISTORY) return std::nullopt;
   const std::optional<bool> up = trendUp(change(r));
   if (!up) return std::nullopt;
@@ -313,6 +315,7 @@ std::optional<cellui::Color> Quotes::color(int r, int c) const {
 }
 
 std::optional<double> Quotes::number(int r, int c) const {
+  c = own(c);
   if (c == PRICE) return price(r);
   if (c == CHANGE || c == HIGH || c == LOW) {
     const double v = c == CHANGE ? change(r) : c == HIGH ? high(r) : low(r);
@@ -343,6 +346,7 @@ void Quotes::build(int column) const {
 }
 
 int Quotes::compare(int a, int b, int column) const {
+  column = own(column);
   if (column <= ICON || column >= HISTORY) return 0;  // the icon and the trace sort as equal
   if (!built_[column]) build(column);
   if (isNumeric(column)) {

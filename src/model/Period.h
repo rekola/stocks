@@ -30,8 +30,14 @@
 // memory has none: the row shows its price and no trace until it is read. A fund's NAV is a bar of one value and works the same way.
 //
 // The high and the low of a period are the highest high and the lowest low of the same bars the change is measured over (the period's window of the
-// first feed that reaches back far enough; the day's own bars, else the daily bar of its day), and undefined where the change is. Not the price: the
-// quote's last price is not a bar.
+// first feed that reaches back far enough; the day's own bars, else the daily bar of its day), and the period's last price with them, so that the Price
+// column's number is never outside the range beside it (low <= price <= high): a quote newer than the last bar widens it. A bar with no high or no low
+// counts at its close (high = max(its high, its close), low = min(its low, its close); a bar with nothing defined says nothing), and a Scalar queue's
+// value is its close. They are defined only where bars cover the period: a period with none stays undefined, whatever the quote says.
+//
+// The day is of ONE SESSION: intraday bars older than the day of the price (the quote's time: a list has said a newer price than the bars have) are
+// not the day's, and give neither its range nor its change nor its trace, so a source's own day range and `yield_1d` stand until bars of the same
+// session arrive. The daily bar of the price's day stands in where there are no intraday bars, as before.
 //
 // The change of a period is shown only from bars that cover it (the trace is whatever bars there are): the first bar must be within a third of the period of its start (so the 60
 // daily bars the made-up data has are a quarter, one daily bar is not a week). Else the row has no number for the period,

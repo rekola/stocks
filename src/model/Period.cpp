@@ -52,12 +52,22 @@ Seq<Candle> from(const Seq<Candle> & bars, int64_t key) {
   return bars.drop(static_cast<size_t>(at - bars.begin()));
 }
 
-// The highest high and the lowest low of the bars (a bar with none says nothing).
+// The highest high and the lowest low of the bars, and the period's last price with them: the Price column's number is never outside the range
+// beside it. A bar that lacks its high or its low counts at its close there (a metal that gives only a last price, a bar stored with no open): high =
+// max(its high, its close), low = min(its low, its close); a bar with nothing defined says nothing. Called only where bars cover the period, so a
+// period with none stays undefined.
 void extent(const Seq<Candle> & bars, PeriodView & v) {
+  const auto take = [&](double high, double low) {
+    if (isDefined(high) && (!isDefined(v.high) || high > v.high)) v.high = high;
+    if (isDefined(low) && (!isDefined(v.low) || low < v.low)) v.low = low;
+  };
   for (const Candle & c : bars) {
-    if (isDefined(c.high) && (!isDefined(v.high) || c.high > v.high)) v.high = c.high;
-    if (isDefined(c.low) && (!isDefined(v.low) || c.low < v.low)) v.low = c.low;
+    if (isDefined(c.high) && isDefined(c.low)) take(c.high, c.low);
+    else if (isDefined(c.close)) take(isDefined(c.high) ? std::max(c.high, c.close) : c.close, isDefined(c.low) ? std::min(c.low, c.close) : c.close);
+    else take(c.high, c.low);
   }
+  if (isDefined(v.high) && isDefined(v.last)) v.high = std::max(v.high, v.last);
+  if (isDefined(v.low) && isDefined(v.last)) v.low = std::min(v.low, v.last);
 }
 
 // Fills in the last price and the trace of a period from its bars (of resolution `r`). The last price is the quote's, the one the Price column shows (the store
@@ -163,6 +173,8 @@ PeriodView periodView(const Snapshot & snapshot, const EdgeKey & edge, Period pe
       if (queue.empty()) continue;
       const int64_t session = dayOf(r, queue.back().time);
       if (!days.empty() && session < days.back().time) continue;  // older than the daily bars: a session gone by
+      // Older than the price's day: the bars are of a session gone by (a list has said a newer price). Neither their range nor their change is the day's.
+      if (quote && quote->time != 0 && dayNumberOfInstant(quote->time) > session) continue;
       const Seq<Candle> bars = from(queue, keyOf(r, session));
       v.primary = true;
       finish(r, bars, quote, v, withTrace);

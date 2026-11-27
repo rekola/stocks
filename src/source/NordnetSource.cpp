@@ -241,7 +241,7 @@ bool NordnetSource::parsePage(const std::string & body, Page & page, std::string
       // A fund has only its NAV: the bar's close, which is also the last price while the slot is still in progress (the
       // NAV of the day is dated by its tick). Its open, high and low are undefined, and so is a volume the answer lacks.
       const bool fund = kindOfType(l.type) == InstrumentKind::Fund;
-      if (fund && last) open = high = low = kUndefined;
+      if (fund && last) open = high = low = std::nullopt;
       if (last && tick > 0) {
         l.hasQuote = true;
         l.quote.last = *last;
@@ -254,9 +254,9 @@ bool NordnetSource::parsePage(const std::string & body, Page & page, std::string
         l.hasBar = true;
         // Keyed by the trading date, not by the instant: the date of the last tick in UTC (a market east of UTC+9 around
         // its open would need its own time zone).
-        l.bar = {dayNumberOfInstant(tick), *open, *high, *low, *last,
+        l.bar = {dayNumberOfInstant(tick), open.value_or(kUndefined), high.value_or(kUndefined), low.value_or(kUndefined), last.value_or(kUndefined),
                  volume != p.end() && volume->is_number() ? volume->get<double>() : kUndefined};
-        // The high and the low of today's session are the day's (a fund has none: they were cleared above).
+        // The high and the low of today's session are the day's (a fund has none: they were cleared above, so its bar is a close only).
         if (high && low) {
           l.ranges.high[static_cast<size_t>(Period::Day)] = *high;
           l.ranges.low[static_cast<size_t>(Period::Day)] = *low;

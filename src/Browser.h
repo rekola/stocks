@@ -147,7 +147,10 @@ class Browser {
   std::shared_ptr<HistoryLoader> history_;
   cellui::TagBar tags_, periods_;
   Period period_ = kDefaultPeriod;
-  bool narrow_ = false;  // the display is too narrow for the markets table's roomy columns (setColumns)
+  // How much room the display gives the markets table: narrow (under 110 cells) hides the high and low columns and has narrow ones, wide (140 and up) has
+  // the roomiest (setColumns, layout).
+  enum class Fit { Narrow, Medium, Wide };
+  Fit fit_ = Fit::Medium;
   cellui::Table table_;
   cellui::Label info_;
   cellui::Label hint_;  // over the table's first rows where the Portfolio context has nothing to show

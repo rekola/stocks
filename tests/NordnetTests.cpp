@@ -103,7 +103,7 @@ TEST(the_days_high_and_low_of_a_listing_and_of_an_indicator_are_the_days_range_a
   for (size_t p = 1; p < kChangeCount; p++) CHECK(!isDefined(r.high[p]) && !isDefined(r.low[p]));  // the answer has no week, month or year range
   NordnetSource::Page funds;
   CHECK(NordnetSource::parsePage(fixture("fundlist-1.json"), funds, error));
-  for (const NordnetListing & l : funds.listings) CHECK(!l.ranges.says());  // a NAV has no range
+  for (const NordnetListing & l : funds.listings) CHECK(!l.ranges.says() && l.hasBar && !isDefined(l.bar.high) && !isDefined(l.bar.low) && !isDefined(l.bar.open));  // a NAV: a close, no range
   // Stored with the edge: shown before any history is loaded.
   auto store = makeMemoryStore();
   FakeHttp http;

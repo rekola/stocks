@@ -74,8 +74,9 @@ std::function<bool(const NewsItem &)> newsKeep(const NewsPreset & preset) {
 // The one button at the end of a row opens the row's menu: the hamburger, three equal lines (U+2261, identical to, in Mathematical
 // Operators with the circled plus and minus that were here before), which the monospace fonts terminals and the window use have, one
 // cell wide. The trigram (U+2630) is in fewer of them and its lines came with margins of their own where it was not.
-// From this many columns the markets table has its roomy columns; below it (a terminal of 80) it has the narrow ones.
-constexpr int kWideCols = 110;
+// From these many columns the markets table has all its columns (medium), and its roomiest widths (wide); below the first (a terminal of 80) it has
+// no high and low columns and narrower ones.
+constexpr int kMediumCols = 110, kWideCols = 140;
 constexpr const char * kMenuGlyph = "\xE2\x89\xA1";
 
 Quotes::Scope scopeOf(const Snapshot & snapshot, const Preset & preset) {
@@ -214,21 +215,27 @@ void Browser::setColumns() {
     return;
   }
   if (context_ == Context::Markets) {
-    // Twelve columns with a cell between each. Wide (from kWideCols): the Name takes what the others leave. Narrow (80 columns): the Market, the Dataset, the
-    // trace, the symbols and the numbers are narrower, so that the Name still has a few cells and the trace and the menu button are not cut off.
-    const bool wide = !narrow_;
-    table_.setColumns({{.title = "", .width = 2, .sortable = false, .icon = true, .icon_fallback = true},
-                       {.title = "Base", .width = wide ? 8 : 5},
-                       {.title = "Quote", .width = wide ? 6 : 4},
-                       {.title = "Name", .width = 0},
-                       {.title = "Market", .width = wide ? 10 : 5},
-                       {.title = "Dataset", .width = wide ? 9 : 5},
-                       {.title = "Price", .width = wide ? 9 : 8, .align = Align::RIGHT},
-                       {.title = changeTitle(period_), .width = wide ? 11 : 10, .align = Align::RIGHT},
-                       {.title = highTitle(period_), .width = wide ? 9 : 8, .align = Align::RIGHT},
-                       {.title = lowTitle(period_), .width = wide ? 9 : 8, .align = Align::RIGHT},
-                       {.title = info(period_).trace, .width = wide ? 12 : 8, .sortable = false, .trace = true},
-                       {.title = "", .buttons = {kMenuGlyph}}});
+    // Three steps by the width of the display (Fit). The longest market labels the app shows are 25 cells ("Spotlight Stock Market DK"; most are under 24) and
+    // the dataset names 21 ("European Central Bank"; the rest 13 or less), so the wide ones are cut: no width fits them with a Name left over.
+    //   narrow (80)   no High and Low columns (the table has 10): icon 2, Base 7, Quote 5, Market 8, Dataset 8, Price 9, Change 10, trace 10, menu 1 and 9 gaps
+    //                 leave the Name 10 cells at 80 columns (the scrollbar has the last one);
+    //   medium (110)  all 12: Base 8, Quote 6, Market 10, Dataset 9, Price 9, Change 11, High 9, Low 9, trace 12, menu 1 and 11 gaps leave the Name 12 at 110;
+    //   wide (140)    Market 16, Dataset 13 and trace 16: the Name has 28 at 140.
+    std::vector<cellui::TableColumn> columns = {{.title = "", .width = 2, .sortable = false, .icon = true, .icon_fallback = true},
+                                                {.title = "Base", .width = fit_ == Fit::Narrow ? 7 : 8},
+                                                {.title = "Quote", .width = fit_ == Fit::Narrow ? 5 : 6},
+                                                {.title = "Name", .width = 0},
+                                                {.title = "Market", .width = fit_ == Fit::Narrow ? 8 : fit_ == Fit::Medium ? 10 : 16},
+                                                {.title = "Dataset", .width = fit_ == Fit::Narrow ? 8 : fit_ == Fit::Medium ? 9 : 13},
+                                                {.title = "Price", .width = 9, .align = Align::RIGHT},
+                                                {.title = changeTitle(period_), .width = fit_ == Fit::Narrow ? 10 : 11, .align = Align::RIGHT}};
+    if (fit_ != Fit::Narrow) {
+      columns.push_back({.title = highTitle(period_), .width = 9, .align = Align::RIGHT});
+      columns.push_back({.title = lowTitle(period_), .width = 9, .align = Align::RIGHT});
+    }
+    columns.push_back({.title = info(period_).trace, .width = fit_ == Fit::Narrow ? 10 : fit_ == Fit::Medium ? 12 : 16, .sortable = false, .trace = true});
+    columns.push_back({.title = "", .buttons = {kMenuGlyph}});
+    table_.setColumns(std::move(columns));
     return;
   }
   const auto positions = std::dynamic_pointer_cast<Positions>(table_.model());
@@ -263,6 +270,7 @@ void Browser::showPreset(int i) {
   auto snapshot = store_->snapshot();
   auto quotes = std::make_shared<Quotes>(snapshot, edgesOf(*snapshot, kPresets[i]), icons_);
   quotes->setPeriod(period_);
+  quotes->setNarrow(fit_ == Fit::Narrow);
   table_.setModel(quotes);
   shown_version_ = snapshot->version();
   shown_preset_ = i;
@@ -447,9 +455,22 @@ int Browser::rowOfNewsKey(const std::string & key) const {
 // The tags on the top rows (one cell in), a gap, the table, the info line and the status line. The presets go onto as many lines as they
 // need, the period tags at the right end of the first.
 void Browser::layout(int rows, int cols) {
-  if (const bool narrow = cols < kWideCols; narrow != narrow_) {
-    narrow_ = narrow;
-    setColumns();  // the markets table has its columns for the width; the sort and the scroll position stay
+  const Fit fit = cols < kMediumCols ? Fit::Narrow : cols < kWideCols ? Fit::Medium : Fit::Wide;
+  if (fit != fit_) {
+    auto quotes = std::dynamic_pointer_cast<Quotes>(table_.model());
+    const bool hide = fit == Fit::Narrow, moves = quotes && quotes->narrow() != hide;
+    int column = table_.sortColumn();
+    const SortOrder order = table_.sortOrder();
+    if (moves) {
+      // The columns the table has change: the sort follows its column, and one by a column that is hidden now is dropped.
+      const int own = column < 0 ? -1 : quotes->narrow() && column >= Quotes::HIGH ? column + 2 : column;
+      quotes->setNarrow(hide);
+      column = own < 0 ? -1 : quotes->tableColumn(own);
+    }
+    fit_ = fit;
+    setColumns();  // the markets table has its columns for the width; the scroll position stays
+    if (moves) table_.sortBy(column, column >= 0 ? order : SortOrder::NONE);
+    table_.modelChanged();
   }
   // The period tags have the right end of the top row, where there is room beside the presets: all of them on one line, or at
   // least what is worth wrapping in.

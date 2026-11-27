@@ -55,7 +55,9 @@ struct Changes {
 // price unit of the edge (per cent for a rate, points for an index, the quote currency for the rest: not a change), undefined where not
 // known. A source that says its own (a quote's day range, a 52-week range) writes them, and only the defined ones overwrite; a period the
 // queues cover is then worked out from the bars (the highest high and the lowest low of the bars of the window `periodView` reads for the
-// change, the highest and lowest value for a Scalar queue), and that overrides what a source said.
+// change, the highest and lowest value for a Scalar queue, the period's last price with them, a bar with no high or low at its close), and that
+// overrides what a source said. The day is the exception that keeps a source's range: bars override it only when they are of the same session as the
+// price (`Period.h`: intraday bars older than the day of the quote are not the day's), so a newer said range survives bars of the session before.
 struct Ranges {
   std::array<double, kChangeCount> high, low;
   Ranges() {

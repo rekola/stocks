@@ -236,8 +236,12 @@ An edge's summary is its **quote**, its **changes**, its **highs and lows** and,
   `fiftyTwoWeekHigh/Low` for the year; no other field of any source is a range, and none is stretched to a period it does not cover) writes
   them, and only the defined numbers overwrite. A period the queues cover is worked out from the bars, with exactly the window and the feeds
   `periodView` reads for the change (`Period.h`), and overrides what a source said: the highest `high` and the lowest `low` of a candle
-  queue's bars, the highest and lowest value of a value queue; the day with no intraday bars is the daily bar of its day; a period with no
-  bars and nothing said is undefined. They are recomputed whenever the bars, the quote or the queue change, as the changes are, and kept on
+  queue's bars, the highest and lowest value of a value queue, **and the period's last price (the quote's) with them**, so the Price column is never
+  outside the range beside it; a bar with no high or no low counts at its close (high = max(its high, its close), low = min(its low, its close); a bar with
+  nothing defined says nothing); the day with no intraday bars is the daily bar of its day; a period with no bars and nothing said is undefined (the
+  price alone makes no range). **The day is of one session**: intraday bars older than the day of the quote are not the day's, and give neither its range nor
+  its change nor its trace, so a source's day range and `yield_1d` (a list says a newer price than the history has) stand until bars of the same session
+  arrive; the change had the same fault (stale bars' previous close against a newer price) and has the same fix. They are recomputed whenever the bars, the quote or the queue change, as the changes are, and kept on
   the disk with the edge (`high_day … high_year10`, `low_day … low_year10`), so a table shows them before any history is loaded.
 - A **queue** is the bars that the periods using a resolution show: time-ordered, a bar at a time already there replaces it, a new time is
   pushed, and bars older than the window are popped from the old end. There is no downsampling and no base bar. The window is measured back

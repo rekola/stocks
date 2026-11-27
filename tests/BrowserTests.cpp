@@ -1266,7 +1266,7 @@ TEST(the_high_and_low_columns_follow_the_period_are_formatted_like_the_price_and
   said.high[static_cast<size_t>(Period::Year10)] = 130.5;
   w.store->setRanges(index, said);
   Quotes q(w.store->snapshot(), {rate, index, none});
-  CHECK(q.text(rowOf(q, rate), Quotes::HIGH) == "1.000%" && q.text(rowOf(q, rate), Quotes::LOW) == "1.000%");  // the quarter, from the daily bars (these have 1 for a high and a low)
+  CHECK(q.text(rowOf(q, rate), Quotes::HIGH) == "3.100%" && q.text(rowOf(q, rate), Quotes::LOW) == "1.000%");  // the quarter: the bars have 1 for a high and a low, and the price 3.10 is in the range
   q.setPeriod(Period::Year10);
   const int rr = rowOf(q, rate), ri = rowOf(q, index), rn = rowOf(q, none);
   CHECK(q.text(rr, Quotes::HIGH) == "4.500%" && q.text(rr, Quotes::LOW) == "0.500%");  // a rate, in per cent
@@ -1277,7 +1277,7 @@ TEST(the_high_and_low_columns_follow_the_period_are_formatted_like_the_price_and
   CHECK(q.compare(rn, ri, Quotes::HIGH) < 0 && q.compare(ri, rr, Quotes::HIGH) > 0 && q.compare(rr, ri, Quotes::LOW) > 0 && q.compare(rn, rr, Quotes::LOW) < 0);
   // The period picked decides: back to the quarter, the 10-year numbers are not shown.
   q.setPeriod(Period::Quarter);
-  CHECK(q.text(rr, Quotes::HIGH) == "1.000%");
+  CHECK(q.text(rr, Quotes::HIGH) == "3.100%");
   CHECK(q.compare(rn, ri, Quotes::HIGH) == 0);
 }
 
@@ -1319,14 +1319,81 @@ TEST(picking_the_ten_years_shows_the_ten_year_high_and_low_in_the_window_and_sor
   CHECK(cell(rows.flat, Quotes::HIGH) != "7.00");
 }
 
-TEST(at_80_columns_every_column_is_there_and_the_name_has_a_few_cells) {
+namespace {
+// The headings of the markets table on a display of `cols` cells: each is there whole, and so are the trace's heading and the menu button.
+bool showsColumns(const std::string & screen, std::initializer_list<const char *> headings) {
+  for (const char * h : headings)
+    if (screen.find(h) == std::string::npos) return false;
+  return screen.find(kMenuGlyphText) != std::string::npos && screen.find("Euro") != std::string::npos && screen.find("20.00") != std::string::npos;
+}
+}  // namespace
+
+TEST(every_row_has_its_price_inside_its_high_and_low_for_every_period) {
+  Fixture f;  // the made-up data
+  periodWorld(*f.store);
+  const auto s = f.store->snapshot();
+  size_t seen = 0;
+  for (const EdgeKey & k : allQuoteEdges(*s)) {
+    const auto quote = s->quote(k);
+    for (size_t p = 0; p < kPeriodCount; p++) {
+      const double high = s->ranges(k).high[p], low = s->ranges(k).low[p];
+      if (isDefined(high) && isDefined(low)) {
+        CHECK(low <= high);
+        if (quote && isDefined(quote->last)) CHECK(low <= quote->last && quote->last <= high);
+        seen++;
+      }
+    }
+  }
+  CHECK(seen > 100);
+}
+
+TEST(at_80_columns_the_high_and_low_are_hidden_and_the_rest_is_there_with_the_menu_button_and_the_trace) {
   Fixture f(false, 80);
   periodWorld(*f.store);
   f.app->execute("show-currencies");
   const std::string screen = f.text();
-  // The headings of the narrow columns are cut short ("Quo…", "Mark…"); the Name has four cells.
-  for (const char * heading : {"Base", "Quo", "Name", "Mark", "Data", "Price", "Change 3m", "3m high", "3m low", "3 months"}) CHECK(screen.find(heading) != std::string::npos);
-  CHECK(screen.find("Euro") != std::string::npos && screen.find("20.00") != std::string::npos);
+  CHECK(showsColumns(screen, {"Base", "Quote", "Name", "Market", "Dataset", "Price", "Change 3m", "3 months"}));
+  CHECK(screen.find("3m high") == std::string::npos && screen.find("3m low") == std::string::npos);
+  CHECK(f.browser->table().model()->text(0, Quotes::HISTORY - 2).empty());  // the table has no columns for them: the trace is its column 8, which says no text
+  CHECK(f.browser->table().sortColumn() == -1);
+  // The change is still its column 7, and sorts.
+  f.browser->table().sortBy(7, SortOrder::DESCENDING);
+  CHECK(f.browser->table().model()->text(f.browser->table().rowAt(0), 7) == "+100.00%");
+}
+
+TEST(at_110_columns_every_column_is_there_and_at_140_the_market_and_the_trace_are_wider) {
+  for (int cols : {110, 140}) {
+    Fixture f(false, cols);
+    periodWorld(*f.store);
+    f.app->execute("show-currencies");
+    CHECK(showsColumns(f.text(), {"Base", "Quote", "Name", "Market", "Dataset", "Price", "Change 3m", "3m high", "3m low", "3 months"}));
+    CHECK(!f.browser->table().model()->text(f.browser->table().rowAt(0), Quotes::HIGH).empty());
+  }
+}
+
+namespace {
+void resizeTo(Fixture & f, int cols) {
+  f.backend->resize(24, cols);
+  f.app->handle(BackendEvent::makeResize(24, cols));
+  f.app->present();
+}
+}  // namespace
+
+TEST(a_display_that_becomes_narrow_hides_the_high_and_low_and_the_sort_follows_its_column_and_one_by_a_hidden_column_is_dropped) {
+  Fixture f(false, 110);
+  periodWorld(*f.store);
+  f.app->execute("show-currencies");
+  Table & t = f.browser->table();
+  t.sortBy(Quotes::CHANGE, SortOrder::DESCENDING);
+  resizeTo(f, 80);
+  CHECK(f.text().find("3m high") == std::string::npos && t.sortColumn() == 7 && t.sortOrder() == SortOrder::DESCENDING);
+  resizeTo(f, 130);
+  CHECK(f.text().find("3m high") != std::string::npos && t.sortColumn() == Quotes::CHANGE);
+  t.sortBy(Quotes::LOW, SortOrder::ASCENDING);
+  resizeTo(f, 80);
+  CHECK(t.sortColumn() == -1);  // sorted by a column that is hidden now: no sort
+  resizeTo(f, 110);
+  CHECK(f.text().find("3m low") != std::string::npos);
 }
 
 TEST(the_days_change_of_a_rate_is_the_difference_from_the_previous_close_in_basis_points) {
