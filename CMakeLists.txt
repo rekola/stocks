@@ -79,7 +79,7 @@ FetchContent_Declare(SQLiteCpp
 FetchContent_MakeAvailable(SQLiteCpp)
 
 # The data model: plain values and the Store they live in. Knows nothing of the screen.
-add_library(stocks_model STATIC src/model/MemoryStore.cpp src/model/Isin.cpp src/model/Period.cpp src/model/NodeKey.cpp src/model/LegacyNodeKey.cpp
+add_library(stocks_model STATIC src/model/MemoryStore.cpp src/model/Isin.cpp src/model/Period.cpp src/model/Group.cpp src/model/NodeKey.cpp src/model/LegacyNodeKey.cpp
   src/model/FactWriter.cpp src/model/SqliteFactStore.cpp src/model/SummaryRecords.cpp src/model/SummaryWriter.cpp src/model/BarWriter.cpp src/model/SqliteSummaryStore.cpp src/model/SqliteBarStore.cpp src/portfolio/Portfolio.cpp src/portfolio/Transaction.cpp)
 target_include_directories(stocks_model PUBLIC src)
 target_compile_features(stocks_model PUBLIC cxx_std_20)
@@ -168,7 +168,7 @@ endif()
 # The browser on a test display: keys in, what it shows out. cellui's test display
 # (TestBackend) is built where there is a POSIX event loop, so not on Windows.
 if(NOT WIN32)
-  add_executable(stocks_tests tests/test_main.cpp tests/BrowserTests.cpp tests/ModelTests.cpp tests/SourceTests.cpp tests/InstrumentListsTests.cpp tests/NordnetTests.cpp tests/HistoryTests.cpp tests/NordnetHistoryTests.cpp tests/DatesTests.cpp tests/IconTests.cpp tests/FundTests.cpp tests/DataDirectoryTests.cpp tests/FactTests.cpp tests/NodeKeyTests.cpp tests/NordnetDetailsTests.cpp tests/NordnetNewsTests.cpp tests/SuomenPankkiTests.cpp tests/EcbTests.cpp tests/PortfolioTests.cpp tests/PortfolioFileTests.cpp tests/PhysicalTests.cpp tests/KnownIsinsTests.cpp tests/GoldApiTests.cpp tests/GoldPriceTests.cpp tests/SifterTests.cpp tests/SummaryTests.cpp tests/SummaryStoreTests.cpp tests/BarStoreTests.cpp)
+  add_executable(stocks_tests tests/test_main.cpp tests/BrowserTests.cpp tests/ModelTests.cpp tests/SourceTests.cpp tests/InstrumentListsTests.cpp tests/NordnetTests.cpp tests/HistoryTests.cpp tests/NordnetHistoryTests.cpp tests/DatesTests.cpp tests/IconTests.cpp tests/FundTests.cpp tests/DataDirectoryTests.cpp tests/FactTests.cpp tests/NodeKeyTests.cpp tests/NordnetDetailsTests.cpp tests/NordnetNewsTests.cpp tests/SuomenPankkiTests.cpp tests/EcbTests.cpp tests/PortfolioTests.cpp tests/PortfolioFileTests.cpp tests/PhysicalTests.cpp tests/KnownIsinsTests.cpp tests/GoldApiTests.cpp tests/GoldPriceTests.cpp tests/SifterTests.cpp tests/SummaryTests.cpp tests/SummaryStoreTests.cpp tests/BarStoreTests.cpp tests/GroupTests.cpp)
   target_link_libraries(stocks_tests PRIVATE stocks_lib SQLiteCpp)  # the tests of the file make an old one with it
   if(TARGET stocks_mariadb)
     target_sources(stocks_tests PRIVATE tests/MariaDbStoreTests.cpp)
