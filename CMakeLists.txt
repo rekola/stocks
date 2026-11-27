@@ -98,6 +98,21 @@ target_link_libraries(stocks_lib PUBLIC cellui stocks_model stocks_http httpclie
 target_compile_definitions(stocks_lib PUBLIC STOCKS_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
   STOCKS_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")
 
+# MariaDB: the stores of the model kept in a MariaDB schema (src/model/MariaDbStores.cpp), over a thin wrapper of libmariadb's prepared
+# statements, for a server. Built where libmariadb is found (pkg-config); not on Windows. The application keeps its own in SQLite.
+if(NOT WIN32)
+  find_package(PkgConfig QUIET)
+  if(PkgConfig_FOUND)
+    pkg_check_modules(MARIADB QUIET IMPORTED_TARGET GLOBAL libmariadb)
+  endif()
+endif()
+if(MARIADB_FOUND)
+  add_library(stocks_mariadb STATIC src/model/MariaDb.cpp src/model/MariaDbStores.cpp)
+  target_link_libraries(stocks_mariadb PUBLIC stocks_model PkgConfig::MARIADB)
+else()
+  message(STATUS "The MariaDB stores are not built: they need libmariadb (pkg-config)")
+endif()
+
 add_executable(stocks src/main.cpp)
 
 # The data the program ships with (data/lists, data/funds): a copy beside the program in the build directory, and in share/stocks when installed
@@ -145,16 +160,15 @@ endif()
 if(NOT WIN32)
   add_executable(stocks_tests tests/test_main.cpp tests/BrowserTests.cpp tests/ModelTests.cpp tests/SourceTests.cpp tests/InstrumentListsTests.cpp tests/NordnetTests.cpp tests/HistoryTests.cpp tests/NordnetHistoryTests.cpp tests/DatesTests.cpp tests/IconTests.cpp tests/FundTests.cpp tests/DataDirectoryTests.cpp tests/FactTests.cpp tests/NodeKeyTests.cpp tests/NordnetDetailsTests.cpp tests/NordnetNewsTests.cpp tests/SuomenPankkiTests.cpp tests/EcbTests.cpp tests/PortfolioTests.cpp tests/PortfolioFileTests.cpp tests/PhysicalTests.cpp tests/KnownIsinsTests.cpp tests/GoldApiTests.cpp tests/GoldPriceTests.cpp tests/SifterTests.cpp tests/SummaryTests.cpp tests/SummaryStoreTests.cpp tests/BarStoreTests.cpp)
   target_link_libraries(stocks_tests PRIVATE stocks_lib SQLiteCpp)  # the tests of the file make an old one with it
+  if(TARGET stocks_mariadb)
+    target_sources(stocks_tests PRIVATE tests/MariaDbStoreTests.cpp)
+    target_link_libraries(stocks_tests PRIVATE stocks_mariadb)
+  endif()
   add_test(NAME stocks_tests COMMAND stocks_tests)
   set_tests_properties(stocks_tests PROPERTIES TIMEOUT 60)
 endif()
 
-# The market-data server and its ingest (src/market, plans/server.md): `market-ingest` loads datasets into a database and `market-server`
-# serves them. The catalog and the bars are kept in SQLite, and in MariaDB too where libmariadb is found (pkg-config). Not built on Windows.
+# The market-data server and its ingest (src/market, plans/server.md).
 if(NOT WIN32)
-  find_package(PkgConfig QUIET)
-  if(PkgConfig_FOUND)
-    pkg_check_modules(MARIADB QUIET IMPORTED_TARGET GLOBAL libmariadb)
-  endif()
   add_subdirectory(src/market)
 endif()
