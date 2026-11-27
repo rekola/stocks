@@ -52,8 +52,8 @@ struct Changes {
 };
 
 // What a queue holds: a bar with an open, a high, a low, a close and a volume, or only a value (a fund's NAV, an index's value of the day).
-enum class QueueKind : uint8_t { Candle = 0, Value = 1 };
-inline QueueKind queueKindOf(InstrumentKind kind) { return kind == InstrumentKind::Fund || kind == InstrumentKind::Index ? QueueKind::Value : QueueKind::Candle; }
+enum class QueueKind : uint8_t { Candle = 0, Scalar = 1 };
+inline QueueKind queueKindOf(InstrumentKind kind) { return kind == InstrumentKind::Fund || kind == InstrumentKind::Index ? QueueKind::Scalar : QueueKind::Candle; }
 
 // What the file says of a queue without its bars: all that start-up reads of it.
 struct QueueCoverage {

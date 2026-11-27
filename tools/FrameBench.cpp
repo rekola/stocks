@@ -84,11 +84,10 @@ int main(int argc, char ** argv) {
     }
     std::printf("news PageDown + present: %.2f ms each\n", since(t) / 20);
   }
-  EdgeKey any{};
   for (int round = 0; round < 3; round++) {
     // a source adds a bar to one row, then the UI hears of it
     auto edges = store->snapshot()->edges(market);
-    store->appendCandles(edges[round], Resolution::Day, {{today + 1 + round, 1, 1, 1, 50, 1}});
+    store->appendCandles(edges[static_cast<size_t>(round)], Resolution::Day, {{today + 1 + round, 1, 1, 1, 50, 1}});
     t = Clock::now();
     app->handle(cellui::BackendEvent::makeInput(cellui::keyInput('x', 0, cellui::Input::Kind::PRESS)));  // warm
     t = Clock::now();

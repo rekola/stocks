@@ -89,7 +89,7 @@ uint64_t get64(const unsigned char * p) {
 bool fits(const Candle & c) { return c.time >= 0 && c.time <= static_cast<int64_t>(std::numeric_limits<uint32_t>::max()) && std::isfinite(c.close); }
 
 Candle normalized(QueueKind kind, const Candle & c) {
-  if (kind == QueueKind::Value) return valueBar(static_cast<uint32_t>(c.time), c.close);
+  if (kind == QueueKind::Scalar) return valueBar(static_cast<uint32_t>(c.time), c.close);
   return candleOf(candleRecord(c));
 }
 
@@ -107,12 +107,12 @@ bool sameBar(const Candle & a, const Candle & b) {
 
 std::string pack(QueueKind kind, const std::vector<Candle> & bars) {
   std::string out;
-  out.reserve(2 + bars.size() * (kind == QueueKind::Value ? kValueRecordBytes : kCandleRecordBytes));
+  out.reserve(2 + bars.size() * (kind == QueueKind::Scalar ? kValueRecordBytes : kCandleRecordBytes));
   out.push_back(static_cast<char>(kFormat));
   out.push_back(static_cast<char>(kind));
   for (const Candle & c : bars) {
     if (!fits(c)) continue;
-    if (kind == QueueKind::Value) {
+    if (kind == QueueKind::Scalar) {
       put32(out, static_cast<uint32_t>(c.time));
       put64(out, std::bit_cast<uint64_t>(c.close));
     } else {
@@ -132,15 +132,15 @@ bool unpack(std::string_view blob, QueueKind & kind, std::vector<Candle> & bars)
   bars.clear();
   if (blob.size() < 2 || static_cast<uint8_t>(blob[0]) != kFormat) return false;
   const uint8_t k = static_cast<uint8_t>(blob[1]);
-  if (k > static_cast<uint8_t>(QueueKind::Value)) return false;
+  if (k > static_cast<uint8_t>(QueueKind::Scalar)) return false;
   kind = static_cast<QueueKind>(k);
-  const size_t size = kind == QueueKind::Value ? kValueRecordBytes : kCandleRecordBytes;
+  const size_t size = kind == QueueKind::Scalar ? kValueRecordBytes : kCandleRecordBytes;
   if ((blob.size() - 2) % size != 0) return false;
   const auto * p = reinterpret_cast<const unsigned char *>(blob.data()) + 2;
   const size_t n = (blob.size() - 2) / size;
   bars.reserve(n);
   for (size_t i = 0; i < n; i++, p += size) {
-    if (kind == QueueKind::Value) {
+    if (kind == QueueKind::Scalar) {
       bars.push_back(valueBar(get32(p), std::bit_cast<double>(get64(p + 4))));
     } else {
       Record r;

@@ -817,7 +817,7 @@ TEST(a_cancelled_http_ends_the_request_in_progress_and_makes_no_more) {
   CHECK(bind(server, reinterpret_cast<sockaddr *>(&address), sizeof address) == 0 && listen(server, 4) == 0);
   socklen_t length = sizeof address;
   getsockname(server, reinterpret_cast<sockaddr *>(&address), &length);
-  const std::string url = "http://127.0.0.1:" + std::to_string(ntohs(address.sin_port)) + "/";
+  const std::string url = "http://127.0.0.1:" + std::to_string(static_cast<int>(ntohs(address.sin_port))) + "/";
 
   std::unique_ptr<Http> http = makeHttp();
   std::atomic<bool> returned{false};

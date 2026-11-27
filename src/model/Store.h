@@ -88,7 +88,7 @@ class Snapshot {
   // this only grows, and a reader that has seen the first `n` asks for what came after (`quoteRowsSince(n)`) instead of listing
   // everything again to find what is new: `quoteRowCount()` is the one number that says whether anything is.
   size_t quoteRowCount() const { return quoteRows_.size(); }
-  std::vector<EdgeKey> quoteRowsSince(size_t n) const { return std::vector<EdgeKey>(quoteRows_.begin() + std::min(n, quoteRows_.size()), quoteRows_.end()); }
+  std::vector<EdgeKey> quoteRowsSince(size_t n) const { return std::vector<EdgeKey>(quoteRows_.begin() + static_cast<std::ptrdiff_t>(std::min(n, quoteRows_.size())), quoteRows_.end()); }
   // Whether the edge is one of those rows.
   bool listed(const EdgeKey &) const;
 

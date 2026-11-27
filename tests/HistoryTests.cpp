@@ -403,9 +403,9 @@ TEST(a_provider_waits_the_loaders_pause_between_the_requests_of_one_load_and_is_
     struct Waits : FakeProvider {
       std::atomic<bool> * told = nullptr;
       std::atomic<bool> * inWait = nullptr;
-      Outcome load(Store &, Http &, const EdgeKey &, int, const Wait & wait) override {
+      Outcome load(Store &, Http &, const EdgeKey &, int, const Wait & stop) override {
         *inWait = true;
-        *told = !wait();
+        *told = !stop();
         return Outcome::Ok;
       }
     };

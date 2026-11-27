@@ -33,10 +33,6 @@ int64_t integer(const json & o, const char * key) {
   return it != o.end() && it->is_number_integer() ? it->get<int64_t>() : 0;
 }
 
-std::optional<double> number(const json & o, const char * key) {
-  auto it = o.find(key);
-  return it != o.end() && it->is_number() ? std::optional<double>(it->get<double>()) : std::nullopt;
-}
 
 // What a row says of the instrument itself, as triples: a table of where each is in the row and what it is called. The
 // table is the registry of Nordnet's predicates; a field the row does not have is not said.

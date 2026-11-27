@@ -106,7 +106,7 @@ TEST(a_candle_record_is_28_bytes_and_reads_back_as_the_bar_it_was_stored_from) {
   CHECK(static_cast<uint8_t>(blob[1]) == 0);
   // Little-endian, whatever the machine: the slot first.
   CHECK(static_cast<uint8_t>(blob[2]) == (5'000'000 & 0xff) && static_cast<uint8_t>(blob[3]) == ((5'000'000 >> 8) & 0xff));
-  QueueKind kind = QueueKind::Value;
+  QueueKind kind = QueueKind::Scalar;
   std::vector<Candle> back;
   CHECK(summary::unpack(blob, kind, back));
   CHECK(kind == QueueKind::Candle);
@@ -121,18 +121,18 @@ TEST(a_candle_record_is_28_bytes_and_reads_back_as_the_bar_it_was_stored_from) {
 }
 
 TEST(a_value_record_is_12_bytes_and_reads_back_as_a_bar_of_one_value) {
-  const std::string blob = summary::pack(QueueKind::Value, {bar(20'000, 1, 5, 0, 123.456, 77)});
+  const std::string blob = summary::pack(QueueKind::Scalar, {bar(20'000, 1, 5, 0, 123.456, 77)});
   CHECK(blob.size() == 2 + 12);
   CHECK(static_cast<uint8_t>(blob[1]) == 1);
   QueueKind kind = QueueKind::Candle;
   std::vector<Candle> back;
   CHECK(summary::unpack(blob, kind, back));
-  CHECK(kind == QueueKind::Value);
+  CHECK(kind == QueueKind::Scalar);
   CHECK(back.size() == 1);
   CHECK(back[0].time == 20'000);
   CHECK(back[0].open == 123.456 && back[0].high == 123.456 && back[0].low == 123.456 && back[0].close == 123.456);
   CHECK(!isDefined(back[0].volume));
-  CHECK(queueKindOf(InstrumentKind::Fund) == QueueKind::Value && queueKindOf(InstrumentKind::Index) == QueueKind::Value);
+  CHECK(queueKindOf(InstrumentKind::Fund) == QueueKind::Scalar && queueKindOf(InstrumentKind::Index) == QueueKind::Scalar);
   CHECK(queueKindOf(InstrumentKind::Company) == QueueKind::Candle && queueKindOf(InstrumentKind::Etf) == QueueKind::Candle);
 }
 
@@ -311,13 +311,13 @@ TEST(a_value_queue_is_kept_as_value_records) {
   auto store = openSqliteSummaryStore(t.dir / "nordnet.sqlite", a.dataset);
   SummaryBatch batch;
   StoredQueue q = storedQueue(a, Resolution::Day, {bar(5, 3, 3, 3, 3, kUndefined), bar(6, 4, 4, 4, 4, kUndefined)});
-  q.kind = QueueKind::Value;
+  q.kind = QueueKind::Scalar;
   batch.edges.push_back(storedEdge(a, 4));
   batch.queues.push_back(q);
   store->apply(batch);
   const auto read = store->readQueue(a, Resolution::Day);
-  CHECK(read && read->kind == QueueKind::Value && read->bars.size() == 2 && read->bars[1].close == 4 && !isDefined(read->bars[1].volume));
-  CHECK(store->loadEdges()[0].queues[0].second.kind == QueueKind::Value);
+  CHECK(read && read->kind == QueueKind::Scalar && read->bars.size() == 2 && read->bars[1].close == 4 && !isDefined(read->bars[1].volume));
+  CHECK(store->loadEdges()[0].queues[0].second.kind == QueueKind::Scalar);
 }
 
 TEST(a_damaged_file_is_moved_aside_and_a_new_one_made_and_the_log_says_so) {

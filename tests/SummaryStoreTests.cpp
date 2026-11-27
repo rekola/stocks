@@ -385,7 +385,7 @@ TEST(a_fund_and_an_index_keep_value_queues_and_a_company_keeps_bars) {
   const EdgeKey fund = t.edge(t.fund), index = t.edge(t.index), company = t.edge(t.nokia);
   for (const EdgeKey & k : {fund, index, company}) store->appendCandles(k, Resolution::Day, {Candle{kLast - 1, 10, 12, 9, 11, 500}, Candle{kLast, 11, 13, 10, 12, 600}});
   const auto s = store->snapshot();
-  CHECK(s->coverage(fund, Resolution::Day)->kind == QueueKind::Value && s->coverage(index, Resolution::Day)->kind == QueueKind::Value);
+  CHECK(s->coverage(fund, Resolution::Day)->kind == QueueKind::Scalar && s->coverage(index, Resolution::Day)->kind == QueueKind::Scalar);
   CHECK(s->coverage(company, Resolution::Day)->kind == QueueKind::Candle);
   for (const EdgeKey & k : {fund, index}) {
     const auto q = s->queue(k, Resolution::Day);
@@ -444,7 +444,7 @@ TEST(after_a_restart_every_edge_shows_its_price_bid_and_ask_and_a_portfolio_is_v
   CHECK(s->queue(nokia, Resolution::Day).empty() && !s->queueResident(nokia, Resolution::Day));
   const auto day = s->coverage(nokia, Resolution::Day);
   CHECK(day && day->count == 92 && day->first_key == kLast - 91 && day->last_key == kLast && day->kind == QueueKind::Candle);
-  CHECK(s->coverage(fund, Resolution::Day)->kind == QueueKind::Value);
+  CHECK(s->coverage(fund, Resolution::Day)->kind == QueueKind::Scalar);
   CHECK(s->queues(nokia) == std::vector<Resolution>({Resolution::Min5, Resolution::Day}));
   CHECK(s->candles(nokia, Resolution::Day).candles.empty());  // the data is not kept
   // The portfolio is valued from the quote.
