@@ -281,11 +281,11 @@ bool FundSchema::parse(const std::string & text, FundSchema & out, std::string &
   if (history.is_object() && history.contains("morningstar")) {
     // The company's history is Morningstar's: the schema says whose, and the URL is made here, so that only this adapter knows the endpoint.
     const json & m = history["morningstar"];
-    auto text = [&](const char * key, const char * otherwise) -> std::string {
+    auto field = [&](const char * key, const char * otherwise) -> std::string {
       auto it = m.is_object() ? m.find(key) : json::const_iterator();
       return m.is_object() && it != m.end() && it->is_string() ? it->get<std::string>() : std::string(otherwise);
     };
-    const std::string client = text("client", ""), universe = text("universe", ""), currency = text("currency", "EUR"), start = text("startDate", "2000-01-01");
+    const std::string client = field("client", ""), universe = field("universe", ""), currency = field("currency", "EUR"), start = field("startDate", "2000-01-01");
     if (!plainWord(client) || !plainWord(universe) || !plainWord(currency) || !looseDay(json(start))) {
       error = "history.morningstar needs a client and a universe (letters and digits), and may have a currency and a startDate (YYYY-MM-DD)";
       return false;

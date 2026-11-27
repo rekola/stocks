@@ -129,7 +129,7 @@ bool tooSparse(const std::vector<Candle> & bars) {
   if (bars.size() < 2) return false;
   std::vector<int64_t> gaps;
   for (size_t i = bars.size() > kLook ? bars.size() - kLook : 1; i < bars.size(); i++) gaps.push_back(bars[i].time - bars[i - 1].time);
-  std::nth_element(gaps.begin(), gaps.begin() + gaps.size() / 2, gaps.end());
+  std::nth_element(gaps.begin(), gaps.begin() + static_cast<std::ptrdiff_t>(gaps.size() / 2), gaps.end());
   return gaps[gaps.size() / 2] > kMaxDays;
 }
 

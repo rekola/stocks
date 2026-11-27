@@ -54,7 +54,7 @@ Rows periodWorld(Store & store) {
   DatasetId a = store.addDataset("providera");
   Rows rows{{eur, usd, currencies, a}, {gbp, usd, currencies, a}};
   std::vector<Candle> days;
-  for (int d = 70; d >= 1; d--) days.push_back({kToday - d, 1, 1, 1, 21.0 - d * 11.0 / 70.0 + (d == 1 ? 0.0 : 0.0), 1});
+  for (int d = 70; d >= 1; d--) days.push_back({kToday - d, 1, 1, 1, 21.0 - d * 11.0 / 70.0, 1});
   days.back().close = 21;  // yesterday
   days.push_back({kToday, 1, 1, 1, 20, 1});
   store.appendCandles(rows.riseFall, Resolution::Day, days);
@@ -1073,7 +1073,7 @@ TEST(a_value_wraps_by_the_width_the_display_gives_the_text_not_by_its_count_of_c
 
 TEST(the_attribute_dialog_wraps_a_long_value_under_its_predicate_and_asks_for_the_displays_selection) {
   Fixture f(false);
-  Rows rows = periodWorld(*f.store);
+  periodWorld(*f.store);
   const std::string value = "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau upsilon phi chi psi omega alpha beta gamma delta epsilon zeta";
   AttributeModal modal(f.app->widgets(), f.app->root(), f.app->backend().eventLoop(), "t", f.store->snapshot(), {{"S", {{"note", {value, std::nullopt}}}}});
   CHECK(modal.wantsNativeSelection());
@@ -1594,7 +1594,7 @@ std::string menuOf(Fixture & f) {
 TEST(the_menu_offers_buy_and_sell_on_the_rows_that_can_be_bought_and_not_on_an_index_a_rate_or_a_pair) {
   Fixture f(false, 120);  // the Portfolio context has more columns, and the button is the last
   Holdings h = addHoldings(*f.store);
-  Untradables u = addUntradables(*f.store, h);
+  addUntradables(*f.store, h);
   f.app->execute("show-all");
   auto offers = [&](const std::string & base) {
     const int r = rowOfBase(f, base);
@@ -1725,7 +1725,7 @@ TEST(a_click_on_the_menu_button_and_buy_opens_the_form_for_that_row_and_not_the_
 TEST(the_keyboard_reaches_the_menu_button_with_the_cursor_and_enter_presses_it_on_every_row) {
   Fixture f(false);
   Holdings h = addHoldings(*f.store);
-  Untradables u = addUntradables(*f.store, h);
+  addUntradables(*f.store, h);
   f.app->execute("show-all");
   Table & table = f.browser->table();
   for (const char * base : {"NOKIA", "OMXH25"}) {  // a row that can be bought, and one that cannot: the one button is on both
@@ -1940,7 +1940,7 @@ TEST(new_portfolio_makes_one_with_a_name_and_a_currency_and_it_is_the_one_shown)
   CHECK(taken.find("A portfolio called Retirement exists") != std::string::npos);
   const auto snapshot = f.store->snapshot();
   CHECK(snapshot->portfolios().size() == 3);
-  CHECK(f.browser->tags().tags().size() == 3 && f.browser->tags().tags()[f.browser->tags().selected()] == "Dividends");
+  CHECK(f.browser->tags().tags().size() == 3 && f.browser->tags().tags()[static_cast<size_t>(f.browser->tags().selected())] == "Dividends");
   const PortfolioId made = f.browser->shownPortfolio();
   CHECK(snapshot->name(NodeRef(made)) == "Dividends" && portfolio::currencyOf(*snapshot, made) == std::optional<InstrumentId>(InstrumentId{currencyKey("USD")->value}));
   CHECK(f.text().find("Made portfolio Dividends in USD") != std::string::npos && f.browser->table().model()->rowCount() == 0);
@@ -2204,7 +2204,7 @@ TEST(the_info_of_a_news_item_says_whom_it_is_about_and_the_info_of_a_row_lists_i
 TEST(the_physical_preset_has_what_is_held_in_hand_and_not_the_funds_or_the_spot) {
   Fixture f(false, 120);
   Holdings h = addHoldings(*f.store);
-  Untradables u = addUntradables(*f.store, h);  // the fund is on XOFF too, and the index and the rate on XXXX
+  addUntradables(*f.store, h);  // the fund is on XOFF too, and the index and the rate on XXXX
   InstrumentId gold = f.store->addInstrument("GOLDCOIN", "Gold coin (1 oz fine)", InstrumentKind::Commodity);
   InstrumentId spot = f.store->addInstrument("GOLD", "Gold", InstrumentKind::Commodity, "XC0009655157");
   MarketId off = *f.store->snapshot()->findMarket(kOffExchange), none = *f.store->snapshot()->findMarket(kNoMarket);
@@ -2274,7 +2274,7 @@ TEST(a_row_is_put_on_the_watchlist_from_its_menu_and_only_that_row_not_the_instr
 
 TEST(a_row_already_on_the_watchlist_or_not_on_it_is_told_so_and_nothing_is_recorded) {
   Fixture f(false);
-  const auto edges = addNokiaTwice(*f.store);
+  addNokiaTwice(*f.store);
   f.app->execute("show-nasdaq-helsinki");
   f.browser->table().select(0);
   f.app->execute("remove-from-watchlist");
@@ -2286,7 +2286,7 @@ TEST(a_row_already_on_the_watchlist_or_not_on_it_is_told_so_and_nothing_is_recor
 
 TEST(a_list_is_of_edges_so_a_position_cannot_be_put_on_one) {
   Fixture f(false);
-  Holdings h = addHoldings(*f.store);
+  addHoldings(*f.store);
   f.press(Key::Tab);
   f.browser->table().select(0);
   f.app->execute("add-to-watchlist");

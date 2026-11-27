@@ -232,7 +232,7 @@ TEST(a_file_of_another_schema_is_moved_aside_with_what_it_held_and_a_new_one_sta
 
 // A key of schema 1, packed as it was (six bits a character, ten at most, the case kept) and written here on its own, so that this checks
 // the upgrade against the old way and not against the code that does it.
-uint64_t keyOfSchema1(uint64_t kind, const std::string & code) {
+static uint64_t keyOfSchema1(uint64_t kind, const std::string & code) {
   uint64_t packed = 0;
   for (size_t i = 0; i < 10; i++) {
     uint64_t symbol = 0;

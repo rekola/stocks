@@ -17,7 +17,7 @@ namespace {
 // A hash that is the same in every run, for the file name and the picture's id.
 uint64_t hashOf(const std::string & s) {
   uint64_t h = 1469598103934665603ull;
-  for (unsigned char c : s) h = (h ^ c) * 1099511628211ull;
+  for (char ch : s) h = (h ^ static_cast<unsigned char>(ch)) * 1099511628211ull;
   return h;
 }
 
@@ -254,7 +254,7 @@ void IconLoader::trimDisk() {
   std::vector<File> files;
   uintmax_t total = 0;
   for (const auto & entry : fs::directory_iterator(options_.cache_dir, ec)) {
-    if (!entry.is_regular_file(ec) || entry.path().extension() != ".img" && entry.path().extension() != ".icn") continue;
+    if (!entry.is_regular_file(ec) || (entry.path().extension() != ".img" && entry.path().extension() != ".icn")) continue;
     files.push_back({entry.path(), entry.last_write_time(ec), entry.file_size(ec)});
     total += files.back().size;
   }
