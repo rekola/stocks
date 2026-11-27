@@ -1,3 +1,4 @@
+#include "source/DatasetCodes.h"
 #include "TestFramework.h"
 
 #include "FakeHttp.h"
@@ -125,7 +126,7 @@ TEST(a_yahoo_chart_becomes_candles_on_the_edge_of_its_market) {
     std::string error;
   CHECK(YahooSource::parse(fixture("nokia.json"), entry("NOKIA.HE"), *store, error));
   auto s = store->snapshot();
-  EdgeKey k = edgeOf(*s, kNokia, "EUR", "XHEL", "yahoo");
+  EdgeKey k = edgeOf(*s, kNokia, "EUR", "XHEL", kYahooDataset);
   CandleSeries c = s->candles(k, Resolution::Day);
   CHECK(c.resolution == Resolution::Day && c.candles.size() > 400);
   // Keyed by trading date: the exchange's date of the first bar, not an instant.
@@ -167,7 +168,7 @@ TEST(yahoo_dividends_become_corporate_actions_in_the_quote_currency) {
     std::string error;
   CHECK(YahooSource::parse(fixture("nokia.json"), entry("NOKIA.HE"), *store, error));
   auto s = store->snapshot();
-  EventKey k{*s->findInstrumentByIsin(kNokia), *s->findDataset("yahoo")};
+  EventKey k{*s->findInstrumentByIsin(kNokia), *s->findDataset(kYahooDataset)};
   auto actions = s->actions(k);
   CHECK(actions.size() >= 2);
   for (const CorporateAction & a : actions) {
@@ -185,7 +186,7 @@ TEST(a_yahoo_split_is_new_shares_per_old) {
     std::string error;
   CHECK(YahooSource::parse(body, entry("NOKIA.HE"), *store, error));
   auto s = store->snapshot();
-  auto actions = s->actions({*s->findInstrumentByIsin(kNokia), *s->findDataset("yahoo")});
+  auto actions = s->actions({*s->findInstrumentByIsin(kNokia), *s->findDataset(kYahooDataset)});
   CHECK(actions.size() == 1 && actions[0].kind == ActionKind::Split && actions[0].value == 2.0 && actions[0].note == "2:1");
   CHECK(actions[0].time == dayNumber(2023, 11, 15));  // an ex-date is a date, not an instant
 }
@@ -196,7 +197,7 @@ TEST(days_yahoo_has_no_price_for_are_skipped) {
   CHECK(YahooSource::parse(fixture("gold.json"), entry("GC=F"), *store, error));
   auto s = store->snapshot();
   CandleSeries c =
-      s->candles(edgeOf(*s, kGold, "USD", "XXXX", "yahoo"), Resolution::Day);
+      s->candles(edgeOf(*s, kGold, "USD", "XXXX", kYahooDataset), Resolution::Day);
   CHECK(c.candles.size() == 504);  // 506 days, two of them null
   CHECK(s->kind(*s->findInstrumentByIsin(kGold)) == InstrumentKind::Commodity);
 }
@@ -206,7 +207,7 @@ TEST(a_currency_pair_is_an_edge_between_two_currencies) {
   std::string error;
   CHECK(YahooSource::parse(fixture("eurusd.json"), entry("EURUSD=X"), *store, error));
   auto s = store->snapshot();
-  EdgeKey k = edgeOf(*s, "EUR", "USD", "XXXX", "yahoo");
+  EdgeKey k = edgeOf(*s, "EUR", "USD", "XXXX", kYahooDataset);
   CHECK(s->lastCandles(k, Resolution::Day, 1).candles.size() == 1);
   CHECK(s->kind(k.base) == InstrumentKind::Currency && s->name(k.quote) == "US dollar");
 }
@@ -438,7 +439,7 @@ TEST(yahoo_makes_the_instrument_from_the_isin_in_its_list_and_the_same_node_as_a
   std::string error;
   CHECK(YahooSource::parse(fixture("nokia.json"), entry("NOKIA.HE"), *store, error));
   auto s = store->snapshot();
-  EdgeKey k = edgeOf(*s, kNokia, "EUR", "XHEL", "yahoo");
+  EdgeKey k = edgeOf(*s, kNokia, "EUR", "XHEL", kYahooDataset);
   CHECK(k.base == made && s->nodeCount(NodeType::Instrument) == 2);  // the one instrument, and the euro
   CHECK(s->symbol(k) == "NOKIA.HE");                          // what Yahoo calls it
   // Where Yahoo's history begins is said of the instrument.
@@ -458,8 +459,8 @@ TEST(yahoo_keeps_its_own_type_on_the_edge) {
   CHECK(YahooSource::parse(fixture("gold.json"), entry("GC=F"), *store, error));
   auto s = store->snapshot();
   auto typeOf = [&](const EdgeKey & k) { return s->listing(k)->type; };
-  CHECK(typeOf(edgeOf(*s, kNokia, "EUR", "XHEL", "yahoo")) == "EQUITY");
-  CHECK(typeOf(edgeOf(*s, kGold, "USD", "XXXX", "yahoo")) ==
+  CHECK(typeOf(edgeOf(*s, kNokia, "EUR", "XHEL", kYahooDataset)) == "EQUITY");
+  CHECK(typeOf(edgeOf(*s, kGold, "USD", "XXXX", kYahooDataset)) ==
         "FUTURE"); // the contract, not the metal
   CHECK(s->kind(*s->findInstrumentByIsin(kGold)) == InstrumentKind::Commodity);
 }
@@ -513,10 +514,10 @@ TEST(autos_history_provider_is_asked_for_before_the_choice_and_follows_it) {
   auto store = makeMemoryStore();
   FakeHttp http;
   auto primary = std::make_unique<Scripted>("nordnet", 0), fallback = std::make_unique<Scripted>("yahoo", 1);
-  primary->history = std::make_shared<NamedHistory>("nordnet");
+  primary->history = std::make_shared<NamedHistory>(kNordnetDataset);
   AutoSource source(std::move(primary), std::move(fallback));
   auto history = source.historyProvider();  // as the program does, before the primary has loaded
-  CHECK(history && history->dataset() == "nordnet");
+  CHECK(history && history->dataset() == kNordnetDataset);
   Listener listener;
   source.load(*store, http, listener);  // the primary gave nothing: the fallback, which has no history of its own, is the source
   CHECK(history->dataset().empty() && !history->need(*store->snapshot(), EdgeKey{}, Period::Quarter));
@@ -526,18 +527,18 @@ TEST(autos_history_goes_to_the_fallbacks_provider_where_it_has_one_and_there_is_
   auto store = makeMemoryStore();
   FakeHttp http;
   auto primary = std::make_unique<Scripted>("nordnet", 0), fallback = std::make_unique<Scripted>("yahoo", 1);
-  primary->history = std::make_shared<NamedHistory>("nordnet");
-  fallback->history = std::make_shared<NamedHistory>("yahoo");
+  primary->history = std::make_shared<NamedHistory>(kNordnetDataset);
+  fallback->history = std::make_shared<NamedHistory>(kYahooDataset);
   AutoSource source(std::move(primary), std::move(fallback));
   auto history = source.historyProvider();
   Listener listener;
   source.load(*store, http, listener);
-  CHECK(history->dataset() == "yahoo");
+  CHECK(history->dataset() == kYahooDataset);
   AutoSource neither(std::make_unique<Scripted>("a", 1), std::make_unique<Scripted>("b", 1));
   CHECK(!neither.historyProvider());
   // The real pair: Nordnet's provider until Nordnet fails, and Yahoo loads its history with its list.
   AutoSource real(std::make_unique<NordnetSource>(), std::make_unique<YahooSource>(InstrumentList{}));
-  CHECK(real.historyProvider() && real.historyProvider()->dataset() == "nordnet");
+  CHECK(real.historyProvider() && real.historyProvider()->dataset() == kNordnetDataset);
 }
 
 TEST(auto_stays_with_the_primary_when_it_gives_something) {
@@ -773,7 +774,7 @@ TEST(a_yahoo_answer_that_lacks_a_column_parses_without_crashing) {
         R"({"chart":{"result":[{"timestamp":[1767254400],"indicators":{"quote":[{"open":[1],"high":[2],"low":[0.5],"close":[1.5]}]}}]}})",
         entry("NOKIA.HE"), *store, error));
     auto s = store->snapshot();
-    CandleSeries c = s->candles(edgeOf(*s, kNokia, "EUR", "XHEL", "yahoo"), Resolution::Day);
+    CandleSeries c = s->candles(edgeOf(*s, kNokia, "EUR", "XHEL", kYahooDataset), Resolution::Day);
     CHECK(c.candles.size() == 1 && c.candles[0].close == 1.5 && !isDefined(c.candles[0].volume));
   }
   // No open, a quote that is not an object, events of the wrong shape: no candles, or none of the bad events, and no throw.
@@ -816,7 +817,7 @@ TEST(a_cancelled_http_ends_the_request_in_progress_and_makes_no_more) {
   CHECK(bind(server, reinterpret_cast<sockaddr *>(&address), sizeof address) == 0 && listen(server, 4) == 0);
   socklen_t length = sizeof address;
   getsockname(server, reinterpret_cast<sockaddr *>(&address), &length);
-  const std::string url = "http://127.0.0.1:" + std::to_string(ntohs(address.sin_port)) + "/";
+  const std::string url = "http://127.0.0.1:" + std::to_string(static_cast<int>(ntohs(address.sin_port))) + "/";
 
   std::unique_ptr<Http> http = makeHttp();
   std::atomic<bool> returned{false};
@@ -951,4 +952,58 @@ TEST(yahoo_history_loads_ten_years_of_weekly_bars_for_the_long_periods_only) {
   CHECK(history->load(*store, http, edge, 0, [] { return true; }) == HistoryProvider::Outcome::Refused);
   http.answer = [](const std::string &) { return failed(404); };
   CHECK(history->load(*store, http, edge, 0, [] { return true; }) == HistoryProvider::Outcome::Missing);
+}
+
+namespace {
+
+std::string headerValue(const HttpHeaders & h, const std::string & name) {
+  std::string found = "(none)";
+  int count = 0;
+  for (const auto & [n, v] : h)
+    if (n == name) found = v, count++;
+  return count > 1 ? "(" + std::to_string(count) + " times)" : found;
+}
+
+}  // namespace
+
+TEST(a_browsers_fetch_says_whose_page_asks_by_its_referer) {
+  // Yahoo's page asks its API on another host of the same site.
+  HttpHeaders h = browserHeaders("https://query1.finance.yahoo.com/v8/finance/chart/X", {{"Referer", "https://finance.yahoo.com/"}});
+  CHECK(headerValue(h, "Sec-Fetch-Site") == "same-site");
+  CHECK(headerValue(h, "Origin") == "https://finance.yahoo.com");  // a cross-origin fetch says where it is from
+  CHECK(headerValue(h, "Sec-Fetch-Mode") == "cors" && headerValue(h, "Accept") == "*/*");
+  // Nordnet's page asks an API on another site; its search is on its own origin, and sends no Origin of its own.
+  CHECK(headerValue(browserHeaders("https://api.prod.nntech.io/x", {{"Referer", "https://www.nordnet.fi/"}}), "Sec-Fetch-Site") == "cross-site");
+  HttpHeaders search = browserHeaders("https://www.nordnet.fi/api/2/x", {{"Referer", "https://www.nordnet.fi/"}});
+  CHECK(headerValue(search, "Sec-Fetch-Site") == "same-origin" && headerValue(search, "Origin") == "(none)");
+  // Without a Referer the fetch is the URL's own page's.
+  CHECK(headerValue(browserHeaders("https://a.example/data"), "Sec-Fetch-Site") == "same-origin");
+}
+
+TEST(a_browsers_page_is_typed_in_unless_a_referer_says_where_it_was_followed_from) {
+  HttpHeaders typed = browserHeaders("https://a.example/funds", {}, BrowserRequest::Page);
+  CHECK(headerValue(typed, "Sec-Fetch-Site") == "none" && headerValue(typed, "Sec-Fetch-Mode") == "navigate");
+  CHECK(headerValue(typed, "Sec-Fetch-Dest") == "document" && headerValue(typed, "Origin") == "(none)");
+  CHECK(headerValue(typed, "Accept").rfind("text/html", 0) == 0);
+  CHECK(headerValue(browserHeaders("https://a.example/funds", {{"Referer", "https://b.example/"}}, BrowserRequest::Page), "Sec-Fetch-Site") ==
+        "cross-site");
+}
+
+TEST(a_browsers_headers_are_replaced_by_an_adapters_own_of_any_case_and_left_out_when_empty) {
+  HttpHeaders h = browserHeaders("https://a.example/", {{"accept", "application/json"}, {"sec-ch-ua", ""}, {"X-One", "1"}, {"X-One", "2"}});
+  CHECK(headerValue(h, "Accept") == "(none)" && headerValue(h, "accept") == "application/json");
+  CHECK(headerValue(h, "sec-ch-ua") == "(none)");
+  CHECK(headerValue(h, "X-One") == "(2 times)");  // the adapter's own are all sent
+}
+
+TEST(a_browsers_user_agent_and_client_hints_name_the_same_chrome) {
+  HttpHeaders h = browserHeaders("https://a.example/");
+  const std::string agent = headerValue(h, "User-Agent"), hints = headerValue(h, "sec-ch-ua");
+  const size_t at = agent.find("Chrome/");
+  CHECK(at != std::string::npos);
+  if (at == std::string::npos) return;
+  const std::string major = agent.substr(at + 7, agent.find('.', at) - at - 7);
+  CHECK(hints.find("\"Google Chrome\";v=\"" + major + "\"") != std::string::npos);
+  CHECK(hints.find("\"Chromium\";v=\"" + major + "\"") != std::string::npos);
+  CHECK(hints.find("Brand\";v=\"") != std::string::npos);
 }

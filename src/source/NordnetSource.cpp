@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <nlohmann/json.hpp>
+#include <iterator>
 #include <set>
 
 #include <optional>
@@ -32,10 +33,6 @@ int64_t integer(const json & o, const char * key) {
   return it != o.end() && it->is_number_integer() ? it->get<int64_t>() : 0;
 }
 
-std::optional<double> number(const json & o, const char * key) {
-  auto it = o.find(key);
-  return it != o.end() && it->is_number() ? std::optional<double>(it->get<double>()) : std::nullopt;
-}
 
 // What a row says of the instrument itself, as triples: a table of where each is in the row and what it is called. The
 // table is the registry of Nordnet's predicates; a field the row does not have is not said.
@@ -261,6 +258,15 @@ bool NordnetSource::parsePage(const std::string & body, Page & page, std::string
                  volume != p.end() && volume->is_number() ? volume->get<double>() : kUndefined};
       }
     }
+    if (row.is_object() && row.contains("historical_returns_info") && row["historical_returns_info"].is_object()) {
+      const json & h = row["historical_returns_info"];
+      // In the order of `Period`, which has no year-to-date. `yield_max` is since the start, whatever its age, so it is not the ten years: a
+      // listing younger than ten years has no `yield_10y`.
+      static constexpr const char * keys[] = {"yield_1d", "yield_1w", "yield_1m", "yield_3m", "yield_1y", "yield_3y", "yield_10y"};
+      static_assert(std::size(keys) == kChangeCount);
+      for (size_t i = 0; i < kChangeCount; i++)
+        if (auto it = h.find(keys[i]); it != h.end() && it->is_number()) l.changes.pct[i] = it->get<double>();
+    }
     if (row.is_object() && row.contains("exchange_info") && row["exchange_info"].is_object())
       l.country = text(row["exchange_info"], "exchange_country");
     if (row.is_object()) l.attributes = attributesOf(row);
@@ -314,7 +320,7 @@ bool NordnetSource::parseIndicators(const std::string & body, std::vector<Nordne
 }
 
 size_t NordnetSource::loadIndicators(const List & list, Store & store, Http & http, SourceListener & listener, bool & stop) {
-  HttpResult r = http.get(list.url, nordnet::marketDataHeaders());
+  HttpResult r = http.get(list.url, nordnet::marketDataHeaders(list.url));
   if (!r.ok()) {
     const bool refused = r.status == 429 || r.status == 403;
     listener.message("nordnet: " + list.name + ": " +
@@ -339,7 +345,7 @@ size_t NordnetSource::loadIndicators(const List & list, Store & store, Http & ht
   std::vector<size_t> refused;  // the rows left out, which the source does not keep
   // The whole list is one publication.
   store.batch([&](Batch & b) {
-    const DatasetId nordnet = b.addDataset(kNordnetDataset);
+    const DatasetId nordnet = b.addDataset(kNordnetDataset, "Nordnet");
     const DatasetId morningstar = b.addDataset(kMorningstarDataset, "Morningstar");
     // Indices, currency pairs and commodity prices of these lists are on no
     // market.
@@ -401,10 +407,11 @@ size_t NordnetSource::loadIndicators(const List & list, Store & store, Http & ht
 size_t NordnetSource::loadNews(const List & list, Store & store, Http & http, SourceListener & listener, bool & stop, bool first) {
   size_t stored = 0;
   const int pages = first ? 2 : 1;  // the first time a few hours back, then what is new since the last load
-  const DatasetId dataset = store.addDataset(kNordnetDataset);
+  const DatasetId dataset = store.addDataset(kNordnetDataset, "Nordnet");
   for (int page = 0; page < pages; page++) {
     if (listener.cancelled()) return stored;
-    HttpResult r = http.get(list.url + "&offset=" + std::to_string(page * list.pageSize), nordnet::marketDataHeaders());
+    const std::string url = list.url + "&offset=" + std::to_string(page * list.pageSize);
+    HttpResult r = http.get(url, nordnet::marketDataHeaders(url));
     if (!r.ok()) {
       const bool refused = r.status == 429 || r.status == 403;
       listener.message("nordnet: " + list.name + ": " +
@@ -465,7 +472,7 @@ void NordnetSource::load(Store & store, Http & http, SourceListener & listener) 
       if (listener.cancelled()) return;
       std::string url = list.url + "&limit=" + std::to_string(list.pageSize);
       if (offset) url += "&offset=" + std::to_string(offset);
-      HttpResult r = http.get(url, nordnet::searchHeaders());
+      HttpResult r = http.get(url, nordnet::searchHeaders(url));
       if (!r.ok()) {
         const bool refused = r.status == 429 || r.status == 403;
         listener.message("nordnet: " + list.name + ": " +
@@ -505,7 +512,7 @@ void NordnetSource::load(Store & store, Http & http, SourceListener & listener) 
       // One page is one publication.
       std::vector<size_t> refused;  // the rows left out, which the source does not keep
       store.batch([&](Batch & b) {
-        const DatasetId dataset = b.addDataset(kNordnetDataset);
+        const DatasetId dataset = b.addDataset(kNordnetDataset, "Nordnet");
         for (size_t i = 0; i < page.listings.size(); i++) {
           NordnetListing & l = page.listings[i];
           l.list = list.name;
@@ -542,6 +549,7 @@ void NordnetSource::load(Store & store, Http & http, SourceListener & listener) 
           if (l.hasBar) {
             const EdgeKey edge{base, quote, market, dataset};
             if (l.hasQuote) b.setQuote(edge, l.quote);  // the realtime price is a quote and no bar: the bars are the history's
+            b.setChanges(edge, l.changes);
             // What the market says of it: what it calls it, its own id for it and the order book its history is asked for by.
             b.setListing({edge, l.symbol, l.identifier, l.bookId, l.type, l.name});
           }

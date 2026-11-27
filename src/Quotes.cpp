@@ -65,7 +65,7 @@ void appendRows(const Snapshot & snapshot, MarketId market, Period period, std::
     r.history = std::move(view.closes);
     r.price = priceOf(snapshot, key);
     r.rate = view.rate;
-    r.change = view.change();
+    r.change = snapshot.changes(key).pct[static_cast<size_t>(period)];
     rows.push_back(std::move(r));
   }
 }
@@ -236,7 +236,9 @@ const std::string & Quotes::datasetName(DatasetId id) const {
 
 double Quotes::price(int r) const { return priceOf(*snapshot_, edge(r)); }
 
-double Quotes::change(int r) const { return periodView(*snapshot_, edge(r), period_, false).change(); }
+// The edge's own number for the period (Summary.h): there from the first list a source gave, so a table sorts by it before any history is
+// loaded, and the bars keep it up to date.
+double Quotes::change(int r) const { return snapshot_->changes(edge(r)).pct[static_cast<size_t>(period_)]; }
 
 void Quotes::setPeriod(Period period) {
   period_ = period;

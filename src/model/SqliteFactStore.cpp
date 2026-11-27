@@ -1,6 +1,9 @@
 #include "model/SqliteFactStore.h"
 
+#include "model/LegacyNodeKey.h"
 #include "model/NodeKey.h"
+
+#include <nlohmann/json.hpp>
 
 #include <SQLiteCpp/SQLiteCpp.h>
 
@@ -14,7 +17,7 @@ namespace {
 
 namespace fs = std::filesystem;
 
-constexpr int kFactsVersion = 5;  // 5: a value may be a link to a node (`tag` in place of `is_bool`); 4: private ISINs are a hash of the exact text
+constexpr int kFactsVersion = 6;  // 6: the keys of codes are of eleven capitals or digits, base 37; 5: a value may be a link to a node (`tag` in place of `is_bool`); 4: private ISINs are a hash of the exact text
 // What a fact's value is beyond what SQLite says of it: an integer that is a truth value, or one that is the key of a node.
 constexpr int kPlain = 0, kBoolean = 1, kNode = 2;
 // SQLite's result codes for a damaged database and for a file that is none (kCorrupt, kNotADatabase): SQLiteCpp does
@@ -22,8 +25,9 @@ constexpr int kPlain = 0, kBoolean = 1, kNode = 2;
 constexpr int kCorrupt = 11, kNotADatabase = 26;
 
 // The portfolio file's own schema, which shares no table and no version with the cache's: `facts` as the cache has it, and
-// `events` for the transactions. 1: the first.
-constexpr int kPortfoliosVersion = 1;
+// `events` for the transactions and `list_members` for the edges on the lists. 3: the lists (a file of 2 only gets the table); 2: the keys of codes are
+// of eleven capitals or digits, base 37 (a file of 1 is upgraded, `upgradeV1`); 1: the first.
+constexpr int kPortfoliosVersion = 3;
 
 // A file that cannot be used as it is: damaged or not a database.
 struct Unusable {
@@ -121,6 +125,28 @@ class SqliteFactStore : public FactStore {
         e.time = q.getColumn(3).getInt64();
         e.body = q.getColumn(4).getString();
         out.push_back(std::move(e));
+      }
+    } catch (const std::exception & ex) {
+      say(std::string("cannot read ") + file_.string() + ": " + ex.what());
+      out.clear();
+    }
+    return out;
+  }
+
+  std::vector<StoredMember> loadMembers() override {
+    std::vector<StoredMember> out;
+    if (!db_ || kind_ != Kind::Portfolios) return out;
+    std::lock_guard lock(mutex_);
+    try {
+      SQLite::Statement q(*db_, "SELECT list, base, quote, market, dataset FROM list_members");
+      while (q.executeStep()) {
+        StoredMember m;
+        m.list = q.getColumn(0).getString();
+        m.base = static_cast<uint64_t>(q.getColumn(1).getInt64());
+        m.quote = static_cast<uint64_t>(q.getColumn(2).getInt64());
+        m.market = static_cast<uint64_t>(q.getColumn(3).getInt64());
+        m.dataset = static_cast<uint64_t>(q.getColumn(4).getInt64());
+        out.push_back(std::move(m));
       }
     } catch (const std::exception & ex) {
       say(std::string("cannot read ") + file_.string() + ": " + ex.what());
@@ -235,6 +261,24 @@ class SqliteFactStore : public FactStore {
       q.bind(5, e.body);
       q.exec();
     }
+    for (const StoredMember & m : batch.members_removed) {
+      SQLite::Statement q(*db_, "DELETE FROM list_members WHERE list = ? AND base = ? AND quote = ? AND market = ? AND dataset = ?");
+      bindMember(q, m);
+      q.exec();
+    }
+    for (const StoredMember & m : batch.members) {
+      SQLite::Statement q(*db_, "INSERT OR IGNORE INTO list_members (list, base, quote, market, dataset) VALUES (?, ?, ?, ?, ?)");
+      bindMember(q, m);
+      q.exec();
+    }
+  }
+
+  static void bindMember(SQLite::Statement & q, const StoredMember & m) {
+    q.bind(1, m.list);
+    q.bind(2, static_cast<int64_t>(m.base));
+    q.bind(3, static_cast<int64_t>(m.quote));
+    q.bind(4, static_cast<int64_t>(m.market));
+    q.bind(5, static_cast<int64_t>(m.dataset));
   }
 
   bool hasTables() {
@@ -261,10 +305,82 @@ class SqliteFactStore : public FactStore {
     if (version != schemaVersion()) {
       // A new file has no version and no table: it only gets its version. Another schema is emptied for the cache and moved aside for
       // the portfolios.
-      if (kind_ == Kind::Portfolios && hasTables()) throw OtherSchema{version};
-      startOver(version);
+      if (kind_ == Kind::Portfolios && hasTables()) {
+        if (version != 1 && version != 2) throw OtherSchema{version};
+        if (version == 1) upgradeV1();
+        // A file of 2 has what 3 has but the table of the lists, which `createTable` makes.
+        createTable();
+        db_->exec("PRAGMA user_version = " + std::to_string(schemaVersion()));
+      } else {
+        startOver(version);
+      }
     }
     createTable();
+  }
+
+  // The user's own file of schema 1, whose keys of codes (a currency, a market, a dataset) were packed another way: every key that is one of a
+  // code is written as schema 2 has it, in the facts (the node, and the value of a link) and in the events (the dataset, and the keys in the
+  // body). Nothing else changes. Two keys that were two codes of one case-folded code are one node now: the later fact stands.
+  void upgradeV1() {
+    SQLite::Transaction transaction(*db_);
+    db_->exec("CREATE TEMP TABLE keymap (old INTEGER PRIMARY KEY, new INTEGER NOT NULL)");
+    {
+      SQLite::Statement find(*db_,
+                             "SELECT node_key FROM facts UNION SELECT value FROM facts WHERE tag = 2 AND typeof(value) = 'integer' "
+                             "UNION SELECT dataset FROM events");
+      SQLite::Statement put(*db_, "INSERT OR IGNORE INTO keymap (old, new) VALUES (?, ?)");
+      while (find.executeStep()) {
+        const int64_t old = find.getColumn(0).getInt64();
+        const int64_t next = static_cast<int64_t>(upgradeLegacyKey(static_cast<uint64_t>(old)));
+        if (next == old) continue;
+        put.bind(1, old);
+        put.bind(2, next);
+        put.exec();
+        put.reset();
+      }
+    }
+    db_->exec(
+        "CREATE TABLE facts_v2 ("
+        "node_key INTEGER NOT NULL, predicate TEXT NOT NULL, "
+        "value, tag INTEGER NOT NULL DEFAULT 0, updated INTEGER NOT NULL, "
+        "PRIMARY KEY (node_key, predicate)) WITHOUT ROWID");
+    db_->exec(
+        "INSERT OR REPLACE INTO facts_v2 (node_key, predicate, value, tag, updated) "
+        "SELECT COALESCE((SELECT new FROM keymap WHERE old = f.node_key), f.node_key), f.predicate, "
+        "CASE WHEN f.tag = 2 AND typeof(f.value) = 'integer' THEN COALESCE((SELECT new FROM keymap WHERE old = f.value), f.value) ELSE f.value END, "
+        "f.tag, f.updated FROM facts f ORDER BY f.updated");
+    db_->exec("DROP TABLE facts");
+    db_->exec("ALTER TABLE facts_v2 RENAME TO facts");
+    db_->exec(
+        "CREATE TABLE events_v2 ("
+        "portfolio INTEGER NOT NULL, dataset INTEGER NOT NULL, id INTEGER NOT NULL, time INTEGER NOT NULL, body TEXT NOT NULL, "
+        "PRIMARY KEY (portfolio, dataset, id)) WITHOUT ROWID");
+    {
+      SQLite::Statement read(*db_, "SELECT portfolio, dataset, id, time, body FROM events");
+      SQLite::Statement write(*db_, "INSERT OR REPLACE INTO events_v2 (portfolio, dataset, id, time, body) VALUES (?, ?, ?, ?, ?)");
+      while (read.executeStep()) {
+        std::string body = read.getColumn(4).getString();
+        nlohmann::json j = nlohmann::json::parse(body, nullptr, /*allow_exceptions=*/false);
+        if (j.is_object()) {
+          for (const char * key : {"instrument", "market", "quote"})
+            if (auto it = j.find(key); it != j.end() && it->is_number_unsigned()) *it = upgradeLegacyKey(it->get<uint64_t>());
+          body = j.dump();
+        }
+        write.bind(1, read.getColumn(0).getInt64());
+        write.bind(2, static_cast<int64_t>(upgradeLegacyKey(static_cast<uint64_t>(read.getColumn(1).getInt64()))));
+        write.bind(3, read.getColumn(2).getInt64());
+        write.bind(4, read.getColumn(3).getInt64());
+        write.bind(5, body);
+        write.exec();
+        write.reset();
+      }
+    }
+    db_->exec("DROP TABLE events");
+    db_->exec("ALTER TABLE events_v2 RENAME TO events");
+    db_->exec("DROP TABLE keymap");
+    db_->exec("PRAGMA user_version = " + std::to_string(schemaVersion()));
+    transaction.commit();
+    say(file_.string() + ": schema 1 upgraded to " + std::to_string(schemaVersion()) + " (the keys of codes are packed another way)");
   }
 
   // A file of another schema, older or newer, is emptied in place: the sources say everything again.
@@ -289,11 +405,17 @@ class SqliteFactStore : public FactStore {
         "node_key INTEGER NOT NULL, predicate TEXT NOT NULL, "
         "value, tag INTEGER NOT NULL DEFAULT 0, updated INTEGER NOT NULL, "
         "PRIMARY KEY (node_key, predicate)) WITHOUT ROWID");
-    if (kind_ == Kind::Portfolios)
+    if (kind_ == Kind::Portfolios) {
       db_->exec(
           "CREATE TABLE IF NOT EXISTS events ("
           "portfolio INTEGER NOT NULL, dataset INTEGER NOT NULL, id INTEGER NOT NULL, time INTEGER NOT NULL, body TEXT NOT NULL, "
           "PRIMARY KEY (portfolio, dataset, id)) WITHOUT ROWID");
+      // The edges on the user's lists: a list is its code, an edge its four keys.
+      db_->exec(
+          "CREATE TABLE IF NOT EXISTS list_members ("
+          "list TEXT NOT NULL, base INTEGER NOT NULL, quote INTEGER NOT NULL, market INTEGER NOT NULL, dataset INTEGER NOT NULL, "
+          "PRIMARY KEY (list, base, quote, market, dataset)) WITHOUT ROWID");
+    }
   }
 
   // Puts the file (and what WAL mode keeps beside it) out of the way, with `prefix` and the time added: `.bad-` for one that is damaged,

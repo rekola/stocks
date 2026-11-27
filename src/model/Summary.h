@@ -2,6 +2,7 @@
 
 #include "model/Types.h"
 
+#include <array>
 #include <chrono>
 #include <cstdint>
 #include <memory>
@@ -30,9 +31,29 @@ struct Quote {
   }
 };
 
+// An edge's change over each period, as a number of its own: what the table sorts by before any history is loaded, and what stays
+// in step with the bars once there are some. In the order of `Period` (Period.h: day, week, month, quarter, year, 3 years, 10 years),
+// in the unit of `PeriodView::change()`: per cent, or basis points for a rate. Undefined: not known. A source that says its own
+// numbers (a provider's list of returns) writes them; a period the queues cover is then worked out from the bars instead.
+inline constexpr size_t kChangeCount = 7;
+struct Changes {
+  std::array<double, kChangeCount> pct;
+  Changes() { pct.fill(kUndefined); }
+  bool says() const {
+    for (double c : pct)
+      if (isDefined(c)) return true;
+    return false;
+  }
+  friend bool operator==(const Changes & a, const Changes & b) {
+    for (size_t i = 0; i < kChangeCount; i++)
+      if (!(a.pct[i] == b.pct[i] || (!isDefined(a.pct[i]) && !isDefined(b.pct[i])))) return false;
+    return true;
+  }
+};
+
 // What a queue holds: a bar with an open, a high, a low, a close and a volume, or only a value (a fund's NAV, an index's value of the day).
-enum class QueueKind : uint8_t { Candle = 0, Value = 1 };
-inline QueueKind queueKindOf(InstrumentKind kind) { return kind == InstrumentKind::Fund || kind == InstrumentKind::Index ? QueueKind::Value : QueueKind::Candle; }
+enum class QueueKind : uint8_t { Candle = 0, Scalar = 1 };
+inline QueueKind queueKindOf(InstrumentKind kind) { return kind == InstrumentKind::Fund || kind == InstrumentKind::Index ? QueueKind::Scalar : QueueKind::Candle; }
 
 // What the file says of a queue without its bars: all that start-up reads of it.
 struct QueueCoverage {
@@ -59,6 +80,7 @@ struct QueueState {
 struct StoredEdge {
   Listing listing;  // its key is the edge's; the rest is empty where no listing was said
   Quote quote;
+  Changes changes;
   int64_t previous_close_day = 0;       // the close before the session and the day number it was said for
   double previous_close = kUndefined;   // undefined: none
   std::vector<std::pair<Resolution, QueueCoverage>> queues;

@@ -88,7 +88,7 @@ class Snapshot {
   // this only grows, and a reader that has seen the first `n` asks for what came after (`quoteRowsSince(n)`) instead of listing
   // everything again to find what is new: `quoteRowCount()` is the one number that says whether anything is.
   size_t quoteRowCount() const { return quoteRows_.size(); }
-  std::vector<EdgeKey> quoteRowsSince(size_t n) const { return std::vector<EdgeKey>(quoteRows_.begin() + std::min(n, quoteRows_.size()), quoteRows_.end()); }
+  std::vector<EdgeKey> quoteRowsSince(size_t n) const { return std::vector<EdgeKey>(quoteRows_.begin() + static_cast<std::ptrdiff_t>(std::min(n, quoteRows_.size())), quoteRows_.end()); }
   // Whether the edge is one of those rows.
   bool listed(const EdgeKey &) const;
 
@@ -96,6 +96,9 @@ class Snapshot {
   // price for the tables, the sparklines and the portfolios.
   // The edge's quote, if anything has said one. `last` is what the table shows as the price.
   std::optional<Quote> quote(const EdgeKey &) const;
+  // The edge's change over each period, by `Period` (Summary.h): what a source said of it, and for a period whose queue is in memory and
+  // covers it the number worked out from the bars, kept up to date as the bars and the quote change. Undefined where not known.
+  Changes changes(const EdgeKey &) const;
   // The bars of the queue of `resolution`, oldest first, as they were stored (see SummaryRecords.h); empty where there is none or it is
   // not in memory (read from the disk when it is wanted: `Store::want`). A row whose queue is not here shows its price and no trace.
   Seq<Candle> queue(const EdgeKey &, Resolution) const;
@@ -131,6 +134,13 @@ class Snapshot {
   // The datasets that say anything of what a portfolio did. Sorted.
   std::vector<DatasetId> ledgers(PortfolioId) const;
 
+  // The user's lists. A list is a code (the application names them: "watchlist") and has the edges the user put on it, which are hers and
+  // no dataset's: an edge is a row, so a row is on a list or it is not, whatever else the instrument is on (another market, another
+  // dataset). They are kept in the user's own file, beside the portfolios. The members are sorted by key and are not checked to have
+  // data (an edge listed here that no source says anything of is not a row, and nothing selects it).
+  std::vector<EdgeKey> listMembers(const std::string & list) const;
+  bool onList(const std::string & list, const EdgeKey &) const;
+
   // The snapshots in `range`, oldest first.
   Seq<BookSnapshot> books(const EdgeKey &, TimeRange range = {}) const;
   // The snapshot standing at `time`: the latest at or before it.
@@ -157,6 +167,8 @@ class Snapshot {
   void setPreviousClose(const EdgeKey &, int64_t day, double close);
   // The edge's quote, replacing the one it had; the newest says: one with an earlier time than the one there is left out.
   void setQuote(const EdgeKey &, const Quote &);
+  // What a source says the edge changed over each period: a period it leaves undefined keeps what is there.
+  void setChanges(const EdgeKey &, const Changes &);
   void setRetention(DatasetId, Resolution, std::optional<std::chrono::seconds>);
   void appendBooks(const EdgeKey &, const std::vector<BookSnapshot> &);
   void appendNews(DatasetId, const std::vector<NewsItem> &);
@@ -165,6 +177,8 @@ class Snapshot {
   void removePortfolio(PortfolioId);
   void appendTransactions(const LedgerKey &, const std::vector<portfolio::Transaction> &);
   void removeTransactions(const LedgerKey &, const std::vector<uint64_t> & ids);
+  void addToList(const std::string & list, const std::vector<EdgeKey> &);
+  void removeFromList(const std::string & list, const std::vector<EdgeKey> &);
 
   // For a store to make on its own copy, with the changes above. `setTime` is the time of the write in progress: what
   // `updated` becomes. `load` gives it what an earlier run said: the facts of nodes, which makes no version and no node but
@@ -183,6 +197,8 @@ class Snapshot {
   void load(std::vector<StoredFact> facts);  // by value: a caller that is done with them moves them in
   // The transactions an earlier run kept: no version, no write for the disk; one that cannot be read, or that is not tradable, is left out.
   void loadEvents(const std::vector<StoredEvent> &);
+  // The edges an earlier run kept on the lists: no version, no write for the disk; one with a part that is none is left out.
+  void loadMembers(const std::vector<StoredMember> &);
   // What an earlier run kept of edges: their listing, quote and close before the session, and the coverage of their queues. It makes the
   // edges, but no bar and no write for the disk, and what a source has said since stands (it is newer than the disk).
   void loadEdges(const std::vector<StoredEdge> &);
@@ -216,6 +232,7 @@ class Snapshot {
   void noteRow(const EdgeKey &);
   bool deriveSummary(const EdgeKey &, Resolution, const std::vector<Candle> &);
   void putListing(const Listing &, bool fromDisk);
+  void refreshChanges(const EdgeKey &);  // the periods the queues cover, from the bars; for what changed the price or the bars
 
   uint64_t version_ = 0;
   uint64_t checks_ = 0;
@@ -234,6 +251,7 @@ class Snapshot {
   immer::flex_vector<EdgeKey> quoteRows_;  // the edges with a last price or a daily queue, in the order they got one
   immer::set<EdgeKey> rows_;               // the same, to know one is there
   immer::map<EdgeKey, Quote> quotes_;
+  immer::map<EdgeKey, Changes> changes_;
   immer::map<SeriesKey, QueueState> queues_;
   immer::map<DatasetId, std::array<int64_t, 11>> retention_;  // seconds by resolution, for a dataset that has its own rules
   size_t queueBytes_ = 0;
@@ -256,6 +274,7 @@ class Snapshot {
   immer::map<InstrumentId, immer::set<EventKey>> eventsByInstrument_;
   immer::map<LedgerKey, Seq<portfolio::Transaction>> ledgers_;
   immer::map<PortfolioId, immer::set<DatasetId>> ledgersOf_;  // the datasets that have transactions
+  immer::map<std::string, immer::set<EdgeKey>> lists_;       // the user's lists: the edges on each
   immer::set<PortfolioId> portfolios_;                        // those that anything is said of
   void settle(PortfolioId);                                   // lists or forgets the portfolio, by whether anything is said of it
   void forget(uint64_t node, const std::string * predicate);  // takes what is waiting for the disk of the node back
@@ -295,7 +314,7 @@ class StoreWrites {
   // Says several things of a node in one write (an adapter's whole row), each as setAttribute does.
   virtual void setAttributes(NodeRef, const std::vector<Attribute> &) = 0;
   // The dataset with this code, made if it is new; `name` is what a person reads (the code until one is said), and one already said
-  // stands where none is given. A code that is not one to ten letters or digits makes none: the id is none, and it is told of.
+  // stands where none is given. A code that is not one to eleven capitals, digits, hyphens, periods or hashes makes none: the id is none, and it is told of.
   virtual DatasetId addDataset(const std::string & code, const std::string & name = {}) = 0;
 
   // What is said of an edge or an event needs all of its parts: a key with an
@@ -315,6 +334,10 @@ class StoreWrites {
   // newest says: a quote with an earlier time than the one there is left out. A source that gives only bars still gives a price: a bar newer
   // than the quote's time sets its last price to the bar's close and its time to the bar's.
   virtual void setQuote(const EdgeKey &, const Quote &) = 0;
+  // The change over each period as a source gives it, in the unit of `PeriodView::change()` (per cent; basis points for a rate), in the order
+  // of `Period`; a period left undefined says nothing and keeps what was there. A period the edge's bars cover is worked out from them
+  // instead, and kept up to date as they change, so this is for the edge that has no history yet: what its table sorts by.
+  virtual void setChanges(const EdgeKey &, const Changes &) = 0;
   // Order book snapshots, time-ordered; one at a time already in the series replaces it.
   virtual void appendBooks(const EdgeKey &, const std::vector<BookSnapshot> &) = 0;
   // News, by the dataset that says it. An item is its dataset and its id: one that is there already is left as it was (a dataset
@@ -337,6 +360,11 @@ class StoreWrites {
   virtual void appendTransactions(const LedgerKey &, const std::vector<portfolio::Transaction> &) = 0;
   // Takes back the transactions with these ids; ids not there change nothing.
   virtual void removeTransactions(const LedgerKey &, const std::vector<uint64_t> & ids) = 0;
+  // Puts edges on a user's list, which is made by the first (a list is only its code, which is not empty); one that is on it already
+  // stays. An edge with a part that is none is refused with std::invalid_argument and nothing of the call is written.
+  virtual void addToList(const std::string & list, const std::vector<EdgeKey> &) = 0;
+  // Takes edges off it; ones that are not on it change nothing.
+  virtual void removeFromList(const std::string & list, const std::vector<EdgeKey> &) = 0;
 };
 
 // What `Store::batch()` gives its function: the writes above, applied to one copy of the store that nothing sees until the

@@ -1,3 +1,4 @@
+#include "source/DatasetCodes.h"
 #include "TestFramework.h"
 
 #include "FakeHttp.h"
@@ -31,7 +32,7 @@ void addInstruments(Store & store) {
   InstrumentId stock = store.addInstrument("", "AbbVie", InstrumentKind::Company, "US00287Y1091");
   InstrumentId fund = store.addInstrument("", "A fund", InstrumentKind::Fund, "LU0231483743");
   MarketId market = store.addMarket("XXXX", "Somewhere");
-  DatasetId data = store.addDataset("nordnet");
+  DatasetId data = store.addDataset(kNordnetDataset);
   for (auto [instrument, book] : {std::pair{stock, "stock-book"}, std::pair{fund, "fund-book"}}) {
     EdgeKey key{instrument, eur, market, data};
     store.appendCandles(key, Resolution::Day, {{dayNumber(2026, 1, 2), 1, 1, 1, 4.2, 1}});
@@ -140,7 +141,7 @@ TEST(a_refusal_is_said_once_and_nothing_more_is_asked_for_this_session) {
   // A third instrument, so that there is one left after the refusal.
   InstrumentId eur = store->addInstrument("EUR", "Euro", InstrumentKind::Currency);
   InstrumentId other = store->addInstrument("", "Another", InstrumentKind::Company, "US0378331005");
-  EdgeKey key{other, eur, *store->snapshot()->findMarket("XXXX"), *store->snapshot()->findDataset("nordnet")};
+  EdgeKey key{other, eur, *store->snapshot()->findMarket("XXXX"), *store->snapshot()->findDataset(kNordnetDataset)};
   store->appendCandles(key, Resolution::Day, {{dayNumber(2026, 1, 2), 1, 1, 1, 4.2, 1}});
   store->setListing({key, "Another", "id", "other-book", "X", "Another"});
   FakeHttp http;

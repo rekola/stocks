@@ -58,9 +58,12 @@ void HistoryLoader::addProvider(std::shared_ptr<HistoryProvider> provider) {
 }
 
 std::shared_ptr<HistoryProvider> HistoryLoader::providerOf(const std::string & dataset) const {
+  // By key, not by text: the case of a code is not kept (NodeKey.h), so a provider that says "other" serves the dataset the store calls OTHER.
+  const auto key = datasetKey(dataset);
+  if (!key) return nullptr;
   for (const auto & p : providers_)
     for (const std::string & code : p->datasets())
-      if (code == dataset) return p;
+      if (datasetKey(code) == key) return p;
   return nullptr;
 }
 

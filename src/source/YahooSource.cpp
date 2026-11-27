@@ -2,6 +2,7 @@
 
 #include "model/Dates.h"
 #include "source/LeftOut.h"
+#include "source/YahooHeaders.h"
 
 #include <nlohmann/json.hpp>
 
@@ -104,7 +105,7 @@ YahooSource::Parsed YahooSource::parseEntry(const std::string & body, const List
   // One entry is one publication: the bars, the listing and what is said of the instrument together.
   bool leftOut = false;
   store.batch([&](Batch & b) {
-    const DatasetId dataset = b.addDataset(kYahooDataset);
+    const DatasetId dataset = b.addDataset(kYahooDataset, "Yahoo");
     const MarketId market = b.addMarket(e.mic, e.market);
     const InstrumentId base = baseOf(b, e);
     const InstrumentId quote = quoteNode(b, e.quote);
@@ -174,8 +175,9 @@ void YahooSource::load(Store & store, Http & http, SourceListener & listener) {
     bool done = false;
     bool named = true;
     for (const char * host : kHosts) {  // the second host answers when the first does not
-      HttpResult r = http.get(std::string("https://") + host + "/v8/finance/chart/" + encoded(e.yahoo) + "?range=" + range_ +
-                              "&interval=1d&events=div%7Csplit");
+      const std::string url = std::string("https://") + host + "/v8/finance/chart/" + encoded(e.yahoo) + "?range=" + range_ +
+                              "&interval=1d&events=div%7Csplit";
+      HttpResult r = http.get(url, yahoo::headers(url));
       if (r.status == 429 || r.status == 403) {
         listener.message(r.status == 429 ? "yahoo: rate limited, stopping" : "yahoo: refused, stopping");
         return;

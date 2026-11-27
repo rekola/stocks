@@ -19,6 +19,10 @@ if(NOT WIN32 AND NOT APPLE AND NOT DEFINED CELLUI_ENABLE_GTK)
   endif()
 endif()
 
+# The dependencies' own CMake warnings (a policy version too old for CMake, a Find module's name) are theirs to fix, not ours.
+set(CMAKE_SUPPRESS_DEVELOPER_WARNINGS ON CACHE BOOL "" FORCE)
+set(CMAKE_WARN_DEPRECATED OFF CACHE BOOL "" FORCE)
+
 include(FetchContent)
 FetchContent_Declare(cellui
   GIT_REPOSITORY https://github.com/rekola/cellui
@@ -75,7 +79,7 @@ FetchContent_Declare(SQLiteCpp
 FetchContent_MakeAvailable(SQLiteCpp)
 
 # The data model: plain values and the Store they live in. Knows nothing of the screen.
-add_library(stocks_model STATIC src/model/MemoryStore.cpp src/model/Isin.cpp src/model/Period.cpp src/model/NodeKey.cpp
+add_library(stocks_model STATIC src/model/MemoryStore.cpp src/model/Isin.cpp src/model/Period.cpp src/model/NodeKey.cpp src/model/LegacyNodeKey.cpp
   src/model/FactWriter.cpp src/model/SqliteFactStore.cpp src/model/SummaryRecords.cpp src/model/SummaryWriter.cpp src/model/SqliteSummaryStore.cpp src/portfolio/Portfolio.cpp src/portfolio/Transaction.cpp)
 target_include_directories(stocks_model PUBLIC src)
 target_compile_features(stocks_model PUBLIC cxx_std_20)
@@ -85,7 +89,7 @@ target_link_libraries(stocks_model PUBLIC immer Threads::Threads)
 target_link_libraries(stocks_model PRIVATE SQLiteCpp nlohmann_json::nlohmann_json)
 
 # The browser: the screen, its commands and the rows it shows, as a library so the tests can drive it.
-add_library(stocks_lib STATIC src/Browser.cpp src/BrowserPortfolio.cpp src/Positions.cpp src/News.cpp src/AttributeView.cpp src/Quotes.cpp src/Synthetic.cpp src/source/Http.cpp src/source/InstrumentLists.cpp
+add_library(stocks_lib STATIC src/Browser.cpp src/BrowserPortfolio.cpp src/Positions.cpp src/News.cpp src/AttributeView.cpp src/TransactionsView.cpp src/Quotes.cpp src/Synthetic.cpp src/source/Http.cpp src/source/InstrumentLists.cpp
   src/icons/IconLoader.cpp src/history/HistoryLoader.cpp src/source/NordnetHistory.cpp src/source/YahooSource.cpp src/source/YahooHistory.cpp src/source/NordnetSource.cpp src/source/SourceRunner.cpp src/source/DatasetCodes.cpp src/source/AutoSource.cpp
   src/source/DataDirectory.cpp src/source/FundRows.cpp src/source/FundSource.cpp src/source/NordnetDetails.cpp src/source/Countries.cpp src/source/KnownMarkets.cpp src/source/NordnetNews.cpp src/source/SuomenPankkiSource.cpp src/source/EcbSource.cpp src/source/PhysicalSource.cpp src/source/GoldApiSource.cpp src/source/GoldPriceSource.cpp src/source/GoldPriceHistory.cpp src/source/SifterSource.cpp)
 target_include_directories(stocks_lib PUBLIC src)
@@ -142,4 +146,38 @@ if(NOT WIN32)
   target_link_libraries(stocks_tests PRIVATE stocks_lib SQLiteCpp)  # the tests of the file make an old one with it
   add_test(NAME stocks_tests COMMAND stocks_tests)
   set_tests_properties(stocks_tests PROPERTIES TIMEOUT 60)
+endif()
+
+# Warnings are errors for our own code (as in synth). They are set on our targets only, never in CMAKE_CXX_FLAGS: that would
+# reach the dependencies (cellui, immer, pugixml, SQLiteCpp, ...), which are built with the flags they come with.
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  set(STOCKS_WARNING_FLAGS -Wall -Werror=return-type -Werror=parentheses -Werror=switch -Werror=address -Werror=cast-qual
+    -Werror=non-virtual-dtor -Werror=sign-conversion -Werror=sign-compare -Werror=sign-promo -Werror=redundant-decls -Werror=shadow
+    -Werror=missing-declarations -Werror=unused-variable -Werror=unused-but-set-variable -Werror=unused-function
+    -Werror=range-loop-construct -Werror=format -Wformat=2)
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    list(APPEND STOCKS_WARNING_FLAGS -Werror=logical-op -Werror=duplicated-cond -Werror=duplicated-branches)
+  endif()
+  # Their headers are SYSTEM includes, so templates instantiated from them are not held to our flags (as synth does for third_party/).
+  foreach(dep immer nlohmann_json pugixml SQLiteCpp httpclient)
+    foreach(name ${dep} ${dep}::${dep})
+      if(TARGET ${name})
+        get_target_property(aliased ${name} ALIASED_TARGET)
+        if(aliased)
+          set(real ${aliased})
+        else()
+          set(real ${name})
+        endif()
+        get_target_property(dirs ${real} INTERFACE_INCLUDE_DIRECTORIES)
+        if(dirs)
+          set_property(TARGET ${real} APPEND PROPERTY INTERFACE_SYSTEM_INCLUDE_DIRECTORIES ${dirs})
+        endif()
+      endif()
+    endforeach()
+  endforeach()
+  foreach(t stocks_model stocks_lib stocks stocks_frame_bench stocks_period_bench stocks_restore_bench stocks_tests)
+    if(TARGET ${t})
+      target_compile_options(${t} PRIVATE ${STOCKS_WARNING_FLAGS})
+    endif()
+  endforeach()
 endif()

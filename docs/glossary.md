@@ -3,7 +3,7 @@
 Terms with a specific meaning in this project.
 
 **Dataset code**
-What names a dataset: one to ten letters or digits that its adapter defines and
+What names a dataset: one to eleven capitals, digits, hyphens, periods or hashes that its adapter defines and
 never changes. The name a person reads is a fact of the dataset.
 
 **Fact**

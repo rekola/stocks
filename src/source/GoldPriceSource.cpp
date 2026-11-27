@@ -7,10 +7,10 @@
 #include "source/KnownMarkets.h"
 #include "source/MetalUnits.h"
 
+#include <cellui/NumberParse.h>
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
-#include <charconv>
 #include <cmath>
 
 using json = nlohmann::json;
@@ -32,7 +32,7 @@ std::optional<double> amount(const json & row, const char * key) {
   if (!it->is_string()) return std::nullopt;
   const std::string s = it->get<std::string>();
   double v = 0;
-  const auto [end, ec] = std::from_chars(s.data(), s.data() + s.size(), v);
+  const auto [end, ec] = cellui::parseFloat(s.data(), s.data() + s.size(), v);
   if (ec != std::errc() || end != s.data() + s.size()) return std::nullopt;
   return v;
 }
@@ -139,7 +139,7 @@ void GoldPriceSource::load(Store & store, Http & http, SourceListener & listener
     }
     if (rows.empty()) continue;
     store.batch([&](Batch & b) {
-      const DatasetId dataset = b.addDataset(kGoldPriceDataset, "goldprice");
+      const DatasetId dataset = b.addDataset(kGoldPriceDataset, "goldprice.dev");
       const MarketId market = b.addMarket(kNoMarket, marketNameOfMic(kNoMarket));
       const InstrumentId base = addInstrumentUnlessSaid(b, symbol, known->name, InstrumentKind::Commodity, known->isin, "METAL");
       if (!base.valid()) return;

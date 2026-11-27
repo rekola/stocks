@@ -3,6 +3,7 @@
 #include "FakeHttp.h"
 #include "model/Dates.h"
 #include "model/Isin.h"
+#include "model/Period.h"
 #include "source/InstrumentLists.h"
 #include "source/NordnetSource.h"
 
@@ -63,6 +64,34 @@ TEST(a_page_of_the_etf_list_becomes_listings_with_the_ids_the_history_needs) {
   CHECK(l.name == "Franklin FTSE Korea UCITS ETF" && l.issuer == "Franklin Templeton" && l.country == "DE");
   CHECK(page.listings[1].symbol == "XACT BULL" && page.listings[1].currency == "SEK" && page.listings[1].type == "KETF");
   CHECK(page.listings[2].marketId == 14 && page.listings[2].currency == "DKK");
+}
+
+TEST(the_returns_of_a_listing_are_its_changes_from_the_first_list_with_no_history) {
+  NordnetSource::Page page;
+  std::string error;
+  CHECK(NordnetSource::parsePage(fixture("etflist-1.json"), page, error));
+  const Changes & c = page.listings[0].changes;  // FLXK
+  CHECK(c.pct[0] == -8.2 && c.pct[1] == -12.49 && c.pct[2] == -18.37 && c.pct[3] == -22.26 && c.pct[4] == 59.31 && c.pct[5] == 123.05);
+  CHECK(!isDefined(c.pct[6]));  // FLXK has a `yield_max` (since the start) and no `yield_10y`
+  NordnetSource::Page old;
+  CHECK(NordnetSource::parsePage(fixture("etflist-1.json"), old, error));
+  CHECK(old.listings[1].changes.pct[6] == 266.61);  // XACT BULL: yield_10y, not its yield_max (1012.19)
+  // Written with the edge: a table can sort by any of them at once.
+  auto store = makeMemoryStore();
+  FakeHttp http;
+  http.answer = pages;
+  Listener listener;
+  NordnetSource source = quick();
+  source.load(*store, http, listener);
+  auto s = store->snapshot();
+  const InstrumentId flxk = *s->findInstrumentByIsin("IE00BHZRR030");
+  bool found = false;
+  for (const EdgeKey & edge : s->edgesOf(flxk)) {
+    found = true;
+    CHECK(s->changes(edge).pct[static_cast<size_t>(Period::Week)] == -12.49 && s->changes(edge).pct[static_cast<size_t>(Period::Year3)] == 123.05 &&
+          !isDefined(s->changes(edge).pct[static_cast<size_t>(Period::Year10)]));
+  }
+  CHECK(found);
 }
 
 TEST(a_market_is_named_by_its_nordnet_id_where_that_is_known) {
@@ -167,7 +196,7 @@ TEST(loading_pages_through_every_list_and_stores_instruments_markets_and_edges) 
   // No tick time: a node, and no edge.
   CHECK(s->findInstrumentByIsin("NO0010903685") &&
         s->edges(*s->findMarket("FNSE")).empty());
-  DatasetId nordnet = *s->findDataset("nordnet");
+  DatasetId nordnet = *s->findDataset(kNordnetDataset);
   EdgeKey onXetra{xaix, *s->findInstrument("EUR"), xetra, nordnet};
   EdgeKey onStockholm{xaix, *s->findInstrument("SEK"), stockholm, nordnet};
   // Each listing's price block is its quote, at the time of the tick (16:30 UTC on the 20th), and no bar: the bars are the history's.
@@ -341,8 +370,8 @@ TEST(an_indicator_row_with_another_price_source_is_nordnets_own) {
   auto s = store->snapshot();
   const MarketId none = *s->findMarket("XXXX");
   CHECK(s->listing({*s->findInstrument("EUR"), *s->findInstrument("USD"), none, *s->findDataset(kMorningstarDataset)}));
-  CHECK(s->listing({*s->findInstrument("USD"), *s->findInstrument("JPY"), none, *s->findDataset("nordnet")}));
-  CHECK(source.historyProvider()->datasets() == (std::vector<std::string>{"nordnet", kMorningstarDataset}));
+  CHECK(s->listing({*s->findInstrument("USD"), *s->findInstrument("JPY"), none, *s->findDataset(kNordnetDataset)}));
+  CHECK(source.historyProvider()->datasets() == (std::vector<std::string>{kNordnetDataset, kMorningstarDataset}));
 }
 
 TEST(listings_of_one_isin_with_different_names_leave_one_name_and_no_change_on_the_next_pass) {
@@ -507,7 +536,7 @@ TEST(a_new_day_adds_a_bar_to_the_series) {
   auto s = store->snapshot();
   InstrumentId xaix = *s->findInstrumentByIsin("IE00BGV5VN51");
   EdgeKey onXetra{xaix, *s->findInstrument("EUR"), *s->findMarket("XETR"),
-                  *s->findDataset("nordnet")};
+                  *s->findDataset(kNordnetDataset)};
   CHECK(s->quote(onXetra) && s->quote(onXetra)->time == 1795278600 && s->candles(onXetra, Resolution::Day).candles.empty());
 }
 
@@ -668,7 +697,7 @@ TEST(
 TEST(every_kind_of_node_keeps_its_attributes_the_same_way) {
   auto store = makeMemoryStore();
   InstrumentId i = store->addInstrument("NOKIA", "Nokia", InstrumentKind::Company, "FI0009000681", "ESH");
-  DatasetId d = store->addDataset("nordnet");
+  DatasetId d = store->addDataset(kNordnetDataset);
   MarketId m = store->addMarket("XHEL");
   store->setAttribute(i, {"nordnet-id", "16"});
   store->setAttribute(d, {"description", "Nordnet"});
@@ -711,7 +740,7 @@ TEST(an_instrument_listed_on_two_markets_is_one_node_with_an_edge_and_a_say_for_
   auto s = store->snapshot();
   InstrumentId xaix = *s->findInstrumentByIsin("IE00BGV5VN51");
   MarketId xetra = *s->findMarket("XETR"), stockholm = *s->findMarket("XSTO");
-  DatasetId nordnet = *s->findDataset("nordnet");
+  DatasetId nordnet = *s->findDataset(kNordnetDataset);
   const EdgeKey onXetra{xaix, *s->findInstrument("EUR"), xetra, nordnet};
   const EdgeKey onStockholm{xaix, *s->findInstrument("SEK"), stockholm, nordnet};
   CHECK(s->symbol(onXetra) == "XAIX" && s->symbol(onStockholm) == "XAIX");
@@ -806,7 +835,7 @@ TEST(the_indicator_lists_make_indices_in_points_currency_pairs_and_commodities_i
 }
 
 // The object of a predicate among the facts a parsed row has.
-const Value * said(const NordnetListing & l, const char * predicate) {
+static const Value * said(const NordnetListing & l, const char * predicate) {
   for (const Attribute & a : l.attributes)
     if (a.predicate == predicate) return &a.value;
   return nullptr;
