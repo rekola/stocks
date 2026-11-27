@@ -354,7 +354,7 @@ TEST(a_fat_edge_has_a_typed_listing_and_only_once_it_has_data) {
 
   // One instrument, a listing for each market's edge, found by the market.
   CHECK(w.snap()->symbol(onHel) == "XAIX" && w.snap()->symbol(onSto) == "XAIX-S");
-  CHECK(w.snap()->listing(onSto)->providerIdentifier == "419021" && w.snap()->listing(onSto)->nordnetOrderBookId == "book-s");
+  CHECK(w.snap()->listing(onSto)->nordnetIdentifier == "419021" && w.snap()->listing(onSto)->nordnetOrderBookId == "book-s");
   CHECK(*w.snap()->findEdge("XAIX", w.hel) == onHel);
   CHECK(!w.snap()->findEdge("XAIX", w.sto));  // that market calls it something else
   CHECK(*w.snap()->findEdge("XAIX-S", w.sto) == onSto);

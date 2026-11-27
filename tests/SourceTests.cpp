@@ -458,7 +458,7 @@ TEST(yahoo_keeps_its_own_type_on_the_edge) {
   CHECK(YahooSource::parse(fixture("nokia.json"), entry("NOKIA.HE"), *store, error));
   CHECK(YahooSource::parse(fixture("gold.json"), entry("GC=F"), *store, error));
   auto s = store->snapshot();
-  auto typeOf = [&](const EdgeKey & k) { return s->listing(k)->providerType; };
+  auto typeOf = [&](const EdgeKey & k) { return s->listing(k)->yahooType; };
   CHECK(typeOf(edgeOf(*s, kNokia, "EUR", "XHEL", kYahooDataset)) == "EQUITY");
   CHECK(typeOf(edgeOf(*s, kGold, "USD", "XXXX", kYahooDataset)) ==
         "FUTURE"); // the contract, not the metal

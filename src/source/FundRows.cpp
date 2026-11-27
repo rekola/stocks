@@ -159,6 +159,6 @@ std::optional<EdgeKey> writeFund(Batch &store, const std::string &datasetName,
   store.setAttributes(base, attributesOf(f));
   const EdgeKey edge{base, quote, market, dataset};
   store.appendCandles(edge, Resolution::Day, bars, QueueKind::Scalar);  // a NAV: one value a day
-  store.setListing({edge, f.symbol.empty() ? f.isin : f.symbol, f.identifier, "", "FUND", f.name});
+  store.setListing({edge, f.symbol.empty() ? f.isin : f.symbol, "", "", "", f.name, "", f.identifier});
   return edge;
 }

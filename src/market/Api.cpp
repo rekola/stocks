@@ -96,12 +96,12 @@ Timestamp lastBarTimeOf(const Snapshot & s, const EdgeKey & e) {
 // of the base node what a client needs to make it as the server did (its kind; its name and ISIN where it is an instrument, whose key is
 // its ISIN; a currency or a unit is its code alone).
 json instrumentJson(const Snapshot & s, const EdgeKey & e) {
-  const Listing listing = s.listing(e).value_or(Listing{e, {}, {}, {}, {}, {}});
+  const Listing listing = s.listing(e).value_or(Listing{e, {}, {}, {}, {}, {}, {}, {}});
   const bool isInstrument = NodeKey{e.base.value}.kind() == NodeKind::Instrument;
   json out = {{"id", edgeId(e)},
               {"edge", {{"base", nodeText(e.base.value)}, {"quote", nodeText(e.quote.value)}, {"market", nodeText(e.market.value)}, {"dataset", nodeText(e.dataset.value)}}},
               {"dataset", {{"code", datasetCode(e.dataset)}, {"name", s.name(e.dataset)}}},
-              {"listing", {{"symbol", listing.symbol}, {"provider_identifier", listing.providerIdentifier}, {"nordnet_order_book_id", listing.nordnetOrderBookId}, {"provider_type", listing.providerType}, {"name", listing.name}}},
+              {"listing", {{"symbol", listing.symbol}, {"nordnet_identifier", listing.nordnetIdentifier}, {"nordnet_order_book_id", listing.nordnetOrderBookId}, {"nordnet_type", listing.nordnetType}, {"name", listing.name}, {"yahoo_type", listing.yahooType}, {"fund_identifier", listing.fundIdentifier}}},
               {"base", {{"kind", kindName(s.kind(e.base))}, {"name", isInstrument ? json(s.name(e.base)) : json(nullptr)}, {"isin", isInstrument ? json(s.isin(e.base)) : json(nullptr)}}},
               {"last_bar_time", nullptr}};
   if (const Timestamp last = lastBarTimeOf(s, e); last > 0) out["last_bar_time"] = last;

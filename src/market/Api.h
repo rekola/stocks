@@ -50,7 +50,7 @@
 //   id            the edge id
 //   edge          {"base", "quote", "market", "dataset"}: the texts of the keys
 //   dataset       {"code", "name"}: what the store has of the dataset (its name is its code until one is said)
-//   listing       {"symbol", "provider_identifier", "nordnet_order_book_id", "provider_type", "name"}: what the dataset said of the instrument on the market ("" where not)
+//   listing       {"symbol", "nordnet_identifier", "nordnet_order_book_id", "nordnet_type", "name", "yahoo_type", "fund_identifier"}: what the dataset said of the instrument on the market ("" where not)
 //   base          what a client needs to make the base node as the server did: {"kind", "name", "isin"}. The kind is the model's
 //                 (company, currency, commodity, index, etf, certificate, fund, unit, crypto, other); the name and the ISIN are given where the
 //                 base is an instrument (its key is its ISIN) and null for a currency or a unit, which is its code alone.

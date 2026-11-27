@@ -255,10 +255,12 @@ struct LedgerKey {
 struct Listing {
   EdgeKey key;
   std::string symbol;      // what the market calls the instrument
-  std::string providerIdentifier;  // the provider's own id for it; provider-specific, not real market data
+  std::string nordnetIdentifier;  // Nordnet's own id for it (its `identifier`); not real market data
   std::string nordnetOrderBookId;  // Nordnet's own order book id: what Nordnet's price history is asked for by; not real market data
-  std::string providerType;  // the provider's own type for it, in its own vocabulary (Nordnet's "UETF" is not Yahoo's "ETF"), not comparable across providers; not real market data
+  std::string nordnetType;  // Nordnet's own type for it ("UETF", "INDEX"): its vocabulary is not Yahoo's; not real market data
   std::string name;        // what the dataset calls it there ("EUR/USD", a fund's name on that market): what a row shows
+  std::string yahooType;       // Yahoo's own type for it ("EQUITY", "FUTURE"): its vocabulary is not Nordnet's; not real market data
+  std::string fundIdentifier;  // the fund company's own id for it: what its price history is asked for by; not real market data
   friend bool operator==(const Listing &, const Listing &) = default;
 };
 

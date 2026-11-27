@@ -122,7 +122,7 @@ YahooSource::Parsed YahooSource::parseEntry(const std::string & body, const List
     std::vector<Attribute> said;
     if (auto meta = result.find("meta"); meta != result.end() && meta->is_object()) {
       auto t = meta->find("instrumentType");
-      if (t != meta->end() && t->is_string()) listing.providerType = t->get<std::string>();
+      if (t != meta->end() && t->is_string()) listing.yahooType = t->get<std::string>();
       // Where the history begins, and the market's time zone (which a market has, not an instrument).
       auto first = meta->find("firstTradeDate");
       if (first != meta->end() && first->is_number_integer() && first->get<int64_t>() > 0)

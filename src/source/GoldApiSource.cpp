@@ -180,7 +180,7 @@ void GoldApiSource::load(Store & store, Http & http, SourceListener & listener) 
         spot.time = p.time;
         b.setQuote(edge, spot);
         // The unit is in the name the row shows: a price of copper is for a tonne and one of gold for a troy ounce.
-        b.setListing({edge, s.symbol, "", "", known ? known->type : "SPOT", known ? s.name + ", per " + known->unit : s.name});
+        b.setListing({edge, s.symbol, "", "", "", known ? s.name + ", per " + known->unit : s.name});
       }
     });
     listener.changed();
