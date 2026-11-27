@@ -128,14 +128,15 @@ void PhysicalSource::load(Store & store, Http &, SourceListener & listener) {
     for (const EdgeKey & key : snapshot->edges(*market)) {
       const auto listing = snapshot->listing(key);
       if (!listing) continue;
-      const CandleSeries last = snapshot->lastCandles(key, Resolution::Day, 1);
-      if (last.candles.empty() || !isDefined(last.candles.back().close)) continue;
+      // The spot is the quote a source says (the live price is no bar).
+      const auto quote = snapshot->quote(key);
+      if (!quote || !quote->time || !isDefined(quote->last)) continue;
+      const Candle bar{dayNumberOfInstant(quote->time), kUndefined, kUndefined, kUndefined, quote->last, kUndefined};
       for (size_t rank = 0; rank < table_.spots.size(); rank++) {
         if (table_.spots[rank].symbol != listing->symbol) continue;
         if (!table_.spots[rank].dataset.empty() && (!rowDatasets[rank] || *rowDatasets[rank] != key.dataset)) continue;
         auto & of = spots[table_.spots[rank].metal];
         const auto found = of.find(key.quote.value);
-        const Candle & bar = last.candles.back();
         const bool better = found == of.end() || bar.time > found->second.bar.time || (bar.time == found->second.bar.time && rank < found->second.rank);
         if (better) of[key.quote.value] = {rank, key, bar};
       }

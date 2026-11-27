@@ -169,8 +169,12 @@ void GoldApiSource::load(Store & store, Http & http, SourceListener & listener) 
         const InstrumentId quote = currencyNode(b, p.currency);
         if (!quote.valid()) continue;
         const EdgeKey edge{base, quote, market, dataset};
-        // In the unit of the instrument, so that this source's copper and another's, of one ISIN, are the same number.
-        b.appendCandles(edge, Resolution::Day, {{p.day, kUndefined, kUndefined, kUndefined, p.price * (known ? known->factor : 1.0), kUndefined}});
+        // The quote only, in the unit of the instrument, so that this source's copper and another's, of one ISIN, are the same number. A bar is
+        // history, which this API has none of: a live price written as a bar lands wherever the program happened to be open.
+        Quote quote;
+        quote.last = p.price * (known ? known->factor : 1.0);
+        quote.time = (p.day - kUnixEpochDayNumber) * 86400;
+        b.setQuote(edge, quote);
         // The unit is in the name the row shows: a price of copper is for a tonne and one of gold for a troy ounce.
         b.setListing({edge, s.symbol, "", "", known ? known->type : "SPOT", known ? s.name + ", per " + known->unit : s.name});
       }

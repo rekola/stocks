@@ -92,19 +92,21 @@ TEST(every_symbol_is_priced_in_euros_and_in_dollars_as_edges_of_the_dataset) {
   const DatasetId data = *s->findDataset(kGoldApiDataset);
   CHECK(s->name(NodeRef(data)) == "goldapi" && s->edges(none).size() == 14);
   const InstrumentId gold = *s->findInstrument("XAU");
-  const CandleSeries inEuros = s->candles({gold, eur, none, data}, Resolution::Day), inDollars = s->candles({gold, usd, none, data}, Resolution::Day);
-  CHECK(inEuros.candles.size() == 1 && inDollars.candles.size() == 1);
-  CHECK(std::abs(inEuros.candles[0].close - 3240) < 1e-6 && std::abs(inDollars.candles[0].close - 3600) < 1e-9);
-  CHECK(inEuros.candles[0].time == dayNumber(2026, 11, 24) && !isDefined(inEuros.candles[0].open) && !isDefined(inEuros.candles[0].volume));
+  // A live price is a quote and no bar: the bars are history's, and this API has none.
+  const auto inEuros = s->quote({gold, eur, none, data}), inDollars = s->quote({gold, usd, none, data});
+  CHECK(inEuros && inDollars);
+  CHECK(std::abs(inEuros->last - 3240) < 1e-6 && std::abs(inDollars->last - 3600) < 1e-9);
+  CHECK(dayNumberOfInstant(inEuros->time) == dayNumber(2026, 11, 24));
+  CHECK(s->candles({gold, eur, none, data}, Resolution::Day).candles.empty() && s->candles({gold, usd, none, data}, Resolution::Day).candles.empty());
   CHECK(s->symbol(EdgeKey{gold, eur, none, data}) == "XAU" && s->name(NodeRef(gold)) == "Gold");
   // What a price is for is in the name the row shows: the metals by the troy ounce, copper by the pound, a coin by the coin.
   for (auto [symbol, shown] : {std::pair{"XAU", "Gold, per troy oz"}, {"XAG", "Silver, per troy oz"}, {"XPT", "Platinum, per troy oz"},
                                {"XPD", "Palladium, per troy oz"}, {"HG", "Copper, per tonne"}, {"BTC", "Bitcoin, per coin"}, {"ETH", "Ethereum, per coin"}})
     for (const InstrumentId currency : {eur, usd}) CHECK(s->listing({*s->findInstrument(symbol), currency, none, data})->name == shown);
   // Copper is quoted per pound by the API and is kept per metric tonne, the unit of the instrument (another source's copper has the same ISIN).
-  CHECK(std::abs(s->lastCandles({*s->findInstrument("HG"), usd, none, data}, Resolution::Day, 1).candles.back().close - 5 * 1000 / 0.45359237) < 1e-6);
-  CHECK(std::abs(s->lastCandles({*s->findInstrument("HG"), eur, none, data}, Resolution::Day, 1).candles.back().close - 4.5 * 1000 / 0.45359237) < 1e-6);
-  CHECK(std::abs(s->lastCandles({*s->findInstrument("XAG"), usd, none, data}, Resolution::Day, 1).candles.back().close - 45) < 1e-9);  // the others as they come
+  CHECK(std::abs(s->quote({*s->findInstrument("HG"), usd, none, data})->last - 5 * 1000 / 0.45359237) < 1e-6);
+  CHECK(std::abs(s->quote({*s->findInstrument("HG"), eur, none, data})->last - 4.5 * 1000 / 0.45359237) < 1e-6);
+  CHECK(std::abs(s->quote({*s->findInstrument("XAG"), usd, none, data})->last - 45) < 1e-9);  // the others as they come
   // The metals are commodities (so in the Commodities preset), the coins are of no kind.
   for (const char * metal : {"XAU", "XAG", "XPT", "XPD", "HG"}) CHECK(s->kind(*s->findInstrument(metal)) == InstrumentKind::Commodity);
   for (const char * coin : {"BTC", "ETH"}) CHECK(s->kind(*s->findInstrument(coin)) == InstrumentKind::Other);
@@ -113,7 +115,7 @@ TEST(every_symbol_is_priced_in_euros_and_in_dollars_as_edges_of_the_dataset) {
   CHECK(!portfolio::tradable(*s, EdgeKey{gold, eur, none, data}));
 }
 
-TEST(a_second_load_replaces_the_days_bar_and_a_new_day_adds_one) {
+TEST(a_second_load_replaces_the_quote_and_leaves_no_bar) {
   auto store = makeMemoryStore();
   FakeHttp http;
   double gold = 3600;
@@ -129,11 +131,12 @@ TEST(a_second_load_replaces_the_days_bar_and_a_new_day_adds_one) {
   source.load(*store, http, said);
   auto s = store->snapshot();
   const EdgeKey usd{*s->findInstrument("XAU"), *s->findInstrument("USD"), *s->findMarket(kNoMarket), *s->findDataset(kGoldApiDataset)};
-  CHECK(s->candles(usd, Resolution::Day).candles.size() == 1 && s->candles(usd, Resolution::Day).candles[0].close == 3650);
+  CHECK(s->quote(usd)->last == 3650 && s->candles(usd, Resolution::Day).candles.empty());
   updated = "2026-11-25T00:00:05Z";
   source.load(*store, http, said);
-  const auto bars = store->snapshot()->candles(usd, Resolution::Day).candles;
-  CHECK(bars.size() == 2 && bars[1].time == dayNumber(2026, 11, 25) && bars[1].close == 3650);
+  const auto quote = store->snapshot()->quote(usd);
+  CHECK(quote->last == 3650 && dayNumberOfInstant(quote->time) == dayNumber(2026, 11, 25));
+  CHECK(store->snapshot()->candles(usd, Resolution::Day).candles.empty());
   const uint64_t version = store->snapshot()->version();
   source.load(*store, http, said);  // the same again
   CHECK(store->snapshot()->version() == version);

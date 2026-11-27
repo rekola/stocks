@@ -147,7 +147,11 @@ void GoldPriceSource::load(Store & store, Http & http, SourceListener & listener
         const InstrumentId quote = currencyNode(b, row.currency);
         if (!quote.valid()) continue;
         const EdgeKey edge{base, quote, market, dataset};
-        b.appendCandles(edge, Resolution::Day, {{row.day, kUndefined, kUndefined, kUndefined, row.value, kUndefined}});
+        // The quote only: the bars are the history's (GoldPriceHistory), the real ones.
+        Quote quote;
+        quote.last = row.value;
+        quote.time = (row.day - kUnixEpochDayNumber) * 86400;
+        b.setQuote(edge, quote);
         b.setListing({edge, symbol, "", "", "METAL", std::string(known->name) + ", per " + known->unit});
       }
     });
