@@ -380,7 +380,7 @@ size_t NordnetSource::loadIndicators(const List & list, Store & store, Http & ht
         const InstrumentKind kind = row.type == "INDEX" ? InstrumentKind::Index
                                     : row.type == "COMMODITY" ? InstrumentKind::Commodity
                                                               : InstrumentKind::Other;
-        std::vector<Attribute> rest = {{predicate::name, row.name}, {predicate::type, row.type},
+        std::vector<Attribute> rest = {{predicate::name, row.name},
                                        {kInstrumentIdPredicate, row.instrumentId}};
         if (kind != InstrumentKind::Other) rest.push_back({predicate::kind, kindName(kind)});
         base = b.resolveInstrument(identifying, rest);
@@ -543,8 +543,8 @@ void NordnetSource::load(Store & store, Http & http, SourceListener & listener) 
         // listing elsewhere says them only where none are said yet, so two listings do not take turns at it.
         const std::string country = b.view().said(NodeRef(market), predicate::country);
         const bool home = !country.empty() && l.isin.compare(0, 2, country) == 0;
-        const InstrumentId base = home ? b.addInstrument("", l.name, kindOfType(l.type), l.isin, l.type)
-                                       : addInstrumentUnlessSaid(b, "", l.name, kindOfType(l.type), l.isin, l.type);
+        const InstrumentId base = home ? b.addInstrument("", l.name, kindOfType(l.type), l.isin)
+                                       : addInstrumentUnlessSaid(b, "", l.name, kindOfType(l.type), l.isin);
           if (!base.valid()) {
             leftOut.add(!l.isin.empty() ? l.isin : !l.symbol.empty() ? l.symbol : l.name);
             refused.push_back(i);

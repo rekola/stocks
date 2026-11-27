@@ -448,25 +448,23 @@ TEST(a_value_may_be_a_node_and_is_found_by_the_node_it_names) {
   CHECK(w.snap()->version() == after && asNode(*w.snap()->attribute(share, "quoted-in")) == sek);
 }
 
-TEST(edges_can_be_selected_by_the_type_of_their_base_instrument) {
+TEST(edges_can_be_selected_by_the_kind_of_their_base_instrument) {
   World w;
-  InstrumentId etf = w.store->addInstrument("FLXK", "A fund", InstrumentKind::Etf, "IE00BHZRR030", "UETF");
-  InstrumentId cert = w.store->addInstrument("4GLD", "A certificate", InstrumentKind::Other, "DE000A0S9GB0", "PTC");
+  InstrumentId etf = w.store->addInstrument("FLXK", "A fund", InstrumentKind::Etf, "IE00BHZRR030");
+  InstrumentId cert = w.store->addInstrument("4GLD", "A certificate", InstrumentKind::Certificate, "DE000A0S9GB0");
   EdgeKey a{etf, w.eur, w.hel, w.a}, b{cert, w.eur, w.hel, w.a}, c{w.nokia, w.eur, w.hel, w.a};
   for (const EdgeKey & k : {a, b, c}) w.store->appendCandles(k, Resolution::Min1, {bar(0, 1)});
-  CHECK(w.snap()->said(NodeRef(*w.snap()->findInstrument("FLXK")), predicate::type) == "UETF" && w.snap()->said(NodeRef(*w.snap()->findInstrument("NOKIA")), predicate::type).empty());
   CHECK(w.snap()->edges(w.hel).size() == 3);
-  auto isType = [&w](const char * t) { return [&w, t](InstrumentId i) { return w.snap()->said(NodeRef(i), predicate::type) == t; }; };
-  CHECK(w.snap()->edges(w.hel, isType("PTC")).size() == 1 && w.snap()->edges(w.hel, isType("PTC"))[0] == b);
-  CHECK(w.snap()->edges(w.hel, isType("UETF")).size() == 1);
-  CHECK(w.snap()->edges(w.hel, isType("nothing")).empty());
-  CHECK(w.snap()->edges(w.hel, [&w](InstrumentId i) { return w.snap()->kind(i) == InstrumentKind::Etf; }).size() == 1);
-  CHECK(w.snap()->edges(w.sto, isType("PTC")).empty());
+  auto isKind = [&w](InstrumentKind k) { return [&w, k](InstrumentId i) { return w.snap()->kind(i) == k; }; };
+  CHECK(w.snap()->edges(w.hel, isKind(InstrumentKind::Certificate)).size() == 1 && w.snap()->edges(w.hel, isKind(InstrumentKind::Certificate))[0] == b);
+  CHECK(w.snap()->edges(w.hel, isKind(InstrumentKind::Etf)).size() == 1);
+  CHECK(w.snap()->edges(w.hel, isKind(InstrumentKind::Crypto)).empty());
+  CHECK(w.snap()->edges(w.sto, isKind(InstrumentKind::Certificate)).empty());
 }
 
 TEST(an_instrument_with_no_edge_is_not_seen_by_a_market) {
   World w;
-  w.store->addInstrument("LONELY", "No data", InstrumentKind::Etf, "XX0000000002", "UETF");
+  w.store->addInstrument("LONELY", "No data", InstrumentKind::Etf, "XX0000000002");
   CHECK(w.snap()->findInstrument("LONELY"));  // it exists, as a node
   CHECK(w.snap()->edges(w.hel).empty() && w.snap()->edges(w.sto).empty() && w.snap()->edgeMarkets().empty());
 }
@@ -474,10 +472,10 @@ TEST(an_instrument_with_no_edge_is_not_seen_by_a_market) {
 TEST(an_instrument_is_its_id_and_what_is_said_of_it_is_read_from_the_facts) {
   World w;
   auto s = w.snap();
-  const InstrumentId ericsson = w.store->addInstrument("ERIC", "Ericsson", InstrumentKind::Company, "SE0000108656", "EQUITY");
+  const InstrumentId ericsson = w.store->addInstrument("ERIC", "Ericsson", InstrumentKind::Company, "SE0000108656");
   s = w.snap();
   CHECK(s->isin(ericsson) == "SE0000108656" && s->symbol(ericsson) == "ERIC" && s->name(ericsson) == "Ericsson");
-  CHECK(s->kind(ericsson) == InstrumentKind::Company && s->said(NodeRef(ericsson), predicate::type) == "EQUITY");
+  CHECK(s->kind(ericsson) == InstrumentKind::Company);
   CHECK(s->known(NodeRef(ericsson)) && *s->findInstrumentByIsin("SE0000108656") == ericsson && *s->findInstrument("ERIC") == ericsson);
   // A currency has no ISIN: its code is its key and its symbol.
   CHECK(s->isin(w.eur).empty() && s->symbol(w.eur) == "EUR" && s->kind(w.eur) == InstrumentKind::Currency);

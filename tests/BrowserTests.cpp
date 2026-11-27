@@ -2313,7 +2313,7 @@ NewsItem newsItem(const char * id, Timestamp time, const char * headline, std::v
 
 TEST(the_news_context_shows_the_news_newest_first_and_a_preset_is_a_selection_by_kind) {
   Fixture f(false, 160);
-  const InstrumentId nokia = f.store->addInstrument("", "Nokia Oyj", InstrumentKind::Company, "FI0009000681", "ESH");
+  const InstrumentId nokia = f.store->addInstrument("", "Nokia Oyj", InstrumentKind::Company, "FI0009000681");
   const DatasetId data = f.store->addDataset(kNordnetDataset, "Nordnet");
   const NodeRef finland = nodeOf(*countryKey("FI"));
   f.store->appendNews(data, {newsItem("1", 1795214400, "Nokia buys back shares", {nokia, finland}, kPressRelease),
@@ -2351,8 +2351,8 @@ TEST(the_news_context_shows_the_news_newest_first_and_a_preset_is_a_selection_by
 
 TEST(the_info_of_a_news_item_says_whom_it_is_about_and_the_info_of_a_row_lists_its_latest_news) {
   Fixture f(false, 160);
-  const InstrumentId eur = f.store->addInstrument("EUR", "Euro", InstrumentKind::Currency, "", "");
-  const InstrumentId nokia = f.store->addInstrument("", "Nokia Oyj", InstrumentKind::Company, "FI0009000681", "ESH");
+  const InstrumentId eur = f.store->addInstrument("EUR", "Euro", InstrumentKind::Currency, "");
+  const InstrumentId nokia = f.store->addInstrument("", "Nokia Oyj", InstrumentKind::Company, "FI0009000681");
   const MarketId hel = f.store->addMarket("XHEL", "Nasdaq Helsinki");
   const DatasetId data = f.store->addDataset(kNordnetDataset, "Nordnet");
   f.store->appendCandles({nokia, eur, hel, data}, Resolution::Day, {{dayNumber(2026, 1, 2), 1, 1, 1, 4.2, 1}});

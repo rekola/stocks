@@ -19,8 +19,8 @@ std::string fixture(const std::string & name) {
 // A store with the instruments two of the fixture's news items are about, as the search lists would have made them.
 std::shared_ptr<Store> storeWithNewsInstruments(InstrumentId * alkane = nullptr, InstrumentId * oatly = nullptr) {
   std::shared_ptr<Store> store = makeMemoryStore();
-  const InstrumentId a = store->addInstrument("", "Alkane Resources Ltd", InstrumentKind::Company, "AU000000ALK9", "ESH");
-  const InstrumentId o = store->addInstrument("", "Oatly Group", InstrumentKind::Company, "US67421J1088", "ESH");
+  const InstrumentId a = store->addInstrument("", "Alkane Resources Ltd", InstrumentKind::Company, "AU000000ALK9");
+  const InstrumentId o = store->addInstrument("", "Oatly Group", InstrumentKind::Company, "US67421J1088");
   store->setAttribute(a, {nordnet::kInstrumentId, "e66ae6a8-5427-4f91-94c1-c59a11eb1ff5"});
   store->setAttribute(o, {nordnet::kInstrumentId, "7fb9dda7-a3b1-4bf3-a266-75706e95b7f6"});
   if (alkane) *alkane = a;

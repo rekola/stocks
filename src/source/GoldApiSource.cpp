@@ -159,10 +159,10 @@ void GoldApiSource::load(Store & store, Http & http, SourceListener & listener) 
       const InstrumentKind kind = known ? known->kind : InstrumentKind::Other;
       InstrumentId base;
       if (known && *known->isin) {
-        // The instrument another source made by this ISIN: its name and type stand where they are said, and ours are said only where none is.
-        base = addInstrumentUnlessSaid(b, s.symbol, s.name, kind, known->isin, known->type);
+        // The instrument another source made by this ISIN: its name stands where they are said, and ours are said only where none is.
+        base = addInstrumentUnlessSaid(b, s.symbol, s.name, kind, known->isin);
       } else {
-        std::vector<Attribute> rest = {{predicate::name, s.name}, {predicate::symbol, s.symbol}, {predicate::type, known ? known->type : "SPOT"}};
+        std::vector<Attribute> rest = {{predicate::name, s.name}, {predicate::symbol, s.symbol}};
         if (kind != InstrumentKind::Other) rest.push_back({predicate::kind, kindName(kind)});
         base = b.resolveInstrument({}, rest);
       }

@@ -20,7 +20,6 @@ struct InstrumentSpec {
   std::string code;    // how the dataset and the command line name it, lower case: "eurusd"
   std::string symbol;  // what the dataset calls it on its market (the listing's): "EURUSD"
   std::string name;    // what a row shows (the listing's): "EUR/USD"
-  std::string type;    // the provider's own type for it ("CURRENCY", "METAL", "OIL", "INDEX")
   // The base node: a currency is found by its symbol; anything else is an instrument by its ISIN (source/KnownIsins.h), made if new.
   std::string baseSymbol, baseName, baseIsin;
   InstrumentKind baseKind = InstrumentKind::Currency;

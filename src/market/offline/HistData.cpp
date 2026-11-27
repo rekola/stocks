@@ -69,27 +69,26 @@ struct Known {
   const char * name;
   const char * isin;
   InstrumentKind kind;
-  const char * type;
 };
 constexpr Known kKnown[] = {
-    {"xauusd", "XAU", "Gold", known_isin::kGold, InstrumentKind::Commodity, "METAL"},
-    {"xauaud", "XAU", "Gold", known_isin::kGold, InstrumentKind::Commodity, "METAL"},
-    {"xauchf", "XAU", "Gold", known_isin::kGold, InstrumentKind::Commodity, "METAL"},
-    {"xaueur", "XAU", "Gold", known_isin::kGold, InstrumentKind::Commodity, "METAL"},
-    {"xaugbp", "XAU", "Gold", known_isin::kGold, InstrumentKind::Commodity, "METAL"},
-    {"xagusd", "XAG", "Silver", known_isin::kSilver, InstrumentKind::Commodity, "METAL"},
-    {"wtiusd", "WTI", "WTI crude oil", known_isin::kWti, InstrumentKind::Commodity, "OIL"},
-    {"bcousd", "BRENT", "Brent crude oil", known_isin::kBrent, InstrumentKind::Commodity, "OIL"},
-    {"spxusd", "SPX", "S&P 500", known_isin::kSp500, InstrumentKind::Index, "INDEX"},
-    {"nsxusd", "NDX", "Nasdaq 100", known_isin::kNasdaq100, InstrumentKind::Index, "INDEX"},
-    {"udxusd", "DXY", "US Dollar Index", known_isin::kUsDollarIndex, InstrumentKind::Index, "INDEX"},
-    {"grxeur", "DAX", "DAX", known_isin::kDax, InstrumentKind::Index, "INDEX"},
-    {"frxeur", "CAC", "CAC 40", known_isin::kCac40, InstrumentKind::Index, "INDEX"},
-    {"etxeur", "SX5E", "Euro STOXX 50", known_isin::kEuroStoxx50, InstrumentKind::Index, "INDEX"},
-    {"ukxgbp", "UKX", "FTSE 100", known_isin::kFtse100, InstrumentKind::Index, "INDEX"},
-    {"jpxjpy", "NKY", "Nikkei 225", known_isin::kNikkei225, InstrumentKind::Index, "INDEX"},
-    {"hkxhkd", "HSI", "Hang Seng", known_isin::kHangSeng, InstrumentKind::Index, "INDEX"},
-    {"auxaud", "AS51", "S&P/ASX 200", known_isin::kAsx200, InstrumentKind::Index, "INDEX"},
+    {"xauusd", "XAU", "Gold", known_isin::kGold, InstrumentKind::Commodity},
+    {"xauaud", "XAU", "Gold", known_isin::kGold, InstrumentKind::Commodity},
+    {"xauchf", "XAU", "Gold", known_isin::kGold, InstrumentKind::Commodity},
+    {"xaueur", "XAU", "Gold", known_isin::kGold, InstrumentKind::Commodity},
+    {"xaugbp", "XAU", "Gold", known_isin::kGold, InstrumentKind::Commodity},
+    {"xagusd", "XAG", "Silver", known_isin::kSilver, InstrumentKind::Commodity},
+    {"wtiusd", "WTI", "WTI crude oil", known_isin::kWti, InstrumentKind::Commodity},
+    {"bcousd", "BRENT", "Brent crude oil", known_isin::kBrent, InstrumentKind::Commodity},
+    {"spxusd", "SPX", "S&P 500", known_isin::kSp500, InstrumentKind::Index},
+    {"nsxusd", "NDX", "Nasdaq 100", known_isin::kNasdaq100, InstrumentKind::Index},
+    {"udxusd", "DXY", "US Dollar Index", known_isin::kUsDollarIndex, InstrumentKind::Index},
+    {"grxeur", "DAX", "DAX", known_isin::kDax, InstrumentKind::Index},
+    {"frxeur", "CAC", "CAC 40", known_isin::kCac40, InstrumentKind::Index},
+    {"etxeur", "SX5E", "Euro STOXX 50", known_isin::kEuroStoxx50, InstrumentKind::Index},
+    {"ukxgbp", "UKX", "FTSE 100", known_isin::kFtse100, InstrumentKind::Index},
+    {"jpxjpy", "NKY", "Nikkei 225", known_isin::kNikkei225, InstrumentKind::Index},
+    {"hkxhkd", "HSI", "Hang Seng", known_isin::kHangSeng, InstrumentKind::Index},
+    {"auxaud", "AS51", "S&P/ASX 200", known_isin::kAsx200, InstrumentKind::Index},
 };
 
 market::InstrumentSpec specOf(const std::string & code, int firstPeriod) {
@@ -101,14 +100,12 @@ market::InstrumentSpec specOf(const std::string & code, int firstPeriod) {
   spec.baseSymbol = upper(code.substr(0, 3));
   spec.quote = upper(code.substr(3));
   spec.baseKind = InstrumentKind::Currency;
-  spec.type = "CURRENCY";
   for (const Known & k : kKnown)
     if (code == k.code) {
       spec.baseSymbol = k.symbol;
       spec.baseName = k.name;
       spec.baseIsin = k.isin;
       spec.baseKind = k.kind;
-      spec.type = k.type;
       if (k.kind == InstrumentKind::Index) spec.quote = kPointsUnit;
     }
   return spec;

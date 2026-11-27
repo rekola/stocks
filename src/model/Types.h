@@ -106,7 +106,7 @@ inline constexpr const char * name = "name";
 inline constexpr const char * symbol = "symbol";
 inline constexpr const char * isin = "isin";
 inline constexpr const char * kind = "kind";
-inline constexpr const char * type = "type";  // the provider's own type
+inline constexpr const char * type = "type";  // a news item's own type (the provider's)
 inline constexpr const char * country = "country";  // a market's country (ISO 3166 alpha-2)
 inline constexpr const char * timezone = "timezone";  // a market's time zone (IANA name)
 inline constexpr const char * iconUrl = "icon-url";
@@ -158,7 +158,7 @@ inline NodeRef nodeOf(NodeKey key) {
 inline constexpr double kUndefined = std::numeric_limits<double>::quiet_NaN();
 inline bool isDefined(double v) { return v == v; }
 
-// What an instrument is, in one vocabulary for all providers: each adapter maps its own types onto these. The provider's own type is kept beside it, under `predicate::type`.
+// What an instrument is, in one vocabulary for all providers: each adapter maps its own types onto these. The provider's own type is kept on its listing (`nordnetType`, `yahooType`).
 enum class InstrumentKind { Company, Currency, Commodity, Index, Etf, Certificate, Fund, Unit, Crypto, Other };  // a unit: what an index is quoted in
 
 inline const char * kindName(InstrumentKind k) {
@@ -351,7 +351,7 @@ struct NewsItem {
 };
 
 // What an item of news is, in one vocabulary for all datasets (`predicate::kind`, as for an instrument): each adapter maps its own types
-// onto these, and keeps its own under `predicate::type`. A selection of the news by kind is a preset.
+// onto these, and keeps its own under `predicate::type` (a news item's own type). A selection of the news by kind is a preset.
 inline constexpr const char * kPressRelease = "press-release";  // what a company or an institution says of itself
 inline constexpr const char * kAnalysis = "analysis";           // an analyst's or a house's view
 inline constexpr const char * kNewsStory = "news";              // a report by a newsroom, and anything else

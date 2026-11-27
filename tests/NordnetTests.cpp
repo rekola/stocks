@@ -430,14 +430,14 @@ TEST(listings_of_one_isin_with_different_names_leave_one_name_and_no_change_on_t
   }
 }
 
-TEST(a_source_that_is_not_the_instruments_own_says_its_name_and_type_only_where_none_is_said) {
+TEST(a_source_that_is_not_the_instruments_own_says_its_name_only_where_none_is_said) {
   auto store = makeMemoryStore();
   store->batch([&](Batch & b) {
-    addInstrumentUnlessSaid(b, "", "First", InstrumentKind::Fund, "IE00BGV5VN51", "FUND");
-    addInstrumentUnlessSaid(b, "", "Second", InstrumentKind::Fund, "IE00BGV5VN51", "OTHER");
+    addInstrumentUnlessSaid(b, "", "First", InstrumentKind::Fund, "IE00BGV5VN51");
+    addInstrumentUnlessSaid(b, "", "Second", InstrumentKind::Fund, "IE00BGV5VN51");
   });
   const auto id = *store->snapshot()->findInstrumentByIsin("IE00BGV5VN51");
-  CHECK(store->snapshot()->name(NodeRef(id)) == "First" && store->snapshot()->said(NodeRef(id), predicate::type) == "FUND");
+  CHECK(store->snapshot()->name(NodeRef(id)) == "First");
 }
 
 TEST(loading_again_replaces_todays_bars_and_a_new_day_adds_one) {
@@ -615,13 +615,9 @@ TEST(an_instrument_keeps_the_type_nordnet_gives_it_and_edges_can_be_selected_by_
   Listener listener;
   quick().load(*store, http, listener);
   auto s = store->snapshot();
-  CHECK(s->said(NodeRef(*s->findInstrumentByIsin("IE00BHZRR030")), predicate::type) == "UETF" && s->said(NodeRef(*s->findInstrumentByIsin("SE0001342395")), predicate::type) == "KETF");
-  CHECK(s->said(NodeRef(*s->findInstrumentByIsin("DE000A0S9GB0")), predicate::type) == "PTC" && s->said(NodeRef(*s->findInstrument("EUR")), predicate::type).empty());
   MarketId xetra = *s->findMarket("XETR");
-  auto certificates = s->edges(xetra, [&](InstrumentId i) { return s->said(NodeRef(i), predicate::type) == "PTC"; });
   auto funds = s->edges(xetra, [&](InstrumentId i) { return s->kind(i) == InstrumentKind::Etf; });
-  auto byKind = s->edges(xetra, [&](InstrumentId i) { return s->kind(i) == InstrumentKind::Certificate; });
-  CHECK(byKind == certificates);  // the type and the combined kind agree here
+  auto certificates = s->edges(xetra, [&](InstrumentId i) { return s->kind(i) == InstrumentKind::Certificate; });
   CHECK(certificates.size() == 1 && certificates[0].base == *s->findInstrumentByIsin("DE000A0S9GB0"));
   CHECK(funds.size() == 2);  // FLXK and XAIX
 }
@@ -728,7 +724,7 @@ TEST(
 
 TEST(every_kind_of_node_keeps_its_attributes_the_same_way) {
   auto store = makeMemoryStore();
-  InstrumentId i = store->addInstrument("NOKIA", "Nokia", InstrumentKind::Company, "FI0009000681", "ESH");
+  InstrumentId i = store->addInstrument("NOKIA", "Nokia", InstrumentKind::Company, "FI0009000681");
   DatasetId d = store->addDataset(kNordnetDataset);
   MarketId m = store->addMarket("XHEL");
   store->setAttribute(i, {"nordnet-id", "16"});
@@ -743,11 +739,11 @@ TEST(every_kind_of_node_keeps_its_attributes_the_same_way) {
             2); // its code and its name, which is the code until it is said
 
   // The instrument's name changes and the view follows; unchanged says nothing new.
-  store->addInstrument("NOKIA", "Nokia Oyj", InstrumentKind::Company, "FI0009000681", "ESH");
+  store->addInstrument("NOKIA", "Nokia Oyj", InstrumentKind::Company, "FI0009000681");
   CHECK(store->snapshot()->name(i) == "Nokia Oyj");
   const uint64_t version = store->snapshot()->version();
-  store->addInstrument("NOKIA", "Nokia Oyj", InstrumentKind::Company, "FI0009000681", "ESH");
-  store->addInstrument("NOKIA", "", InstrumentKind::Other, "FI0009000681", "");  // says nothing: empty and unknown
+  store->addInstrument("NOKIA", "Nokia Oyj", InstrumentKind::Company, "FI0009000681");
+  store->addInstrument("NOKIA", "", InstrumentKind::Other, "FI0009000681");  // says nothing: empty and unknown
   CHECK(store->snapshot()->version() == version && store->snapshot()->kind(i) == InstrumentKind::Company);
 }
 
@@ -820,7 +816,7 @@ TEST(the_indicator_lists_make_indices_in_points_currency_pairs_and_commodities_i
 
   // An index: its ISIN, in points, on no market.
   InstrumentId dax = *s->findInstrumentByIsin("DE0008469008");
-  CHECK(s->kind(dax) == InstrumentKind::Index && s->said(NodeRef(dax), predicate::type) == "INDEX");
+  CHECK(s->kind(dax) == InstrumentKind::Index);
   const InstrumentId points = *s->findInstrument("pts");
   CHECK(s->kind(points) == InstrumentKind::Unit);
   const EdgeKey onDax{dax, points, *s->findMarket("XXXX"), nordnet};

@@ -126,7 +126,7 @@ TEST(every_symbol_is_priced_in_euros_and_in_dollars_as_edges_of_the_dataset) {
     CHECK(iconColor && asText(*iconColor).value_or("") == "#d4af37");
   }
   CHECK(!s->attribute(gold, predicate::iconColor));
-  CHECK(s->name(NodeRef(*s->findInstrument("XPT"))) == "Platinum" && std::string(s->said(NodeRef(gold), predicate::type)) == "METAL");
+  CHECK(s->name(NodeRef(*s->findInstrument("XPT"))) == "Platinum");
   // Not tradable: a spot price is priced and not bought.
   CHECK(!portfolio::tradable(*s, EdgeKey{gold, eur, none, data}));
 }
@@ -308,16 +308,16 @@ TEST(a_sample_of_physical_platinum_is_priced_from_the_platinum_spot_in_both_curr
 TEST(a_metal_has_the_isin_of_its_commodity_and_is_the_instrument_another_source_made_by_it) {
   auto store = makeMemoryStore();
   // Nordnet's list was there first: gold by its ISIN, called Kulta.
-  const InstrumentId nordnetGold = store->addInstrument("", "Kulta", InstrumentKind::Commodity, "XC0009655157", "COMMODITY");
+  const InstrumentId nordnetGold = store->addInstrument("", "Kulta", InstrumentKind::Commodity, "XC0009655157");
   FakeHttp http;
   http.answer = answerPrices;
   Said said;
   GoldApiSource source(std::chrono::minutes(2), std::chrono::milliseconds(0));
   source.load(*store, http, said);
   const auto s = store->snapshot();
-  // The same instrument: one gold, with its name and type as they were said, and the prices of both sources on it.
+  // The same instrument: one gold, with its name as it was said, and the prices of both sources on it.
   CHECK(s->findInstrumentByIsin("XC0009655157") == std::optional<InstrumentId>(nordnetGold) && s->findInstrument("XAU") == std::optional<InstrumentId>(nordnetGold));
-  CHECK(s->name(NodeRef(nordnetGold)) == "Kulta" && s->said(NodeRef(nordnetGold), predicate::type) == "COMMODITY");
+  CHECK(s->name(NodeRef(nordnetGold)) == "Kulta");
   const MarketId none = *s->findMarket(kNoMarket);
   CHECK(s->edges(none).size() == 14 && s->quote({nordnetGold, *s->findInstrument("EUR"), none, *s->findDataset(kGoldApiDataset)}));
   // Every symbol has a real (valid) ISIN, the ones source/KnownIsins.h names, and none is one of ours: there is no second gold, and the coins are not private.

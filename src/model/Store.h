@@ -160,7 +160,7 @@ class Snapshot {
 
   // Changes, for a store to make on its own copy before publishing it. Nothing that holds a published snapshot
   // can call them, because it holds it const. Each one that changes something bumps the version.
-  InstrumentId addInstrument(const std::string & symbol, const std::string & name, InstrumentKind, const std::string & isin, const std::string & type);
+  InstrumentId addInstrument(const std::string & symbol, const std::string & name, InstrumentKind, const std::string & isin);
   InstrumentId resolveInstrument(const std::vector<Attribute> & identifying, const std::vector<Attribute> & rest);
   void setListing(const Listing &);
   MarketId addMarket(const std::string &mic, const std::string &name);
@@ -302,9 +302,8 @@ class StoreWrites {
   //
   // An instrument is its ISIN: it is found by it, and what a market calls it is on its edge there, not on the
   // instrument. One without an ISIN (a currency, whose symbol is its code) is found by its symbol. Its symbol, name,
-  // ISIN, type and kind (unless Other) are then set. The id returned is the instrument's key, none if it cannot be given one.
-  virtual InstrumentId addInstrument(const std::string & symbol, const std::string & name, InstrumentKind kind, const std::string & isin = {},
-                                     const std::string & type = {}) = 0;
+  // ISIN and kind (unless Other) are then set. The id returned is the instrument's key, none if it cannot be given one.
+  virtual InstrumentId addInstrument(const std::string & symbol, const std::string & name, InstrumentKind kind, const std::string & isin = {}) = 0;
   // An instrument by the first of the identifying attributes that finds one, made if none does; then all the
   // attributes, the identifying ones too, are set.
   virtual InstrumentId resolveInstrument(const std::vector<Attribute> & identifying, const std::vector<Attribute> & rest) = 0;
