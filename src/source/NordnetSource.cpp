@@ -256,6 +256,11 @@ bool NordnetSource::parsePage(const std::string & body, Page & page, std::string
         // its open would need its own time zone).
         l.bar = {dayNumberOfInstant(tick), *open, *high, *low, *last,
                  volume != p.end() && volume->is_number() ? volume->get<double>() : kUndefined};
+        // The high and the low of today's session are the day's (a fund has none: they were cleared above).
+        if (high && low) {
+          l.ranges.high[static_cast<size_t>(Period::Day)] = *high;
+          l.ranges.low[static_cast<size_t>(Period::Day)] = *low;
+        }
       }
     }
     if (row.is_object() && row.contains("historical_returns_info") && row["historical_returns_info"].is_object()) {
@@ -312,6 +317,8 @@ bool NordnetSource::parseIndicators(const std::string & body, std::vector<Nordne
         // No open and no volume: undefined, and so are the high and the low where the row has none (the London metals
         // give only the last price). Keyed by the date of the last tick in UTC.
         r.bar = {dayNumberOfInstant(tick), kUndefined, h.value_or(kUndefined), l.value_or(kUndefined), *c, kUndefined};
+        r.ranges.high[static_cast<size_t>(Period::Day)] = h.value_or(kUndefined);  // the session's high and low: the day's
+        r.ranges.low[static_cast<size_t>(Period::Day)] = l.value_or(kUndefined);
       }
     }
     rows.push_back(std::move(r));
@@ -392,6 +399,7 @@ size_t NordnetSource::loadIndicators(const List & list, Store & store, Http & ht
         const EdgeKey edge{base, quote, market, row.priceSource == "MORNINGSTAR" ? morningstar : nordnet};
         // The quote, which makes the edge: the realtime price is no bar (a bar is history, and written at random days it misleads).
         if (row.hasQuote) b.setQuote(edge, row.quote);
+        b.setRanges(edge, row.ranges);
         b.setListing({edge, row.symbol, "", row.orderBookId, row.type, row.name});
       }
       written++;
@@ -550,6 +558,7 @@ void NordnetSource::load(Store & store, Http & http, SourceListener & listener) 
             const EdgeKey edge{base, quote, market, dataset};
             if (l.hasQuote) b.setQuote(edge, l.quote);  // the realtime price is a quote and no bar: the bars are the history's
             b.setChanges(edge, l.changes);
+            b.setRanges(edge, l.ranges);
             // What the market says of it: what it calls it, its own id for it and the order book its history is asked for by.
             b.setListing({edge, l.symbol, l.identifier, l.bookId, l.type, l.name});
           }

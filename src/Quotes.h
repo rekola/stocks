@@ -46,8 +46,10 @@ std::vector<EdgeKey> allQuoteEdges(const Snapshot & snapshot);
 // A number with `decimals` places and a decimal point whatever the locale, with a sign when `sign`.
 std::string fixed(double v, int decimals, bool sign = false);
 
-// The headings of the change and the trace columns name the period: "Change 1d", "1 day".
+// The headings of the change and the trace columns name the period: "Change 1d", "1 day"; the high and the low columns: "1d high", "1d low".
 std::string changeTitle(Period);
+std::string highTitle(Period);
+std::string lowTitle(Period);
 
 // A list of edges as a table: base, quote, name, market, dataset, price, the change over a period and a trace of its closes. The rows are not
 // built: a cell is read from the snapshot when the table asks for it, which is for the rows in view, so the cost of
@@ -55,7 +57,7 @@ std::string changeTitle(Period);
 // Only a sort reads a whole column, once, and keeps it until the rows change.
 class Quotes : public cellui::TableModel {
  public:
-  enum Column { ICON, BASE, QUOTE, NAME, MARKET, DATASET, PRICE, CHANGE, HISTORY };
+  enum Column { ICON, BASE, QUOTE, NAME, MARKET, DATASET, PRICE, CHANGE, HIGH, LOW, HISTORY };
 
   // `icons` supplies the pictures of the icon column; without it the column is empty.
   Quotes(std::shared_ptr<const Snapshot> snapshot, std::vector<EdgeKey> keys, std::shared_ptr<IconLoader> icons = nullptr);
@@ -110,6 +112,9 @@ class Quotes : public cellui::TableModel {
  private:
   double price(int r) const;
   double change(int r) const;  // over the period, in percent (basis points for a rate); undefined for no number
+  double high(int r) const;    // the highest and the lowest price of the period, in the row's price unit; undefined for no number
+  double low(int r) const;
+  std::string priceText(int r, double) const;  // a price as the Price column shows it: a rate in per cent
   const std::string & marketLabel(MarketId) const;
   const std::string & datasetName(DatasetId) const;
 
@@ -121,7 +126,7 @@ class Quotes : public cellui::TableModel {
   mutable std::unordered_map<uint64_t, std::string> marketLabels_, datasetNames_;
   const PeriodView & traceOf(int r) const;  // the row's period view with its trace, kept while it is drawn
   mutable std::unordered_map<int, PeriodView> traces_;  // the rows drawn lately, for the span trace() gives
-  mutable std::vector<double> numbers_[2];                      // the sort keys of price and change
+  mutable std::vector<double> numbers_[4];                      // the sort keys of price, change, high and low
   mutable std::vector<std::string> texts_[HISTORY];             // and of the text columns, in lower case
   mutable bool built_[HISTORY + 1] = {};
   void build(int column) const;

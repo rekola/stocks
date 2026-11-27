@@ -52,6 +52,14 @@ Seq<Candle> from(const Seq<Candle> & bars, int64_t key) {
   return bars.drop(static_cast<size_t>(at - bars.begin()));
 }
 
+// The highest high and the lowest low of the bars (a bar with none says nothing).
+void extent(const Seq<Candle> & bars, PeriodView & v) {
+  for (const Candle & c : bars) {
+    if (isDefined(c.high) && (!isDefined(v.high) || c.high > v.high)) v.high = c.high;
+    if (isDefined(c.low) && (!isDefined(v.low) || c.low < v.low)) v.low = c.low;
+  }
+}
+
 // Fills in the last price and the trace of a period from its bars (of resolution `r`). The last price is the quote's, the one the Price column shows (the store
 // sets it from any bar newer than it, so it is never older than the bars), and the trace ends with it as one more point when it differs from
 // the last bar's close, so the Price, the Change and the line agree. With no quote it is the last bar's close.
@@ -158,6 +166,7 @@ PeriodView periodView(const Snapshot & snapshot, const EdgeKey & edge, Period pe
       const Seq<Candle> bars = from(queue, keyOf(r, session));
       v.primary = true;
       finish(r, bars, quote, v, withTrace);
+      extent(bars, v);
       if (auto previous = snapshot.previousClose(edge, session)) v.base = *previous;
       else
         for (size_t i = days.size(); i-- > 0;)
@@ -174,6 +183,7 @@ PeriodView periodView(const Snapshot & snapshot, const EdgeKey & edge, Period pe
         if (days[i].time < today) {
           v.base = days[i].close;
           v.last = quote && isDefined(quote->last) ? quote->last : days.back().close;
+          if (days.back().time == today) extent(days.drop(days.size() - 1), v);  // the day's own daily bar
           break;
         }
     }
@@ -189,6 +199,7 @@ PeriodView periodView(const Snapshot & snapshot, const EdgeKey & edge, Period pe
     v.primary = f < in.primary;
     v.base = bars[0].close;
     finish(r, bars, quote, v, withTrace);
+    extent(bars, v);
     return v;
   }
   // No feed reaches back far enough: the trace is what there is (a new instrument, a source with a short history), and there is no change, since it

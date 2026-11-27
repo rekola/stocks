@@ -147,6 +147,7 @@ class Browser {
   std::shared_ptr<HistoryLoader> history_;
   cellui::TagBar tags_, periods_;
   Period period_ = kDefaultPeriod;
+  bool narrow_ = false;  // the display is too narrow for the markets table's roomy columns (setColumns)
   cellui::Table table_;
   cellui::Label info_;
   cellui::Label hint_;  // over the table's first rows where the Portfolio context has nothing to show

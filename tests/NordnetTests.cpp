@@ -94,6 +94,38 @@ TEST(the_returns_of_a_listing_are_its_changes_from_the_first_list_with_no_histor
   CHECK(found);
 }
 
+TEST(the_days_high_and_low_of_a_listing_and_of_an_indicator_are_the_days_range_and_nothing_else_is_taken_for_a_longer_one) {
+  NordnetSource::Page page;
+  std::string error;
+  CHECK(NordnetSource::parsePage(fixture("etflist-1.json"), page, error));
+  const Ranges & r = page.listings[0].ranges;  // FLXK: price_info high 68.48, low 65.03
+  CHECK(r.high[static_cast<size_t>(Period::Day)] == 68.48 && r.low[static_cast<size_t>(Period::Day)] == 65.03);
+  for (size_t p = 1; p < kChangeCount; p++) CHECK(!isDefined(r.high[p]) && !isDefined(r.low[p]));  // the answer has no week, month or year range
+  NordnetSource::Page funds;
+  CHECK(NordnetSource::parsePage(fixture("fundlist-1.json"), funds, error));
+  for (const NordnetListing & l : funds.listings) CHECK(!l.ranges.says());  // a NAV has no range
+  // Stored with the edge: shown before any history is loaded.
+  auto store = makeMemoryStore();
+  FakeHttp http;
+  http.answer = pages;
+  Listener listener;
+  NordnetSource source = quick();
+  source.load(*store, http, listener);
+  auto s = store->snapshot();
+  bool found = false;
+  for (const EdgeKey & edge : s->edgesOf(*s->findInstrumentByIsin("IE00BHZRR030"))) {
+    found = true;
+    CHECK(s->ranges(edge).high[static_cast<size_t>(Period::Day)] == 68.48 && s->ranges(edge).low[static_cast<size_t>(Period::Day)] == 65.03);
+    CHECK(!isDefined(s->ranges(edge).high[static_cast<size_t>(Period::Year)]) && s->queue(edge, Resolution::Day).empty());
+  }
+  CHECK(found);
+  // An indicator row's price block: the same, the session's high and low.
+  std::vector<NordnetIndicator> rows;
+  CHECK(NordnetSource::parseIndicators(fixture("indicators-indices.json"), rows, error));
+  for (const NordnetIndicator & i : rows)
+    if (i.symbol == "DAX") CHECK(i.ranges.high[static_cast<size_t>(Period::Day)] == 25194.64 && i.ranges.low[static_cast<size_t>(Period::Day)] == 24801.22 && !isDefined(i.ranges.high[static_cast<size_t>(Period::Year)]));
+}
+
 TEST(a_market_is_named_by_its_nordnet_id_where_that_is_known) {
   CHECK(std::string(NordnetSource::knownMarketName(4)) == "Xetra");
   CHECK(std::string(NordnetSource::knownMarketName(11)) == "Nasdaq Stockholm");
