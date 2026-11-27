@@ -25,6 +25,8 @@ file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/miniz_include/miniz_export.h "#pragma onc
 add_library(miniz STATIC ${miniz_SOURCE_DIR}/miniz.c ${miniz_SOURCE_DIR}/miniz_tdef.c ${miniz_SOURCE_DIR}/miniz_tinfl.c ${miniz_SOURCE_DIR}/miniz_zip.c)
 target_include_directories(miniz SYSTEM PUBLIC ${miniz_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR}/miniz_include)
 set_target_properties(miniz PROPERTIES C_STANDARD 99)
+# Only zips in memory are read and written (Zip.cpp), so miniz's file I/O is left out (its fopen path also prints a #pragma message at every build).
+target_compile_definitions(miniz PUBLIC MINIZ_NO_STDIO)
 
 # Everything provider-free: the bars, the raw file cache, the ingest and the API.
 add_library(market_lib STATIC Bars.cpp Zip.cpp RawCache.cpp Backends.cpp Config.cpp Ingest.cpp Api.cpp)
