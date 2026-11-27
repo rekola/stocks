@@ -33,15 +33,16 @@ struct Known {
   const char * unit;  // what the instrument's price is for: it is tied to the ISIN (Nordnet's copper, which has the same ISIN, is per metric tonne)
   double factor;      // what the API's price is multiplied by to be for that unit: the answer does not say what its price is for, and copper is per pound
   const char * icon_symbol = "";  // the symbol that stands for its icon where there is no picture ("₿"): the coins have no other
+  const char * icon_color = "";   // and its colour, "#rrggbb"; none for the text colour
 };
 
-constexpr Known kKnown[] = {{"XAU", InstrumentKind::Commodity, "METAL", known_isin::kGold, "troy oz", 1, ""},
-                            {"XAG", InstrumentKind::Commodity, "METAL", known_isin::kSilver, "troy oz", 1, ""},
-                            {"XPT", InstrumentKind::Commodity, "METAL", known_isin::kPlatinum, "troy oz", 1, ""},
-                            {"XPD", InstrumentKind::Commodity, "METAL", known_isin::kPalladium, "troy oz", 1, ""},
-                            {"HG", InstrumentKind::Commodity, "METAL", known_isin::kCopper, "tonne", kPoundsPerTonne, ""},  // the API quotes it per pound
-                            {"BTC", InstrumentKind::Crypto, "CRYPTO", known_isin::kBitcoin, "coin", 1, "₿"},
-                            {"ETH", InstrumentKind::Crypto, "CRYPTO", known_isin::kEthereum, "coin", 1, "⟠"}};
+constexpr Known kKnown[] = {{"XAU", InstrumentKind::Commodity, "METAL", known_isin::kGold, "troy oz", 1, "", ""},
+                            {"XAG", InstrumentKind::Commodity, "METAL", known_isin::kSilver, "troy oz", 1, "", ""},
+                            {"XPT", InstrumentKind::Commodity, "METAL", known_isin::kPlatinum, "troy oz", 1, "", ""},
+                            {"XPD", InstrumentKind::Commodity, "METAL", known_isin::kPalladium, "troy oz", 1, "", ""},
+                            {"HG", InstrumentKind::Commodity, "METAL", known_isin::kCopper, "tonne", kPoundsPerTonne, "", ""},  // the API quotes it per pound
+                            {"BTC", InstrumentKind::Crypto, "CRYPTO", known_isin::kBitcoin, "coin", 1, "₿", "#d4af37"},
+                            {"ETH", InstrumentKind::Crypto, "CRYPTO", known_isin::kEthereum, "coin", 1, "⟠", "#d4af37"}};
 
 const Known * knownSymbol(const std::string & symbol) {
   for (const Known & k : kKnown)
@@ -167,6 +168,7 @@ void GoldApiSource::load(Store & store, Http & http, SourceListener & listener) 
       }
       if (!base.valid()) return;
       if (known && *known->icon_symbol) b.setAttribute(NodeRef(base), {predicate::iconSymbol, known->icon_symbol});
+      if (known && *known->icon_color) b.setAttribute(NodeRef(base), {predicate::iconColor, known->icon_color});
       for (const Price & p : prices) {
         const InstrumentId quote = currencyNode(b, p.currency);
         if (!quote.valid()) continue;

@@ -18,6 +18,8 @@
 // The symbol that stands for an instrument's icon where there is no picture: the one it says itself (iconSymbol), else one of its
 // kind (an index 📈, a currency 💱: quoted in another, it is a currency pair); empty for none.
 std::string iconSymbolOf(const Snapshot & snapshot, InstrumentId instrument);
+// The colour the instrument says its symbol has (iconColor); none for the text colour.
+std::optional<cellui::Color> iconColorOf(const Snapshot & snapshot, InstrumentId instrument);
 
 struct QuoteRow {
   EdgeKey key;
@@ -95,6 +97,7 @@ class Quotes : public cellui::TableModel {
   std::shared_ptr<const cellui::TableIcon> icon(int r, int c) const override;
   // The symbol an instrument says stands for its icon, shown where there is no picture.
   std::string iconFallback(int r, int c) const override;
+  std::optional<cellui::Color> iconFallbackColor(int r, int c) const override;
   std::span<const float> trace(int r, int) const override;
   std::span<const float> traceLight(int r, int) const override;
   double traceSpan(int r, int) const override;

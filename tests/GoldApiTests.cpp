@@ -120,6 +120,12 @@ TEST(every_symbol_is_priced_in_euros_and_in_dollars_as_edges_of_the_dataset) {
     CHECK(iconSaid && asText(*iconSaid).value_or("") == sign);
   }
   CHECK(!s->attribute(gold, predicate::iconSymbol));
+  // The coins' symbols are goldish yellow; a metal says no colour.
+  for (const char * coin : {"BTC", "ETH"}) {
+    const auto iconColor = s->attribute(*s->findInstrument(coin), predicate::iconColor);
+    CHECK(iconColor && asText(*iconColor).value_or("") == "#d4af37");
+  }
+  CHECK(!s->attribute(gold, predicate::iconColor));
   CHECK(s->name(NodeRef(*s->findInstrument("XPT"))) == "Platinum" && std::string(s->said(NodeRef(gold), predicate::type)) == "METAL");
   // Not tradable: a spot price is priced and not bought.
   CHECK(!portfolio::tradable(*s, EdgeKey{gold, eur, none, data}));
