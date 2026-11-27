@@ -1,8 +1,47 @@
-# Market-data server: setting it up
+# Market-data server
 
-`market-ingest` loads external datasets (now HistData.com's 1-minute quotes, as the history) into a database, by hand, and `market-server` serves what it holds over a read-only HTTP
-API for the desktop application. What they are and how they work is in the README ("Market-data server") and, as planned, in
-[plans/server.md](../plans/server.md); this is how to set them up on a machine, step by step.
+Two programs beside the desktop app: `market-ingest` loads external datasets (now HistData.com's 1-minute quotes) into
+a database, and `market-server` serves what it holds to the app. The design is in
+[plans/server.md](../plans/server.md).
+
+## Overview
+
+`market-ingest` loads external datasets, and `market-server` serves what it holds to the desktop app over a read-only
+HTTP API (JSON, no key; it listens on the loopback address unless the config says otherwise). Both run on the
+application's own `Store`: the ingest creates its instruments with the same calls and helpers as the sources do
+(`addInstrument`, `currencyNode`, `setListing`, `appendCandles`). The store's data goes to the model's stores, which
+in the application are SQLite files and on a server MariaDB (a schema of its own; needs `libmariadb`,
+`sudo apt install libmariadb-dev`). `database.type` is `sqlite` or `mariadb`.
+
+    cp market.example.json market.json                             # database, raw file cache, listen address
+    build/market-ingest histdata eurusd usdjpy --level 5m          # or: histdata all
+    build/market-server --config market.json                       # GET /health, /instruments, /summary[?codes=a,b]
+
+`market-ingest DATASET [CODE...|all] [--level 5m|1h|1d|1w|all] [--refresh] [--config FILE]` does everything for one
+dataset in one run: it finds the instruments, makes the missing nodes, gets the files (from the raw cache where they
+are), builds the bars and writes them. Run it again at any time: bars written again change nothing. The one dataset
+now is `histdata` (HistData.com's free 1-minute bid quotes, one file per request with a pause of two seconds); a pair
+with no data this year is left out. `--refresh` asks again for the months of the current year and for the list of
+pairs.
+
+**Bars.** These are the bars the application's periods are drawn from, each ending at the instrument's last bar (this
+data lags by weeks), keyed by slot number in UTC (`src/market/Bars.h`):
+
+| period | bars |
+|---|---|
+| day | 5-minute |
+| week | hourly |
+| month, quarter | daily |
+| year, 3 years, 10 years | weekly |
+
+How much of each the summaries keep is the model's (`defaultKeep`: 1 day, 7 days, 365 days, 10 years). Every bar
+written also goes to the model's `BarStore` (`StoreOptions::bars`), so a server holds more than the summaries: for
+now the windows, later the whole history. The 1-minute data is not in the database: the downloaded zips are kept as
+they came in `cache_dir`, which is the only copy, and nothing deletes from it.
+
+The tests are `market_tests`; see [Tests](guide.md#tests) in the user guide.
+
+## Setting up
 
 For a machine of its own that serves the local network: Ubuntu 24.04 (or like it), its address 192.168.2.10, MariaDB on the same machine as the ingest and the
 server, which is why the database user is `market`@`localhost` and nothing but the machine itself can reach the database. Change the address, the paths

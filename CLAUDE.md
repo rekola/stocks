@@ -1,8 +1,9 @@
 # stocks
 
 A stock data browser for the terminal and a GTK window, built on
-[cellui](https://github.com/rekola/cellui) (fetched at a pinned commit by
-`CMakeLists.txt`; bump the pin when cellui changes). C++ throughout.
+[cellui](https://github.com/rekola/cellui) (not pinned: the two are developed
+together, so `CMakeLists.txt` fetches cellui's `main`; build against a local
+checkout with `-DFETCHCONTENT_SOURCE_DIR_CELLUI`). C++ throughout.
 
 ## Greenfield
 
