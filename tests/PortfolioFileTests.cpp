@@ -5,6 +5,7 @@
 #include "model/SqliteFactStore.h"
 #include "model/Store.h"
 #include "portfolio/Portfolio.h"
+#include "portfolio/Transaction.h"
 #include "source/DatasetCodes.h"
 
 #include <SQLiteCpp/SQLiteCpp.h>
@@ -13,6 +14,8 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <map>
+#include <variant>
 
 namespace {
 
@@ -227,6 +230,80 @@ TEST(a_file_of_another_schema_is_moved_aside_with_what_it_held_and_a_new_one_sta
   CHECK(d.files(".old-") == 2);
 }
 
+// A key of schema 1, packed as it was (six bits a character, ten at most, the case kept) and written here on its own, so that this checks
+// the upgrade against the old way and not against the code that does it.
+uint64_t keyOfSchema1(uint64_t kind, const std::string & code) {
+  uint64_t packed = 0;
+  for (size_t i = 0; i < 10; i++) {
+    uint64_t symbol = 0;
+    if (i < code.size()) {
+      const char c = code[i];
+      symbol = c >= '0' && c <= '9' ? static_cast<uint64_t>(c - '0') + 1 : c >= 'A' && c <= 'Z' ? static_cast<uint64_t>(c - 'A') + 11 : static_cast<uint64_t>(c - 'a') + 37;
+    }
+    packed = (packed << 6) | symbol;
+  }
+  return (kind << 60) | packed;
+}
+
+TEST(a_file_of_schema_one_is_upgraded_to_the_keys_of_codes_as_they_are_packed_now) {
+  Dir d;
+  const uint64_t nokia = instrumentKey("FI0009000681")->value, mine = portfolioKey(7)->value;
+  const uint64_t oldUser = keyOfSchema1(3, "user"), oldHel = keyOfSchema1(2, "XHEL"), oldEur = keyOfSchema1(1, "EUR"), oldPts = keyOfSchema1(1, "pts");
+  const std::string body = "{\"side\":\"buy\",\"instrument\":" + std::to_string(nokia) + ",\"market\":" + std::to_string(oldHel) + ",\"quote\":" +
+                           std::to_string(oldEur) + ",\"quantity\":10.0,\"price\":4.5,\"fee\":1.0,\"note\":\"by hand\"}";
+  {
+    SQLite::Database db(d.portfolios.string(), SQLite::OPEN_READWRITE | SQLite::OPEN_CREATE);
+    db.exec("CREATE TABLE facts (node_key INTEGER NOT NULL, predicate TEXT NOT NULL, value, tag INTEGER NOT NULL DEFAULT 0, updated INTEGER NOT NULL, "
+            "PRIMARY KEY (node_key, predicate)) WITHOUT ROWID");
+    db.exec("CREATE TABLE events (portfolio INTEGER NOT NULL, dataset INTEGER NOT NULL, id INTEGER NOT NULL, time INTEGER NOT NULL, body TEXT NOT NULL, "
+            "PRIMARY KEY (portfolio, dataset, id)) WITHOUT ROWID");
+    db.exec("INSERT INTO facts VALUES (" + std::to_string(mine) + ", 'name', 'Typed by hand', 0, 1)");
+    db.exec("INSERT INTO facts VALUES (" + std::to_string(mine) + ", 'ledger', " + std::to_string(oldUser) + ", 2, 2)");  // a link to a dataset
+    db.exec("INSERT INTO facts VALUES (" + std::to_string(oldPts) + ", 'name', 'Points', 0, 3)");                         // a fact of a unit
+    db.exec("INSERT INTO facts VALUES (" + std::to_string(nokia) + ", 'name', 'Nokia', 0, 4)");                           // an instrument is as it was
+    db.exec("INSERT INTO facts VALUES (" + std::to_string(mine) + ", 'seen', 5, 0, 5)");                                  // a number that is no link stays
+    db.exec("INSERT INTO events VALUES (" + std::to_string(mine) + ", " + std::to_string(oldUser) + ", 11, 20000, '" + body + "')");
+    db.exec("PRAGMA user_version = 1");
+  }
+  std::vector<std::string> said;
+  auto store = openSqlitePortfolioStore(d.portfolios, [&](const std::string & t) { said.push_back(t); });
+  CHECK(d.files(".old-") == 0 && d.files(".bad-") == 0);  // upgraded in place, not moved aside
+  bool told = false;
+  for (const std::string & line : said) told |= line.find("schema 1 upgraded") != std::string::npos;
+  CHECK(told);
+
+  const uint64_t user = datasetKey("USER")->value, hel = marketKey("XHEL")->value, eur = currencyKey("EUR")->value, pts = currencyKey("PTS")->value;
+  CHECK(user != oldUser && hel != oldHel && eur != oldEur && pts != oldPts);  // the keys are others now
+  std::vector<StoredFact> facts = store->loadAll();
+  auto fact = [&](uint64_t node, const std::string & name) -> const StoredFact * {
+    for (const StoredFact & f : facts)
+      if (f.node == node && f.predicate == name) return &f;
+    return nullptr;
+  };
+  CHECK(facts.size() == 5);
+  const StoredFact * typed = fact(mine, "name"), * ledger = fact(mine, "ledger"), * points = fact(pts, "name"), * seen = fact(mine, "seen");
+  CHECK(typed && std::get<std::string>(typed->value) == "Typed by hand");
+  CHECK(ledger && std::holds_alternative<NodeKey>(ledger->value) && std::get<NodeKey>(ledger->value).value == user);
+  CHECK(points && std::get<std::string>(points->value) == "Points" && points->updated == 3);
+  CHECK(fact(nokia, "name") != nullptr);
+  CHECK(seen && std::holds_alternative<int64_t>(seen->value) && std::get<int64_t>(seen->value) == 5);
+  const auto events = store->loadEvents();
+  CHECK(events.size() == 1 && events[0].portfolio == mine && events[0].dataset == user && events[0].id == 11 && events[0].time == 20000);
+  const auto transaction = portfolio::decodeTransaction(events[0].id, events[0].time, events[0].body);
+  CHECK(transaction && transaction->instrument.value == nokia && transaction->market.value == hel && transaction->quote.value == eur);
+  CHECK(transaction && transaction->quantity == 10.0 && transaction->price == 4.5 && transaction->fee == 1.0 && transaction->note == "by hand");
+
+  // Done once: the version is 2 and a second open reads it as it is.
+  store.reset();
+  {
+    SQLite::Database db(d.portfolios.string(), SQLite::OPEN_READONLY);
+    CHECK(db.execAndGet("PRAGMA user_version").getInt() == 3);
+  }
+  said.clear();
+  auto again = openSqlitePortfolioStore(d.portfolios, [&](const std::string & t) { said.push_back(t); });
+  CHECK(said.empty() && again->loadEvents().size() == 1 && again->loadEvents()[0].dataset == user);
+}
+
 TEST(a_damaged_file_is_moved_aside_and_nothing_throws) {
   Dir d;
   {
@@ -294,4 +371,88 @@ TEST(a_transaction_the_file_holds_that_can_no_longer_be_bought_or_read_is_left_o
   (void)dummy;
   auto store = openStore(d);
   CHECK(store->snapshot()->transactions({kMine, DatasetId{datasetKey(kUserDataset)->value}}).size() == 1);
+}
+
+namespace {
+// An edge of Nokia on the Helsinki market, as the dataset `d` says it, quoted in euro.
+EdgeKey nokiaEdge(const Things & t, DatasetId d) { return EdgeKey{t.nokia, t.eur, t.hel, d}; }
+}  // namespace
+
+TEST(an_edge_is_on_a_list_or_not_whatever_else_the_instrument_is_on_and_a_list_is_made_by_its_first) {
+  auto store = makeMemoryStore();
+  const Things t = makeThings(*store);
+  const DatasetId other = store->addDataset("yahoo");
+  const EdgeKey one = nokiaEdge(t, t.user), two = nokiaEdge(t, other);
+  CHECK(store->snapshot()->listMembers("watchlist").empty() && !store->snapshot()->onList("watchlist", one));
+  const uint64_t before = store->snapshot()->version();
+  store->addToList("watchlist", {one});
+  auto s = store->snapshot();
+  CHECK(s->version() == before + 1 && s->onList("watchlist", one) && !s->onList("watchlist", two));  // that edge, not the instrument
+  CHECK(!s->onList("holdings", one));  // a list of its own
+  store->addToList("holdings", {one, two});
+  store->addToList("watchlist", {one});  // there already: nothing changes
+  CHECK(store->snapshot()->version() == s->version() + 1 && store->snapshot()->listMembers("holdings").size() == 2);
+  CHECK(s->listMembers("holdings").empty());  // a snapshot already taken does not change
+  store->removeFromList("watchlist", {two});  // not on it: nothing changes
+  const uint64_t same = store->snapshot()->version();
+  store->removeFromList("watchlist", {two});
+  CHECK(store->snapshot()->version() == same && store->snapshot()->onList("watchlist", one));
+  store->removeFromList("watchlist", {one});
+  CHECK(store->snapshot()->listMembers("watchlist").empty() && store->snapshot()->listMembers("holdings").size() == 2);
+  // A list with no code, and an edge with a part that is none, are refused and nothing of the call is written.
+  const uint64_t refused_at = store->snapshot()->version();
+  bool refused_list = false, refused_edge = false;
+  try { store->addToList("", {one}); } catch (const std::invalid_argument &) { refused_list = true; }
+  try { store->addToList("watchlist", {one, EdgeKey{t.nokia, t.eur, MarketId{}, t.user}}); } catch (const std::invalid_argument &) { refused_edge = true; }
+  CHECK(refused_list && refused_edge && store->snapshot()->version() == refused_at && store->snapshot()->listMembers("watchlist").empty());
+  // A batch is one version.
+  store->batch([&](Batch & b) {
+    b.addToList("watchlist", {one});
+    b.addToList("watchlist", {two});
+  });
+  CHECK(store->snapshot()->version() == refused_at + 1 && store->snapshot()->listMembers("watchlist").size() == 2);
+}
+
+TEST(the_lists_come_back_after_a_restart_with_no_version_and_a_removal_is_kept) {
+  Dir d;
+  EdgeKey one, two;
+  {
+    auto store = openStore(d);
+    const Things t = makeThings(*store);
+    const DatasetId other = store->addDataset("yahoo");
+    one = nokiaEdge(t, t.user);
+    two = nokiaEdge(t, other);
+    store->addToList("watchlist", {one, two});
+    store->addToList("holdings", {two});
+    store->removeFromList("watchlist", {two});
+    store->addToList("watchlist", {two});  // put back after it was taken off, in a later write
+    store->removeFromList("watchlist", {one});
+  }
+  auto store = openStore(d);
+  auto s = store->snapshot();
+  CHECK(s->version() == 0);
+  CHECK(s->listMembers("watchlist") == std::vector<EdgeKey>{two});
+  CHECK(s->listMembers("holdings") == std::vector<EdgeKey>{two});
+  CHECK(!s->onList("watchlist", one));
+  // They are the user's own: in their file and not in the cache.
+  CHECK(keysIn(d.portfolios, "SELECT base FROM list_members").size() == 2);
+  SQLite::Database cache(d.facts.string(), SQLite::OPEN_READONLY);
+  CHECK(cache.execAndGet("SELECT count(*) FROM sqlite_master WHERE name = 'list_members'").getInt() == 0);
+}
+
+TEST(a_list_member_with_a_part_that_is_none_in_the_file_is_not_read) {
+  Dir d;
+  {
+    auto store = openStore(d);
+    makeThings(*store);
+  }
+  {
+    auto file = openSqlitePortfolioStore(d.portfolios);
+    FactBatch planted;
+    planted.members.push_back({"watchlist", 0, 0, 0, 0});
+    planted.members.push_back({"", 1, 2, 3, 4});
+    file->apply(planted);
+  }
+  auto store = openStore(d);
+  CHECK(store->snapshot()->listMembers("watchlist").empty());
 }

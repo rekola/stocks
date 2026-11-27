@@ -76,7 +76,7 @@ std::string Positions::symbolOf(int r) const {
 
 double Positions::change(int r) const {
   const auto edge = priceEdge(r);
-  return edge ? periodView(*snapshot_, *edge, period_, false).change() : kUndefined;
+  return edge ? snapshot_->changes(*edge).pct[static_cast<size_t>(period_)] : kUndefined;
 }
 
 std::string Positions::text(int r, int c) const {

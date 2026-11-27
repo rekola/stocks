@@ -47,7 +47,6 @@ class Positions : public cellui::TableModel {
   std::string iconFallback(int r, int c) const override;
   std::optional<cellui::Color> color(int r, int c) const override;
   std::optional<double> number(int r, int c) const override;
-  // A position is of something that is traded, so every row has all three buttons (the default).
 
   const portfolio::PositionValue & row(int r) const { return valuation_.rows[static_cast<size_t>(r)]; }
   // What the position is: instrument, market and currency (no dataset). Its identity across a refresh.

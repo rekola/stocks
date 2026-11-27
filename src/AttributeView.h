@@ -5,6 +5,7 @@
 #include <cellui/ModalDialog.h>
 #include <cellui/ScrollBody.h>
 
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -31,9 +32,13 @@ std::string dateText(int64_t dayNumber);
 // Whether a predicate says a day number.
 bool isDayPredicate(const std::string & predicate);
 
-// `text` as lines of at most `cols` cells: broken at whitespace, filled greedily, and a word wider than a line (a URL)
-// broken between characters, so all of it shows and can be copied. Always at least one line.
-std::vector<std::string> wrapText(const std::string & text, int cols);
+// How wide a piece of text comes out, in cells.
+using TextWidth = std::function<double(const std::string &)>;
+
+// `text` as lines at most `cols` cells wide by `width` (the cells' own count where unset: a display that lays text out
+// itself is asked, since a proportional face is narrower): broken at whitespace, filled greedily, and a word wider than
+// a line (a URL) broken between characters, so all of it shows and can be copied. Always at least one line.
+std::vector<std::string> wrapText(const std::string & text, double cols, const TextWidth & width = nullptr);
 
 struct InfoRow {
   std::string predicate;
@@ -84,8 +89,9 @@ class AttributeModal : public cellui::ModalDialog {
     bool link = false;
     bool continued = false;  // the rest of the value above
   };
-  // The dialog's lines for a value column `value_cols` wide: a row's value wrapped onto as many lines as it needs.
-  void wrapLines(int value_cols);
+  // The dialog's lines for a value column `value_cols` wide: a row's value wrapped onto as many lines as it needs, by
+  // `width` (see wrapText()).
+  void wrapLines(int value_cols, const TextWidth & width = nullptr);
   int bodyRows() const { return body_rows_; }
   void scrollBy(int delta);
 

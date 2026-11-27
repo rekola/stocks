@@ -2,7 +2,6 @@
 
 #include "icons/IconLoader.h"
 #include "model/Period.h"
-#include "RowActions.h"
 #include "model/Store.h"
 #include "portfolio/Portfolio.h"
 
@@ -89,9 +88,6 @@ class Quotes : public cellui::TableModel {
 
   int rowCount() const override { return static_cast<int>(keys_.size()); }
   std::string text(int r, int c) const override;
-  // The info button is on every row; buy and sell only on a row that can be bought: a venue or a fund, not an index, a spot price, a
-  // currency pair or a rate (portfolio::tradable).
-  bool buttonShown(int r, int, int button) const override { return button == kInfoButton || portfolio::tradable(*snapshot_, edge(r)); }
   // The edge a row shows: its identity.
   const EdgeKey & edge(int r) const { return keys_[static_cast<size_t>(r)]; }
   // The icon URL of a row's base instrument, empty for none.
