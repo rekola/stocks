@@ -59,11 +59,11 @@ TEST(the_symbols_answer_is_read_and_a_row_without_a_symbol_is_left_out) {
   CHECK(!GoldApiSource::parseSymbols("{}", symbols, error) && !GoldApiSource::parseSymbols("[]", symbols, error));
 }
 
-TEST(a_price_answer_is_read_with_the_date_of_its_update) {
+TEST(a_price_answer_is_read_with_the_time_of_its_update) {
   GoldApiSource::Price p;
   std::string error;
   CHECK(GoldApiSource::parsePrice(fixture("price-XAU-EUR.json"), p, error));
-  CHECK(p.symbol == "XAU" && p.name == "Gold" && p.currency == "EUR" && std::abs(p.price - 3312.7278451306997) < 1e-9 && p.day == dayNumber(2026, 11, 24));
+  CHECK(p.symbol == "XAU" && p.name == "Gold" && p.currency == "EUR" && std::abs(p.price - 3312.7278451306997) < 1e-9 && p.time == (dayNumber(2026, 11, 24) - kUnixEpochDayNumber) * 86400 + 14 * 3600 + 19 * 60 + 44);
   CHECK(GoldApiSource::parsePrice(fixture("price-XAU-USD.json"), p, error) && p.currency == "USD" && std::abs(p.price - 3617.699951) < 1e-9);
   CHECK(GoldApiSource::parsePrice(fixture("price-BTC-USD.json"), p, error) && p.symbol == "BTC");
   for (const char * bad : {"", "[]", "{}", R"({"symbol":"XAU","currency":"EUR","price":"3000","updatedAt":"2026-11-24T14:19:44Z"})",

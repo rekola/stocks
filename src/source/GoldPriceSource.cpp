@@ -148,10 +148,10 @@ void GoldPriceSource::load(Store & store, Http & http, SourceListener & listener
         if (!quote.valid()) continue;
         const EdgeKey edge{base, quote, market, dataset};
         // The quote only: the bars are the history's (GoldPriceHistory), the real ones.
-        Quote quote;
-        quote.last = row.value;
-        quote.time = row.time;
-        b.setQuote(edge, quote);
+        Quote spot;
+        spot.last = row.value;
+        spot.time = row.time;
+        b.setQuote(edge, spot);
         b.setListing({edge, symbol, "", "", "METAL", std::string(known->name) + ", per " + known->unit});
       }
     });

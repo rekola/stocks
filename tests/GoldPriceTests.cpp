@@ -39,7 +39,7 @@ TEST(the_prices_answer_is_read_with_its_strings_and_what_is_not_a_spot_price_is_
   std::vector<GoldPriceSource::Price> prices;
   std::string error;
   CHECK(GoldPriceSource::parsePrices(fixture("prices.json"), prices, error) && prices.size() == 5);
-  CHECK(prices[0].symbol == "HG" && prices[0].unit == "pound" && std::abs(prices[0].price - 5.2595) < 1e-12 && prices[0].day == dayNumber(2026, 11, 25) && !prices[0].stale);
+  CHECK(prices[0].symbol == "HG" && prices[0].unit == "pound" && std::abs(prices[0].price - 5.2595) < 1e-12 && prices[0].time == (dayNumber(2026, 11, 25) - kUnixEpochDayNumber) * 86400 + 14 * 3600 + 22 * 60 + 1 && !prices[0].stale);
   const std::string body = "{\"symbols\":[" + row("XAU", "USD", "troy_ounce", "10") + "," + row("XAU", "EUR", "troy_ounce", "0") + "," + row("XAU", "GBP", "troy_ounce", "x") + "," +
                            row("XAU", "SEK", "", "5") + "," + row("XAU", "NOK", "troy_ounce", "5", false, "yesterday") + "," + row("GC", "USD", "troy_ounce", "9", false, "2026-11-25T00:00:00+00:00", "future") +
                            "," + row("XAG", "USD", "troy_ounce", "30", true) + ",5]}";
