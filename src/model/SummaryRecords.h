@@ -14,7 +14,7 @@
 //       float  high, low, close   each as the difference from the open
 //       uint32 volume     0 is no volume; a larger one saturates at the maximum; fractions are rounded
 //     A bar with no open takes its close as its base, with its high and low deltas undefined (NaN).
-//   a value record (a fund's NAV, an index's value of the day), 12 bytes:
+//   a value record (one value per bar, as its writer says: a fund's NAV, a rate's fixing), 12 bytes:
 //       uint32 slot, double value
 //     decoded as a bar whose open, high, low and close are that value and whose volume is undefined.
 //

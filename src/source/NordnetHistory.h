@@ -68,6 +68,7 @@ class NordnetHistory : public HistoryProvider {
     double previousClose = kUndefined;        // the close before the session, as the answer gives it
     std::vector<std::string> periods;         // the periods it offers
     bool supported = false;                   // the resolution is one we store
+    QueueKind kind = QueueKind::Candle;       // Scalar where the answer gives only a value for each point (a fund's NAV), else bars with an open, a high and a low
   };
   // False, with `error` set, when `json` is not an answer. `nav`: the points are a fund's, with only a value.
   static bool parse(const std::string & json, bool nav, Series & out, std::string & error);

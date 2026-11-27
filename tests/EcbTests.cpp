@@ -55,6 +55,7 @@ TEST(the_euro_short_term_rate_is_a_rate_in_per_cent_and_its_compounded_index_is_
   CHECK(points.size() == 5);
   CHECK(points[0].close == 100 && points[0].time == dayNumber(2019, 10, 1));
   CHECK(points[4].time == dayNumber(2026, 11, 23) && points[4].close == 110.2938007);  // a day the rate has not been published for yet
+  CHECK(s->coverage(*rate, Resolution::Day)->kind == QueueKind::Scalar && s->coverage(*index, Resolution::Day)->kind == QueueKind::Scalar);
 }
 
 TEST(a_series_that_was_not_asked_for_is_ignored) {

@@ -609,7 +609,7 @@ void Snapshot::putListing(const Listing & l, bool fromDisk) {
   version_++;
 }
 
-void Snapshot::appendCandles(const EdgeKey & k, Resolution r, const std::vector<Candle> & in) {
+void Snapshot::appendCandles(const EdgeKey & k, Resolution r, const std::vector<Candle> & in, QueueKind kind) {
   require(k);
   if (in.empty())
     return;
@@ -620,7 +620,7 @@ void Snapshot::appendCandles(const EdgeKey & k, Resolution r, const std::vector<
   bool changed = false;
   for (const Candle & c : in) bars = upsert(bars, c, [](const Candle &, const Candle &) { return true; }, sameBar, changed);
   // The summary: the quote and the queue of the resolution, derived from the same bars.
-  const bool summarised = deriveSummary(k, r, in);
+  const bool summarised = deriveSummary(k, r, in, kind);
   if (!changed && !summarised) return;  // the same bars again: no new version, nothing for a reader to refresh
   if (changed) {
     auto & pending = pendingBars_[key];
@@ -769,25 +769,58 @@ void Snapshot::setChanges(const EdgeKey & k, const Changes & in) {
   refreshChanges(k);
 }
 
+Ranges Snapshot::ranges(const EdgeKey & k) const {
+  const Ranges * r = ranges_.find(k);
+  return r ? *r : Ranges{};
+}
+
+void Snapshot::setRanges(const EdgeKey & k, const Ranges & in) {
+  require(k);
+  if (!in.says()) return;
+  Ranges now = ranges(k);
+  for (size_t i = 0; i < kChangeCount; i++) {
+    if (isDefined(in.high[i])) now.high[i] = in.high[i];
+    if (isDefined(in.low[i])) now.low[i] = in.low[i];
+  }
+  if (const Ranges * old = ranges_.find(k); old ? *old != now : true) {
+    ranges_ = ranges_.set(k, now);
+    dirtyEdges_.insert(k);
+    addEdge(k);
+    version_++;
+  }
+  refreshChanges(k);
+}
+
 void Snapshot::refreshChanges(const EdgeKey & k) {
   Changes now = changes(k);
-  bool any = false;
+  Ranges range = ranges(k);
+  bool anyChange = false, anyRange = false;
   for (size_t p = 0; p < kChangeCount; p++) {
-    const double c = periodView(*this, k, static_cast<Period>(p), false).change();
+    const PeriodView v = periodView(*this, k, static_cast<Period>(p), false);
+    const double c = v.change();
     if (isDefined(c) && !(now.pct[p] == c)) {
       now.pct[p] = c;
-      any = true;
+      anyChange = true;
+    }
+    if (isDefined(v.high) && !(range.high[p] == v.high)) {
+      range.high[p] = v.high;
+      anyRange = true;
+    }
+    if (isDefined(v.low) && !(range.low[p] == v.low)) {
+      range.low[p] = v.low;
+      anyRange = true;
     }
   }
-  if (!any) return;
-  changes_ = changes_.set(k, now);
+  if (!anyChange && !anyRange) return;
+  if (anyChange) changes_ = changes_.set(k, now);
+  if (anyRange) ranges_ = ranges_.set(k, range);
   dirtyEdges_.insert(k);
   version_++;
 }
 
 // The summary of the bars a source writes: the quote moves to the newest bar if that is newer than it, and the queue of the resolution takes
 // the bars. True where either changed.
-bool Snapshot::deriveSummary(const EdgeKey & k, Resolution r, const std::vector<Candle> & in) {
+bool Snapshot::deriveSummary(const EdgeKey & k, Resolution r, const std::vector<Candle> & in, QueueKind kind) {
   bool changed = false;
   // A bar newer than the quote sets its last price and its time (the bid and the ask stay): a source that gives only bars gives a price.
   const Candle * newest = nullptr;
@@ -811,11 +844,20 @@ bool Snapshot::deriveSummary(const EdgeKey & k, Resolution r, const std::vector<
   }
   const int64_t window = keep(k.dataset, r);
   if (window > 0) {
-    const QueueKind kind = queueKindOf(this->kind(k.base));
     const SeriesKey key{k, r};
     const QueueState * old = queues_.find(key);
     QueueState state;
-    if (old) {
+    // A queue of the other kind starts over with this one (what the writer says, never mixed): what it had, in memory or on the disk, is gone.
+    const bool restart = old && old->kind != kind && std::any_of(in.begin(), in.end(), summary::fits);
+    if (restart) {
+      queueBytes_ -= std::min(queueBytes_, old->bars.size() * kBarBytes);
+      state.kind = kind;
+      state.resident = true;
+      old = nullptr;
+      mergeQueues_.erase(key);
+      touchQueues_.erase(key);
+      queues_ = queues_.erase(key);
+    } else if (old) {
       state = *old;
     } else {
       state.kind = kind;
@@ -830,7 +872,7 @@ bool Snapshot::deriveSummary(const EdgeKey & k, Resolution r, const std::vector<
       if (summary::fits(c)) said.push_back(summary::normalized(state.kind, c));
     for (const Candle & c : said) last = std::max(last, summary::instantOf(r, c.time));
     std::vector<Candle> put;  // what changed the queue: for the merge of one that is not in memory
-    bool queueChanged = false;
+    bool queueChanged = restart;
     Seq<Candle> bars = state.bars;
     for (const Candle & c : said) {
       if (summary::instantOf(r, c.time) < last - window) continue;  // older than the window: no bar of it
@@ -891,6 +933,7 @@ void Snapshot::loadEdges(const std::vector<StoredEdge> & edges) {
       if (!old || (e.quote.time != 0 && old->time != 0 && e.quote.time > old->time)) quotes_ = quotes_.set(k, e.quote);
     }
     if (e.changes.says() && !changes_.find(k)) changes_ = changes_.set(k, e.changes);  // what a source has said is newer
+    if (e.ranges.says() && !ranges_.find(k)) ranges_ = ranges_.set(k, e.ranges);
     if (isDefined(e.previous_close) && !previousClose_.find(k)) previousClose_ = previousClose_.set(k, {e.previous_close_day, e.previous_close});
     for (const auto & [r, c] : e.queues) {
       const SeriesKey key{k, r};
@@ -905,7 +948,14 @@ void Snapshot::loadEdges(const std::vector<StoredEdge> & edges) {
       } else if (old->unknown) {
         QueueState state = *old;
         state.unknown = false;
-        state.disk = c;
+        if (c.kind == state.kind) {
+          state.disk = c;
+        } else {
+          // The file's queue is of the other kind than the one a source has written since: it starts over, and what was said is the whole of it.
+          state.resident = true;
+          putQueues_.insert(key);
+          mergeQueues_.erase(key);
+        }
         queues_ = queues_.set(key, std::move(state));
       }
     }
@@ -934,6 +984,7 @@ void Snapshot::loadQueue(const StoredQueue & in) {
   const SeriesKey key{in.edge, in.resolution};
   const QueueState * old = queues_.find(key);
   if (old && old->resident) return;  // made resident by a write or another read since
+  if (old && old->kind != in.kind) return;  // a writer has said the other kind since: the file's queue is of the old one and is not mixed in
   QueueState state;
   if (old) state = *old;
   state.kind = in.kind;
@@ -986,12 +1037,14 @@ SummaryBatch Snapshot::takeSummaries() {
     const Quote * q = quotes_.find(k);
     const auto * previous = previousClose_.find(k);
     const Changes * changes = changes_.find(k);
-    if (!q && !previous && !changes && !hasQueueOp(k)) continue;  // nothing of a summary yet: an edge with a listing and books is not kept
+    const Ranges * ranges = ranges_.find(k);
+    if (!q && !previous && !changes && !ranges && !hasQueueOp(k)) continue;  // nothing of a summary yet: an edge with a listing and books is not kept
     StoredEdge e;
     if (const Listing * l = listings_.find(k)) e.listing = *l;
     e.listing.key = k;
     if (q) e.quote = *q;
     if (changes) e.changes = *changes;
+    if (ranges) e.ranges = *ranges;
     if (previous) {
       e.previous_close_day = previous->first;
       e.previous_close = previous->second;
@@ -1370,10 +1423,11 @@ class SnapshotBatch : public Batch {
   void setAttributes(NodeRef n, const std::vector<Attribute> & a) override { s_.setAttributes(n, a); }
   void setListing(const Listing & l) override { s_.setListing(l); }
   DatasetId addDataset(const std::string & code, const std::string & name) override { return s_.addDataset(code, name); }
-  void appendCandles(const EdgeKey & k, Resolution r, const std::vector<Candle> & c) override { s_.appendCandles(k, r, c); }
+  void appendCandles(const EdgeKey & k, Resolution r, const std::vector<Candle> & c, QueueKind kind) override { s_.appendCandles(k, r, c, kind); }
   void setPreviousClose(const EdgeKey & k, int64_t day, double close) override { s_.setPreviousClose(k, day, close); }
   void setQuote(const EdgeKey & k, const Quote & q) override { s_.setQuote(k, q); }
   void setChanges(const EdgeKey & k, const Changes & c) override { s_.setChanges(k, c); }
+  void setRanges(const EdgeKey & k, const Ranges & r) override { s_.setRanges(k, r); }
   void appendBooks(const EdgeKey & k, const std::vector<BookSnapshot> & b) override { s_.appendBooks(k, b); }
   void appendNews(DatasetId d, const std::vector<NewsItem> & n) override { s_.appendNews(d, n); }
   void appendActions(const EventKey & k, const std::vector<CorporateAction> & a) override { s_.appendActions(k, a); }
@@ -1492,8 +1546,8 @@ class MemoryStore : public Store {
   DatasetId addDataset(const std::string & code, const std::string & name) override {
     return write([&](Snapshot & s) { return s.addDataset(code, name); });
   }
-  void appendCandles(const EdgeKey & k, Resolution r, const std::vector<Candle> & c) override {
-    write([&](Snapshot & s) { s.appendCandles(k, r, c); });
+  void appendCandles(const EdgeKey & k, Resolution r, const std::vector<Candle> & c, QueueKind kind) override {
+    write([&](Snapshot & s) { s.appendCandles(k, r, c, kind); });
   }
   void setPreviousClose(const EdgeKey & k, int64_t day, double close) override {
     write([&](Snapshot & s) { s.setPreviousClose(k, day, close); });
@@ -1503,6 +1557,9 @@ class MemoryStore : public Store {
   }
   void setChanges(const EdgeKey & k, const Changes & c) override {
     write([&](Snapshot & s) { s.setChanges(k, c); });
+  }
+  void setRanges(const EdgeKey & k, const Ranges & r) override {
+    write([&](Snapshot & s) { s.setRanges(k, r); });
   }
   void setRetention(DatasetId d, Resolution r, std::optional<std::chrono::seconds> keep) override {
     write([&](Snapshot & s) { s.setRetention(d, r, keep); });

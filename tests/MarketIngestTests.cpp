@@ -241,6 +241,38 @@ TEST(ingest_makes_its_instruments_as_the_sources_do) {
   }
 }
 
+TEST(ingest_gives_an_index_and_a_pair_their_ten_year_high_and_low_from_their_weekly_bars_with_no_code_of_its_own) {
+  Fixture f;
+  f.site.step = 360;
+  f.run({Resolution::Day, Resolution::Week}, false, {"spxusd", "eurusd"});
+  const auto snapshot = f.store->snapshot();
+  const auto edges = snapshot->quoteRowsSince(0);
+  CHECK(edges.size() == 2);
+  for (const EdgeKey & e : edges) {
+    const Seq<Candle> weeks = snapshot->queue(e, Resolution::Week);
+    CHECK(!weeks.empty());
+    // The queue holds bars with an open, a high and a low (an index too): the kind is the writer's, not the instrument's.
+    CHECK(snapshot->coverage(e, Resolution::Week)->kind == QueueKind::Candle);
+    // The window the change reads: ten years of days back from the last, from the first week at or after its start.
+    const int64_t end = std::max(weeks.back().time, dayNumberOfInstant(snapshot->quote(e)->time)), start = end - 3649;
+    double high = -1e18, low = 1e18;
+    int n = 0;
+    for (const Candle & c : weeks)
+      if (c.time >= start) {
+        high = std::max(high, c.high);
+        low = std::min(low, c.low);
+        n++;
+      }
+    CHECK(n > 400);
+    const Ranges r = snapshot->ranges(e);
+    CHECK(isDefined(r.high[static_cast<size_t>(::Period::Year10)]) && isDefined(r.low[static_cast<size_t>(::Period::Year10)]));
+    CHECK(r.high[static_cast<size_t>(::Period::Year10)] == high && r.low[static_cast<size_t>(::Period::Year10)] == low);
+    CHECK(high > low);
+    // The weekly queue gives the 3 years as well, and a shorter window has a narrower or equal range.
+    CHECK(r.high[static_cast<size_t>(::Period::Year3)] <= high && r.low[static_cast<size_t>(::Period::Year3)] >= low);
+  }
+}
+
 TEST(ingest_an_unknown_code_is_reported_and_a_pair_with_no_data_this_year_is_left_out) {
   Fixture f;
   f.site.lastBar = utcOfEst(2025, 6, 13, 16, 0, 0);  // the data stopped last year; the clock says November 2026

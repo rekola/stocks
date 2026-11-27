@@ -101,6 +101,8 @@ class Snapshot {
   // The edge's change over each period, by `Period` (Summary.h): what a source said of it, and for a period whose queue is in memory and
   // covers it the number worked out from the bars, kept up to date as the bars and the quote change. Undefined where not known.
   Changes changes(const EdgeKey &) const;
+  // The highest and lowest price over each period (Summary.h `Ranges`); all undefined where nothing is known.
+  Ranges ranges(const EdgeKey &) const;
   // The bars of the queue of `resolution`, oldest first, as they were stored (see SummaryRecords.h); empty where there is none or it is
   // not in memory (read from the disk when it is wanted: `Store::want`). A row whose queue is not here shows its price and no trace.
   Seq<Candle> queue(const EdgeKey &, Resolution) const;
@@ -165,12 +167,14 @@ class Snapshot {
   void setAttribute(NodeRef, const Attribute &);
   void setAttributes(NodeRef, const std::vector<Attribute> &);
   DatasetId addDataset(const std::string & code, const std::string & name);
-  void appendCandles(const EdgeKey &, Resolution, const std::vector<Candle> &);
+  void appendCandles(const EdgeKey &, Resolution, const std::vector<Candle> &, QueueKind = QueueKind::Candle);
   void setPreviousClose(const EdgeKey &, int64_t day, double close);
   // The edge's quote, replacing the one it had; the newest says: one with an earlier time than the one there is left out.
   void setQuote(const EdgeKey &, const Quote &);
   // What a source says the edge changed over each period: a period it leaves undefined keeps what is there.
   void setChanges(const EdgeKey &, const Changes &);
+  // What a source says the edge's highest and lowest price were over each period: a defined number overwrites, an undefined one keeps what is there.
+  void setRanges(const EdgeKey &, const Ranges &);
   void setRetention(DatasetId, Resolution, std::optional<std::chrono::seconds>);
   void appendBooks(const EdgeKey &, const std::vector<BookSnapshot> &);
   void appendNews(DatasetId, const std::vector<NewsItem> &);
@@ -234,9 +238,9 @@ class Snapshot {
   void indexSymbol(const EdgeKey &);
   void addEdge(const EdgeKey &);
   void noteRow(const EdgeKey &);
-  bool deriveSummary(const EdgeKey &, Resolution, const std::vector<Candle> &);
+  bool deriveSummary(const EdgeKey &, Resolution, const std::vector<Candle> &, QueueKind);
   void putListing(const Listing &, bool fromDisk);
-  void refreshChanges(const EdgeKey &);  // the periods the queues cover, from the bars; for what changed the price or the bars
+  void refreshChanges(const EdgeKey &);  // the change, high and low of the periods the queues cover, from the bars; for what changed the price or the bars
 
   uint64_t version_ = 0;
   uint64_t checks_ = 0;
@@ -256,6 +260,7 @@ class Snapshot {
   immer::set<EdgeKey> rows_;               // the same, to know one is there
   immer::map<EdgeKey, Quote> quotes_;
   immer::map<EdgeKey, Changes> changes_;
+  immer::map<EdgeKey, Ranges> ranges_;
   immer::map<SeriesKey, QueueState> queues_;
   immer::map<DatasetId, std::array<int64_t, 11>> retention_;  // seconds by resolution, for a dataset that has its own rules
   size_t queueBytes_ = 0;
@@ -332,7 +337,11 @@ class StoreWrites {
   // in the series replaces it (a correction, or today's bar updated); the rest
   // are inserted in order. The bars' times are slot numbers, or day numbers for
   // a date resolution.
-  virtual void appendCandles(const EdgeKey &, Resolution, const std::vector<Candle> &) = 0;
+  //
+  // `kind` is the writer's to say, for the whole queue the bars go to (Summary.h `QueueKind`): Candle for bars with an open, a high and a low
+  // (whatever the instrument is), Scalar for a source that gives one value per bar (the close is the value). It is never inferred. A queue
+  // that has the other kind starts over with this one. The data series above keeps the bars as written either way.
+  virtual void appendCandles(const EdgeKey &, Resolution, const std::vector<Candle> &, QueueKind = QueueKind::Candle) = 0;
   // The close before the session of `day`, which a provider gives beside the day's bars; replaces what was said.
   virtual void setPreviousClose(const EdgeKey &, int64_t day, double close) = 0;
   // The edge's quote (Summary.h): the last price, bid and ask and the time they are for, replacing the one it had without touching a queue. The
@@ -343,6 +352,9 @@ class StoreWrites {
   // of `Period`; a period left undefined says nothing and keeps what was there. A period the edge's bars cover is worked out from them
   // instead, and kept up to date as they change, so this is for the edge that has no history yet: what its table sorts by.
   virtual void setChanges(const EdgeKey &, const Changes &) = 0;
+  // The highest and lowest price over each period as a source gives them (Summary.h `Ranges`), the same way: a defined number overwrites, an
+  // undefined one says nothing, and a period the edge's bars cover is worked out from them instead (the highest high, the lowest low).
+  virtual void setRanges(const EdgeKey &, const Ranges &) = 0;
   // Order book snapshots, time-ordered; one at a time already in the series replaces it.
   virtual void appendBooks(const EdgeKey &, const std::vector<BookSnapshot> &) = 0;
   // News, by the dataset that says it. An item is its dataset and its id: one that is there already is left as it was (a dataset
