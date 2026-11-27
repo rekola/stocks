@@ -1,6 +1,7 @@
 #include "TestFramework.h"
 #include "market/Bars.h"
 #include "model/Dates.h"
+#include "model/Period.h"
 
 using namespace market;
 
@@ -13,18 +14,14 @@ TEST(market_bar_keys_of_the_sample_row) {
   CHECK(barKey(Resolution::Hour1, kSample) == 368909);
   CHECK(barKey(Resolution::Day, kSample) == 734534);
   CHECK(barKey(Resolution::Min5, kSample) == 1328072460 / 300);
-  CHECK(barKey(Resolution::Hour4, kSample) == 1328072460 / 14400);
   CHECK(barKey(Resolution::Day, 0) == 719163);  // 1970-01-01, Date_to_Days
-  CHECK(barKey(Resolution::Day, 86399) == 719163);
-  CHECK(barKey(Resolution::Day, 86400) == 719164);
+  CHECK(barKey(Resolution::Day, 86399) == 719163 && barKey(Resolution::Day, 86400) == 719164);
   CHECK(barKey(Resolution::Hour1, 3599) == 0 && barKey(Resolution::Hour1, 3600) == 1);
   CHECK(barKey(Resolution::Min5, 299) == 0 && barKey(Resolution::Min5, 300) == 1);
-  CHECK(barKey(Resolution::Hour4, 14399) == 0 && barKey(Resolution::Hour4, 14400) == 1);
 }
 
 TEST(market_a_week_is_keyed_by_the_day_number_of_its_monday) {
-  // 2026-11-09 was a Monday
-  const int64_t monday = dayNumber(2026, 11, 9);
+  const int64_t monday = dayNumber(2026, 11, 9);  // a Monday
   CHECK(weekday(monday) == 0);
   for (int d = 0; d < 7; d++) CHECK(barKey(Resolution::Week, at(2026, 11, 9 + d, 23, 59)) == monday);
   CHECK(barKey(Resolution::Week, at(2026, 11, 16)) == monday + 7);
@@ -32,21 +29,26 @@ TEST(market_a_week_is_keyed_by_the_day_number_of_its_monday) {
 }
 
 TEST(market_bar_start_is_the_inverse_of_the_key) {
-  for (Resolution bar : {Resolution::Min5, Resolution::Hour1, Resolution::Hour4, Resolution::Day, Resolution::Week}) {
-    const int64_t key = barKey(bar, kSample);
-    CHECK(barKey(bar, barStart(bar, key)) == key);
-    CHECK(barStart(bar, key) <= kSample);
-    CHECK(barKey(bar, barStart(bar, key) - 1) == key - 1 || bar == Resolution::Week && barKey(bar, barStart(bar, key) - 1) == key - 7);
+  for (Resolution r : kResolutions) {
+    const int64_t key = barKey(r, kSample);
+    CHECK(barKey(r, barStart(r, key)) == key);
+    CHECK(barStart(r, key) <= kSample);
+    CHECK(barKey(r, barStart(r, key) - 1) < key);
   }
 }
 
-TEST(market_levels_are_named_by_the_window_and_know_their_bars) {
-  CHECK(parseLevel("day") == Level::Day && parseLevel("week") == Level::Week && parseLevel("month") == Level::Month);
-  CHECK(parseLevel("year") == Level::Year && parseLevel("3years") == Level::Years3 && parseLevel("10years") == Level::Years10);
-  CHECK(!parseLevel("all") && !parseLevel("5m") && !parseLevel(""));
-  CHECK(barOf(Level::Day) == Resolution::Min5 && barOf(Level::Week) == Resolution::Hour1 && barOf(Level::Month) == Resolution::Hour4);
-  CHECK(barOf(Level::Year) == Resolution::Day && barOf(Level::Years3) == Resolution::Week && barOf(Level::Years10) == Resolution::Week);
-  for (Level level : kLevels) CHECK(parseLevel(name(level)) == level);
+TEST(market_resolutions_are_parsed_by_the_models_names) {
+  CHECK(parseResolution("5m") == Resolution::Min5 && parseResolution("1h") == Resolution::Hour1);
+  CHECK(parseResolution("1d") == Resolution::Day && parseResolution("1w") == Resolution::Week);
+  CHECK(!parseResolution("all") && !parseResolution("1m") && !parseResolution(""));
+}
+
+TEST(market_how_much_is_kept_is_what_the_application_keeps_for_its_periods) {
+  CHECK(keepSeconds(Resolution::Min5) == 86400);
+  CHECK(keepSeconds(Resolution::Hour1) == 7 * 86400);
+  CHECK(keepSeconds(Resolution::Day) == 365 * 86400);
+  CHECK(keepSeconds(Resolution::Week) == 3650 * 86400);
+  for (Resolution r : kResolutions) CHECK(keepSeconds(r) == defaultKeep(r)->count());
 }
 
 TEST(market_aggregate_takes_first_open_max_high_min_low_last_close) {
@@ -58,60 +60,42 @@ TEST(market_aggregate_takes_first_open_max_high_min_low_last_close) {
   };
   const auto hourly = aggregate(Resolution::Hour1, minutes);
   CHECK(hourly.size() == 2);
-  CHECK(hourly[0].key == 368909 && hourly[1].key == 368910);
-  CHECK(hourly[0].open == 1 && hourly[0].high == 9 && hourly[0].low == 0.5 && hourly[0].close == 4);
-  CHECK(hourly[1] == (Bar{368910, 5, 6, 4, 5.5}));
-  CHECK(aggregate(Resolution::Day, minutes).size() == 1);
-  CHECK(aggregate(Resolution::Week, minutes).size() == 1);
-  CHECK(aggregate(Resolution::Hour4, minutes).size() == 1);  // 04:00 to 08:00
+  CHECK(hourly.size() == 2 && hourly[0].time == 368909 && hourly[1].time == 368910);
+  CHECK(hourly[0].open == 1 && hourly[0].high == 9 && hourly[0].low == 0.5 && hourly[0].close == 4 && !isDefined(hourly[0].volume));
+  CHECK(hourly[1].open == 5 && hourly[1].high == 6 && hourly[1].low == 4 && hourly[1].close == 5.5);
+  CHECK(aggregate(Resolution::Day, minutes).size() == 1 && aggregate(Resolution::Week, minutes).size() == 1);
   const auto five = aggregate(Resolution::Min5, minutes);
-  CHECK(five.size() == 2);  // 05:01..05:03 are one slot (05:00), 06:00 another
-  CHECK(five[0].open == 1 && five[0].close == 4);
+  CHECK(five.size() == 2 && five[0].open == 1 && five[0].close == 4);  // 05:01..05:03 are one slot (05:00), 06:00 another
 }
 
-TEST(market_aggregate_keeps_the_later_of_two_minutes_with_one_time) {
+TEST(market_aggregate_keeps_the_later_of_two_minutes_with_one_time_and_a_day_is_the_utc_day) {
   const auto bars = aggregate(Resolution::Hour1, {{kSample, 1, 1, 1, 1}, {kSample, 2, 2, 2, 2}});
   CHECK(bars.size() == 1 && bars[0].open == 2);
   CHECK(aggregate(Resolution::Day, {}).empty());
-}
-
-TEST(market_a_day_is_the_utc_day_not_the_est_day) {
-  const auto bars = aggregate(Resolution::Day, {{kSample + 18 * 3600 + 29 * 60, 1, 1, 1, 1}, {kSample + 18 * 3600 + 59 * 60, 2, 2, 2, 2}});
-  CHECK(bars.size() == 2 && bars[1].key == bars[0].key + 1);
+  // 2012-02-01 23:30 UTC and 2012-02-02 00:00 UTC are two days, though in HistData's EST both are the 1st
+  const auto days = aggregate(Resolution::Day, {{kSample + 18 * 3600 + 29 * 60, 1, 1, 1, 1}, {kSample + 18 * 3600 + 59 * 60, 2, 2, 2, 2}});
+  CHECK(days.size() == 2 && days[1].time == days[0].time + 1);
 }
 
 TEST(market_join_merges_a_bar_cut_in_two_by_a_file_boundary) {
-  const std::vector<Bar> a = {{1, 1, 5, 1, 2}, {2, 2, 6, 2, 3}};
-  const std::vector<Bar> b = {{2, 9, 8, 0.5, 4}, {3, 4, 4, 4, 4}};
+  const std::vector<Candle> a = {{1, 1, 5, 1, 2, kUndefined}, {2, 2, 6, 2, 3, kUndefined}};
+  const std::vector<Candle> b = {{2, 9, 8, 0.5, 4, kUndefined}, {3, 4, 4, 4, 4, kUndefined}};
   const auto joined = joinBars(a, b);
   CHECK(joined.size() == 3);
-  CHECK(joined[1] == (Bar{2, 2, 8, 0.5, 4}));  // first open of the earlier, max, min, last close of the later
-  CHECK(joined[2].key == 3);
-  CHECK(joinBars({}, b) == b);
+  CHECK(joined.size() == 3 && joined[1].open == 2 && joined[1].high == 8 && joined[1].low == 0.5 && joined[1].close == 4);  // first open, max, min, last close
+  CHECK(joined.size() == 3 && joined[2].time == 3);
+  CHECK(joinBars({}, b).size() == 2);
 }
 
-TEST(market_windows_end_at_the_last_bar_and_start_the_day_after_the_date_a_period_back) {
+TEST(market_windows_end_at_the_last_bar_by_the_models_rule) {
   const Timestamp last = at(2026, 11, 13, 21, 58);
-  CHECK(windowFirstKey(Level::Day, last) == barKey(Resolution::Min5, last) - 287);
-  CHECK(windowFirstKey(Level::Week, last) == barKey(Resolution::Hour1, last) - 167);
-  // a month back: 2026-10-13, so the window starts on the 14th at midnight
-  CHECK(barStart(Resolution::Hour4, windowFirstKey(Level::Month, last)) == at(2026, 10, 14));
-  CHECK(windowFirstKey(Level::Year, last) == dayNumber(2025, 11, 14));
-  // 29 February a period back is not there in a year that is not a leap year
-  CHECK(windowFirstKey(Level::Year, at(2024, 2, 29, 12)) == dayNumber(2023, 2, 28) + 1);
-  CHECK(windowFirstKey(Level::Month, at(2026, 3, 31, 12)) == barKey(Resolution::Hour4, at(2026, 3, 1)));  // 28 February + 1
-  // weeks start on a Monday: the first one from the day after three (ten) years back
-  CHECK(windowFirstKey(Level::Years3, last) == dayNumber(2023, 11, 20));  // 2023-11-14 is a Tuesday
-  CHECK(windowFirstKey(Level::Years10, last) == dayNumber(2016, 11, 14));  // and this one a Monday
-  CHECK(weekday(windowFirstKey(Level::Years3, last)) == 0 && weekday(windowFirstKey(Level::Years10, last)) == 0);
-  CHECK(windowStartTime(Level::Years10, last) == at(2016, 11, 14));
-}
-
-TEST(market_cut_to_window_drops_what_is_outside) {
-  const Timestamp last = at(2026, 11, 13, 21, 58);
-  std::vector<Bar> bars;
+  std::vector<Candle> bars;
   const int64_t end = barKey(Resolution::Min5, last);
-  for (int64_t k = end - 1000; k <= end + 5; k++) bars.push_back({k, 1, 1, 1, 1});
-  const auto cut = cutToWindow(Level::Day, bars, last);
-  CHECK(cut.size() == 288 && cut.front().key == end - 287 && cut.back().key == end);
+  for (int64_t k = end - 1000; k <= end + 5; k++) bars.push_back({k, 1, 1, 1, 1, kUndefined});
+  const auto cut = cutToWindow(Resolution::Min5, bars, last);
+  CHECK(cut.size() == 289 && cut.front().time == end - 288 && cut.back().time == end);  // the day back from the last bar, both ends in
+  // what the files have to reach back to
+  CHECK(windowStartTime(Resolution::Day, last) == at(2025, 11, 13));
+  CHECK(windowStartTime(Resolution::Hour1, last) == at(2026, 11, 6, 21));
+  CHECK(windowStartTime(Resolution::Week, last) == barStart(Resolution::Week, barKey(Resolution::Week, last - 3650 * 86400)));
 }

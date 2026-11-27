@@ -90,11 +90,17 @@ add_library(stocks_http STATIC src/source/Http.cpp)
 target_include_directories(stocks_http PUBLIC src)
 target_link_libraries(stocks_http PUBLIC httpclient::httpclient)
 
-add_library(stocks_lib STATIC src/Browser.cpp src/BrowserPortfolio.cpp src/Positions.cpp src/News.cpp src/AttributeView.cpp src/TransactionsView.cpp src/Quotes.cpp src/Synthetic.cpp src/source/InstrumentLists.cpp
-  src/icons/IconLoader.cpp src/history/HistoryLoader.cpp src/source/NordnetHistory.cpp src/source/YahooSource.cpp src/source/YahooHistory.cpp src/source/NordnetSource.cpp src/source/SourceRunner.cpp src/source/DatasetCodes.cpp src/source/AutoSource.cpp
-  src/source/DataDirectory.cpp src/source/FundRows.cpp src/source/FundSource.cpp src/source/NordnetDetails.cpp src/source/Countries.cpp src/source/KnownMarkets.cpp src/source/NordnetNews.cpp src/source/SuomenPankkiSource.cpp src/source/EcbSource.cpp src/source/PhysicalSource.cpp src/source/GoldApiSource.cpp src/source/GoldPriceSource.cpp src/source/GoldPriceHistory.cpp src/source/SifterSource.cpp)
+# How the sources make the nodes of the store (the currency, the instrument by its ISIN, the unit a price is in, the markets by their MIC) and where
+# the data directory is: apart from the browser, so that the market-data server makes its instruments in exactly the same way as the application.
+add_library(stocks_nodes STATIC src/source/InstrumentLists.cpp src/source/KnownMarkets.cpp src/source/DataDirectory.cpp)
+target_include_directories(stocks_nodes PUBLIC src)
+target_link_libraries(stocks_nodes PUBLIC stocks_model)
+target_compile_definitions(stocks_nodes PUBLIC STOCKS_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")
+
+add_library(stocks_lib STATIC src/Browser.cpp src/BrowserPortfolio.cpp src/Positions.cpp src/News.cpp src/AttributeView.cpp src/TransactionsView.cpp src/Quotes.cpp src/Synthetic.cpp src/icons/IconLoader.cpp src/history/HistoryLoader.cpp src/source/NordnetHistory.cpp src/source/YahooSource.cpp src/source/YahooHistory.cpp src/source/NordnetSource.cpp src/source/SourceRunner.cpp src/source/DatasetCodes.cpp src/source/AutoSource.cpp
+  src/source/FundRows.cpp src/source/FundSource.cpp src/source/NordnetDetails.cpp src/source/Countries.cpp src/source/NordnetNews.cpp src/source/SuomenPankkiSource.cpp src/source/EcbSource.cpp src/source/PhysicalSource.cpp src/source/GoldApiSource.cpp src/source/GoldPriceSource.cpp src/source/GoldPriceHistory.cpp src/source/SifterSource.cpp)
 target_include_directories(stocks_lib PUBLIC src)
-target_link_libraries(stocks_lib PUBLIC cellui stocks_model stocks_http httpclient::httpclient nlohmann_json::nlohmann_json pugixml::pugixml)
+target_link_libraries(stocks_lib PUBLIC cellui stocks_model stocks_nodes stocks_http httpclient::httpclient nlohmann_json::nlohmann_json pugixml::pugixml)
 target_compile_definitions(stocks_lib PUBLIC STOCKS_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
   STOCKS_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")
 
@@ -168,7 +174,7 @@ if(NOT WIN32)
   set_tests_properties(stocks_tests PROPERTIES TIMEOUT 60)
 endif()
 
-# The market-data server and its ingest (src/market, plans/server.md).
+# The market-data server and its ingest (src/market, plans/server.md). Not built on Windows.
 if(NOT WIN32)
   add_subdirectory(src/market)
 endif()

@@ -1,8 +1,7 @@
 #pragma once
 
 #include "market/Config.h"
-#include "market/SqlStores.h"
-#include "market/Store.h"
+#include "market/Backends.h"
 #include "market/Zip.h"
 #include "model/Dates.h"
 #include "market/offline/HistData.h"
@@ -19,65 +18,49 @@
 #include <string>
 #include <vector>
 
-// A scratch MariaDB schema for the tests that run on a server, where the environment names one:
-//   MARKET_TEST_DB_USER (required; those runs are skipped, and say so, without it), MARKET_TEST_DB_PASSWORD, MARKET_TEST_DB_HOST,
-//   MARKET_TEST_DB_PORT, MARKET_TEST_DB_SOCKET. The user needs the right to make and drop schemas named market_test_*.
+// A database to test on, made and removed with the object: SQLite files in a directory of their own, or a scratch MariaDB schema where the
+// environment names one: MARKET_TEST_DB_USER (those runs are skipped, and say so, without it), MARKET_TEST_DB_PASSWORD, MARKET_TEST_DB_HOST,
+// MARKET_TEST_DB_PORT, MARKET_TEST_DB_SOCKET; the user needs the right to make and drop schemas named market_test_*.
 struct ScratchDb {
   market::DbConfig config;
   bool available = false;
-  ScratchDb() {
+  explicit ScratchDb(const std::string & type) {
+    static int counter = 0;
+    const std::string unique = std::to_string(getpid()) + "_" + std::to_string(counter++);
+    config.type = type;
+    if (type == "sqlite") {
+      available = true;
+      config.path = (std::filesystem::temp_directory_path() / ("market_test_" + unique)).string();
+      return;
+    }
     const char * user = std::getenv("MARKET_TEST_DB_USER");
     if (!user || !market::hasBackend("mariadb")) return;
     available = true;
-    config.type = "mariadb";
     config.user = user;
     if (const char * v = std::getenv("MARKET_TEST_DB_PASSWORD")) config.password = v;
     if (const char * v = std::getenv("MARKET_TEST_DB_HOST")) config.host = v;
     if (const char * v = std::getenv("MARKET_TEST_DB_PORT")) config.port = std::atoi(v);
     if (const char * v = std::getenv("MARKET_TEST_DB_SOCKET")) config.socket = v;
-    static int counter = 0;
-    config.name = "market_test_" + std::to_string(getpid()) + "_" + std::to_string(counter++);
+    config.name = "market_test_" + unique;
   }
   ~ScratchDb() {
     if (!available) return;
     try {
-      market::dropStore(config);
+      market::dropBackends(config);
     } catch (...) {
     }
   }
 };
 
-// A SQLite file of its own, gone with the object.
-struct ScratchSqlite {
-  market::DbConfig config;
-  ScratchSqlite() {
-    static int counter = 0;
-    config.type = "sqlite";
-    config.path = (std::filesystem::temp_directory_path() / ("market_test_" + std::to_string(getpid()) + "_" + std::to_string(counter++) + ".sqlite")).string();
-  }
-  ~ScratchSqlite() { market::dropStore(config); }
-};
-
 inline void skipWithoutDatabase() { std::printf("  SKIPPED on MariaDB: MARKET_TEST_DB_USER is not set (or this build has no MariaDB)\n"); }
 
-// Runs `body(store, backendName)` on each way the data is kept: in memory, in SQLite, and in MariaDB where there is one to test against.
+// Runs `body(database, backendName)` on each database there is to test on: SQLite files, and MariaDB where there is one.
 template <class F>
-void forEachStore(F && body) {
-  {
-    auto store = market::makeMemoryStore();
-    body(*store, "memory");
-  }
-  {
-    ScratchSqlite db;
-    auto store = market::openStore(db.config, market::OpenMode::ReadWrite);
-    body(*store, "sqlite");
-  }
-  ScratchDb maria;
-  if (maria.available) {
-    auto store = market::openStore(maria.config, market::OpenMode::ReadWrite);
-    body(*store, "mariadb");
-  } else {
-    skipWithoutDatabase();
+void forEachDatabase(F && body) {
+  for (const char * type : {"sqlite", "mariadb"}) {
+    ScratchDb db(type);
+    if (db.available) body(db.config, type);
+    else skipWithoutDatabase();
   }
 }
 
@@ -120,7 +103,9 @@ class FakeSite : public Http {
     } else {
       r.body = pairsOnPage ? "<table><tr><td><a href=\"/download-free-forex-historical-data/?/ascii/1-minute-bar-quotes/EURUSD\"><strong>EUR/USD</strong></a>"
                              "<br/>(2000/May)</td><td><a href=\"/download-free-forex-historical-data/?/ascii/1-minute-bar-quotes/GBPUSD\"><strong>GBP/USD</strong></a>"
-                             "<br/>(2000/May)</td></tr></table>"
+                             "<br/>(2000/May)</td><td><a href=\"/download-free-forex-historical-data/?/ascii/1-minute-bar-quotes/XAUUSD\"><strong>XAU/USD</strong></a>"
+                             "<br/>(2009/March)</td><td><a href=\"/download-free-forex-historical-data/?/ascii/1-minute-bar-quotes/SPXUSD\"><strong>SPX/USD</strong></a>"
+                             "<br/>(2010/November)</td></tr></table>"
                            : "<html>no pairs</html>";
     }
     return r;

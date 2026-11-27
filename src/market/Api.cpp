@@ -3,31 +3,24 @@
 
 #include "market/Api.h"
 
-#include "model/Dates.h"
+#include "market/Bars.h"
 #include "model/NodeKey.h"
+#include "model/Period.h"
+#include "model/SummaryRecords.h"
 
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
 #include <cctype>
-#include <set>
+#include <chrono>
+#include <thread>
+#include <unordered_set>
 
 namespace market {
 
 namespace {
 
 using nlohmann::json;
-
-struct Window {
-  const char * id;
-  Level level;      // the stored level that feeds it
-  int64_t days;     // 0: the whole level; else only this many days of it (the level's bars are days)
-};
-
-constexpr Window kWindows[] = {
-    {"day", Level::Day, 0},      {"week", Level::Week, 0},        {"month", Level::Month, 0},      {"3months", Level::Year, 90},
-    {"year", Level::Year, 0},    {"3years", Level::Years3, 0},    {"10years", Level::Years10, 0},
-};
 
 std::string lower(std::string s) {
   for (char & c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
@@ -37,114 +30,140 @@ std::string lower(std::string s) {
 ApiResponse reply(int status, const json & body) { return {status, body.dump()}; }
 ApiResponse failure(int status, const std::string & message) { return reply(status, {{"error", message}}); }
 
-Timestamp lastBarTimeOf(const InstrumentInfo & info) {
+constexpr Period kPeriods[] = {Period::Day, Period::Week, Period::Month, Period::Quarter, Period::Year, Period::Year3, Period::Year10};
+
+// What the API calls an edge: the dataset's symbol for it, in lower case ("eurusd").
+std::string codeOf(const Snapshot & s, const EdgeKey & e) { return lower(s.symbol(e)); }
+
+std::vector<EdgeKey> listedEdges(const Snapshot & s) {
+  std::vector<EdgeKey> edges = s.quoteRowsSince(0);
+  std::sort(edges.begin(), edges.end(), [&](const EdgeKey & a, const EdgeKey & b) { return codeOf(s, a) < codeOf(s, b); });
+  return edges;
+}
+
+// The instant of the last bar of any queue of the edge (UTC seconds); 0 where it has none.
+Timestamp lastBarTimeOf(const Snapshot & s, const EdgeKey & e) {
   Timestamp last = 0;
-  for (const LevelState & s : info.levels) last = std::max(last, s.lastBarTime);
+  for (Resolution r : kResolutions) {
+    const auto c = s.coverage(e, r);
+    if (c && c->count > 0) last = std::max<Timestamp>(last, barStart(r, c->last_key));
+  }
   return last;
 }
 
-const LevelState * stateOf(const InstrumentInfo & info, Level level) {
-  for (const LevelState & s : info.levels)
-    if (s.level == level) return &s;
-  return nullptr;
-}
-
-json instrumentJson(const InstrumentInfo & info) {
-  const InstrumentRecord & r = info.instrument;
-  json out = {{"code", r.code},
-              {"name", r.name},
-              {"asset_class", r.assetClass},
-              {"base", text(NodeKey{r.edge.base})},
-              {"quote", text(NodeKey{r.edge.quote})},
-              {"market", text(NodeKey{r.edge.market})},
-              {"dataset", text(NodeKey{r.edge.dataset})},
+json instrumentJson(const Snapshot & s, const EdgeKey & e) {
+  json out = {{"code", codeOf(s, e)},
+              {"name", s.listing(e) ? s.listing(e)->name : std::string()},
+              {"asset_class", kindName(s.kind(e.base))},
+              {"base", text(NodeKey{e.base.value})},
+              {"quote", text(NodeKey{e.quote.value})},
+              {"market", text(NodeKey{e.market.value})},
+              {"dataset", text(NodeKey{e.dataset.value})},
               {"first_bar_time", nullptr},
               {"last_bar_time", nullptr}};
   bool any = false;
   Timestamp first = 0;
-  for (const LevelState & s : info.levels) {
-    if (s.barCount == 0) continue;
-    const Timestamp t = barStart(barOf(s.level), s.firstKey);
+  for (Resolution r : kResolutions) {
+    const auto c = s.coverage(e, r);
+    if (!c || c->count == 0) continue;
+    const Timestamp t = barStart(r, c->first_key);
     first = any ? std::min(first, t) : t;
     any = true;
   }
   if (any) {
     out["first_bar_time"] = first;
-    out["last_bar_time"] = lastBarTimeOf(info);
+    out["last_bar_time"] = lastBarTimeOf(s, e);
   }
   return out;
 }
 
-json summaryJson(MarketStore & store, const InstrumentInfo & info) {
-  json out = {{"code", info.instrument.code},
-              {"name", info.instrument.name},
-              {"asset_class", info.instrument.assetClass},
+json summaryJson(const Snapshot & s, const EdgeKey & e) {
+  json out = {{"code", codeOf(s, e)},
+              {"name", s.listing(e) ? s.listing(e)->name : std::string()},
+              {"asset_class", kindName(s.kind(e.base))},
               {"last_bar_time", nullptr},
-              {"windows", json::object()}};
-  const Timestamp anchor = lastBarTimeOf(info);
-  bool loaded = false;
-  for (const LevelState & s : info.levels) loaded = loaded || s.barCount > 0;
-  if (loaded) out["last_bar_time"] = anchor;
-  for (const Window & w : kWindows) {
-    json window = {{"level", name(barOf(w.level))}, {"keys", json::array()}, {"close", json::array()}};
-    const LevelState * state = stateOf(info, w.level);
-    if (w.level == Level::Day) window["previous_close"] = nullptr;
-    if (loaded && state && state->barCount > 0) {
-      // The window ends at the instrument's last bar, whenever the level was loaded.
-      const int64_t last = barKey(barOf(w.level), anchor);
-      int64_t first = windowFirstKey(w.level, anchor);
-      if (w.days > 0) first = std::max(first, last - w.days + 1);
-      json & keys = window["keys"];
-      json & closes = window["close"];
-      store.forEachBar(info.instrument.edge, w.level, first, last, [&](const Bar & bar) {
-        keys.push_back(bar.key);
-        closes.push_back(bar.close);
-      });
-      if (w.level == Level::Day && stateOf(info, Level::Year)) {
-        // What the day's change is measured from: the close before the day of the last bar.
-        const int64_t day = barKey(Resolution::Day, anchor);
-        store.forEachBar(info.instrument.edge, Level::Year, day - 10, day - 1, [&](const Bar & bar) { window["previous_close"] = bar.close; });
+              {"periods", json::object()}};
+  const Timestamp anchor = lastBarTimeOf(s, e);
+  if (anchor > 0) out["last_bar_time"] = anchor;
+  for (Period p : kPeriods) {
+    const PeriodInfo & in = info(p);
+    json period = {{"resolution", nullptr}, {"keys", json::array()}, {"close", json::array()}};
+    if (p == Period::Day) period["previous_close"] = nullptr;
+    // The first of the period's own feeds that has bars in memory (not the stand-ins the application falls back on: a resolution that was not
+    // loaded is an empty period).
+    for (size_t f = 0; f < in.primary && anchor > 0; f++) {
+      const Resolution r = in.feeds[f];
+      const Seq<Candle> queue = s.queue(e, r);
+      if (queue.empty()) continue;
+      period["resolution"] = name(r);
+      const int64_t from = anchor - in.days * 86400;
+      for (const Candle & c : queue) {
+        if (summary::instantOf(r, c.time) < from || summary::instantOf(r, c.time) > anchor) continue;
+        period["keys"].push_back(c.time);
+        period["close"].push_back(c.close);
       }
+      break;
     }
-    out["windows"][w.id] = std::move(window);
+    if (p == Period::Day && anchor > 0) {
+      // What the day's change is measured from: the close of the last day before the day of the last bar.
+      const int64_t day = barKey(Resolution::Day, anchor);
+      for (const Candle & c : s.queue(e, Resolution::Day))
+        if (c.time < day) period["previous_close"] = c.close;
+    }
+    out["periods"][in.id] = std::move(period);
   }
   return out;
 }
 
 }  // namespace
 
-ApiResponse handleApi(MarketStore & store, const std::string & path, const std::map<std::string, std::string> & params) {
+void loadQueues(Store & store, int timeoutSeconds) {
+  store.waitRestored();
+  std::vector<SeriesKey> wanted;
+  const auto snapshot = store.snapshot();
+  for (const EdgeKey & e : snapshot->quoteRowsSince(0))
+    for (Resolution r : kResolutions)
+      if (const auto c = snapshot->coverage(e, r); c && c->count > 0) wanted.push_back({e, r});
+  store.want(wanted);
+  const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(timeoutSeconds);
+  for (;;) {
+    const auto now = store.snapshot();
+    const bool done = std::all_of(wanted.begin(), wanted.end(), [&](const SeriesKey & k) { return now->queueResident(k.edge, k.resolution); });
+    if (done || std::chrono::steady_clock::now() > until) return;
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+  }
+}
+
+ApiResponse handleApi(Store & store, const std::string & path, const std::map<std::string, std::string> & params) {
   try {
-    if (path == "/health") {
-      if (!store.healthy()) return failure(503, "the database does not answer");
-      return reply(200, {{"status", "ok"}});
-    }
+    const auto snapshot = store.snapshot();
+    const Snapshot & s = *snapshot;
+    if (path == "/health") return reply(200, {{"status", "ok"}, {"instruments", s.quoteRowCount()}});
     if (path == "/instruments") {
       json list = json::array();
-      for (const InstrumentInfo & info : store.instruments()) list.push_back(instrumentJson(info));
+      for (const EdgeKey & e : listedEdges(s)) list.push_back(instrumentJson(s, e));
       return reply(200, {{"instruments", list}});
     }
     if (path == "/summary") {
-      std::vector<InstrumentInfo> all = store.instruments();
-      std::vector<InstrumentInfo> chosen;
+      std::vector<EdgeKey> all = listedEdges(s), chosen;
       const auto codes = params.find("codes");
       if (codes == params.end() || codes->second.empty()) {
         chosen = std::move(all);
       } else {
-        std::set<std::string> done;
+        std::unordered_set<std::string> done;
         std::string rest = codes->second + ",";
         for (size_t comma = rest.find(','); comma != std::string::npos; comma = rest.find(',')) {
           std::string code = lower(rest.substr(0, comma));
           rest.erase(0, comma + 1);
           code.erase(std::remove_if(code.begin(), code.end(), [](unsigned char c) { return std::isspace(c); }), code.end());
           if (code.empty() || !done.insert(code).second) continue;
-          const auto it = std::find_if(all.begin(), all.end(), [&](const InstrumentInfo & i) { return i.instrument.code == code; });
+          const auto it = std::find_if(all.begin(), all.end(), [&](const EdgeKey & e) { return codeOf(s, e) == code; });
           if (it == all.end()) return failure(404, "no instrument " + code);
           chosen.push_back(*it);
         }
       }
       json list = json::array();
-      for (const InstrumentInfo & info : chosen) list.push_back(summaryJson(store, info));
+      for (const EdgeKey & e : chosen) list.push_back(summaryJson(s, e));
       return reply(200, {{"instruments", list}});
     }
     return failure(404, "no such path: " + path);
@@ -158,7 +177,7 @@ struct ApiServer::Impl {
   int port = 0;
 };
 
-ApiServer::ApiServer(MarketStore & store) : impl_(std::make_unique<Impl>()) {
+ApiServer::ApiServer(std::function<std::shared_ptr<Store>()> current) : impl_(std::make_unique<Impl>()) {
   httplib::Server & s = impl_->server;
   // Read-only: any method but GET (and HEAD) is refused before it is routed.
   s.set_pre_routing_handler([](const httplib::Request & req, httplib::Response & res) {
@@ -168,10 +187,11 @@ ApiServer::ApiServer(MarketStore & store) : impl_(std::make_unique<Impl>()) {
     res.set_content(json{{"error", "read-only: only GET"}}.dump(), "application/json");
     return httplib::Server::HandlerResponse::Handled;
   });
-  auto serve = [&store](const httplib::Request & req, httplib::Response & res) {
+  auto serve = [current](const httplib::Request & req, httplib::Response & res) {
     std::map<std::string, std::string> params;
     for (const auto & [key, value] : req.params) params[key] = value;
-    const ApiResponse answer = handleApi(store, req.path, params);
+    const std::shared_ptr<Store> store = current();
+    const ApiResponse answer = store ? handleApi(*store, req.path, params) : failure(503, "the store is not there yet");
     res.status = answer.status;
     res.set_content(answer.body, "application/json");
   };
@@ -195,13 +215,6 @@ bool ApiServer::bind(const std::string & host, int port, std::string & error) {
 }
 
 void ApiServer::serve() { impl_->server.listen_after_bind(); }
-
-bool ApiServer::listen(const std::string & host, int port, std::string & error) {
-  if (!bind(host, port, error)) return false;
-  serve();
-  return true;
-}
-
 int ApiServer::port() const { return impl_->port; }
 void ApiServer::stop() { impl_->server.stop(); }
 

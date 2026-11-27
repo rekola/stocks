@@ -53,7 +53,7 @@ bool loadConfig(const std::string & path, Config & config, std::string & error) 
     if (auto it = datasets->find("histdata"); it != datasets->end() && it->is_object())
       if (!take(*it, "cache_dir", config.histdataCacheDir, error, "datasets.histdata.")) return false;
   if (const auto * server = section("server"))
-    if (!take(*server, "listen", config.listen, error, "server.") || !take(*server, "port", config.port, error, "server.")) return false;
+    if (!take(*server, "listen", config.listen, error, "server.") || !take(*server, "port", config.port, error, "server.") || !take(*server, "refresh_seconds", config.refreshSeconds, error, "server.")) return false;
   if (const char * password = std::getenv("MARKET_DB_PASSWORD")) config.database.password = password;
 
   if (config.database.type != "mariadb" && config.database.type != "sqlite") {
@@ -61,7 +61,7 @@ bool loadConfig(const std::string & path, Config & config, std::string & error) 
     return false;
   }
   const std::filesystem::path base = std::filesystem::path(path).parent_path();
-  if (config.database.type == "sqlite" && config.database.path != ":memory:") {
+  if (config.database.type == "sqlite") {
     std::filesystem::path file = config.database.path;
     if (file.is_relative()) file = base / file;
     config.database.path = file.lexically_normal().string();

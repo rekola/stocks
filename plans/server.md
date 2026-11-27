@@ -7,41 +7,31 @@ in [data-model.md](data-model.md); this is the other end of it.
 ## The MVP as built
 
 `market-ingest` and `market-server` (`src/market/`; the HistData adapter is in `src/market/offline/`, apart from the realtime sources of
-`src/source/`); how to run them is in the README. What it holds is small on purpose: the bars the sparklines need, six levels, each
-replaced by every run, each a window with the bar size that draws it:
+`src/source/`); how to run them is in the README. Both run on the application's own `Store` (`src/model`): the ingest is a source that runs on
+request. It makes its nodes with the helpers the sources use (`currencyNode`, `quoteNode`, `addInstrumentUnlessSaid`; ISINs from
+`source/KnownIsins.h`), sets a listing and writes `appendCandles`; the store derives the summaries (quote and queues, with the retention of each
+resolution), and hands what changed to its stores. The server restores a store from the same stores and answers from its snapshot.
 
-| Level | Bar, key | Stored | Feeds |
-|---|---|---|---|
-| day | 5 minutes, `floor(unix / 300)` | 1 day | day |
-| week | 1 hour, the hour number | 7 days | week |
-| month | 4 hours, `floor(unix / 14400)` | 1 month | month |
-| year | 1 day, the day number (`Date_to_Days`) | 1 year | 3 months, year |
-| 3years | 1 week, the day number of its Monday | 3 years | 3 years |
-| 10years | 1 week, the same | 10 years | 10 years |
-
-Each period ends at the instrument's last bar (the data lags by weeks), the bucketing is UTC and in one function (`barKey`), and how a
-09:30 New York open falls on the numbers is still the open question above. The 1-minute data is not in the database: the raw zips
-are the only copy and are kept as they came. The catalog is the plan's edge: an instrument is `(base, quote, market, dataset)`, the
-keys of `NodeKey.h` (a pair's two nodes are currencies or units by code, the market XXXX, the dataset `HISTDATA`), and a bar carries the
-batch that wrote it (`version`). A pair with no data in the current year is not carried (early in a year, the year before still counts).
-The API is `/health`, `/instruments` and `/summary` (see `src/market/Api.h`), unversioned for now.
-
-**Storage.** The catalog and the bars are the same SQL tables in SQLite or in MariaDB, through sqlpp11 (typed, every statement prepared with
-its values bound, a result read a row at a time), written once in `SqlStore.h`; a backend only says how it connects and ends a CREATE
-TABLE. A row store is the plan's MariaDB for the catalog; for the bars it stands in for ClickHouse (below).
+- **The stores.** The model has three, each an interface with a SQLite implementation (the application's) and a MariaDB one (a server's, in
+  `MariaDbStores.cpp`, over a thin wrapper of libmariadb's prepared statements in `MariaDb.cpp`): `FactStore` (the node attributes),
+  `SummaryStores` (the quote and the queues of each edge, a queue as a blob) and `BarStore` (every bar, one row each; new, `StoreOptions::bars`).
+- **Resolutions, as the application's periods feed on them:** 5m (1 day), 1h (7 days), 1d (365 days) and 1w (10 years, keyed by the day number
+  of the Monday) for the day, the week, the month and the quarter, the year, 3 years and 10 years. The queues keep those windows; the bars of the
+  `BarStore` are what the ingest wrote, which is for now the same windows, and the whole history later.
+- **Instruments.** An FX pair is an edge between two currency nodes (no ISIN); gold and silver are the commodity by the ISINs the sources share;
+  oil and the indices are instruments by their ISINs (given by the owner), an index quoted in points as everywhere in the application. The
+  dataset is `HISTDATA`, the market XXXX. A pair with no data in the current year is not carried.
+- **API.** `/health`, `/instruments` and `/summary` (see `src/market/Api.h`), unversioned for now, the periods named as the application's.
 
 Where it differs from the plan above, and why:
 
-- **Bars are in SQL behind `MarketStore`, not in ClickHouse.** ClickHouse cannot run where this was built (the distribution's package is
-  from 2018 and the official one is not reachable), and the MVP's few hundred thousand rows do not need it. The table has the plan's
-  columns, so the move is a second implementation of the interface.
-- **A run replaces a level instead of adding a version of each bar**: the task asks that nothing outside the period remains. The
-  `version` column still says which batch wrote a bar, and the plan's insert-only history is a later change.
-- **Intraday levels are built from the 1-minute quotes, not loaded as the provider gives them** (the plan says nothing is derived from another
+- **Bars are in the stores of the model, not in ClickHouse.** ClickHouse cannot run where this was built (the distribution's package is from 2018 and
+  the official one is not reachable). `BarStore` is the interface a ClickHouse store would implement.
+- **Bars are put in place of those with the same time, and nothing is added as a version**: `appendCandles` replaces a bar at a time already in the series.
+  The plan's insert-only history is a later change.
+- **Intraday bars are built from the 1-minute quotes, not loaded as the provider gives them** (the plan says nothing is derived from another
   interval): HistData has only 1-minute data, so this is the one dataset where that is how it has to be.
-- **No `/v1` prefix and no columnar chunks yet**: the paths are the task's, and a window is JSON columns (`keys`, `close`).
-- **A currency pair, a metal, an oil price and an index are all an edge between two codes** (`EUR`/`USD`, `XAU`/`USD`, `SPX`/`USD`), as the plan
-  says of pairs; they have no ISIN, and no `KnownIsins` entry is made for them.
+- **No `/v1` prefix and no columnar chunks yet**: the paths are the task's, and a period is JSON columns (`keys`, `close`).
 
 ## Goals and constraints
 

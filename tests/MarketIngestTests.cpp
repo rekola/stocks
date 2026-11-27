@@ -1,26 +1,44 @@
 #include "TestFramework.h"
 #include "MarketTestSupport.h"
+#include "market/Api.h"
 #include "market/Ingest.h"
-#include "market/Store.h"
+#include "model/Period.h"
+#include "model/SqliteBarStore.h"
+#include "model/Store.h"
+#include "source/KnownIsins.h"
+
+#include <nlohmann/json.hpp>
 
 #include <algorithm>
 #include <set>
 
 using namespace histdata;
-using market::Level;
 
 namespace {
 
 const market::Log kQuiet = [](const std::string &) {};
 const Timestamp kLast = 1794603600;  // 2026-11-13 21:00 UTC: 16:00 EST, a row of the made-up site (the real file ends 21:58)
 
-market::InstrumentRecord only(market::MarketStore & store) {
-  const auto all = store.instruments();
-  return all.empty() ? market::InstrumentRecord{} : all[0].instrument;
+std::unique_ptr<Store> plainStore() {
+  StoreOptions options;
+  options.invent_isins = false;  // as the programs have it: an instrument with no ISIN is refused
+  return makeMemoryStore(std::move(options));
 }
 
-// What the made-up site's rows say a level should hold, counted the slow way: the distinct keys of the rows in the window.
-std::vector<int64_t> expectedKeys(const FakeSite & site, Level level) {
+EdgeKey onlyEdge(const Store & store) {
+  const auto edges = store.snapshot()->quoteRowsSince(0);
+  return edges.empty() ? EdgeKey{} : edges[0];
+}
+
+std::vector<int64_t> keysOf(const Seq<Candle> & queue) {
+  std::vector<int64_t> keys;
+  for (const Candle & c : queue) keys.push_back(c.time);
+  return keys;
+}
+
+// What the made-up site's rows say a resolution's window should hold, counted the slow way: the distinct keys of the rows in the window that the
+// model's rule gives (the bars whose instant is within the keep of the last bar's).
+std::vector<int64_t> expectedKeys(const FakeSite & site, Resolution r) {
   std::set<int64_t> keys;
   std::vector<market::MinuteBar> all;
   for (int y = 2015; y <= 2026; y++) {
@@ -28,18 +46,19 @@ std::vector<int64_t> expectedKeys(const FakeSite & site, Level level) {
       for (int m = 1; m <= 12; m++) {
         char p[8];
         std::snprintf(p, sizeof p, "%04d%02d", y, m);
-        for (auto & r : site.rows(p)) all.push_back(r);
+        for (auto & row : site.rows(p)) all.push_back(row);
       }
     } else {
-      for (auto & r : site.rows(std::to_string(y))) all.push_back(r);
+      for (auto & row : site.rows(std::to_string(y))) all.push_back(row);
     }
   }
-  const Resolution bar = market::barOf(level);
-  const int64_t last = market::barKey(bar, site.lastBar);
-  const int64_t first = market::windowFirstKey(level, site.lastBar);
-  for (const auto & r : all) {
-    const int64_t k = market::barKey(bar, r.time);
-    if (k >= first && k <= last) keys.insert(k);
+  Timestamp lastRow = 0;  // the window ends at the last row the site has, which is not always its cap
+  for (const auto & row : all) lastRow = std::max(lastRow, row.time);
+  const int64_t last = market::barKey(r, lastRow);
+  const int64_t from = market::barStart(r, last) - market::keepSeconds(r);
+  for (const auto & row : all) {
+    const int64_t k = market::barKey(r, row.time);
+    if (k <= last && market::barStart(r, k) >= from) keys.insert(k);
   }
   return {keys.begin(), keys.end()};
 }
@@ -47,139 +66,131 @@ std::vector<int64_t> expectedKeys(const FakeSite & site, Level level) {
 struct Fixture {
   FakeSite site;
   TempDir dir;
-  std::unique_ptr<market::MarketStore> store = market::makeMemoryStore();
+  std::unique_ptr<Store> store = plainStore();
   Fixture() {
     site.lastBar = kLast;
     site.step = 120;
-    site.firstYear = 2000;
   }
-  market::IngestReport run(std::vector<Level> levels, bool refresh = false, std::vector<std::string> codes = {"eurusd"}) {
+  market::IngestReport run(std::vector<Resolution> resolutions, bool refresh = false, std::vector<std::string> codes = {"eurusd"}) {
     HistData adapter(site, market::RawCache(dir.path), fastSettings());
     market::IngestOptions options;
     options.codes = codes;
-    options.levels = levels;
+    options.resolutions = resolutions;
     options.refresh = refresh;
     return market::runIngest(adapter, *store, options, kQuiet);
   }
 };
 
+const std::vector<Resolution> kAll = {Resolution::Min5, Resolution::Hour1, Resolution::Day, Resolution::Week};
+
 }  // namespace
 
-TEST(ingest_level_5m_downloads_one_file_when_the_day_is_in_one_month) {
+TEST(ingest_5m_downloads_one_file_when_the_day_is_in_one_month) {
   Fixture f;
-  const auto report = f.run({Level::Day});
+  const auto report = f.run({Resolution::Min5});
   CHECK(f.site.downloads() == 1);
   CHECK(report.complete());
-  CHECK(report.instruments.size() == 1 && report.instruments[0].levels.size() == 1);
-  const auto bars = f.store->bars(only(*f.store).edge, Level::Day, 0, INT64_MAX);
-  std::vector<int64_t> keys;
-  for (const auto & b : bars) keys.push_back(b.key);
-  CHECK(keys == expectedKeys(f.site, Level::Day));
-  CHECK(!bars.empty() && bars.back().key == market::barKey(Resolution::Min5, kLast));
-  // nothing of the other levels
-  CHECK(f.store->bars(only(*f.store).edge, Level::Year, 0, INT64_MAX).empty());
+  const EdgeKey edge = onlyEdge(*f.store);
+  const auto snapshot = f.store->snapshot();
+  CHECK(keysOf(snapshot->queue(edge, Resolution::Min5)) == expectedKeys(f.site, Resolution::Min5));
+  CHECK(!snapshot->queue(edge, Resolution::Min5).empty() && snapshot->queue(edge, Resolution::Min5).back().time == market::barKey(Resolution::Min5, kLast));
+  CHECK(snapshot->queue(edge, Resolution::Day).empty());  // nothing of the other resolutions
 }
 
-TEST(ingest_level_5m_downloads_two_files_when_the_day_spans_a_month_boundary) {
+TEST(ingest_5m_downloads_two_files_when_the_day_spans_a_month_boundary) {
   Fixture f;
   f.site.lastBar = utcOfEst(2026, 11, 1, 3, 0, 0);  // 3 am EST on the 1st: the day before is in October
   f.site.step = 30;
-  const auto report = f.run({Level::Day});
+  const auto report = f.run({Resolution::Min5});
   CHECK(f.site.downloads() == 2);
   CHECK(report.complete());
-  const auto bars = f.store->bars(only(*f.store).edge, Level::Day, 0, INT64_MAX);
-  CHECK(!bars.empty() && bars.front().key < market::barKey(Resolution::Min5, utcOfEst(2026, 11, 1, 0, 0, 0)));
+  const auto queue = f.store->snapshot()->queue(onlyEdge(*f.store), Resolution::Min5);
+  CHECK(!queue.empty() && queue[0].time < market::barKey(Resolution::Min5, utcOfEst(2026, 11, 1, 0, 0, 0)));
 }
 
-TEST(ingest_all_levels_hold_the_windows_of_the_rows_and_each_file_is_asked_for_once) {
+TEST(ingest_every_resolution_holds_the_window_of_the_rows_and_each_file_is_asked_for_once) {
   Fixture f;
   f.site.step = 360;  // a few rows a day: the ten years are a lot of files, not of rows
-  const auto report = f.run({Level::Day, Level::Week, Level::Month, Level::Year, Level::Years3, Level::Years10});
+  const auto report = f.run(kAll);
   CHECK(report.complete());
-  const market::Edge edge = only(*f.store).edge;
-  for (Level level : market::kLevels) {
-    std::vector<int64_t> keys;
-    for (const auto & b : f.store->bars(edge, level, 0, INT64_MAX)) keys.push_back(b.key);
-    CHECK(keys == expectedKeys(f.site, level));
-    CHECK(!keys.empty());
+  const EdgeKey edge = onlyEdge(*f.store);
+  const auto snapshot = f.store->snapshot();
+  for (Resolution r : kAll) {
+    CHECK(keysOf(snapshot->queue(edge, r)) == expectedKeys(f.site, r));
+    CHECK(!snapshot->queue(edge, r).empty());
   }
-  // ten yearly files (2016 to 2025) and the eleven months of this year, one request pair each
-  CHECK(f.site.downloads() == 21);
+  CHECK(f.site.downloads() == 21);  // ten yearly files (2016 to 2025) and the eleven months of this year, one request pair each
   std::set<std::string> posts;
   for (const auto & r : f.site.requests)
     if (r.rfind("POST", 0) == 0) posts.insert(r);
-  CHECK(posts.size() == 21);
   int yearly = 0, monthly = 0;
   for (const auto & r : posts) (r.size() - r.rfind(' ') - 1 == 4 ? yearly : monthly)++;
-  CHECK(yearly == 10 && monthly == 11);  // never the months of a past year, nor the whole of this one
+  CHECK(posts.size() == 21 && yearly == 10 && monthly == 11);  // never the months of a past year, nor the whole of this one
 }
 
 TEST(ingest_bars_are_first_open_max_high_min_low_last_close) {
   Fixture f;
-  f.run({Level::Week});
-  const market::Edge edge = only(*f.store).edge;
-  const auto bars = f.store->bars(edge, Level::Week, 0, INT64_MAX);
-  // recompute the last hour from the site's own rows
+  f.run({Resolution::Hour1});
+  const auto queue = f.store->snapshot()->queue(onlyEdge(*f.store), Resolution::Hour1);
+  CHECK(!queue.empty());
+  if (queue.empty()) return;
   std::vector<market::MinuteBar> mine;
   for (const auto & r : f.site.rows("202611"))
-    if (market::barKey(Resolution::Hour1, r.time) == bars.back().key) mine.push_back(r);
+    if (market::barKey(Resolution::Hour1, r.time) == queue.back().time) mine.push_back(r);
   CHECK(!mine.empty());
   double high = 0, low = 1e9;
   for (const auto & m : mine) high = std::max(high, m.high), low = std::min(low, m.low);
-  CHECK_NEAR(bars.back().open, mine.front().open, 1e-6);
-  CHECK_NEAR(bars.back().close, mine.back().close, 1e-6);
-  CHECK_NEAR(bars.back().high, high, 1e-6);
-  CHECK_NEAR(bars.back().low, low, 1e-6);
+  CHECK_NEAR(queue.back().open, mine.front().open, 1e-3);  // a queue keeps a price in the form of its record (a float of the difference from the open)
+  CHECK_NEAR(queue.back().close, mine.back().close, 1e-3);
+  CHECK_NEAR(queue.back().high, high, 1e-3);
+  CHECK_NEAR(queue.back().low, low, 1e-3);
 }
 
 TEST(ingest_a_second_run_with_a_warm_cache_makes_no_requests) {
   Fixture f;
   f.site.step = 360;
-  f.run({Level::Day, Level::Week, Level::Month, Level::Year, Level::Years3, Level::Years10});
+  f.run(kAll);
   const size_t before = f.site.requests.size();
   CHECK(before > 0);
-  const auto again = f.run({Level::Day, Level::Week, Level::Month, Level::Year, Level::Years3, Level::Years10});
+  f.store = plainStore();  // a new program
+  const auto again = f.run(kAll);
   CHECK(f.site.requests.size() == before);
   CHECK(again.complete());
   CHECK(again.instruments[0].downloads == 0 && again.instruments[0].cached == 21);
 }
 
-TEST(ingest_replaces_a_level_and_nothing_old_remains) {
+TEST(ingest_says_the_same_bars_again_and_nothing_changes) {
   Fixture f;
-  f.run({Level::Day});
-  const market::Edge edge = only(*f.store).edge;
-  const size_t first = f.store->bars(edge, Level::Day, 0, INT64_MAX).size();
-  // an old bar that the next run does not produce
-  f.store->replaceBars(edge, Level::Day, {{5, 1, 1, 1, 1}}, 1, 99);
-  f.run({Level::Day});
-  const auto bars = f.store->bars(edge, Level::Day, 0, INT64_MAX);
-  CHECK(bars.size() == first && bars.front().key > 5);
+  f.run({Resolution::Min5});
+  const uint64_t version = f.store->snapshot()->version();
+  f.run({Resolution::Min5});
+  CHECK(f.store->snapshot()->version() == version);
 }
 
 TEST(ingest_refresh_asks_again_for_this_years_months_only) {
   Fixture f;
   f.site.step = 360;
-  f.run({Level::Day, Level::Week, Level::Month, Level::Year, Level::Years3, Level::Years10});
+  f.run(kAll);
   f.site.requests.clear();
   f.site.lastBar += 3 * 86400;  // the site has grown (a month's file does)
-  f.run({Level::Day, Level::Week, Level::Month, Level::Year, Level::Years3, Level::Years10}, /*refresh=*/true);
+  f.run(kAll, /*refresh=*/true);
   int years = 0, months = 0;
   for (const auto & r : f.site.requests)
     if (r.rfind("POST", 0) == 0) (r.size() - r.rfind(' ') == 5 ? years : months)++;
   CHECK(years == 0);
   CHECK(months == 11);
+  CHECK(f.store->snapshot()->queue(onlyEdge(*f.store), Resolution::Min5).back().time == expectedKeys(f.site, Resolution::Min5).back());
 }
 
-TEST(ingest_a_file_that_fails_leaves_the_level_as_it_was) {
+TEST(ingest_a_file_that_fails_leaves_the_resolution_as_it_was) {
   Fixture f;
   f.site.step = 360;
-  f.run({Level::Year});
-  const market::Edge edge = only(*f.store).edge;
-  const auto before = f.store->bars(edge, Level::Year, 0, INT64_MAX);
+  f.run({Resolution::Day});
+  const EdgeKey edge = onlyEdge(*f.store);
+  const auto before = keysOf(f.store->snapshot()->queue(edge, Resolution::Day));
+  CHECK(!before.empty());
   // a fresh cache and a site that breaks after the latest file
   TempDir other;
-  HistData adapter(f.site, market::RawCache(other.path), fastSettings());
-  f.site.failDownloads = 0;
   struct Breaking : Http {
     FakeSite & site;
     int posts = 0;
@@ -197,34 +208,49 @@ TEST(ingest_a_file_that_fails_leaves_the_level_as_it_was) {
   HistData broken(breaking, market::RawCache(other.path), fastSettings());
   market::IngestOptions options;
   options.codes = {"eurusd"};
-  options.levels = {Level::Year};
+  options.resolutions = {Resolution::Day};
   const auto report = market::runIngest(broken, *f.store, options, kQuiet);
   CHECK(!report.complete());
   CHECK(!report.instruments[0].failed.empty() && !report.instruments[0].skipped.empty());
-  CHECK(f.store->bars(edge, Level::Year, 0, INT64_MAX) == before);
+  CHECK(keysOf(f.store->snapshot()->queue(edge, Resolution::Day)) == before);
 }
 
-TEST(ingest_makes_the_instrument_record_and_names_the_dataset) {
+TEST(ingest_makes_its_instruments_as_the_sources_do) {
   Fixture f;
-  f.run({Level::Day});
-  const auto all = f.store->instruments();
-  CHECK(all.size() == 1);
-  CHECK(all.size() == 1 && all[0].instrument.code == "eurusd" && all[0].instrument.name == "EUR/USD" && all[0].instrument.assetClass == "currency");
-  CHECK(all.size() == 1 && all[0].instrument.firstPeriod == 200005);
-  CHECK(all.size() == 1 && text(NodeKey{all[0].instrument.edge.dataset}) == "HISTDATA" && text(NodeKey{all[0].instrument.edge.base}) == "EUR");
-  CHECK(all.size() == 1 && all[0].levels.size() == 1 && all[0].levels[0].lastBarTime == kLast);
+  f.site.step = 360;
+  f.run({Resolution::Day}, false, {"eurusd", "xauusd", "spxusd"});
+  const auto snapshot = f.store->snapshot();
+  const auto edges = snapshot->quoteRowsSince(0);
+  CHECK(edges.size() == 3);
+  for (const EdgeKey & e : edges) {
+    const Listing l = *snapshot->listing(e);
+    CHECK(text(NodeKey{e.dataset.value}) == "HISTDATA" && snapshot->name(NodeRef(e.dataset)) == "HistData.com");
+    CHECK(text(NodeKey{e.market.value}) == "XXXX");
+    if (l.symbol == "EURUSD") {
+      // a pair of two currencies, found by their codes
+      CHECK(l.name == "EUR/USD" && snapshot->kind(e.base) == InstrumentKind::Currency && text(NodeKey{e.base.value}) == "EUR" && text(NodeKey{e.quote.value}) == "USD");
+    } else if (l.symbol == "XAUUSD") {
+      // gold, the one the other sources have, by its ISIN
+      CHECK(l.name == "XAU/USD" && snapshot->kind(e.base) == InstrumentKind::Commodity && snapshot->isin(e.base) == known_isin::kGold);
+      CHECK(text(NodeKey{e.quote.value}) == "USD");
+    } else {
+      CHECK(l.symbol == "SPXUSD" && l.name == "SPX/USD");
+      CHECK(snapshot->kind(e.base) == InstrumentKind::Index && snapshot->isin(e.base) == known_isin::kSp500 && snapshot->symbol(e.base) == "SPX");
+      CHECK(snapshot->symbol(e.quote) == kPointsUnit && snapshot->kind(e.quote) == InstrumentKind::Unit);
+    }
+  }
 }
 
 TEST(ingest_an_unknown_code_is_reported_and_a_pair_with_no_data_this_year_is_left_out) {
   Fixture f;
-  f.site.lastBar = 0;  // the site has nothing
-  const auto report = f.run({Level::Day}, false, {"eurusd", "nonesuch"});
+  f.site.lastBar = utcOfEst(2025, 6, 13, 16, 0, 0);  // the data stopped last year; the clock says November 2026
+  const auto report = f.run({Resolution::Min5}, false, {"eurusd", "nonesuch"});
   CHECK(report.unknownCodes == std::vector<std::string>{"nonesuch"});
-  CHECK(report.inactive == 1);
+  CHECK(report.inactive == 1 && report.instruments.size() == 1 && report.instruments[0].inactive && report.instruments[0].series.empty());
   CHECK(!report.complete());
-  CHECK(report.instruments.size() == 1 && report.instruments[0].inactive && report.instruments[0].levels.empty());
-  CHECK(f.store->instruments().empty());  // nothing is carried for a pair with no data this year
+  CHECK(f.store->snapshot()->quoteRowCount() == 0);  // nothing is carried for it
   CHECK(market::formatReport(report).find("left out") != std::string::npos);
+  CHECK(f.site.downloads() == 11);  // the months of this year, and nothing of the years before
 }
 
 TEST(ingest_formats_times) {
@@ -232,18 +258,45 @@ TEST(ingest_formats_times) {
   CHECK(market::formatTime(0) == "1970-01-01T00:00:00Z");
 }
 
-TEST(ingest_a_pair_that_stops_being_quoted_is_forgotten) {
+TEST(ingest_writes_every_bar_it_builds_to_the_bar_store) {
   Fixture f;
-  f.run({Level::Day});
-  CHECK(f.store->instruments().size() == 1);
-  f.site.lastBar = utcOfEst(2025, 6, 13, 16, 0, 0);  // the data stops: nothing in 2026 on the next run
-  TempDir other;
-  HistData adapter(f.site, market::RawCache(other.path), fastSettings());
-  market::IngestOptions options;
-  options.codes = {"eurusd"};
-  options.levels = {Level::Day};
-  const auto report = market::runIngest(adapter, *f.store, options, kQuiet);
-  CHECK(report.inactive == 1 && f.store->instruments().empty());
-  CHECK(f.store->bars(market::Edge{currencyKey("EUR")->value, currencyKey("USD")->value, marketKey("XXXX")->value, datasetKey("HISTDATA")->value},
-                      Level::Day, 0, INT64_MAX).empty());
+  f.site.step = 360;
+  TempDir bars;
+  StoreOptions options;
+  options.invent_isins = false;
+  options.bars = openSqliteBarStore(bars.path / "bars.sqlite");
+  const auto barStore = options.bars;
+  f.store = makeMemoryStore(std::move(options));
+  f.run(kAll);
+  const EdgeKey edge = onlyEdge(*f.store);
+  for (Resolution r : kAll) {
+    std::vector<int64_t> stored;
+    barStore->read(edge, r, 0, INT64_MAX, [&](const Candle & c) { stored.push_back(c.time); });
+    CHECK(stored == expectedKeys(f.site, r));
+  }
+}
+
+TEST(ingest_to_a_database_and_the_server_reads_it_back_whatever_the_database) {
+  forEachDatabase([](const market::DbConfig & db, const char * backend) {
+    std::printf("  %s\n", backend);
+    Fixture f;
+    f.site.step = 360;
+    {
+      f.store = makeMemoryStore(market::storeOptionsOf(db, {}));
+      const auto report = f.run(kAll, false, {"eurusd", "xauusd"});
+      CHECK(report.complete());
+    }  // the store is gone: what is left is the database's
+    auto server = std::shared_ptr<Store>(makeMemoryStore(market::storeOptionsOf(db, {})));
+    market::loadQueues(*server);
+    const auto instruments = nlohmann::json::parse(market::handleApi(*server, "/instruments", {}).body);
+    CHECK(instruments["instruments"].size() == 2);
+    const auto summary = nlohmann::json::parse(market::handleApi(*server, "/summary", {{"codes", "eurusd"}}).body)["instruments"][0];
+    CHECK(summary["last_bar_time"].get<int64_t>() > kLast - 86400 && summary["last_bar_time"].get<int64_t>() <= kLast);
+    CHECK(summary["periods"]["day"]["resolution"] == "5m" && summary["periods"]["week"]["resolution"] == "1h");
+    CHECK(summary["periods"]["month"]["resolution"] == "1d" && summary["periods"]["year"]["resolution"] == "1w");
+    CHECK(summary["periods"]["day"]["keys"].size() >= 2);
+    // the bars of the bar store are the full doubles, the queues the model's records
+    const EdgeKey edge = onlyEdge(*server);
+    CHECK(!server->snapshot()->queue(edge, Resolution::Day).empty());
+  });
 }

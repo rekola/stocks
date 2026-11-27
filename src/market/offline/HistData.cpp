@@ -1,6 +1,7 @@
 #include "market/offline/HistData.h"
 
 #include "market/Zip.h"
+#include "source/KnownIsins.h"
 #include "model/Dates.h"
 
 #include <algorithm>
@@ -59,21 +60,68 @@ Period estMonthOf(Timestamp time) {
   return {d.year, static_cast<int>(d.month)};
 }
 
+// What HistData's code of a pair is, as the model has it. An FX pair is an edge between two currencies; gold and silver are the commodity by the
+// ISIN the sources share (source/KnownIsins.h), in a currency; oil and the indices are instruments by their ISINs, an index in points (the unit the
+// application quotes an index in; HistData's currency is the one the index is calculated in, and the listing's name says it).
+struct Known {
+  const char * code;
+  const char * symbol;
+  const char * name;
+  const char * isin;
+  InstrumentKind kind;
+  const char * type;
+};
+constexpr Known kKnown[] = {
+    {"xauusd", "XAU", "Gold", known_isin::kGold, InstrumentKind::Commodity, "METAL"},
+    {"xauaud", "XAU", "Gold", known_isin::kGold, InstrumentKind::Commodity, "METAL"},
+    {"xauchf", "XAU", "Gold", known_isin::kGold, InstrumentKind::Commodity, "METAL"},
+    {"xaueur", "XAU", "Gold", known_isin::kGold, InstrumentKind::Commodity, "METAL"},
+    {"xaugbp", "XAU", "Gold", known_isin::kGold, InstrumentKind::Commodity, "METAL"},
+    {"xagusd", "XAG", "Silver", known_isin::kSilver, InstrumentKind::Commodity, "METAL"},
+    {"wtiusd", "WTI", "WTI crude oil", known_isin::kWti, InstrumentKind::Commodity, "OIL"},
+    {"bcousd", "BRENT", "Brent crude oil", known_isin::kBrent, InstrumentKind::Commodity, "OIL"},
+    {"spxusd", "SPX", "S&P 500", known_isin::kSp500, InstrumentKind::Index, "INDEX"},
+    {"nsxusd", "NDX", "Nasdaq 100", known_isin::kNasdaq100, InstrumentKind::Index, "INDEX"},
+    {"udxusd", "DXY", "US Dollar Index", known_isin::kUsDollarIndex, InstrumentKind::Index, "INDEX"},
+    {"grxeur", "DAX", "DAX", known_isin::kDax, InstrumentKind::Index, "INDEX"},
+    {"frxeur", "CAC", "CAC 40", known_isin::kCac40, InstrumentKind::Index, "INDEX"},
+    {"etxeur", "SX5E", "Euro STOXX 50", known_isin::kEuroStoxx50, InstrumentKind::Index, "INDEX"},
+    {"ukxgbp", "UKX", "FTSE 100", known_isin::kFtse100, InstrumentKind::Index, "INDEX"},
+    {"jpxjpy", "NKY", "Nikkei 225", known_isin::kNikkei225, InstrumentKind::Index, "INDEX"},
+    {"hkxhkd", "HSI", "Hang Seng", known_isin::kHangSeng, InstrumentKind::Index, "INDEX"},
+    {"auxaud", "AS51", "S&P/ASX 200", known_isin::kAsx200, InstrumentKind::Index, "INDEX"},
+};
+
+market::InstrumentSpec specOf(const std::string & code, int firstPeriod) {
+  market::InstrumentSpec spec;
+  spec.code = code;
+  spec.symbol = upper(code);
+  spec.name = upper(code.substr(0, 3)) + "/" + upper(code.substr(3));
+  spec.firstPeriod = firstPeriod;
+  spec.baseSymbol = upper(code.substr(0, 3));
+  spec.quote = upper(code.substr(3));
+  spec.baseKind = InstrumentKind::Currency;
+  spec.type = "CURRENCY";
+  for (const Known & k : kKnown)
+    if (code == k.code) {
+      spec.baseSymbol = k.symbol;
+      spec.baseName = k.name;
+      spec.baseIsin = k.isin;
+      spec.baseKind = k.kind;
+      spec.type = k.type;
+      if (k.kind == InstrumentKind::Index) spec.quote = kPointsUnit;
+    }
+  return spec;
+}
+
 // "eurusd:200005 ..." as the list was written from.
-std::vector<market::InstrumentSpec> specsOf(const char * list, const char * assetClass) {
+std::vector<market::InstrumentSpec> specsOf(const char * list) {
   std::vector<market::InstrumentSpec> out;
   std::istringstream in(list);
   std::string item;
   while (in >> item) {
     const size_t colon = item.find(':');
-    market::InstrumentSpec spec;
-    spec.code = item.substr(0, colon);
-    spec.firstPeriod = std::atoi(item.c_str() + colon + 1);
-    spec.base = upper(spec.code.substr(0, 3));
-    spec.quote = upper(spec.code.substr(3));
-    spec.name = spec.base + "/" + spec.quote;
-    spec.assetClass = assetClass;
-    out.push_back(std::move(spec));
+    out.push_back(specOf(item.substr(0, colon), std::atoi(item.c_str() + colon + 1)));
   }
   return out;
 }
@@ -192,12 +240,10 @@ const std::vector<market::InstrumentSpec> & fallbackInstruments() {
                 "eurcad:200703 cadjpy:200703 audcad:200707 gbpaud:200709 audnzd:200709 gbpcad:200709 eurnzd:200803 nzdcad:200803 "
                 "audchf:200803 nzdchf:200803 gbpnzd:200803 cadchf:200803 sgdjpy:200808 usdhkd:200808 usdnok:200808 eursek:200808 "
                 "usdsek:200808 eurdkk:200808 eurnok:200808 usddkk:200808 usdsgd:200808 usdczk:201008 usdmxn:201011 usdtry:201011 "
-                "eurhuf:201011 eurpln:201011 usdhuf:201011 usdpln:201011 usdzar:201011 zarjpy:201011 eurczk:201011 eurtry:201011",
-                "currency"));
-    add(specsOf("xauusd:200903 xagusd:200905 xauaud:200905 xauchf:200905 xaueur:200905 xaugbp:200905 wtiusd:201011 bcousd:201011", "commodity"));
+                "eurhuf:201011 eurpln:201011 usdhuf:201011 usdpln:201011 usdzar:201011 zarjpy:201011 eurczk:201011 eurtry:201011"));
+    add(specsOf("xauusd:200903 xagusd:200905 xauaud:200905 xauchf:200905 xaueur:200905 xaugbp:200905 wtiusd:201011 bcousd:201011"));
     add(specsOf("spxusd:201011 nsxusd:201011 udxusd:201011 grxeur:201011 frxeur:201011 etxeur:201011 ukxgbp:201011 jpxjpy:201011 "
-                "hkxhkd:201011 auxaud:201011",
-                "index"));
+                "hkxhkd:201011 auxaud:201011"));
     return all;
   }();
   return list;
@@ -224,15 +270,7 @@ std::vector<market::InstrumentSpec> parseDiscovery(const std::string & html) {
     while (nameEnd < html.size() && std::isalpha(static_cast<unsigned char>(html[nameEnd]))) nameEnd++;
     const int month = monthNumber(html.substr(paren + 6, nameEnd - paren - 6));
     if (!month || code.size() != 6 || !seen.insert(code).second) continue;
-    market::InstrumentSpec spec;
-    spec.code = code;
-    spec.base = upper(code.substr(0, 3));
-    spec.quote = upper(code.substr(3));
-    spec.name = spec.base + "/" + spec.quote;
-    spec.firstPeriod = static_cast<int>(year) * 100 + month;
-    spec.assetClass = "other";
-    for (const auto & known : fallbackInstruments())
-      if (known.code == code) spec.assetClass = known.assetClass;
+    market::InstrumentSpec spec = specOf(code, static_cast<int>(year) * 100 + month);
     out.push_back(std::move(spec));
   }
   return out;
@@ -277,7 +315,7 @@ void HistData::reportDifferences(const std::vector<market::InstrumentSpec> & fou
   for (const std::string & code : codes) {
     const int first = now[code];
     const auto it = known.find(code);
-    if (it == known.end()) log("histdata: " + code + " is on the page and not in the built-in list (first month " + std::to_string(first) + "; asset class other)"), differences++;
+    if (it == known.end()) log("histdata: " + code + " is on the page and not in the built-in list (first month " + std::to_string(first) + "; treated as a currency pair)"), differences++;
     else if (it->second != first) log("histdata: " + code + " begins " + std::to_string(first) + " on the page, " + std::to_string(it->second) + " in the built-in list"), differences++;
   }
   std::vector<std::string> missing;
@@ -381,8 +419,7 @@ HistData::Got HistData::obtain(const std::string & code, Period period, bool ref
 }
 
 market::LoadResult HistData::load(const market::InstrumentSpec & instrument, const market::LoadOptions & options, const market::Log & log) {
-  using market::Bar;
-  using market::MinuteBar;
+    using market::MinuteBar;
   market::LoadResult result;
   const std::string code = lower(instrument.code);
 
@@ -427,14 +464,14 @@ market::LoadResult HistData::load(const market::InstrumentSpec & instrument, con
     if (got.status == Fetch::Failed) {
       result.failed.push_back(periodText(period) + ": " + got.why);
       log("histdata: " + code + " " + periodText(period) + ": " + got.why + "; given up");
-      for (market::Level level : options.levels) result.skipped.push_back(std::string(market::name(level)) + ": the latest file could not be had");
+      for (Resolution level : options.resolutions) result.skipped.push_back(std::string(::name(level)) + ": the latest file could not be had");
       return result;
     }
     std::string why;
     if (!minutesOf(got, period, latestMinutes, why)) {
       result.failed.push_back(periodText(period) + ": " + why);
       log("histdata: " + code + " " + periodText(period) + ": " + why);
-      for (market::Level level : options.levels) result.skipped.push_back(std::string(market::name(level)) + ": the latest file could not be read");
+      for (Resolution level : options.resolutions) result.skipped.push_back(std::string(::name(level)) + ": the latest file could not be read");
       return result;
     }
     if (latestMinutes.empty()) continue;  // a file with no rows has no last bar
@@ -451,9 +488,9 @@ market::LoadResult HistData::load(const market::InstrumentSpec & instrument, con
   result.lastBarTime = lastBarTime;
 
   // 2. The files each level needs, the window of the level back from the last bar.
-  std::unordered_map<market::Level, std::vector<Period>> needs;
+  std::unordered_map<Resolution, std::vector<Period>> needs;
   std::vector<Period> all{*latest};  // already in hand
-  for (market::Level level : options.levels) {
+  for (Resolution level : options.resolutions) {
     needs[level] = periodsCovering(market::windowStartTime(level, lastBarTime), lastBarTime, currentYear, instrument.firstPeriod);
     all.insert(all.end(), needs[level].begin(), needs[level].end());
   }
@@ -461,11 +498,11 @@ market::LoadResult HistData::load(const market::InstrumentSpec & instrument, con
   all.erase(std::unique(all.begin(), all.end()), all.end());
 
   // 3. Each file once, oldest first, into every level that needs it.
-  std::unordered_map<market::Level, std::vector<Bar>> built;
-  std::unordered_map<market::Level, std::string> incomplete;
+  std::unordered_map<Resolution, std::vector<Candle>> built;
+  std::unordered_map<Resolution, std::string> incomplete;
   for (const Period & period : all) {
-    std::vector<market::Level> users;
-    for (market::Level level : options.levels)
+    std::vector<Resolution> users;
+    for (Resolution level : options.resolutions)
       if (std::find(needs[level].begin(), needs[level].end(), period) != needs[level].end()) users.push_back(level);
     if (users.empty()) continue;
     std::vector<MinuteBar> minutes;
@@ -482,21 +519,21 @@ market::LoadResult HistData::load(const market::InstrumentSpec & instrument, con
       if (got.status != Fetch::Ok || !minutesOf(got, period, minutes, why)) {
         result.failed.push_back(periodText(period) + ": " + why);
         log("histdata: " + code + " " + periodText(period) + ": " + why + "; moving on");
-        for (market::Level level : users) incomplete[level] = periodText(period) + " could not be had";
+        for (Resolution level : users) incomplete[level] = periodText(period) + " could not be had";
         continue;
       }
     }
-    for (market::Level level : users) built[level] = market::joinBars(std::move(built[level]), market::aggregate(market::barOf(level), minutes));
+    for (Resolution level : users) built[level] = market::joinBars(std::move(built[level]), market::aggregate(level, minutes));
   }
 
   // 4. Only a level built from every file it needs replaces what is stored: a gap in the middle of ten years would otherwise
   // wipe good bars.
-  for (market::Level level : options.levels) {
+  for (Resolution level : options.resolutions) {
     if (incomplete.count(level)) {
-      result.skipped.push_back(std::string(market::name(level)) + ": " + incomplete[level]);
+      result.skipped.push_back(std::string(::name(level)) + ": " + incomplete[level]);
       continue;
     }
-    result.levels.push_back({level, market::cutToWindow(level, std::move(built[level]), lastBarTime)});
+    result.series.push_back({level, market::cutToWindow(level, std::move(built[level]), lastBarTime)});
   }
   return result;
 }

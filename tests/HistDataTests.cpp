@@ -2,6 +2,7 @@
 #include "MarketTestSupport.h"
 #include "market/Bars.h"
 #include "market/offline/HistData.h"
+#include "source/KnownIsins.h"
 
 #include <algorithm>
 #include <set>
@@ -80,7 +81,7 @@ TEST(histdata_files_that_cover_a_window) {
   const Timestamp may1 = utcOfEst(2026, 5, 1, 9, 0, 0);
   CHECK(periodsCovering(utcOfEst(2026, 4, 1, 0, 0, 0) - 86400, may1, 2026, 0).size() == 3);
   // ten years: ten yearly files and the months of this year
-  const auto ten = periodsCovering(market::windowStartTime(market::Level::Years10, nov13), nov13, 2026, 200005);
+  const auto ten = periodsCovering(market::windowStartTime(Resolution::Week, nov13), nov13, 2026, 200005);
   CHECK(ten.size() == 10 + 11);
   CHECK(ten.front() == (Period{2016, 0}) && ten[9] == (Period{2025, 0}) && ten[10] == (Period{2026, 1}) && ten.back() == (Period{2026, 11}));
   // a year that is past is one file, even when the window starts in its last days (no months of past years)
@@ -99,10 +100,10 @@ TEST(histdata_reads_the_pair_list_page) {
   const auto pairs = parseDiscovery(page);
   CHECK(pairs.size() == 3);
   if (pairs.size() != 3) return;
-  CHECK(pairs[0].code == "eurusd" && pairs[0].name == "EUR/USD" && pairs[0].base == "EUR" && pairs[0].quote == "USD");
-  CHECK(pairs[0].firstPeriod == 200005 && pairs[0].assetClass == "currency");
+  CHECK(pairs[0].code == "eurusd" && pairs[0].name == "EUR/USD" && pairs[0].baseSymbol == "EUR" && pairs[0].quote == "USD");
+  CHECK(pairs[0].firstPeriod == 200005 && pairs[0].baseKind == InstrumentKind::Currency);
   CHECK(pairs[1].code == "usdczk" && pairs[1].firstPeriod == 201008);
-  CHECK(pairs[2].code == "newpar" && pairs[2].assetClass == "other");
+  CHECK(pairs[2].code == "newpar" && pairs[2].baseKind == InstrumentKind::Currency);
   CHECK(parseDiscovery("<html>nothing</html>").empty());
 }
 
@@ -113,10 +114,17 @@ TEST(histdata_fallback_list_is_the_one_in_the_task) {
   for (const auto & s : list) codes.insert(s.code);
   CHECK(codes.size() == 66);
   const auto find = [&](const std::string & code) { return *std::find_if(list.begin(), list.end(), [&](const auto & s) { return s.code == code; }); };
-  CHECK(find("eurusd").firstPeriod == 200005 && find("eurusd").name == "EUR/USD");
-  CHECK(find("xauusd").assetClass == "commodity" && find("wtiusd").assetClass == "commodity" && find("wtiusd").name == "WTI/USD");
-  CHECK(find("spxusd").assetClass == "index" && find("auxaud").firstPeriod == 201011);
-  CHECK(find("usdczk").firstPeriod == 201008 && find("gbpjpy").firstPeriod == 200205);
+  CHECK(find("eurusd").firstPeriod == 200005 && find("eurusd").name == "EUR/USD" && find("eurusd").symbol == "EURUSD");
+  CHECK(find("usdczk").firstPeriod == 201008 && find("gbpjpy").firstPeriod == 200205 && find("auxaud").firstPeriod == 201011);
+  // an FX pair is an edge between two currencies: no ISIN
+  CHECK(find("eurusd").baseKind == InstrumentKind::Currency && find("eurusd").baseSymbol == "EUR" && find("eurusd").quote == "USD" && find("eurusd").baseIsin.empty());
+  // gold and silver are the commodity by the ISIN the sources share, oil and the indices are instruments by the ISINs we were given
+  CHECK(find("xauusd").baseKind == InstrumentKind::Commodity && find("xauusd").baseIsin == known_isin::kGold && find("xauusd").quote == "USD");
+  CHECK(find("xagusd").baseIsin == known_isin::kSilver && find("xaueur").baseIsin == known_isin::kGold && find("xaueur").quote == "EUR");
+  CHECK(find("wtiusd").baseIsin == known_isin::kWti && find("bcousd").baseIsin == known_isin::kBrent && find("wtiusd").name == "WTI/USD");
+  CHECK(find("spxusd").baseKind == InstrumentKind::Index && find("spxusd").baseIsin == known_isin::kSp500 && find("spxusd").quote == kPointsUnit);
+  for (const char * code : {"nsxusd", "udxusd", "grxeur", "frxeur", "etxeur", "ukxgbp", "jpxjpy", "hkxhkd", "auxaud"})
+    CHECK(find(code).baseKind == InstrumentKind::Index && !find(code).baseIsin.empty() && find(code).quote == kPointsUnit);
 }
 
 TEST(histdata_discovery_falls_back_when_the_page_cannot_be_read) {
@@ -137,9 +145,9 @@ namespace {
 histdata::HistData makeAdapter(FakeSite & site, const TempDir & dir) { return HistData(site, market::RawCache(dir.path), fastSettings()); }
 
 market::InstrumentSpec eurusd() {
-  market::InstrumentSpec s;
-  s.code = "eurusd", s.name = "EUR/USD", s.assetClass = "currency", s.base = "EUR", s.quote = "USD", s.firstPeriod = 200005;
-  return s;
+  for (const auto & spec : fallbackInstruments())
+    if (spec.code == "eurusd") return spec;
+  return {};
 }
 
 const market::Log kQuiet = [](const std::string &) {};
@@ -152,7 +160,7 @@ TEST(histdata_flow_gets_the_page_then_posts_with_referer_and_origin) {
   site.step = 30;
   TempDir dir;
   HistData adapter = makeAdapter(site, dir);
-  const auto result = adapter.load(eurusd(), {{market::Level::Day}, false}, kQuiet);
+  const auto result = adapter.load(eurusd(), {{Resolution::Min5}, false}, kQuiet);
   CHECK(site.requests.size() == 2);
   CHECK(site.requests.size() == 2 && site.requests[0] == "GET https://www.histdata.com/download-free-forex-historical-data/?/ascii/1-minute-bar-quotes/eurusd/2026/11");
   CHECK(site.requests.size() == 2 && site.requests[1] == "POST https://www.histdata.com/get.php 202611");
@@ -174,11 +182,11 @@ TEST(histdata_walks_back_past_months_with_a_token_and_no_data) {
   site.step = 60;
   TempDir dir;
   HistData adapter = makeAdapter(site, dir);
-  const auto result = adapter.load(eurusd(), {{market::Level::Day}, false}, kQuiet);
+  const auto result = adapter.load(eurusd(), {{Resolution::Min5}, false}, kQuiet);
   CHECK(result.lastBarTime == site.lastBar);
   // November and October answered with a token and an empty body; September was the first with a file
   CHECK(site.downloads() == 3);
-  CHECK(result.levels.size() == 1 && !result.levels[0].bars.empty() && result.levels[0].bars.back().key == market::barKey(Resolution::Min5, site.lastBar));
+  CHECK(result.series.size() == 1 && !result.series[0].bars.empty() && result.series[0].bars.back().time == market::barKey(Resolution::Min5, site.lastBar));
   CHECK(!market::RawCache(dir.path).has("DAT_ASCII_EURUSD_M1_202611.zip"));  // nothing cached for what is not there
 }
 
@@ -189,9 +197,9 @@ TEST(histdata_a_failing_download_is_retried_twice_then_given_up) {
   TempDir dir;
   HistData adapter = makeAdapter(site, dir);
   std::vector<std::string> log;
-  const auto result = adapter.load(eurusd(), {{market::Level::Day, market::Level::Week}, false}, [&](const std::string & l) { log.push_back(l); });
+  const auto result = adapter.load(eurusd(), {{Resolution::Min5, Resolution::Hour1}, false}, [&](const std::string & l) { log.push_back(l); });
   CHECK(site.downloads() == 3);  // the first try and two more
-  CHECK(result.levels.empty() && result.failed.size() == 1 && result.skipped.size() == 2);
+  CHECK(result.series.empty() && result.failed.size() == 1 && result.skipped.size() == 2);
   CHECK(!result.inactive);
   CHECK(std::count_if(log.begin(), log.end(), [](const std::string & l) { return l.find("trying again") != std::string::npos; }) == 2);
 }
@@ -202,19 +210,19 @@ TEST(histdata_a_failure_that_goes_away_on_the_second_try_is_fine) {
   site.failDownloads = 1;
   TempDir dir;
   HistData adapter = makeAdapter(site, dir);
-  const auto result = adapter.load(eurusd(), {{market::Level::Day}, false}, kQuiet);
-  CHECK(result.failed.empty() && result.levels.size() == 1 && site.downloads() == 2);
+  const auto result = adapter.load(eurusd(), {{Resolution::Min5}, false}, kQuiet);
+  CHECK(result.failed.empty() && result.series.size() == 1 && site.downloads() == 2);
 }
 
 TEST(histdata_discovery_is_kept_in_the_cache_and_read_again_only_on_refresh) {
   FakeSite site;
   TempDir dir;
   HistData adapter = makeAdapter(site, dir);
-  CHECK(adapter.discover(kQuiet, false).size() == 2);
+  CHECK(adapter.discover(kQuiet, false).size() == 4);
   CHECK(site.requests.size() == 1);
-  CHECK(adapter.discover(kQuiet, false).size() == 2);
+  CHECK(adapter.discover(kQuiet, false).size() == 4);
   CHECK(site.requests.size() == 1);  // from the cache
-  CHECK(adapter.discover(kQuiet, true).size() == 2);
+  CHECK(adapter.discover(kQuiet, true).size() == 4);
   CHECK(site.requests.size() == 2);
 }
 
@@ -224,8 +232,8 @@ TEST(histdata_a_pair_with_no_data_this_year_is_inactive_and_nothing_earlier_is_a
   site.step = 60;
   TempDir dir;
   HistData adapter = makeAdapter(site, dir);
-  const auto result = adapter.load(eurusd(), {{market::Level::Day}, false}, kQuiet);
-  CHECK(result.inactive && result.activeFromYear == 2026 && result.levels.empty() && result.failed.empty());
+  const auto result = adapter.load(eurusd(), {{Resolution::Min5}, false}, kQuiet);
+  CHECK(result.inactive && result.activeFromYear == 2026 && result.series.empty() && result.failed.empty());
   CHECK(site.downloads() == 11);  // January to November of this year, and not the year before
 }
 
@@ -236,9 +244,9 @@ TEST(histdata_early_in_a_year_the_year_before_still_counts) {
   TempDir dir;
   const Timestamp tenthOfJanuary = utcOfEst(2027, 1, 10, 12, 0, 0);
   HistData adapter(site, market::RawCache(dir.path), fastSettings(tenthOfJanuary));
-  const auto result = adapter.load(eurusd(), {{market::Level::Day}, false}, kQuiet);
+  const auto result = adapter.load(eurusd(), {{Resolution::Min5}, false}, kQuiet);
   CHECK(!result.inactive && result.lastBarTime == site.lastBar);
-  CHECK(!result.levels.empty());
+  CHECK(!result.series.empty());
 }
 
 TEST(histdata_pauses_between_requests) {
@@ -252,6 +260,6 @@ TEST(histdata_pauses_between_requests) {
   std::chrono::milliseconds slept{0};
   settings.sleep = [&](std::chrono::milliseconds d) { sleeps++, slept += d; };
   HistData adapter(site, market::RawCache(dir.path), settings);
-  adapter.load(eurusd(), {{market::Level::Day}, false}, kQuiet);
+  adapter.load(eurusd(), {{Resolution::Min5}, false}, kQuiet);
   CHECK(site.requests.size() == 2 && sleeps == 1 && slept.count() > 1900 && slept.count() <= 2000);  // not before the first
 }

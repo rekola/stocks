@@ -162,37 +162,31 @@ The market regime embeddings are planned in [plans/embeddings.md](plans/embeddin
 
 ## Market-data server
 
-Two programs (see [plans/server.md](plans/server.md)): `market-ingest` loads external datasets into a database, and `market-server`
-serves what it holds to the desktop app over a read-only HTTP API (JSON, no key: it listens on the loopback address unless the config says
-otherwise). The database is SQLite (a file) or MariaDB (a schema of its own), the same tables and code either way, chosen by
-`database.type`; MariaDB needs `libmariadb` (`sudo apt install libmariadb-dev`) when the programs are built.
+Two programs (see [plans/server.md](plans/server.md)): `market-ingest` loads external datasets, and `market-server` serves what it holds to the
+desktop app over a read-only HTTP API (JSON, no key: it listens on the loopback address unless the config says otherwise). Both run on the
+application's own `Store`: the ingest creates its instruments with the same calls and helpers as the sources do (`addInstrument`,
+`currencyNode`, `setListing`, `appendCandles`), and what the store keeps goes to the stores of the model, which in the application are SQLite
+files and on a server MariaDB (a schema of its own; needs `libmariadb`, `sudo apt install libmariadb-dev`). `database.type` is `sqlite` or `mariadb`.
 
     cp market.example.json market.json                             # database, raw file cache, listen address
-    build/market-ingest histdata eurusd usdjpy --level day         # or: histdata all
+    build/market-ingest histdata eurusd usdjpy --level 5m          # or: histdata all
     build/market-server --config market.json                       # GET /health, /instruments, /summary[?codes=a,b]
 
-`market-ingest DATASET [CODE...|all] [--level day|week|month|year|3years|10years|all] [--refresh] [--config FILE]` does everything for one
-dataset in one run: it finds the instruments, makes the missing instrument records, gets the files (from the raw cache where they are),
-builds the levels and replaces what the database holds of each. Run it again whenever. The one dataset now is `histdata` (HistData.com's
-free 1-minute bid quotes, one file a request with a pause of two seconds); a pair with no data this year is left out.
+`market-ingest DATASET [CODE...|all] [--level 5m|1h|1d|1w|all] [--refresh] [--config FILE]` does everything for one dataset in one run: it
+finds the instruments, makes the missing nodes, gets the files (from the raw cache where they are), builds the bars and writes them. Run it
+again whenever: bars said again change nothing. The one dataset now is `histdata` (HistData.com's free 1-minute bid quotes, one file a request
+with a pause of two seconds); a pair with no data this year is left out.
 
-A level is a sparkline window with the bar size that draws it, ending at the instrument's last bar (this data lags by weeks), keyed by slot
-number in UTC (`src/market/Bars.h`):
+The bars are those the periods of the application are drawn from, each ending at the instrument's last bar (this data lags by weeks), keyed by
+slot number in UTC (`src/market/Bars.h`): 5-minute bars for the day, hourly for the week, daily for the month and the quarter, weekly for the
+year, 3 years and 10 years. How much of each the summaries keep is the model's (`defaultKeep`: 1 day, 7 days, 365 days, 10 years). Every bar
+that is written also goes to the model's `BarStore` (`StoreOptions::bars`), so that a server holds more than the summaries: for now the
+windows, later the whole history. The 1-minute data is not in the database: the downloaded zips are kept as they came in `cache_dir`, which is
+the only copy, and nothing deletes from it. `--refresh` asks again for the months of the current year and for the list of pairs.
 
-| level | bars | keeps | feeds |
-|---|---|---|---|
-| day | 5 minutes | 1 day | day |
-| week | 1 hour | 7 days | week |
-| month | 4 hours | 1 month | month |
-| year | 1 day | 1 year | 3 months, year |
-| 3years | 1 week | 3 years | 3 years |
-| 10years | 1 week | 10 years | 10 years |
-
-The 1-minute data is not stored in the database: the downloaded zips are kept as they came in `cache_dir`, which is the only copy, and
-nothing deletes from it. `--refresh` asks again for the months of the current year and for the list of pairs.
-
-The tests are `market_tests` (part of `ctest`). They run on SQLite and in memory always, and on MariaDB too where `MARKET_TEST_DB_USER` (and
-`MARKET_TEST_DB_PASSWORD`, `MARKET_TEST_DB_HOST`, `_PORT`, `_SOCKET`) name a user that may make and drop schemas `market_test_*`.
+The tests are `market_tests` (part of `ctest`), on SQLite files, and on MariaDB where `MARKET_TEST_DB_USER` (and `MARKET_TEST_DB_PASSWORD`,
+`MARKET_TEST_DB_HOST`, `_PORT`, `_SOCKET`) name a user that may make and drop schemas `market_test_*` and `stocks_test_*` (the stores of the model
+are tested against both). They say SKIPPED where it is not set.
 
 ## Tests
 

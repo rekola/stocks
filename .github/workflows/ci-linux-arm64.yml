@@ -22,7 +22,7 @@ jobs:
       - name: Start MariaDB for the market-data tests
         run: |
           sudo systemctl start mariadb
-          sudo mariadb -e "CREATE USER 'market_test'@'localhost' IDENTIFIED BY 'market_test'; GRANT ALL ON \`market\\_test\\_%\`.* TO 'market_test'@'localhost';"
+          sudo mariadb -e "CREATE USER 'market_test'@'localhost' IDENTIFIED BY 'market_test'; GRANT ALL ON \`market\\_test\\_%\`.* TO 'market_test'@'localhost'; GRANT ALL ON \`stocks\\_test\\_%\`.* TO 'market_test'@'localhost';"
 
       - name: Configure
         run: cmake -B build
