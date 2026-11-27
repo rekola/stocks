@@ -261,8 +261,8 @@ rule over).
 | value | one value per bar (a NAV, a fixing) | 12 | `uint32 slot`, `double value` |
 
 `slot` is the bar's key as the model has it (a slot number for an intraday resolution, a day number for a date resolution). A volume of 0
-is no volume, a larger one saturates at 4294967295 and a fraction is rounded; a bar with no open takes its close as its base, with its high
-and low undefined; an undefined delta is NaN. A value record is read back as a bar whose open, high, low and close are the value and whose
+is no volume, a larger one saturates at 4294967295 and a fraction is rounded; a bar with no open takes its close as its base, its high and low
+are the differences from the close and its close delta is NaN, which says the open is undefined; an undefined delta is NaN. A value record is read back as a bar whose open, high, low and close are the value and whose
 volume is undefined. A bar is read back as a `Candle` with the sum in a double, and `summary::normalized()` is what any bar reads back as, so
 "the same bar again" is decided on the stored form: a refresh that brings the same bars makes no version and no disk write. A bar whose key
 does not fit 32 bits, or with no close, is not in a queue (it stays in the data).

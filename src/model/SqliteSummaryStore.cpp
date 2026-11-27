@@ -16,7 +16,7 @@ namespace {
 
 namespace fs = std::filesystem;
 
-constexpr int kSummariesVersion = 5;  // 5: the high and the low over each period of an edge, and queues of the kind their writer says; 4: the change over each period of an edge; 3: the keys of codes are of eleven capitals or digits, base 37; 2: a digest of each queue's last bar (`last_hash`); 1: the first
+constexpr int kSummariesVersion = 6;  // 6: a bar with no open says so in its record (SummaryRecords.h); 5: the high and the low over each period of an edge, and queues of the kind their writer says; 4: the change over each period of an edge; 3: the keys of codes are of eleven capitals or digits, base 37; 2: a digest of each queue's last bar (`last_hash`); 1: the first
 // SQLite's result codes for a damaged database and for a file that is none (as the facts store has them).
 constexpr int kCorrupt = 11, kNotADatabase = 26;
 

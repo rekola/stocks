@@ -41,8 +41,12 @@ Record candleRecord(const Candle & c) {
     r.low = delta(c.low, c.open);
     r.close = delta(c.close, c.open);
   } else {
-    r.open = c.close;  // no open: the close is the base, and the high and the low are not told from it
-    r.close = 0;
+    // No open: the close is the base, and the close's own delta is NaN, which says so (a bar with an open has a defined close delta: a close
+    // that is not finite is a bar the queue does not keep).
+    r.open = c.close;
+    r.high = delta(c.high, c.close);
+    r.low = delta(c.low, c.close);
+    r.close = kNanFloat;
   }
   r.volume = volumeOf(c.volume);
   return r;
@@ -51,11 +55,18 @@ Record candleRecord(const Candle & c) {
 Candle candleOf(const Record & r) {
   Candle c;
   c.time = r.slot;
+  c.volume = r.volume ? static_cast<double>(r.volume) : kUndefined;
+  if (std::isnan(r.close)) {  // no open: the base is the close
+    c.open = kUndefined;
+    c.high = sum(r.open, r.high);
+    c.low = sum(r.open, r.low);
+    c.close = r.open;
+    return c;
+  }
   c.open = r.open;
   c.high = sum(r.open, r.high);
   c.low = sum(r.open, r.low);
   c.close = sum(r.open, r.close);
-  c.volume = r.volume ? static_cast<double>(r.volume) : kUndefined;
   return c;
 }
 
