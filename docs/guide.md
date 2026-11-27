@@ -51,7 +51,7 @@ key. There are two keymaps: the terminal one (Emacs-like) and the desktop one.
 
 ## Markets
 
-The tags of Markets are presets: Commodities, Crypto, Nasdaq Helsinki, Currencies, Indices, Funds, Physical, All and
+The tags of Markets are presets: Commodities, Nasdaq Helsinki, Currencies (including the crypto coins), Indices, Funds, Physical, All and
 the Watchlist. Each row is one instrument on one market, from one dataset (see the
 [data model](../plans/data-model.md)), so the same share from two sources is two rows.
 
@@ -197,7 +197,7 @@ what reads a spot price picks one (see [Physical metals](#physical-metals)).
   as a trace. Its prices are 15 minutes late.
 - **`gold-api`** ([gold-api.com](https://gold-api.com), no key) lists its symbols (gold, silver, platinum, palladium,
   copper, Bitcoin and Ethereum) and asks the price of each in euros and dollars. The metals are in the Commodities
-  preset and the coins in Crypto (on a terminal without pictures their icon is ₿ or ⟠); all are in All. Its prices
+  preset and the coins in Currencies, beside the currency pairs (on a terminal without pictures their icon is ₿ or ⟠); all are in All. Its prices
   are quotes only: it has no history, so it writes no bars. The API takes prices from several providers and
   cross-checks them but does not guarantee them: verify a price before a financial decision.
 

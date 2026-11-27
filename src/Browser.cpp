@@ -21,26 +21,25 @@ namespace {
 
 // A preset is a selection of edges: a market (by its MIC; the indices, spot
 // prices and currency pairs are on no market, XXXX) and, where that holds
-// several kinds, the kind of the base. No mic is every market, of the kind where there is one. A preset with a `list` is none of
+// several kinds, the kinds of the base. No mic is every market, of the kind where there is one. A preset with a `list` is none of
 // that: it is the edges the user put on that list (kLists, below).
 struct Preset {
   const char * tag;
   const char * command;
   const char *mic = nullptr;
-  std::optional<InstrumentKind> kind = std::nullopt;
+  KindSet kinds;
   const char * list = nullptr;
 };
 constexpr Preset kPresets[] = {
     {"Commodities", "show-commodities", kNoMarket, InstrumentKind::Commodity},
-    {"Crypto", "show-crypto", kNoMarket, InstrumentKind::Crypto},
     {"Nasdaq Helsinki", "show-nasdaq-helsinki", "XHEL"},
-    {"Currencies", "show-currencies", kNoMarket, InstrumentKind::Currency},
+    {"Currencies", "show-currencies", kNoMarket, {InstrumentKind::Currency, InstrumentKind::Crypto}},  // the coins are money too
     {"Indices", "show-indices", kNoMarket, InstrumentKind::Index},
     {"Funds", "show-funds", nullptr, InstrumentKind::Fund},  // of every market, whoever lists them
     // What is held in hand and traded off exchange: the estimated gold bar and coin now, platinum and scrap gold when they come. Commodities on XOFF.
     {"Physical", "show-physical", kOffExchange, InstrumentKind::Commodity},
     {"All", "show-all"},
-    {"Watchlist", "show-watchlist", nullptr, std::nullopt, "watchlist"}};
+    {"Watchlist", "show-watchlist", nullptr, {}, "watchlist"}};
 
 // The lists the user keeps, each a code (what the store keeps its edges under) and a name. A row is put on one from its menu, and the
 // list is shown by the preset that names it (kPresets): a new list is a line here and a line there, and the menu, the commands
@@ -79,8 +78,8 @@ constexpr const char * kMenuGlyph = "\xE2\x89\xA1";
 
 Quotes::Scope scopeOf(const Snapshot & snapshot, const Preset & preset) {
   if (!preset.mic)
-    return {.all = true, .kind = preset.kind};
-  return {.market = snapshot.findMarket(preset.mic), .kind = preset.kind};
+    return {.all = true, .kinds = preset.kinds};
+  return {.market = snapshot.findMarket(preset.mic), .kinds = preset.kinds};
 }
 
 // The edges of a preset: a list's (those that are rows), a market's, or everything.
@@ -92,12 +91,11 @@ std::vector<EdgeKey> edgesOf(const Snapshot & snapshot, const Preset & preset) {
   }
   if (!preset.mic) {
     std::vector<EdgeKey> keys = allQuoteEdges(snapshot);
-    if (preset.kind)
-      std::erase_if(keys, [&](const EdgeKey & k) { return snapshot.kind(k.base) != *preset.kind; });
+    std::erase_if(keys, [&](const EdgeKey & k) { return !preset.kinds.admits(snapshot.kind(k.base)); });
     return keys;
   }
   const std::optional<MarketId> market = snapshot.findMarket(preset.mic);
-  return market ? quoteEdges(snapshot, *market, preset.kind)
+  return market ? quoteEdges(snapshot, *market, preset.kinds)
                 : std::vector<EdgeKey>{};
 }
 

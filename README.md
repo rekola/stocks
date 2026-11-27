@@ -10,7 +10,7 @@
 A stock data browser for the terminal and a GTK window, built on
 [cellui](https://github.com/rekola/cellui).
 
-- **Markets**: a sortable table of shares, funds, indices, currencies, commodities, crypto and interest rates, with
+- **Markets**: a sortable table of shares, funds, indices, currencies and crypto, commodities and interest rates, with
   a price trace on each row. It stays fast with tens of thousands of rows.
 - **Portfolios**: record buys and sells and see each position's value and P&L.
 - **News**: headlines about instruments, markets and countries.
