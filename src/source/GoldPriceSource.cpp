@@ -152,7 +152,7 @@ void GoldPriceSource::load(Store & store, Http & http, SourceListener & listener
         spot.last = row.value;
         spot.time = row.time;
         b.setQuote(edge, spot);
-        b.setListing({edge, symbol, "", "", "", std::string(known->name) + ", per " + known->unit});
+        b.setListing({edge, symbol, "", "", "METAL", std::string(known->name) + ", per " + known->unit});
       }
     });
     listener.changed();

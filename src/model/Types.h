@@ -158,7 +158,7 @@ inline NodeRef nodeOf(NodeKey key) {
 inline constexpr double kUndefined = std::numeric_limits<double>::quiet_NaN();
 inline bool isDefined(double v) { return v == v; }
 
-// What an instrument is, in one vocabulary for all providers: each adapter maps its own types onto these. The provider's own type is kept on its listing (`nordnetType`, `yahooType`).
+// What an instrument is, in one vocabulary for all providers: each adapter maps its own types onto these. The provider's own type is kept on its listing.
 enum class InstrumentKind { Company, Currency, Commodity, Index, Etf, Certificate, Fund, Unit, Crypto, Other };  // a unit: what an index is quoted in
 
 inline const char * kindName(InstrumentKind k) {
@@ -255,12 +255,10 @@ struct LedgerKey {
 struct Listing {
   EdgeKey key;
   std::string symbol;      // what the market calls the instrument
-  std::string nordnetIdentifier;  // Nordnet's own id for it (its `identifier`)
-  std::string nordnetOrderBookId;  // Nordnet's own order book id: what Nordnet's price history is asked for by
-  std::string nordnetType;  // Nordnet's own type for it ("UETF", "INDEX"): its vocabulary is not Yahoo's
+  std::string identifier;  // the market's own id for it
+  std::string nordnetOrderBookId;  // Nordnet's order book id, specific to Nordnet: what its price history is asked for by
+  std::string type;  // the provider's own type for it, in its own vocabulary ("UETF" for Nordnet, "EQUITY" for Yahoo)
   std::string name;        // what the dataset calls it there ("EUR/USD", a fund's name on that market): what a row shows
-  std::string yahooType;       // Yahoo's own type for it ("EQUITY", "FUTURE"): its vocabulary is not Nordnet's
-  std::string fundIdentifier;  // the fund company's own id for it: what its price history is asked for by
   friend bool operator==(const Listing &, const Listing &) = default;
 };
 

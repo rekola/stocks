@@ -13,8 +13,8 @@
 // lists gave; an instrument that has its description is not asked again.
 class NordnetDetails {
  public:
-  static std::string stockUrl(const std::string & nordnetOrderBookId);
-  static std::string fundUrl(const std::string & nordnetOrderBookId);
+  static std::string stockUrl(const std::string & orderBook);
+  static std::string fundUrl(const std::string & orderBook);
 
   // What a stock's page says; false, with `error` set, when `json` is not one.
   static bool parseStock(const std::string & json, std::vector<Attribute> & said, std::string & error);

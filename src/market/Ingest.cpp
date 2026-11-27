@@ -99,7 +99,7 @@ IngestReport runIngest(Dataset & dataset, Store & store, const IngestOptions & o
       store.batch([&](Batch & b) {
         const auto edge = makeEdge(b, dataset, spec, why);
         if (!edge) return;
-        b.setListing({*edge, spec.symbol, "", "", "", spec.name});
+        b.setListing({*edge, spec.symbol, "", "", spec.type, spec.name});
         for (const Series & s : loaded.series) b.appendCandles(*edge, s.resolution, s.bars);
       });
     } catch (const std::exception & e) {

@@ -159,7 +159,7 @@ void GoldApiSource::load(Store & store, Http & http, SourceListener & listener) 
       const InstrumentKind kind = known ? known->kind : InstrumentKind::Other;
       InstrumentId base;
       if (known && *known->isin) {
-        // The instrument another source made by this ISIN: its name stands where they are said, and ours are said only where none is.
+        // The instrument another source made by this ISIN: its name stands where it is said, and ours is said only where none is.
         base = addInstrumentUnlessSaid(b, s.symbol, s.name, kind, known->isin);
       } else {
         std::vector<Attribute> rest = {{predicate::name, s.name}, {predicate::symbol, s.symbol}};
@@ -180,7 +180,7 @@ void GoldApiSource::load(Store & store, Http & http, SourceListener & listener) 
         spot.time = p.time;
         b.setQuote(edge, spot);
         // The unit is in the name the row shows: a price of copper is for a tonne and one of gold for a troy ounce.
-        b.setListing({edge, s.symbol, "", "", "", known ? s.name + ", per " + known->unit : s.name});
+        b.setListing({edge, s.symbol, "", "", known ? known->type : "SPOT", known ? s.name + ", per " + known->unit : s.name});
       }
     });
     listener.changed();

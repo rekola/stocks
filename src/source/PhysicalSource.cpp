@@ -168,7 +168,7 @@ void PhysicalSource::load(Store & store, Http &, SourceListener & listener) {
         estimate.last = spot.bar.last * scale;
         estimate.time = spot.bar.time;
         b.setQuote(edge, estimate);
-        b.setListing({edge, item.symbol, "", "", "", item.name});
+        b.setListing({edge, item.symbol, "", "", "PHYSICAL", item.name});
       }
     }
   });

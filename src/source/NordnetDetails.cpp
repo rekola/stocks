@@ -89,12 +89,12 @@ std::optional<double> keyFigure(const json & stock, const char * type) {
 
 }  // namespace
 
-std::string NordnetDetails::stockUrl(const std::string & nordnetOrderBookId) {
-  return "https://api.prod.nntech.io/instrument-screening/v3/stocks/web/" + nordnetOrderBookId;
+std::string NordnetDetails::stockUrl(const std::string & orderBook) {
+  return "https://api.prod.nntech.io/instrument-screening/v3/stocks/web/" + orderBook;
 }
 
-std::string NordnetDetails::fundUrl(const std::string & nordnetOrderBookId) {
-  return "https://api.prod.nntech.io/instrument/v2/funds/" + nordnetOrderBookId;
+std::string NordnetDetails::fundUrl(const std::string & orderBook) {
+  return "https://api.prod.nntech.io/instrument/v2/funds/" + orderBook;
 }
 
 bool NordnetDetails::parseStock(const std::string & body, std::vector<Attribute> & said, std::string & error) {
@@ -152,7 +152,7 @@ bool NordnetDetails::parseFund(const std::string & body, std::vector<Attribute> 
 bool NordnetDetails::loadBatch(Store & store, Http & http, SourceListener & listener, std::chrono::milliseconds pause, size_t batch) {
   struct Target {
     InstrumentId id;
-    std::string nordnetOrderBookId;
+    std::string orderBook;
     bool fund;
   };
   // What an earlier run fetched (a description) is on the disk and not yet read, while the store restores: asked for again if this went on.
@@ -183,7 +183,7 @@ bool NordnetDetails::loadBatch(Store & store, Http & http, SourceListener & list
     if (done >= batch) return true;
     tried_.insert(t.id.value);
     done++;
-    const std::string url = t.fund ? fundUrl(t.nordnetOrderBookId) : stockUrl(t.nordnetOrderBookId);
+    const std::string url = t.fund ? fundUrl(t.orderBook) : stockUrl(t.orderBook);
     HttpResult r = http.get(url, nordnet::detailHeaders(url));
     std::vector<Attribute> said;
     std::string error;

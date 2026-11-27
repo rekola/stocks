@@ -16,7 +16,7 @@ namespace {
 
 namespace fs = std::filesystem;
 
-constexpr int kSummariesVersion = 7;  // 7: the listing columns say they are the provider's (`nordnet_identifier`, `nordnet_order_book_id`, `nordnet_type`); 6: a bar with no open says so in its record (SummaryRecords.h); 5: the high and the low over each period of an edge, and queues of the kind their writer says; 4: the change over each period of an edge; 3: the keys of codes are of eleven capitals or digits, base 37; 2: a digest of each queue's last bar (`last_hash`); 1: the first
+constexpr int kSummariesVersion = 7;  // 7: the order book column is `nordnet_order_book_id`, for it is Nordnet's; 6: a bar with no open says so in its record (SummaryRecords.h); 5: the high and the low over each period of an edge, and queues of the kind their writer says; 4: the change over each period of an edge; 3: the keys of codes are of eleven capitals or digits, base 37; 2: a digest of each queue's last bar (`last_hash`); 1: the first
 // SQLite's result codes for a damaged database and for a file that is none (as the facts store has them).
 constexpr int kCorrupt = 11, kNotADatabase = 26;
 
@@ -60,11 +60,11 @@ class SqliteSummaryStore : public SummaryStore {
     try {
       SQLite::Database & db = reader();
       SQLite::Statement q(db,
-                          "SELECT e.id, e.base, e.quote, e.market, e.symbol, e.nordnet_identifier, e.nordnet_order_book_id, e.nordnet_type, e.name, "
+                          "SELECT e.id, e.base, e.quote, e.market, e.symbol, e.identifier, e.nordnet_order_book_id, e.type, e.name, "
                           "e.last, e.bid, e.ask, e.quote_time, e.previous_close, e.previous_close_day, "
                           "e.change_day, e.change_week, e.change_month, e.change_quarter, e.change_year, e.change_year3, e.change_year10, "
                           "e.high_day, e.high_week, e.high_month, e.high_quarter, e.high_year, e.high_year3, e.high_year10, e.low_day, e.low_week, e.low_month, e.low_quarter, e.low_year, e.low_year3, e.low_year10, "
-                          "q.resolution, q.kind, q.fetched, q.count, q.first_key, q.last_key, q.last_hash, e.yahoo_type, e.fund_identifier "
+                          "q.resolution, q.kind, q.fetched, q.count, q.first_key, q.last_key, q.last_hash "
                           "FROM edges e LEFT JOIN queues q ON q.edge = e.id ORDER BY e.id, q.resolution");
       int64_t current = -1;
       while (q.executeStep()) {
@@ -75,12 +75,10 @@ class SqliteSummaryStore : public SummaryStore {
           e.listing.key = EdgeKey{InstrumentId{static_cast<uint64_t>(q.getColumn(1).getInt64())}, InstrumentId{static_cast<uint64_t>(q.getColumn(2).getInt64())},
                                   MarketId{static_cast<uint64_t>(q.getColumn(3).getInt64())}, dataset_};
           e.listing.symbol = q.getColumn(4).getString();
-          e.listing.nordnetIdentifier = q.getColumn(5).getString();
+          e.listing.identifier = q.getColumn(5).getString();
           e.listing.nordnetOrderBookId = q.getColumn(6).getString();
-          e.listing.nordnetType = q.getColumn(7).getString();
+          e.listing.type = q.getColumn(7).getString();
           e.listing.name = q.getColumn(8).getString();
-          e.listing.yahooType = q.getColumn(43).getString();
-          e.listing.fundIdentifier = q.getColumn(44).getString();
           e.quote.last = real(q.getColumn(9));
           e.quote.bid = real(q.getColumn(10));
           e.quote.ask = real(q.getColumn(11));
@@ -179,26 +177,26 @@ class SqliteSummaryStore : public SummaryStore {
 
   void putEdge(const StoredEdge & e) {
     SQLite::Statement put(*db_,
-                          "INSERT INTO edges (base, quote, market, symbol, nordnet_identifier, nordnet_order_book_id, nordnet_type, name, last, bid, ask, quote_time, "
+                          "INSERT INTO edges (base, quote, market, symbol, identifier, nordnet_order_book_id, type, name, last, bid, ask, quote_time, "
                           "previous_close, previous_close_day, change_day, change_week, change_month, change_quarter, change_year, change_year3, change_year10, "
-                          "high_day, high_week, high_month, high_quarter, high_year, high_year3, high_year10, low_day, low_week, low_month, low_quarter, low_year, low_year3, low_year10, yahoo_type, fund_identifier) "
-                          "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
-                          "ON CONFLICT (base, quote, market) DO UPDATE SET symbol = excluded.symbol, nordnet_identifier = excluded.nordnet_identifier, "
-                          "nordnet_order_book_id = excluded.nordnet_order_book_id, nordnet_type = excluded.nordnet_type, name = excluded.name, last = excluded.last, "
+                          "high_day, high_week, high_month, high_quarter, high_year, high_year3, high_year10, low_day, low_week, low_month, low_quarter, low_year, low_year3, low_year10) "
+                          "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                          "ON CONFLICT (base, quote, market) DO UPDATE SET symbol = excluded.symbol, identifier = excluded.identifier, "
+                          "nordnet_order_book_id = excluded.nordnet_order_book_id, type = excluded.type, name = excluded.name, last = excluded.last, "
                           "bid = excluded.bid, ask = excluded.ask, quote_time = excluded.quote_time, "
                           "previous_close = excluded.previous_close, previous_close_day = excluded.previous_close_day, "
                           "change_day = excluded.change_day, change_week = excluded.change_week, change_month = excluded.change_month, "
                           "change_quarter = excluded.change_quarter, change_year = excluded.change_year, change_year3 = excluded.change_year3, "
                           "change_year10 = excluded.change_year10, high_day = excluded.high_day, high_week = excluded.high_week, high_month = excluded.high_month, high_quarter = excluded.high_quarter, high_year = excluded.high_year, high_year3 = excluded.high_year3, high_year10 = excluded.high_year10, "
-                          "low_day = excluded.low_day, low_week = excluded.low_week, low_month = excluded.low_month, low_quarter = excluded.low_quarter, low_year = excluded.low_year, low_year3 = excluded.low_year3, low_year10 = excluded.low_year10, yahoo_type = excluded.yahoo_type, fund_identifier = excluded.fund_identifier");
+                          "low_day = excluded.low_day, low_week = excluded.low_week, low_month = excluded.low_month, low_quarter = excluded.low_quarter, low_year = excluded.low_year, low_year3 = excluded.low_year3, low_year10 = excluded.low_year10");
     const EdgeKey & k = e.listing.key;
     put.bind(1, asInt(k.base.value));
     put.bind(2, asInt(k.quote.value));
     put.bind(3, asInt(k.market.value));
     put.bind(4, e.listing.symbol);
-    put.bind(5, e.listing.nordnetIdentifier);
+    put.bind(5, e.listing.identifier);
     put.bind(6, e.listing.nordnetOrderBookId);
-    put.bind(7, e.listing.nordnetType);
+    put.bind(7, e.listing.type);
     put.bind(8, e.listing.name);
     bindReal(put, 9, e.quote.last);
     bindReal(put, 10, e.quote.bid);
@@ -213,8 +211,6 @@ class SqliteSummaryStore : public SummaryStore {
       bindReal(put, 22 + static_cast<int>(i), e.ranges.high[i]);
       bindReal(put, 29 + static_cast<int>(i), e.ranges.low[i]);
     }
-    put.bind(36, e.listing.yahooType);
-    put.bind(37, e.listing.fundIdentifier);
     put.exec();
   }
 
@@ -325,12 +321,12 @@ class SqliteSummaryStore : public SummaryStore {
     db_->exec(
         "CREATE TABLE IF NOT EXISTS edges ("
         "id INTEGER PRIMARY KEY, base INTEGER NOT NULL, quote INTEGER NOT NULL, market INTEGER NOT NULL, "
-        "symbol TEXT NOT NULL DEFAULT '', nordnet_identifier TEXT NOT NULL DEFAULT '', nordnet_order_book_id TEXT NOT NULL DEFAULT '', "
-        "nordnet_type TEXT NOT NULL DEFAULT '', name TEXT NOT NULL DEFAULT '', "
+        "symbol TEXT NOT NULL DEFAULT '', identifier TEXT NOT NULL DEFAULT '', nordnet_order_book_id TEXT NOT NULL DEFAULT '', "
+        "type TEXT NOT NULL DEFAULT '', name TEXT NOT NULL DEFAULT '', "
         "last REAL, bid REAL, ask REAL, quote_time INTEGER, previous_close REAL, previous_close_day INTEGER, "
         "change_day REAL, change_week REAL, change_month REAL, change_quarter REAL, change_year REAL, change_year3 REAL, change_year10 REAL, "
         "high_day REAL, high_week REAL, high_month REAL, high_quarter REAL, high_year REAL, high_year3 REAL, high_year10 REAL, "
-        "low_day REAL, low_week REAL, low_month REAL, low_quarter REAL, low_year REAL, low_year3 REAL, low_year10 REAL, yahoo_type TEXT NOT NULL DEFAULT '', fund_identifier TEXT NOT NULL DEFAULT '', "
+        "low_day REAL, low_week REAL, low_month REAL, low_quarter REAL, low_year REAL, low_year3 REAL, low_year10 REAL, "
         "UNIQUE (base, quote, market))");
     db_->exec(
         "CREATE TABLE IF NOT EXISTS queues ("

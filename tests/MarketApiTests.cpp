@@ -68,7 +68,7 @@ Edges seed(Store & store, bool noOpen = false) {
     b.setListing({e.eurOther, "EURUSD", "eu-1", "book-1", "FX", "Euro / Dollar"});
     b.setListing({e.gbpTest, "GBPUSD", "", "", "CURRENCY", "GBP/USD"});
     b.setListing({e.chfTest, "CHFUSD", "", "", "CURRENCY", "CHF/USD"});
-    b.setListing({e.fund, "FUNDX", "", "", "", "Fund X (A)", "", "fx-9"});
+    b.setListing({e.fund, "FUNDX", "fx-9", "", "FUND", "Fund X (A)"});
     for (Resolution r : kResolutions) {
       std::vector<Candle> bars;
       for (int64_t k : windowKeys(r)) bars.push_back({k, static_cast<double>(k), k + 1.0, k - 1.0, static_cast<double>(k) + 0.5, kUndefined});
@@ -181,8 +181,8 @@ TEST(api_names_each_instrument_by_its_edge_as_the_store_has_it) {
         CHECK(i["edge"]["market"] == text(NodeKey{e.market.value}) && i["edge"]["dataset"] == text(NodeKey{e.dataset.value}));
         CHECK(i["dataset"]["code"] == i["edge"]["dataset"] && i["dataset"]["name"] == s.name(e.dataset));
         const Listing listing = *s.listing(e);
-        CHECK(i["listing"]["symbol"] == listing.symbol && i["listing"]["nordnet_identifier"] == listing.nordnetIdentifier && i["listing"]["nordnet_order_book_id"] == listing.nordnetOrderBookId);
-        CHECK(i["listing"]["nordnet_type"] == listing.nordnetType && i["listing"]["name"] == listing.name);
+        CHECK(i["listing"]["symbol"] == listing.symbol && i["listing"]["identifier"] == listing.identifier && i["listing"]["nordnet_order_book_id"] == listing.nordnetOrderBookId);
+        CHECK(i["listing"]["type"] == listing.type && i["listing"]["name"] == listing.name);
         CHECK(i["base"]["kind"] == kindName(s.kind(e.base)));
       }
     }
@@ -191,13 +191,13 @@ TEST(api_names_each_instrument_by_its_edge_as_the_store_has_it) {
     CHECK(!eur.is_null() && idOf(served.edges.eurTest) == "EUR/USD/XXXX/TESTDS");
     CHECK(eur["edge"] == json({{"base", "EUR"}, {"quote", "USD"}, {"market", "XXXX"}, {"dataset", "TESTDS"}}));
     CHECK(eur["dataset"] == json({{"code", "TESTDS"}, {"name", "Test"}}));
-    CHECK(eur["listing"] == json({{"symbol", "EURUSD"}, {"nordnet_identifier", ""}, {"nordnet_order_book_id", ""}, {"nordnet_type", "CURRENCY"}, {"name", "EUR/USD"}, {"yahoo_type", ""}, {"fund_identifier", ""}}));
+    CHECK(eur["listing"] == json({{"symbol", "EURUSD"}, {"identifier", ""}, {"nordnet_order_book_id", ""}, {"type", "CURRENCY"}, {"name", "EUR/USD"}}));
     // a currency is its code alone; a fund is its ISIN, and what a client needs to make it
     CHECK(eur["base"] == json({{"kind", "currency"}, {"name", nullptr}, {"isin", nullptr}}));
     const json fund = instrumentWith(instruments, std::string(kFundIsin) + "/EUR/XOFF/OTHERDS");
     CHECK(!fund.is_null() && fund["edge"]["base"] == kFundIsin);
     CHECK(fund["base"] == json({{"kind", "fund"}, {"name", "Fund X"}, {"isin", kFundIsin}}));
-    CHECK(fund["listing"]["fund_identifier"] == "fx-9" && fund["dataset"]["name"] == "Other set");
+    CHECK(fund["listing"]["identifier"] == "fx-9" && fund["dataset"]["name"] == "Other set");
     // the first and last bars (the listing only), and null where there are no bars
     CHECK(eur["last_bar_time"] == barStart(Resolution::Min5, barKey(Resolution::Min5, kLast)));
     CHECK(eur["first_bar_time"] == barStart(Resolution::Week, windowKeys(Resolution::Week).front()));
