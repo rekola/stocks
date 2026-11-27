@@ -155,6 +155,7 @@ name, or several separated by commas.
 | `sifter` | NAV history of the Sifter Fund's PA, PB and PI share classes, no key |
 | `funds:NAME` | a fund company described by `data/funds/NAME.json` (shown under All) |
 | `synthetic` | made-up prices for the instruments in the lists, no network |
+| `market-server` | the [market-data server](market-server.md#in-the-app): every instrument and bar it has, and nothing from the providers. It runs alone |
 
 ### Instrument lists
 
@@ -231,7 +232,7 @@ form is yours to change. A dealer's real bid and ask list is planned ([plans/quo
 ## Command-line options
 
     build/stocks [--ui auto|terminal|window] [--theme original|dark|light] [--source NAME[,NAME...]]
-                 [--market MIC]... [--lists DIR]
+                 [--market MIC]... [--lists DIR] [--market-server URL]
                  [--facts FILE | --no-facts] [--portfolios FILE | --no-portfolios] [--summaries DIR | --no-summaries]
 
 | option | |
@@ -241,6 +242,7 @@ form is yours to change. A dealer's real bid and ask list is planned ([plans/quo
 | `--source` | the data sources (see [Data sources](#data-sources)) |
 | `--market MIC` | load only this market from the instrument lists; repeatable |
 | `--lists DIR` | read the instrument lists from another directory |
+| `--market-server URL` | where the `market-server` source finds the server (default `http://127.0.0.1:8080`; else the environment variable `STOCKS_MARKET_SERVER`) |
 | `--facts FILE`, `--no-facts` | another facts file, or none |
 | `--portfolios FILE`, `--no-portfolios` | another portfolio file, or keep portfolios for the session only |
 | `--summaries DIR`, `--no-summaries` | another summaries directory, or none |

@@ -1,0 +1,140 @@
+{
+ "instruments": [
+  {
+   "base": {
+    "isin": null,
+    "kind": "currency",
+    "name": null
+   },
+   "dataset": {
+    "code": "HISTDATA",
+    "name": "HistData.com"
+   },
+   "edge": {
+    "base": "EUR",
+    "dataset": "HISTDATA",
+    "market": "XXXX",
+    "quote": "USD"
+   },
+   "first_bar_time": 1479081600,
+   "id": "EUR/USD/XXXX/HISTDATA",
+   "last_bar_time": 1794603600,
+   "listing": {
+    "identifier": "",
+    "name": "EUR/USD",
+    "order_book": "",
+    "symbol": "EURUSD",
+    "type": "CURRENCY"
+   }
+  },
+  {
+   "base": {
+    "isin": null,
+    "kind": "currency",
+    "name": null
+   },
+   "dataset": {
+    "code": "OTHERDS",
+    "name": "Other set"
+   },
+   "edge": {
+    "base": "EUR",
+    "dataset": "OTHERDS",
+    "market": "XXXX",
+    "quote": "USD"
+   },
+   "first_bar_time": 1713398400,
+   "id": "EUR/USD/XXXX/OTHERDS",
+   "last_bar_time": 1713916800,
+   "listing": {
+    "identifier": "eu-1",
+    "name": "Euro / Dollar",
+    "order_book": "book-1",
+    "symbol": "EURUSD",
+    "type": "FX"
+   }
+  },
+  {
+   "base": {
+    "isin": "US0378331005",
+    "kind": "fund",
+    "name": "Fund X"
+   },
+   "dataset": {
+    "code": "OTHERDS",
+    "name": "Other set"
+   },
+   "edge": {
+    "base": "US0378331005",
+    "dataset": "OTHERDS",
+    "market": "XOFF",
+    "quote": "EUR"
+   },
+   "first_bar_time": 1713744000,
+   "id": "US0378331005/EUR/XOFF/OTHERDS",
+   "last_bar_time": 1713916800,
+   "listing": {
+    "identifier": "fx-9",
+    "name": "Fund X (A)",
+    "order_book": "",
+    "symbol": "FUNDX",
+    "type": "FUND"
+   }
+  },
+  {
+   "base": {
+    "isin": "US78378X1072",
+    "kind": "index",
+    "name": "S&P 500"
+   },
+   "dataset": {
+    "code": "HISTDATA",
+    "name": "HistData.com"
+   },
+   "edge": {
+    "base": "US78378X1072",
+    "dataset": "HISTDATA",
+    "market": "XXXX",
+    "quote": "PTS"
+   },
+   "first_bar_time": 1479081600,
+   "id": "US78378X1072/PTS/XXXX/HISTDATA",
+   "last_bar_time": 1794603600,
+   "listing": {
+    "identifier": "",
+    "name": "SPX/USD",
+    "order_book": "",
+    "symbol": "SPXUSD",
+    "type": "INDEX"
+   }
+  },
+  {
+   "base": {
+    "isin": "XC0009655157",
+    "kind": "commodity",
+    "name": "Gold"
+   },
+   "dataset": {
+    "code": "HISTDATA",
+    "name": "HistData.com"
+   },
+   "edge": {
+    "base": "XC0009655157",
+    "dataset": "HISTDATA",
+    "market": "XXXX",
+    "quote": "USD"
+   },
+   "first_bar_time": 1479081600,
+   "id": "XC0009655157/USD/XXXX/HISTDATA",
+   "last_bar_time": 1794603600,
+   "listing": {
+    "identifier": "",
+    "name": "XAU/USD",
+    "order_book": "",
+    "symbol": "XAUUSD",
+    "type": "METAL"
+   }
+  }
+ ],
+ "missing": []
+}

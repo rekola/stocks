@@ -41,6 +41,39 @@ they came in `cache_dir`, which is the only copy, and nothing deletes from it.
 
 The tests are `market_tests`; see [Tests](guide.md#tests) in the user guide.
 
+## In the app
+
+Start the server (see [Setting up](#setting-up) for a machine of its own; on your own machine `build/market-server --config market.json` is
+enough) and then the app with the `market-server` source:
+
+    build/stocks --source market-server                              # the server on http://127.0.0.1:8080
+    build/stocks --source market-server --market-server http://192.168.2.10:8080
+    STOCKS_MARKET_SERVER=http://192.168.2.10:8080 build/stocks --source market-server
+
+The option wins over the environment variable, and the environment variable over the default.
+
+**The server supplies all data.** With `--source market-server` the server is the app's whole supply of market data: every
+instrument and every bar comes from it, each under the dataset that produced it (HISTDATA today; the same symbol in two
+datasets is two rows, and they are not combined). Nothing is fetched from Nordnet, Yahoo or any other provider, not even
+for what the server has not got, and no source can run beside it: `--source nordnet,market-server` is refused with
+"market-server supplies every dataset; it runs alone", and `--source market-server` replaces the default set (`spfb`,
+`ecb`, `goldprice` and the others do not run). The rule is one function, `suppliesAllDataClash` (`src/source/DatasetCodes.cpp`),
+so that a later mode in which the clients fetch for the server changes it and nothing else.
+
+The rows come from `/instruments` when the app starts and every ten minutes (every half minute while the server cannot be
+reached), and they show no price, change or trace until their bars are loaded: the rows on the screen first, then the ones
+next to them, up to 50 edges in a request (`/summary?edge=ID,…&resolution=R`) and a request about every half a second.
+Bars of a row that was loaded are asked for again after five minutes, when the row is on the screen. The prices are the
+bars' closes and are as old as their last bar, which lags by weeks (see Bars above): the table has no column for the age of
+a price, so look at the chart of a row, whose axis has the dates of its bars. If the server is down, the app says so once and
+tries again; the rows already loaded stay.
+
+**Not there yet with the server alone:** news and company details; realtime quotes (the server has only bars, so a price is a
+bar's close and is never today's); a previous close as a provider gives it (the day's change is worked out from the daily
+bars instead); the icons of instruments and the other facts a provider gives (a market's country, the number of shares); the funds,
+rates, spot prices and physical metals of the other sources (what the server has not ingested is not in the app); the
+intraday bars of a dataset that has none; and a row that the server has no bars for yet is shown without a price.
+
 ## Setting up
 
 For a machine of its own that serves the local network: Ubuntu 24.04 (or like it), its address 192.168.2.10, MariaDB on the same machine as the ingest and the

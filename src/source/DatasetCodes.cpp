@@ -11,3 +11,16 @@ std::string datasetCodeClash(const std::vector<std::unique_ptr<Source>> & source
     }
   return {};
 }
+
+std::string suppliesAllDataClash(const std::vector<std::unique_ptr<Source>> & sources) {
+  const Source * server = nullptr;
+  for (const auto & source : sources)
+    if (source->suppliesAllData()) server = source.get();
+  if (!server) return {};
+  std::string others;
+  for (const auto & source : sources)
+    if (source.get() != server) others += (others.empty() ? "" : ", ") + source->name();
+  if (others.empty()) return {};
+  return server->name() + " supplies every dataset; it runs alone, so it cannot run with " + others +
+         " (give --source " + server->name() + " by itself)";
+}

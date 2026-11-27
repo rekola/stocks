@@ -36,6 +36,9 @@ class Source {
   // The codes of the datasets this source writes (a code is permanent, and no two sources write the same one: a source that did
   // would be putting its data under another's). Empty for a source that writes none, such as a test's.
   virtual std::vector<std::string> datasetCodes() const { return {}; }
+  // Whether it is the application's whole supply of market data, so that no other source runs beside it (the market-data server's client:
+  // see `suppliesAllDataClash`).
+  virtual bool suppliesAllData() const { return false; }
   virtual void load(Store &, Http &, SourceListener &) = 0;
   // How often to load again, measured from when the last load ended; zero (the default) is once.
   virtual std::chrono::milliseconds refreshInterval() const { return std::chrono::milliseconds(0); }
@@ -57,3 +60,10 @@ struct SourceMessage {
 
 // What is wrong with the sources that are to run together: two of them that write the same dataset. Empty if nothing.
 std::string datasetCodeClash(const std::vector<std::unique_ptr<Source>> & sources);
+
+// THE "SERVER SUPPLIES ALL DATA" RULE, in this one place: when a source says it supplies all data (the market-data server's client), it runs
+// alone, and every other source in the set is refused, whatever it writes: no provider supplies a row or a bar beside the server, for what it
+// has not got either. Empty if the set is fine. Every source there is writes market data (a dataset: datasetCodes() names it), so none may run
+// beside it; a source that writes none does not exist yet, and when one does it is allowed by saying so here. A later mode in which the clients
+// fetch for the server relaxes this function and nothing else.
+std::string suppliesAllDataClash(const std::vector<std::unique_ptr<Source>> & sources);

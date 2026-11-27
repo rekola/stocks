@@ -8,6 +8,7 @@
 #include <functional>
 #include <optional>
 #include <string>
+#include <vector>
 
 // What loads the history of the edges of one dataset: the one place that knows where that history is (its endpoints, headers, formats
 // and how much of it a period needs). A source hands its own to the program (Source::historyProvider); the history loader queues the edges
@@ -49,6 +50,27 @@ class HistoryProvider {
   virtual std::optional<std::chrono::seconds> keep(Resolution resolution) const { return defaultKeep(resolution); }
   // Loads the request: writes its bars to the store, and what else it learns of the instrument.
   virtual Outcome load(Store &, Http &, const EdgeKey &, int request, const Wait &) = 0;
+  // How many edges of one request `loadBatch` takes at most. 1 (the default): the provider loads one edge at a time.
+  virtual size_t batchSize() const { return 1; }
+  // Loads the request for several edges of this provider (at most `batchSize()`, all of the same request), and gives each an outcome, in the
+  // order of `edges`: what `load` does for one, and each edge is then retried, remembered, expired or refused on its own. The default loads them
+  // one by one with `load`, waiting between two, so a provider that does not batch needs nothing of this. A batch has one pause after it,
+  // as a load has.
+  virtual std::vector<Outcome> loadBatch(Store & store, Http & http, const std::vector<EdgeKey> & edges, int request, const Wait & wait) {
+    std::vector<Outcome> outcomes;
+    for (const EdgeKey & edge : edges) {
+      if (!outcomes.empty() && outcomes.back() == Outcome::Refused) {  // a refusal stops the provider: the rest are not asked
+        outcomes.push_back(Outcome::Refused);
+        continue;
+      }
+      if (!outcomes.empty() && !wait()) {  // the loader is stopping
+        outcomes.push_back(Outcome::Offline);
+        continue;
+      }
+      outcomes.push_back(load(store, http, edge, request, wait));
+    }
+    return outcomes;
+  }
   // The wait after a request of its own, if longer than the loader's.
   virtual std::chrono::milliseconds pause() const { return std::chrono::milliseconds(0); }
 };
