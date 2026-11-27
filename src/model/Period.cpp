@@ -192,17 +192,26 @@ PeriodView periodView(const Snapshot & snapshot, const EdgeKey & edge, Period pe
     return v;
   }
   // No feed reaches back far enough: the trace is what there is (a new instrument, a source with a short history), and there is no change, since it
-  // would be over a shorter time than the heading says.
+  // would be over a shorter time than the heading says. The feed that reaches back furthest has it (the finest of those that reach as far): a year of
+  // weekly bars that are a few weeks old is not a better trace than the daily ones they were made of.
+  std::optional<Resolution> best;
+  Seq<Candle> widest;
+  int64_t first = std::numeric_limits<int64_t>::max();
   for (size_t f = 0; f < in.feedCount; f++) {
     const Resolution r = in.feeds[f];
     const Seq<Candle> queue = snapshot.queue(edge, r);
     if (queue.empty()) continue;
     const Seq<Candle> bars = from(queue, keyOf(r, dayOf(r, queue.back().time) - in.days + 1));
-    if (bars.empty()) continue;
-    finish(r, bars, quote, v, withTrace);
+    if (bars.empty() || dayOf(r, bars[0].time) >= first) continue;
+    best = r;
+    widest = bars;
+    first = dayOf(r, bars[0].time);
+  }
+  if (best) {
+    finish(*best, widest, quote, v, withTrace);
     v.base = kUndefined;
     // The trace is as wide as the days it has, of the days the period has: a month of bars in a year is a twelfth of its chart.
-    v.span = std::clamp(static_cast<double>(lastDayOf(quote, dayOf(r, bars.back().time)) - dayOf(r, bars[0].time) + 1) / static_cast<double>(in.days), 0.0, 1.0);
+    v.span = std::clamp(static_cast<double>(lastDayOf(quote, dayOf(*best, widest.back().time)) - first + 1) / static_cast<double>(in.days), 0.0, 1.0);
     return v;
   }
   return v;
