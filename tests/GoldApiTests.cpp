@@ -116,8 +116,8 @@ TEST(every_symbol_is_priced_in_euros_and_in_dollars_as_edges_of_the_dataset) {
   for (const char * coin : {"BTC", "ETH"}) CHECK(s->kind(*s->findInstrument(coin)) == InstrumentKind::Crypto);
   // A coin has no picture, so its sign stands for its icon; a metal says none.
   for (auto [coin, sign] : {std::pair{"BTC", "₿"}, {"ETH", "⟠"}}) {
-    const auto said = s->attribute(*s->findInstrument(coin), predicate::iconSymbol);
-    CHECK(said && asText(*said).value_or("") == sign);
+    const auto iconSaid = s->attribute(*s->findInstrument(coin), predicate::iconSymbol);
+    CHECK(iconSaid && asText(*iconSaid).value_or("") == sign);
   }
   CHECK(!s->attribute(gold, predicate::iconSymbol));
   CHECK(s->name(NodeRef(*s->findInstrument("XPT"))) == "Platinum" && std::string(s->said(NodeRef(gold), predicate::type)) == "METAL");
