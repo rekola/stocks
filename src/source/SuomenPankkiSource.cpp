@@ -123,7 +123,7 @@ bool SuomenPankkiSource::parse(const std::string & xml, Store & store, std::stri
         continue;
       }
       const EdgeKey edge{base, quote, market, dataset};
-      b.appendCandles(edge, Resolution::Day, it->second);
+      b.appendCandles(edge, Resolution::Day, it->second, QueueKind::Scalar);  // a fixing: one value a day
       b.setListing({edge, t.symbol, "", "", "", t.name});
     }
   });

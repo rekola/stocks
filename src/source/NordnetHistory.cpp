@@ -116,6 +116,7 @@ bool NordnetHistory::parse(const std::string & body, bool nav, Series & out, std
     c.open = c.high = c.low = c.volume = kUndefined;
     if (nav) {
       // A fund's NAV: only a value, which is the close.
+      out.kind = QueueKind::Scalar;
       auto value = number(p, "value");
       if (!value) continue;
       c.close = *value;
@@ -192,7 +193,7 @@ HistoryProvider::Outcome NordnetHistory::load(Store & store, Http & http, const 
     failure = fetch(http, listing->orderBook, period, resolution, nav, series);
     if (failure != Outcome::Ok) return false;
     if (series.supported && !series.bars.empty()) {
-      store.appendCandles(edge, series.resolution, series.bars);
+      store.appendCandles(edge, series.resolution, series.bars, series.kind);
       wrote = true;
       // The close before the session, for the day's change, belongs to the date of the bars it came with.
       if (request == Day && isDefined(series.previousClose) && !isDateResolution(series.resolution)) {

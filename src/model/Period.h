@@ -29,13 +29,23 @@
 // Change and the line agree. The base is never moved. The bars are the edge's queues (Summary.h), not its data, and a queue that is not in
 // memory has none: the row shows its price and no trace until it is read. A fund's NAV is a bar of one value and works the same way.
 //
+// The high and the low of a period are the highest high and the lowest low of the same bars the change is measured over (the period's window of the
+// first feed that reaches back far enough; the day's own bars, else the daily bar of its day), and the period's last price with them, so that the Price
+// column's number is never outside the range beside it (low <= price <= high): a quote newer than the last bar widens it. A bar with no high or no low
+// counts at its close (high = max(its high, its close), low = min(its low, its close); a bar with nothing defined says nothing), and a Scalar queue's
+// value is its close. They are defined only where bars cover the period: a period with none stays undefined, whatever the quote says.
+//
+// The day is of ONE SESSION: intraday bars older than the day of the price (the quote's time: a list has said a newer price than the bars have) are
+// not the day's, and give neither its range nor its change nor its trace, so a source's own day range and `yield_1d` stand until bars of the same
+// session arrive. The daily bar of the price's day stands in where there are no intraday bars, as before.
+//
 // The change of a period is shown only from bars that cover it (the trace is whatever bars there are): the first bar must be within a third of the period of its start (so the 60
 // daily bars the made-up data has are a quarter, one daily bar is not a week). Else the row has no number for the period,
 // never a wrong one.
 enum class Period : uint8_t { Day, Week, Month, Quarter, Year, Year3, Year10 };
 
 inline constexpr size_t kPeriodCount = 7;
-static_assert(kPeriodCount == kChangeCount, "an edge keeps a change for each period (Summary.h)");
+static_assert(kPeriodCount == kChangeCount, "an edge keeps a change, a high and a low for each period (Summary.h)");
 // What the table shows until a period is chosen: the three months, the table as it was before there were periods.
 inline constexpr Period kDefaultPeriod = Period::Quarter;
 
@@ -73,6 +83,8 @@ struct PeriodView {
   bool primary = false;           // the bars are the period's own (a stand-in's, or none, is false)
   double base = kUndefined;       // the price the change is measured from
   double last = kUndefined;       // the last price of the period
+  double high = kUndefined;       // the highest high of the bars the period's change is measured over, the lowest low in `low` (a Scalar queue's values:
+  double low = kUndefined;        // its highest and lowest); undefined where those bars do not cover the period, as the change is
   std::vector<float> closes;      // the trace: the period's closes, oldest first (only when asked for)
   std::vector<Timestamp> times;   // when each close is, as UTC seconds (a daily or longer bar: midnight of its date), one for each of `closes`
   double span = 1.0;              // how much of the period the trace covers, 0 to 1: less than 1 only where the bars do not reach back far enough (no change then)

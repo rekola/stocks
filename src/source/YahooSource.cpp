@@ -127,6 +127,18 @@ YahooSource::Parsed YahooSource::parseEntry(const std::string & body, const List
       auto first = meta->find("firstTradeDate");
       if (first != meta->end() && first->is_number_integer() && first->get<int64_t>() > 0)
         said.push_back({predicate::firstTradeDay, int64_t(dayNumberOfInstant(first->get<int64_t>(), utcOffset))});
+      // What Yahoo says of the highest and the lowest price: the session's (the day) and the 52 weeks' (the year). The bars the store has of a
+      // period override them.
+      Ranges ranges;
+      const auto say = [&](const char * key, double & into) {
+        auto v = meta->find(key);
+        if (v != meta->end() && v->is_number() && std::isfinite(v->get<double>())) into = v->get<double>();
+      };
+      say("regularMarketDayHigh", ranges.high[static_cast<size_t>(Period::Day)]);
+      say("regularMarketDayLow", ranges.low[static_cast<size_t>(Period::Day)]);
+      say("fiftyTwoWeekHigh", ranges.high[static_cast<size_t>(Period::Year)]);
+      say("fiftyTwoWeekLow", ranges.low[static_cast<size_t>(Period::Year)]);
+      b.setRanges(edge, ranges);
       auto zone = meta->find("exchangeTimezoneName");
       if (zone != meta->end() && zone->is_string()) b.setAttribute(market, {predicate::timezone, zone->get<std::string>()});
     }

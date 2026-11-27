@@ -379,22 +379,255 @@ TEST(a_source_says_the_changes_of_an_edge_and_the_bars_take_over_the_periods_the
   CHECK_NEAR(at(Period::Quarter), periodView(*store->snapshot(), k, Period::Quarter, false).change(), 1e-9);
 }
 
-TEST(a_fund_and_an_index_keep_value_queues_and_a_company_keeps_bars) {
+TEST(the_writer_says_the_kind_of_a_queue_and_an_index_keeps_its_bars_where_a_value_series_says_scalar) {
   auto store = makeMemoryStore();
   Things t(*store);
-  const EdgeKey fund = t.edge(t.fund), index = t.edge(t.index), company = t.edge(t.nokia);
-  for (const EdgeKey & k : {fund, index, company}) store->appendCandles(k, Resolution::Day, {Candle{kLast - 1, 10, 12, 9, 11, 500}, Candle{kLast, 11, 13, 10, 12, 600}});
+  const EdgeKey fund = t.edge(t.fund), index = t.edge(t.index), rate = t.edge(t.elisa), company = t.edge(t.nokia);
+  const std::vector<Candle> given{Candle{kLast - 1, 10, 12, 9, 11, 500}, Candle{kLast, 11, 13, 10, 12, 600}};
+  store->appendCandles(fund, Resolution::Day, given, QueueKind::Scalar);   // a NAV
+  store->appendCandles(rate, Resolution::Day, given, QueueKind::Scalar);   // a fixing
+  store->appendCandles(index, Resolution::Day, given);                     // an index with its open, high and low: bars, by default
+  store->appendCandles(company, Resolution::Day, given, QueueKind::Candle);
   const auto s = store->snapshot();
-  CHECK(s->coverage(fund, Resolution::Day)->kind == QueueKind::Scalar && s->coverage(index, Resolution::Day)->kind == QueueKind::Scalar);
-  CHECK(s->coverage(company, Resolution::Day)->kind == QueueKind::Candle);
-  for (const EdgeKey & k : {fund, index}) {
+  CHECK(s->coverage(fund, Resolution::Day)->kind == QueueKind::Scalar && s->coverage(rate, Resolution::Day)->kind == QueueKind::Scalar);
+  CHECK(s->coverage(index, Resolution::Day)->kind == QueueKind::Candle && s->coverage(company, Resolution::Day)->kind == QueueKind::Candle);
+  for (const EdgeKey & k : {fund, rate}) {
     const auto q = s->queue(k, Resolution::Day);
     CHECK(q.size() == 2 && q[1].open == 12 && q[1].high == 12 && q[1].low == 12 && q[1].close == 12 && !isDefined(q[1].volume));
     // The data keeps what the source wrote.
     CHECK(s->candles(k, Resolution::Day).candles[1].high == 13 && s->candles(k, Resolution::Day).candles[1].volume == 600);
   }
-  const auto c = s->queue(company, Resolution::Day);
-  CHECK(c.size() == 2 && c[1].open == 11 && c[1].high == 13 && c[1].low == 10 && c[1].close == 12 && c[1].volume == 600);
+  for (const EdgeKey & k : {index, company}) {
+    const auto c = s->queue(k, Resolution::Day);
+    CHECK(c.size() == 2 && c[1].open == 11 && c[1].high == 13 && c[1].low == 10 && c[1].close == 12 && c[1].volume == 600);
+  }
+  // Bars of one value that a Candle writer gives are bars: the kind is never read from the prices.
+  const EdgeKey flat = t.edge(t.nokia);
+  store->appendCandles(flat, Resolution::Week, {Candle{kLast, 5, 5, 5, 5, kUndefined}});
+  CHECK(store->snapshot()->coverage(flat, Resolution::Week)->kind == QueueKind::Candle);
+}
+
+TEST(a_queue_written_with_the_other_kind_starts_over_with_it_and_the_kinds_are_not_mixed) {
+  Disk d;
+  EdgeKey k;
+  {
+    auto store = makeMemoryStore(d.options());
+    Things t(*store);
+    k = t.edge(t.index);
+    store->appendCandles(k, Resolution::Day, days(10));  // bars
+    CHECK(store->snapshot()->queue(k, Resolution::Day).size() == 10);
+    store->flush();
+    // A value series written to it replaces it: of the ten bars, none stays.
+    store->appendCandles(k, Resolution::Day, {Candle{kLast, 0, 0, 0, 7, kUndefined}}, QueueKind::Scalar);
+    const auto s = store->snapshot();
+    const auto q = s->queue(k, Resolution::Day);
+    CHECK(s->coverage(k, Resolution::Day)->kind == QueueKind::Scalar && q.size() == 1 && q[0].close == 7 && q[0].high == 7 && q[0].low == 7);
+    CHECK(s->coverage(k, Resolution::Day)->count == 1);
+    // And back: the value is gone, the bars are bars.
+    store->appendCandles(k, Resolution::Day, days(3));
+    const auto back = store->snapshot();
+    CHECK(back->coverage(k, Resolution::Day)->kind == QueueKind::Candle && back->queue(k, Resolution::Day).size() == 3);
+    store->appendCandles(k, Resolution::Day, {Candle{kLast, 0, 0, 0, 7, kUndefined}}, QueueKind::Scalar);
+    store->flush();
+  }
+  // What the file has is the value queue alone.
+  auto store = makeMemoryStore(d.options());
+  CHECK(store->snapshot()->coverage(k, Resolution::Day)->kind == QueueKind::Scalar && store->snapshot()->coverage(k, Resolution::Day)->count == 1);
+  // A queue on the disk only, written with the other kind: it starts over and the file's bars are not read in.
+  store->appendCandles(k, Resolution::Day, days(4));
+  store->flush();
+  const auto s = store->snapshot();
+  CHECK(s->coverage(k, Resolution::Day)->kind == QueueKind::Candle && s->coverage(k, Resolution::Day)->count == 4);
+  store->want({SeriesKey{k, Resolution::Day}});
+  CHECK(waitFor([&] { return store->snapshot()->queueResident(k, Resolution::Day); }));
+  CHECK(store->snapshot()->queue(k, Resolution::Day).size() == 4 && store->snapshot()->queue(k, Resolution::Day)[0].high == 101);
+}
+
+namespace {
+size_t at(Period p) { return static_cast<size_t>(p); }
+}  // namespace
+
+TEST(the_high_and_low_of_a_period_are_the_highest_high_and_the_lowest_low_of_the_bars_the_change_reads) {
+  auto store = makeMemoryStore();
+  Things t(*store);
+  const EdgeKey k = t.edge(t.nokia);
+  CHECK(!store->snapshot()->ranges(k).says());
+  // Highs and lows that differ from the closes: bar i of the 100 days has high 101 + i and low 99 + i, the day kLast - 99 + i.
+  store->appendCandles(k, Resolution::Day, days(100));
+  const Ranges r = store->snapshot()->ranges(k);
+  // The quarter is the 90 days ending on the price's day: from day kLast - 89, which is bar 10 (low 109), and the bar before it (low 108) is outside.
+  CHECK(r.high[at(Period::Quarter)] == 200 && r.low[at(Period::Quarter)] == 109);
+  CHECK(r.high[at(Period::Month)] == 200 && r.low[at(Period::Month)] == 169);   // from bar 70
+  CHECK(r.high[at(Period::Week)] == 200 && r.low[at(Period::Week)] == 192);    // from bar 93, the daily bars standing in for hourly
+  // The day with no intraday bar is the daily bar of the day.
+  CHECK(r.high[at(Period::Day)] == 200 && r.low[at(Period::Day)] == 198);
+  // A period the bars do not reach back to has none, as it has no change.
+  CHECK(!isDefined(r.high[at(Period::Year)]) && !isDefined(r.low[at(Period::Year3)]) && !isDefined(r.high[at(Period::Year10)]));
+  CHECK(isDefined(store->snapshot()->changes(k).pct[at(Period::Quarter)]) && !isDefined(store->snapshot()->changes(k).pct[at(Period::Year)]));
+  // The window is the change's at its boundary: the quarter's price's day moves the window with it, one bar leaves.
+  store->appendCandles(k, Resolution::Day, {Candle{kLast + 1, 1000, 1500, 1, 1200, 5}});
+  const Ranges moved = store->snapshot()->ranges(k);
+  CHECK(moved.high[at(Period::Quarter)] == 1500 && moved.low[at(Period::Quarter)] == 1);
+  CHECK(moved.high[at(Period::Day)] == 1500 && moved.low[at(Period::Day)] == 1);
+  // A correction of a bar in the window is seen.
+  store->appendCandles(k, Resolution::Day, {Candle{kLast + 1, 1000, 1100, 900, 1050, 5}});
+  // (the price stays the 1200 of the first bar, which the range takes in)
+  CHECK(store->snapshot()->ranges(k).high[at(Period::Quarter)] == 1200 && store->snapshot()->ranges(k).low[at(Period::Quarter)] == 110);  // the window moved a day with the price's: bar 11 is its first, low 110
+  CHECK(store->snapshot()->ranges(k).high[at(Period::Day)] == 1200 && store->snapshot()->ranges(k).low[at(Period::Day)] == 900);
+  // Each is what periodView reads, as the change is.
+  const auto s = store->snapshot();
+  for (Period p : {Period::Week, Period::Month, Period::Quarter}) {
+    const PeriodView v = periodView(*s, k, p, false);
+    CHECK(v.high == s->ranges(k).high[at(p)] && v.low == s->ranges(k).low[at(p)]);
+  }
+}
+
+TEST(the_high_and_low_of_a_value_queue_are_its_highest_and_lowest_value_and_a_weekly_queue_gives_the_long_periods) {
+  auto store = makeMemoryStore();
+  Things t(*store);
+  const EdgeKey k = t.edge(t.fund);
+  std::vector<Candle> weeks;
+  const int64_t first = weekStart(kLast) - 7 * 520;  // ten years of weekly values
+  for (int i = 0; i <= 520; i++) weeks.push_back(Candle{first + 7 * i, 50, 9999, -9999, 10.0 + (i % 40), kUndefined});  // the highs and lows given are not values
+  store->appendCandles(k, Resolution::Week, weeks, QueueKind::Scalar);
+  const Ranges r = store->snapshot()->ranges(k);
+  CHECK(r.high[at(Period::Year10)] == 49 && r.low[at(Period::Year10)] == 10);
+  CHECK(isDefined(r.high[at(Period::Year3)]) && r.high[at(Period::Year3)] <= 49 && r.low[at(Period::Year3)] >= 10);
+  CHECK(!isDefined(r.high[at(Period::Quarter)]) && !isDefined(r.low[at(Period::Day)]));
+  // Bars of the same kind with highs and lows, for comparison: they decide from their highs and lows.
+  const EdgeKey c = t.edge(t.nokia);
+  store->appendCandles(c, Resolution::Week, weeks);
+  CHECK(store->snapshot()->ranges(c).high[at(Period::Year10)] == 9999 && store->snapshot()->ranges(c).low[at(Period::Year10)] == -9999);
+}
+
+TEST(the_range_takes_in_the_price_and_a_bar_with_no_high_or_low_counts_at_its_close) {
+  auto store = makeMemoryStore();
+  Things t(*store);
+  const EdgeKey k = t.edge(t.nokia), metal = t.edge(t.elisa), mixed = t.edge(t.index), bare = t.edge(t.fund);
+  store->appendCandles(k, Resolution::Day, days(100));
+  CHECK(store->snapshot()->ranges(k).high[at(Period::Quarter)] == 200 && store->snapshot()->ranges(k).low[at(Period::Quarter)] == 109);
+  // A price above every bar's high, then below every bar's low: the range has it.
+  store->setQuote(k, {300, 299, 301, midnight(kLast) + 50000});
+  CHECK(store->snapshot()->ranges(k).high[at(Period::Quarter)] == 300 && store->snapshot()->ranges(k).low[at(Period::Quarter)] == 109);
+  CHECK(store->snapshot()->ranges(k).high[at(Period::Week)] == 300 && store->snapshot()->ranges(k).high[at(Period::Day)] == 300);
+  store->setQuote(k, {50, 49, 51, midnight(kLast) + 60000});
+  CHECK(store->snapshot()->ranges(k).low[at(Period::Quarter)] == 50 && store->snapshot()->ranges(k).high[at(Period::Quarter)] == 200);
+  // No bar covers the year: the price does not make a range of it.
+  CHECK(!isDefined(store->snapshot()->ranges(k).high[at(Period::Year)]) && !isDefined(store->snapshot()->ranges(k).low[at(Period::Year)]));
+  // An edge with a price and no bar has none at all.
+  store->setQuote(bare, {5, 4, 6, midnight(kLast) + 50000});
+  CHECK(!store->snapshot()->ranges(bare).says());
+  // Bars of a last price only (a London metal): the closes are the range. 100 days closing 100 ... 199.
+  std::vector<Candle> closes;
+  for (int i = 0; i < 100; i++) closes.push_back(Candle{kLast - 99 + i, kUndefined, kUndefined, kUndefined, 100.0 + i, kUndefined});
+  store->appendCandles(metal, Resolution::Day, closes);
+  CHECK(store->snapshot()->ranges(metal).high[at(Period::Quarter)] == 199 && store->snapshot()->ranges(metal).low[at(Period::Quarter)] == 110);
+  // A mix of bars that have their high and low and bars that have not: both count.
+  std::vector<Candle> some = closes;
+  some[50] = Candle{kLast - 49, 150, 260, 140, 150, 5};   // inside the quarter, with a high above every close
+  some[95] = Candle{kLast - 4, 195, 196, 90, 195, 5};     // and a low below
+  store->appendCandles(mixed, Resolution::Day, some);
+  CHECK(store->snapshot()->ranges(mixed).high[at(Period::Quarter)] == 260 && store->snapshot()->ranges(mixed).low[at(Period::Quarter)] == 90);
+}
+
+TEST(a_said_day_range_and_change_survive_bars_of_the_session_before_and_are_replaced_by_bars_of_the_same_session) {
+  auto store = makeMemoryStore();
+  Things t(*store);
+  const EdgeKey k = t.edge(t.nokia);
+  const int64_t today = kLast + 1;
+  store->setQuote(k, {50, 49, 51, midnight(today) + 20 * 3600});  // a list's price of today
+  Ranges said;
+  said.high[at(Period::Day)] = 52;
+  said.low[at(Period::Day)] = 48;
+  store->setRanges(k, said);
+  Changes change;
+  change.pct[at(Period::Day)] = 1.5;
+  store->setChanges(k, change);
+  // The five-minute bars of the session before (Friday's): neither the range nor the change of today.
+  std::vector<Candle> before;
+  for (int i = 0; i < 3; i++) before.push_back(Candle{slotOfInstant(Resolution::Min5, midnight(kLast) + 8 * 3600 + i * 300), 60, 70, 40, 61, 1});
+  store->appendCandles(k, Resolution::Min5, before);
+  const auto at_ = [&] { return store->snapshot(); };
+  CHECK(at_()->ranges(k).high[at(Period::Day)] == 52 && at_()->ranges(k).low[at(Period::Day)] == 48 && at_()->changes(k).pct[at(Period::Day)] == 1.5);
+  CHECK(periodView(*at_(), k, Period::Day, true).closes.empty());  // and no trace of a gone session
+  // Bars of today's session replace them (the price of the list is the last, and in the range).
+  store->setPreviousClose(k, today, 49);
+  std::vector<Candle> same;
+  for (int i = 0; i < 3; i++) same.push_back(Candle{slotOfInstant(Resolution::Min5, midnight(today) + 8 * 3600 + i * 300), 50, 53.5, 47.5, 50 + i * 0.25, 1});
+  store->appendCandles(k, Resolution::Min5, same);
+  CHECK(at_()->ranges(k).high[at(Period::Day)] == 53.5 && at_()->ranges(k).low[at(Period::Day)] == 47.5);
+  CHECK_NEAR(at_()->changes(k).pct[at(Period::Day)], (50.0 / 49.0 - 1) * 100, 1e-9);
+}
+
+TEST(a_source_says_the_highs_and_lows_of_an_edge_and_the_bars_take_over_the_periods_they_cover) {
+  auto store = makeMemoryStore();
+  Things t(*store);
+  const EdgeKey k = t.edge(t.nokia);
+  Ranges said;
+  said.high[at(Period::Day)] = 52;
+  said.low[at(Period::Day)] = 48;
+  said.high[at(Period::Year)] = 300;
+  said.low[at(Period::Year)] = 10;
+  store->setRanges(k, said);
+  auto now = [&] { return store->snapshot()->ranges(k); };
+  CHECK(now().high[at(Period::Day)] == 52 && now().low[at(Period::Day)] == 48 && now().high[at(Period::Year)] == 300 && now().low[at(Period::Year)] == 10);
+  CHECK(!isDefined(now().high[at(Period::Week)]));
+  // Said again with other periods, and only the defined ones overwrite.
+  Ranges more;
+  more.high[at(Period::Day)] = 53;
+  more.low[at(Period::Week)] = 40;
+  store->setRanges(k, more);
+  CHECK(now().high[at(Period::Day)] == 53 && now().low[at(Period::Day)] == 48 && now().low[at(Period::Week)] == 40 && now().high[at(Period::Year)] == 300);
+  // The same again: no new version.
+  const uint64_t version = store->snapshot()->version();
+  store->setRanges(k, more);
+  CHECK(store->snapshot()->version() == version);
+  // Bars that cover the quarter, the month, the week and the day override what was said of those; the year, which they do not cover, stays.
+  store->appendCandles(k, Resolution::Day, days(100));
+  CHECK(now().high[at(Period::Day)] == 200 && now().low[at(Period::Day)] == 198 && now().low[at(Period::Week)] == 192);
+  CHECK(now().high[at(Period::Year)] == 300 && now().low[at(Period::Year)] == 10);
+  // And the source saying the day again does not win over the bars.
+  store->setRanges(k, said);
+  CHECK(now().high[at(Period::Day)] == 200 && now().low[at(Period::Day)] == 198 && now().high[at(Period::Year)] == 300);
+}
+
+TEST(the_highs_and_lows_are_kept_in_the_summary_and_a_new_store_shows_them_before_any_queue_is_loaded) {
+  Disk d;
+  EdgeKey k, quiet;
+  {
+    auto store = makeMemoryStore(d.options());
+    Things t(*store);
+    k = t.edge(t.nokia);
+    quiet = t.edge(t.elisa);
+    Ranges said;
+    said.high[at(Period::Day)] = 52;
+    said.low[at(Period::Day)] = 48;
+    said.high[at(Period::Year)] = 300;
+    said.low[at(Period::Year)] = 10;
+    store->batch([&](Batch & b) {
+      b.setQuote(k, {50, 49, 51, midnight(kLast) + 3600});
+      b.setRanges(k, said);
+      b.setListing({k, "NOKIA", "", "", "STOCK", "Nokia Oyj"});
+      b.appendCandles(quiet, Resolution::Day, days(100));
+      b.setListing({quiet, "ELISA", "", "", "STOCK", "Elisa Oyj"});
+    });
+    store->flush();
+  }
+  d.counts.reads = 0;
+  auto store = makeMemoryStore(d.options());
+  CHECK(d.counts.reads == 0);
+  const auto s = store->snapshot();
+  CHECK(s->queue(quiet, Resolution::Day).empty());  // nothing loaded
+  const Ranges r = s->ranges(k);
+  CHECK(r.high[at(Period::Day)] == 52 && r.low[at(Period::Day)] == 48 && r.high[at(Period::Year)] == 300 && r.low[at(Period::Year)] == 10);
+  CHECK(!isDefined(r.high[at(Period::Month)]));
+  // What the bars gave before the restart is there too, with no queue read.
+  const Ranges q = s->ranges(quiet);
+  CHECK(q.high[at(Period::Quarter)] == 200 && q.low[at(Period::Quarter)] == 109 && !isDefined(q.high[at(Period::Year)]));
+  // The table shows them for the row, with the period picked.
+  Quotes quotes(s, {k, quiet});
+  quotes.setPeriod(Period::Year);
+  CHECK(quotes.text(0, Quotes::HIGH) == "300.00" && quotes.text(0, Quotes::LOW) == "10.00" && quotes.text(1, Quotes::HIGH).empty());
 }
 
 TEST(after_a_restart_every_edge_shows_its_price_bid_and_ask_and_a_portfolio_is_valued_with_no_network_and_no_queue_in_memory) {
@@ -417,7 +650,7 @@ TEST(after_a_restart_every_edge_shows_its_price_bid_and_ask_and_a_portfolio_is_v
       b.appendCandles(elisa, Resolution::Day, days(10));
       b.setQuote(elisa, {50, 49, 51, midnight(kLast) + 3600});
       b.setListing({elisa, "ELISA", "id-e", "book-e", "STOCK", "Elisa Oyj"});
-      b.appendCandles(fund, Resolution::Day, days(10));
+      b.appendCandles(fund, Resolution::Day, days(10), QueueKind::Scalar);
       b.setListing({fund, "AFUND", "", "", "FUND", "A fund"});
     });
     const portfolio::Transaction buy{1, kLast - 3, portfolio::Side::Buy, t.nokia, t.hel, t.eur, 10, 4, 1, "x"};

@@ -3,6 +3,7 @@
 
 #include "model/Dates.h"
 #include "model/NodeKey.h"
+#include "model/Period.h"
 #include "model/SqliteSummaryStore.h"
 #include "model/Store.h"
 #include "model/SummaryRecords.h"
@@ -132,8 +133,6 @@ TEST(a_value_record_is_12_bytes_and_reads_back_as_a_bar_of_one_value) {
   CHECK(back[0].time == 20'000);
   CHECK(back[0].open == 123.456 && back[0].high == 123.456 && back[0].low == 123.456 && back[0].close == 123.456);
   CHECK(!isDefined(back[0].volume));
-  CHECK(queueKindOf(InstrumentKind::Fund) == QueueKind::Scalar && queueKindOf(InstrumentKind::Index) == QueueKind::Scalar);
-  CHECK(queueKindOf(InstrumentKind::Company) == QueueKind::Candle && queueKindOf(InstrumentKind::Etf) == QueueKind::Candle);
 }
 
 TEST(a_volume_of_zero_is_no_volume_a_larger_one_saturates_and_a_fraction_is_rounded) {
@@ -263,6 +262,63 @@ TEST(edges_and_queues_put_in_the_file_come_back_with_their_coverage_and_no_bars_
   CHECK(!store->readQueue(b, Resolution::Day));
   CHECK(!store->readQueue(a, Resolution::Hour1));
   CHECK(m.lines.empty());
+}
+
+TEST(the_changes_highs_and_lows_of_an_edge_are_kept_and_read_back_with_the_edges_at_start) {
+  TempDir t;
+  Messages m;
+  const EdgeKey a = edgeOf(1), b = edgeOf(2);
+  {
+    auto store = openSqliteSummaryStore(t.dir / "nordnet.sqlite", a.dataset, m.log());
+    SummaryBatch batch;
+    StoredEdge e = storedEdge(a, 10.5);
+    e.changes.pct[static_cast<size_t>(Period::Quarter)] = 3.5;
+    e.ranges.high[static_cast<size_t>(Period::Day)] = 11.25;
+    e.ranges.low[static_cast<size_t>(Period::Day)] = 9.75;
+    e.ranges.high[static_cast<size_t>(Period::Year10)] = 120;
+    e.ranges.low[static_cast<size_t>(Period::Year10)] = 0.125;
+    batch.edges.push_back(e);
+    batch.edges.push_back(storedEdge(b, 3));  // says none
+    store->apply(batch);
+  }
+  // A new store, which has read nothing before: every period's number comes with the edges.
+  auto store = openSqliteSummaryStore(t.dir / "nordnet.sqlite", a.dataset, m.log());
+  const std::vector<StoredEdge> edges = store->loadEdges();
+  CHECK(edges.size() == 2);
+  for (const StoredEdge & e : edges) {
+    if (e.listing.key == a) {
+      CHECK(e.changes.pct[static_cast<size_t>(Period::Quarter)] == 3.5 && !isDefined(e.changes.pct[static_cast<size_t>(Period::Day)]));
+      CHECK(e.ranges.high[static_cast<size_t>(Period::Day)] == 11.25 && e.ranges.low[static_cast<size_t>(Period::Day)] == 9.75);
+      CHECK(e.ranges.high[static_cast<size_t>(Period::Year10)] == 120 && e.ranges.low[static_cast<size_t>(Period::Year10)] == 0.125);
+      CHECK(!isDefined(e.ranges.high[static_cast<size_t>(Period::Week)]) && !isDefined(e.ranges.low[static_cast<size_t>(Period::Year)]));
+    } else {
+      CHECK(!e.ranges.says() && !e.changes.says());
+    }
+  }
+  CHECK(m.lines.empty());
+}
+
+TEST(a_file_of_the_schema_before_the_highs_and_lows_is_started_over) {
+  TempDir t;
+  Messages m;
+  const EdgeKey a = edgeOf(1);
+  {
+    // As the file was before: version 4, the changes and no highs and lows.
+    SQLite::Database db((t.dir / "nordnet.sqlite").string(), SQLite::OPEN_READWRITE | SQLite::OPEN_CREATE);
+    db.exec("CREATE TABLE edges (id INTEGER PRIMARY KEY, base INTEGER NOT NULL, quote INTEGER NOT NULL, market INTEGER NOT NULL, last REAL, change_day REAL)");
+    db.exec("INSERT INTO edges (base, quote, market, last, change_day) VALUES (1, 2, 3, 5.0, 1.0)");
+    db.exec("PRAGMA user_version = 4");
+  }
+  auto store = openSqliteSummaryStore(t.dir / "nordnet.sqlite", a.dataset, m.log());
+  CHECK(m.said("schema 4"));
+  CHECK(store->loadEdges().empty());
+  SummaryBatch batch;
+  StoredEdge e = storedEdge(a, 1);
+  e.ranges.high[0] = 2;
+  batch.edges.push_back(e);
+  store->apply(batch);
+  const auto edges = store->loadEdges();
+  CHECK(edges.size() == 1 && edges[0].ranges.high[0] == 2);
 }
 
 TEST(a_queue_put_replaces_the_one_there_and_a_merge_is_put_into_it_and_cut) {

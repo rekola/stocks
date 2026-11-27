@@ -222,7 +222,7 @@ stays in memory only, exactly as written, and nothing persists or changes it; it
 with a store of their own. The summary is a separate record that the store keeps of each edge, for the tables, the sparklines and the
 portfolios, and it is the only thing kept on disk about prices. No reader of the data reads a summary, or the opposite.
 
-An edge's summary is its **quote**, its **changes** and, for each resolution, a **queue**:
+An edge's summary is its **quote**, its **changes**, its **highs and lows** and, for each resolution, a **queue**:
 
 - The **quote** is the last price, the bid and the ask, and the one time (seconds, UTC) they are for. A provider that gives only a last
   price, or none, leaves the rest undefined.
@@ -230,17 +230,35 @@ An edge's summary is its **quote**, its **changes** and, for each resolution, a 
   undefined where not known. A source that lists returns (`setChanges`) gives them with its first list, so a table sorts by any period
   before a bar is loaded; a period whose queue is in memory and covers it is worked out from the bars instead, and kept in step as the
   bars, the quote or the close before the session change. They are kept on the disk with the edge.
+- The **highs and lows** (`Ranges`) are parallel to the changes: for each period the highest and the lowest price, in the edge's price
+  unit (per cent for a rate, points for an index; not a change), undefined where not known. A source that says its own (`setRanges`: Nordnet's
+  day high and low from `price_info` and the indicator lists' price block, Yahoo's `regularMarketDayHigh/Low` for the day and
+  `fiftyTwoWeekHigh/Low` for the year; no other field of any source is a range, and none is stretched to a period it does not cover) writes
+  them, and only the defined numbers overwrite. A period the queues cover is worked out from the bars, with exactly the window and the feeds
+  `periodView` reads for the change (`Period.h`), and overrides what a source said: the highest `high` and the lowest `low` of a candle
+  queue's bars, the highest and lowest value of a value queue, **and the period's last price (the quote's) with them**, so the Price column is never
+  outside the range beside it; a bar with no high or no low counts at its close (high = max(its high, its close), low = min(its low, its close); a bar with
+  nothing defined says nothing); the day with no intraday bars is the daily bar of its day; a period with no bars and nothing said is undefined (the
+  price alone makes no range). **The day is of one session**: intraday bars older than the day of the quote are not the day's, and give neither its range nor
+  its change nor its trace, so a source's day range and `yield_1d` (a list says a newer price than the history has) stand until bars of the same session
+  arrive; the change had the same fault (stale bars' previous close against a newer price) and has the same fix. They are recomputed whenever the bars, the quote or the queue change, as the changes are, and kept on
+  the disk with the edge (`high_day … high_year10`, `low_day … low_year10`), so a table shows them before any history is loaded.
 - A **queue** is the bars that the periods using a resolution show: time-ordered, a bar at a time already there replaces it, a new time is
   pushed, and bars older than the window are popped from the old end. There is no downsampling and no base bar. The window is measured back
   from the *last bar* of that resolution, not from the clock, so the day's sparkline on a Sunday is Friday's session. How long it is is the
   provider's knowledge (`HistoryProvider::keep(Resolution)`).
 
-Two packed forms are kept, little-endian, chosen by the kind of the edge's instrument (`queueKindOf()`):
+Two packed forms are kept, little-endian, chosen by the kind the WRITER gives the queue (`QueueKind`, the last argument of
+`appendCandles`, default `Candle`): a source that writes bars with an open, a high and a low (an index's too) writes `Candle`; one that gives one
+value per bar says `Scalar` (Euribor, the €STR and its compounded index, a fund's NAV). Nothing infers it from the instrument's kind or from bars
+that happen to have open = high = low = close. A queue that exists and is written with the other kind starts over with the new one, in memory
+and in what the file has of it, and the two are never mixed (`schema 5` of the SQLite summaries, 2 of MariaDB's, started the queues of the old
+rule over).
 
 | record | for | bytes | fields |
 |---|---|---|---|
-| candle | everything but a fund and an index | 28 | `uint32 slot`, `double open`, `float high, low, close` (each the difference from the open), `uint32 volume` |
-| value | a fund's NAV, an index's value | 12 | `uint32 slot`, `double value` |
+| candle | bars with an open, a high and a low | 28 | `uint32 slot`, `double open`, `float high, low, close` (each the difference from the open), `uint32 volume` |
+| value | one value per bar (a NAV, a fixing) | 12 | `uint32 slot`, `double value` |
 
 `slot` is the bar's key as the model has it (a slot number for an intraday resolution, a day number for a date resolution). A volume of 0
 is no volume, a larger one saturates at 4294967295 and a fraction is rounded; a bar with no open takes its close as its base, with its high

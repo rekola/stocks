@@ -51,9 +51,38 @@ struct Changes {
   }
 };
 
-// What a queue holds: a bar with an open, a high, a low, a close and a volume, or only a value (a fund's NAV, an index's value of the day).
+// An edge's highest and lowest price over each period, the numbers beside `Changes` and kept the same way: in the order of `Period`, in the
+// price unit of the edge (per cent for a rate, points for an index, the quote currency for the rest: not a change), undefined where not
+// known. A source that says its own (a quote's day range, a 52-week range) writes them, and only the defined ones overwrite; a period the
+// queues cover is then worked out from the bars (the highest high and the lowest low of the bars of the window `periodView` reads for the
+// change, the highest and lowest value for a Scalar queue, the period's last price with them, a bar with no high or low at its close), and that
+// overrides what a source said. The day is the exception that keeps a source's range: bars override it only when they are of the same session as the
+// price (`Period.h`: intraday bars older than the day of the quote are not the day's), so a newer said range survives bars of the session before.
+struct Ranges {
+  std::array<double, kChangeCount> high, low;
+  Ranges() {
+    high.fill(kUndefined);
+    low.fill(kUndefined);
+  }
+  bool says() const {
+    for (size_t i = 0; i < kChangeCount; i++)
+      if (isDefined(high[i]) || isDefined(low[i])) return true;
+    return false;
+  }
+  friend bool operator==(const Ranges & a, const Ranges & b) {
+    const auto same = [](double x, double y) { return x == y || (!isDefined(x) && !isDefined(y)); };
+    for (size_t i = 0; i < kChangeCount; i++)
+      if (!same(a.high[i], b.high[i]) || !same(a.low[i], b.low[i])) return false;
+    return true;
+  }
+};
+
+// What a queue holds: a bar with an open, a high, a low, a close and a volume (Candle), or only a value (Scalar: a fund's NAV, a rate's fixing).
+// The WRITER says which, with every `appendCandles`: a source that gives bars with an open, a high and a low writes Candle (the default,
+// whatever the instrument is: an index's bars are candles), and one that gives a value for each bar says Scalar. Nothing infers the kind from the
+// instrument or from bars that happen to have all four prices alike. A queue that exists and is written with the other kind starts over with the
+// new one: the two are never mixed. A Scalar queue keeps each bar's close as its value, and its high and its low are that value.
 enum class QueueKind : uint8_t { Candle = 0, Scalar = 1 };
-inline QueueKind queueKindOf(InstrumentKind kind) { return kind == InstrumentKind::Fund || kind == InstrumentKind::Index ? QueueKind::Scalar : QueueKind::Candle; }
 
 // What the file says of a queue without its bars: all that start-up reads of it.
 struct QueueCoverage {
@@ -81,6 +110,7 @@ struct StoredEdge {
   Listing listing;  // its key is the edge's; the rest is empty where no listing was said
   Quote quote;
   Changes changes;
+  Ranges ranges;
   int64_t previous_close_day = 0;       // the close before the session and the day number it was said for
   double previous_close = kUndefined;   // undefined: none
   std::vector<std::pair<Resolution, QueueCoverage>> queues;

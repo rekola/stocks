@@ -1253,6 +1253,149 @@ TEST(a_rates_change_is_the_difference_in_basis_points) {
   CHECK(q.compare(rs, rz, Quotes::CHANGE) < 0 && q.compare(rz, ru, Quotes::CHANGE) > 0);
 }
 
+TEST(the_high_and_low_columns_follow_the_period_are_formatted_like_the_price_and_are_blank_where_unknown) {
+  RateWorld w;
+  EdgeKey rate = w.edgeOf("A", kPercentUnit, 3.00, 3.10), index = w.edgeOf("E", kPointsUnit, 100, 101), none = w.edgeOf("N", kPointsUnit, 100, 101);
+  // Ten years of weekly bars for the rate: the week 260 back has a high of 4.5, the week 300 back a low of 0.5.
+  std::vector<Candle> weeks;
+  const int64_t last = weekStart(kToday);
+  for (int i = 0; i <= 530; i++) weeks.push_back({last - 7 * (530 - i), 3, i == 270 ? 4.5 : 3.2, i == 230 ? 0.5 : 2.8, 3, 1});
+  w.store->appendCandles(rate, Resolution::Week, weeks);
+  // The index has only what a source said of the ten years.
+  Ranges said;
+  said.high[static_cast<size_t>(Period::Year10)] = 130.5;
+  w.store->setRanges(index, said);
+  Quotes q(w.store->snapshot(), {rate, index, none});
+  CHECK(q.text(rowOf(q, rate), Quotes::HIGH) == "3.100%" && q.text(rowOf(q, rate), Quotes::LOW) == "1.000%");  // the quarter: the bars have 1 for a high and a low, and the price 3.10 is in the range
+  q.setPeriod(Period::Year10);
+  const int rr = rowOf(q, rate), ri = rowOf(q, index), rn = rowOf(q, none);
+  CHECK(q.text(rr, Quotes::HIGH) == "4.500%" && q.text(rr, Quotes::LOW) == "0.500%");  // a rate, in per cent
+  CHECK(q.text(ri, Quotes::HIGH) == "130.50" && q.text(ri, Quotes::LOW).empty());        // points, as the price is; no low said
+  CHECK(q.text(rn, Quotes::HIGH).empty() && q.text(rn, Quotes::LOW).empty());
+  CHECK(!q.number(rn, Quotes::HIGH) && *q.number(ri, Quotes::HIGH) == 130.5 && *q.number(rr, Quotes::LOW) == 0.5);
+  // Sorted by them, with the rows that have no number first (as the change's).
+  CHECK(q.compare(rn, ri, Quotes::HIGH) < 0 && q.compare(ri, rr, Quotes::HIGH) > 0 && q.compare(rr, ri, Quotes::LOW) > 0 && q.compare(rn, rr, Quotes::LOW) < 0);
+  // The period picked decides: back to the quarter, the 10-year numbers are not shown.
+  q.setPeriod(Period::Quarter);
+  CHECK(q.text(rr, Quotes::HIGH) == "3.100%");
+  CHECK(q.compare(rn, ri, Quotes::HIGH) == 0);
+}
+
+TEST(picking_the_ten_years_shows_the_ten_year_high_and_low_in_the_window_and_sorting_by_them_works) {
+  Fixture f(false, 110);
+  Rows rows = periodWorld(*f.store);
+  const EdgeKey third{f.store->addInstrument("CHF", "Swiss franc", InstrumentKind::Currency), *f.store->snapshot()->findInstrument("USD"), *f.store->snapshot()->findMarket("XXXX"),
+                      f.store->addDataset("providera")};
+  f.store->appendCandles(third, Resolution::Day, {{kToday, 1, 1, 1, 8, 1}});
+  // riseFall has ten years of weekly bars; flat has what a source said; the third has nothing.
+  std::vector<Candle> weeks;
+  const int64_t last = weekStart(kToday);
+  for (int i = 0; i <= 530; i++) weeks.push_back({last - 7 * (530 - i), 10, i == 270 ? 31 : 15, i == 230 ? 2 : 9, 12, 1});
+  f.store->appendCandles(rows.riseFall, Resolution::Week, weeks);
+  Ranges said;
+  said.high[static_cast<size_t>(Period::Year10)] = 7;
+  f.store->setRanges(rows.flat, said);
+  f.app->execute("show-currencies");
+  f.app->execute("show-period-year10");
+  CHECK(f.browser->period() == Period::Year10);
+  const std::string screen = f.text();
+  CHECK(screen.find("10y high") != std::string::npos && screen.find("10y low") != std::string::npos && screen.find("Change 10y") != std::string::npos);
+  Table & t = f.browser->table();
+  auto cell = [&](const EdgeKey & k, int column) {
+    for (int r = 0; r < t.model()->rowCount(); r++)
+      if (static_cast<Quotes &>(*t.model()).edge(r) == k) return t.model()->text(r, column);
+    return std::string("missing");
+  };
+  CHECK(cell(rows.riseFall, Quotes::HIGH) == "31.00" && cell(rows.riseFall, Quotes::LOW) == "2.00");
+  CHECK(cell(rows.flat, Quotes::HIGH) == "7.00" && cell(rows.flat, Quotes::LOW).empty());
+  CHECK(cell(third, Quotes::HIGH).empty() && cell(third, Quotes::LOW).empty());
+  t.sortBy(Quotes::HIGH, SortOrder::DESCENDING);
+  CHECK(t.model()->text(t.rowAt(0), Quotes::HIGH) == "31.00" && t.model()->text(t.rowAt(1), Quotes::HIGH) == "7.00" && t.model()->text(t.rowAt(2), Quotes::HIGH).empty());
+  t.sortBy(Quotes::LOW, SortOrder::ASCENDING);
+  CHECK(t.model()->text(t.rowAt(2), Quotes::LOW) == "2.00");
+  // Another period: the headings follow, and the numbers are the other period's.
+  f.app->execute("show-period-day");
+  CHECK(f.text().find("1d high") != std::string::npos && f.text().find("1d low") != std::string::npos);
+  CHECK(cell(rows.flat, Quotes::HIGH) != "7.00");
+}
+
+namespace {
+// The headings of the markets table on a display of `cols` cells: each is there whole, and so are the trace's heading and the menu button.
+bool showsColumns(const std::string & screen, std::initializer_list<const char *> headings) {
+  for (const char * h : headings)
+    if (screen.find(h) == std::string::npos) return false;
+  return screen.find(kMenuGlyphText) != std::string::npos && screen.find("Euro") != std::string::npos && screen.find("20.00") != std::string::npos;
+}
+}  // namespace
+
+TEST(every_row_has_its_price_inside_its_high_and_low_for_every_period) {
+  Fixture f;  // the made-up data
+  periodWorld(*f.store);
+  const auto s = f.store->snapshot();
+  size_t seen = 0;
+  for (const EdgeKey & k : allQuoteEdges(*s)) {
+    const auto quote = s->quote(k);
+    for (size_t p = 0; p < kPeriodCount; p++) {
+      const double high = s->ranges(k).high[p], low = s->ranges(k).low[p];
+      if (isDefined(high) && isDefined(low)) {
+        CHECK(low <= high);
+        if (quote && isDefined(quote->last)) CHECK(low <= quote->last && quote->last <= high);
+        seen++;
+      }
+    }
+  }
+  CHECK(seen > 100);
+}
+
+TEST(at_80_columns_the_high_and_low_are_hidden_and_the_rest_is_there_with_the_menu_button_and_the_trace) {
+  Fixture f(false, 80);
+  periodWorld(*f.store);
+  f.app->execute("show-currencies");
+  const std::string screen = f.text();
+  CHECK(showsColumns(screen, {"Base", "Quote", "Name", "Market", "Dataset", "Price", "Change 3m", "3 months"}));
+  CHECK(screen.find("3m high") == std::string::npos && screen.find("3m low") == std::string::npos);
+  CHECK(f.browser->table().model()->text(0, Quotes::HISTORY - 2).empty());  // the table has no columns for them: the trace is its column 8, which says no text
+  CHECK(f.browser->table().sortColumn() == -1);
+  // The change is still its column 7, and sorts.
+  f.browser->table().sortBy(7, SortOrder::DESCENDING);
+  CHECK(f.browser->table().model()->text(f.browser->table().rowAt(0), 7) == "+100.00%");
+}
+
+TEST(at_110_columns_every_column_is_there_and_at_140_the_market_and_the_trace_are_wider) {
+  for (int cols : {110, 140}) {
+    Fixture f(false, cols);
+    periodWorld(*f.store);
+    f.app->execute("show-currencies");
+    CHECK(showsColumns(f.text(), {"Base", "Quote", "Name", "Market", "Dataset", "Price", "Change 3m", "3m high", "3m low", "3 months"}));
+    CHECK(!f.browser->table().model()->text(f.browser->table().rowAt(0), Quotes::HIGH).empty());
+  }
+}
+
+namespace {
+void resizeTo(Fixture & f, int cols) {
+  f.backend->resize(24, cols);
+  f.app->handle(BackendEvent::makeResize(24, cols));
+  f.app->present();
+}
+}  // namespace
+
+TEST(a_display_that_becomes_narrow_hides_the_high_and_low_and_the_sort_follows_its_column_and_one_by_a_hidden_column_is_dropped) {
+  Fixture f(false, 110);
+  periodWorld(*f.store);
+  f.app->execute("show-currencies");
+  Table & t = f.browser->table();
+  t.sortBy(Quotes::CHANGE, SortOrder::DESCENDING);
+  resizeTo(f, 80);
+  CHECK(f.text().find("3m high") == std::string::npos && t.sortColumn() == 7 && t.sortOrder() == SortOrder::DESCENDING);
+  resizeTo(f, 130);
+  CHECK(f.text().find("3m high") != std::string::npos && t.sortColumn() == Quotes::CHANGE);
+  t.sortBy(Quotes::LOW, SortOrder::ASCENDING);
+  resizeTo(f, 80);
+  CHECK(t.sortColumn() == -1);  // sorted by a column that is hidden now: no sort
+  resizeTo(f, 110);
+  CHECK(f.text().find("3m low") != std::string::npos);
+}
+
 TEST(the_days_change_of_a_rate_is_the_difference_from_the_previous_close_in_basis_points) {
   RateWorld w;
   EdgeKey k = w.edgeOf("A", kPercentUnit, 3.00, 3.105);
