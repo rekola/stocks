@@ -1,0 +1,5 @@
+{
+  "database": { "type": "sqlite", "path": "market-data" },
+  "datasets": { "histdata": { "cache_dir": "cache/histdata" } },
+  "server": { "listen": "127.0.0.1", "port": 8080 }
+}

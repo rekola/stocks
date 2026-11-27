@@ -162,6 +162,34 @@ The data model is planned in [plans/data-model.md](plans/data-model.md), the ser
 
 The market regime embeddings are planned in [plans/embeddings.md](plans/embeddings.md).
 
+## Market-data server
+
+Two programs (planned in [plans/server.md](plans/server.md); **how to set them up, with the database and the local network, is in [docs/market-server.md](docs/market-server.md)**): `market-ingest` loads external datasets, and `market-server` serves what it holds to the
+desktop app over a read-only HTTP API (JSON, no key: it listens on the loopback address unless the config says otherwise). Both run on the
+application's own `Store`: the ingest creates its instruments with the same calls and helpers as the sources do (`addInstrument`,
+`currencyNode`, `setListing`, `appendCandles`), and what the store keeps goes to the stores of the model, which in the application are SQLite
+files and on a server MariaDB (a schema of its own; needs `libmariadb`, `sudo apt install libmariadb-dev`). `database.type` is `sqlite` or `mariadb`.
+
+    cp market.example.json market.json                             # database, raw file cache, listen address
+    build/market-ingest histdata eurusd usdjpy --level 5m          # or: histdata all
+    build/market-server --config market.json                       # GET /health, /instruments, /summary[?codes=a,b]
+
+`market-ingest DATASET [CODE...|all] [--level 5m|1h|1d|1w|all] [--refresh] [--config FILE]` does everything for one dataset in one run: it
+finds the instruments, makes the missing nodes, gets the files (from the raw cache where they are), builds the bars and writes them. Run it
+again whenever: bars said again change nothing. The one dataset now is `histdata` (HistData.com's free 1-minute bid quotes, one file a request
+with a pause of two seconds); a pair with no data this year is left out.
+
+The bars are those the periods of the application are drawn from, each ending at the instrument's last bar (this data lags by weeks), keyed by
+slot number in UTC (`src/market/Bars.h`): 5-minute bars for the day, hourly for the week, daily for the month and the quarter, weekly for the
+year, 3 years and 10 years. How much of each the summaries keep is the model's (`defaultKeep`: 1 day, 7 days, 365 days, 10 years). Every bar
+that is written also goes to the model's `BarStore` (`StoreOptions::bars`), so that a server holds more than the summaries: for now the
+windows, later the whole history. The 1-minute data is not in the database: the downloaded zips are kept as they came in `cache_dir`, which is
+the only copy, and nothing deletes from it. `--refresh` asks again for the months of the current year and for the list of pairs.
+
+The tests are `market_tests` (part of `ctest`), on SQLite files, and on MariaDB where `MARKET_TEST_DB_USER` (and `MARKET_TEST_DB_PASSWORD`,
+`MARKET_TEST_DB_HOST`, `_PORT`, `_SOCKET`) name a user that may make and drop schemas `market_test_*` and `stocks_test_*` (the stores of the model
+are tested against both). They say SKIPPED where it is not set.
+
 ## Tests
 
     cmake --build build -j

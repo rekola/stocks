@@ -1,5 +1,7 @@
 #pragma once
 
+#include "model/BarStore.h"
+#include "model/BarWriter.h"
 #include "model/FactWriter.h"
 #include "model/Facts.h"
 #include "model/Summary.h"
@@ -217,6 +219,8 @@ class Snapshot {
   void settleRestored();
   // What the writes since the last call ask of the summary files.
   SummaryBatch takeSummaries();
+  // The bars the writes since the last call changed, for a BarStore (BarStore.h): all of them, not the summary's window.
+  BarBatch takeBars();
   // The edges that were made since the last call (what a store reads the facts of their nodes for, if it has not yet).
   std::vector<EdgeKey> takeNewEdges() { return std::exchange(newEdges_, {}); }
   uint64_t revision() const { return version_ + checks_; }
@@ -261,6 +265,7 @@ class Snapshot {
   std::set<EdgeKey> dirtyEdges_;
   std::set<SeriesKey> putQueues_;
   std::map<SeriesKey, std::vector<Candle>> mergeQueues_;
+  std::map<SeriesKey, std::vector<Candle>> pendingBars_;  // the bars said since the last `takeBars`
   std::map<SeriesKey, TimestampMs> touchQueues_;  // said again and the same: only when it was fetched moves
   std::vector<EdgeKey> newEdges_;                  // the edges made since the last `takeNewEdges`
   immer::map<EdgeKey, std::pair<int64_t, double>> previousClose_;  // the session's day number and the close before it
@@ -399,6 +404,9 @@ class Store : public StoreWrites {
   // Returns when what has been said of the nodes and the summaries is on its way to where it is kept (the disk, if a FactStore and a
   // SummaryStores were given).
   virtual void flush() {}
+  // How many batches the stores behind the store (facts, summaries, bars) threw on, all told since it was made: a write that the disk or the
+  // server did not take. Nothing is retried; a program that keeps things for others (the ingest) asks after `flush()` and says so.
+  virtual uint64_t failedWrites() const { return 0; }
 
   // The queues that are wanted now (the rows on screen and a margin), most wanted first, which replaces what was wanted before: those not in
   // memory are read from the disk on a thread of its own and published into the store (a version, nothing written back), and those wanted
@@ -428,6 +436,10 @@ struct StoreOptions {
   // only. The summary is not the data: the bars a source writes are never kept, only the quote and the queues derived from them.
   std::shared_ptr<SummaryStores> summaries;
   SummaryWriter::Options summary_writer;
+  // Where every bar a source writes is kept (BarStore.h), apart from the summary: for a server that holds the whole history. None: the bars stay in
+  // memory only, as they always have. Written on a thread of its own; `flush()` waits for it.
+  std::shared_ptr<BarStore> bars;
+  BarWriter::Options bar_writer;
   // What the queues in memory may hold, in bytes (48 per bar, `sizeof(Candle)`): above it, the ones not wanted for the longest are dropped (their
   // quote stays, and the disk has them). The default holds some 700,000 bars: a screen of rows with a margin is a few thousand.
   size_t queue_budget = kDefaultQueueBudget;

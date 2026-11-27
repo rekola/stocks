@@ -78,3 +78,13 @@ WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 OTHER DEALINGS IN THE SOFTWARE.
 ```
+
+## cpp-httplib
+
+MIT licence, Copyright (c) 2017 yhirose. <https://github.com/yhirose/cpp-httplib>, version 0.18.3. The market-data server's HTTP
+(`src/market/Api.cpp`).
+
+## miniz
+
+MIT licence, Copyright 2013-2014 RAD Game Tools and Valve Software, Copyright 2010-2014 Rich Geldreich and Tenacious Software LLC.
+<https://github.com/richgel999/miniz>, version 3.0.2. Reads the zip files the market-data ingest downloads (`src/market/Zip.cpp`).

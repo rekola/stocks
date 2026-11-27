@@ -623,6 +623,8 @@ void Snapshot::appendCandles(const EdgeKey & k, Resolution r, const std::vector<
   const bool summarised = deriveSummary(k, r, in);
   if (!changed && !summarised) return;  // the same bars again: no new version, nothing for a reader to refresh
   if (changed) {
+    auto & pending = pendingBars_[key];
+    pending.insert(pending.end(), in.begin(), in.end());
     series_ = series_.set(key, bars);
     const auto * known = resolutions_.find(k);
     resolutions_ = resolutions_.set(k, (known ? *known : immer::set<int>{}).insert(static_cast<int>(r)));
@@ -964,6 +966,13 @@ void Snapshot::evictQueue(const EdgeKey & k, Resolution r) {
   state.bars = {};
   queues_ = queues_.set(key, std::move(state));
   checks_++;  // published so that the memory is freed, but nothing that is shown changes
+}
+
+BarBatch Snapshot::takeBars() {
+  BarBatch out;
+  for (auto & [key, bars] : pendingBars_) out.series.push_back({key.edge, key.resolution, std::move(bars)});
+  pendingBars_.clear();
+  return out;
 }
 
 SummaryBatch Snapshot::takeSummaries() {
@@ -1397,6 +1406,7 @@ class MemoryStore : public Store {
     background_ = options.restore == StoreOptions::Restore::InBackground;
     facts_ = options.facts;
     if (options.summaries) summary_ = std::make_unique<SummaryWriter>(std::move(options.summaries), options.summary_writer);
+    if (options.bars) bars_ = std::make_unique<BarWriter>(std::move(options.bars), options.bar_writer);
     // The user's own file is small and what the program shows first: read here, before the constructor returns. A portfolio is in its own
     // file and never in the cache: one that is found there anyway is not read. What was kept of the nodes and the edges (the cache and the
     // summaries) is read before any source writes, or, in the background, newer than the sources' words are not allowed to stand over.
@@ -1445,6 +1455,11 @@ class MemoryStore : public Store {
   void flush() override {
     if (writer_) writer_->flush();
     if (summary_) summary_->flush();
+    if (bars_) bars_->flush();
+  }
+
+  uint64_t failedWrites() const override {
+    return (writer_ ? writer_->failed() : 0) + (summary_ ? summary_->failed() : 0) + (bars_ ? bars_->failed() : 0);
   }
 
   std::shared_ptr<const Snapshot> snapshot() const override { return current_.load(); }
@@ -1805,6 +1820,10 @@ class MemoryStore : public Store {
       if (portfolios_ && !mine.empty()) portfolios_->apply(mine);
       if (writer_) writer_->post(std::move(facts));
       noteNewEdges(next.takeNewEdges());
+      {
+        BarBatch bars = next.takeBars();
+        if (bars_) bars_->post(std::move(bars));
+      }
       SummaryBatch summaries = next.takeSummaries();
       if (summary_) {
         evict(next, summaries);
@@ -1831,6 +1850,7 @@ class MemoryStore : public Store {
   std::shared_ptr<FactStore> portfolios_;  // the user's file, if there is one
   std::unique_ptr<FactWriter> writer_;  // its thread ends first, with everything written
   std::unique_ptr<SummaryWriter> summary_;
+  std::unique_ptr<BarWriter> bars_;  // ends before the summaries
   std::shared_ptr<FactStore> facts_;  // read by the restore
   bool background_ = false;
   std::atomic<bool> stopping_{false}, restore_running_{false};

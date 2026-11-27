@@ -15,7 +15,14 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake pkg-config libunistring-dev \
-            libcairo2-dev libfontconfig1-dev libgtk-4-dev libcurl4-openssl-dev xvfb xdotool
+            libcairo2-dev libfontconfig1-dev libgtk-4-dev libcurl4-openssl-dev xvfb xdotool \
+            libmariadb-dev mariadb-server
+
+      # The market-data tests that need a server (the store and the API over it) run against a MariaDB of the runner's own.
+      - name: Start MariaDB for the market-data tests
+        run: |
+          sudo systemctl start mariadb
+          sudo mariadb -e "CREATE USER 'market_test'@'localhost' IDENTIFIED BY 'market_test'; GRANT ALL ON \`market\\_test\\_%\`.* TO 'market_test'@'localhost'; GRANT ALL ON \`stocks\\_test\\_%\`.* TO 'market_test'@'localhost';"
 
       - name: Configure
         run: cmake -B build
@@ -24,4 +31,7 @@ jobs:
         run: cmake --build build -j"$(nproc)"
 
       - name: Test
+        env:
+          MARKET_TEST_DB_USER: market_test
+          MARKET_TEST_DB_PASSWORD: market_test
         run: ctest --test-dir build --output-on-failure

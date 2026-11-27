@@ -23,8 +23,21 @@ inline constexpr const char * kLead = "XC0005705527";       // lead
 inline constexpr const char * kBricIndia = "US26075E1047";  // Dow Jones BRIC 50 India Subindex (BRIC50D)
 inline constexpr const char * kBitcoin = "XTV15WLZJMF0";    // Bitcoin
 inline constexpr const char * kEthereum = "XTD5RG2FHH04";   // Ethereum
+inline constexpr const char * kWti = "US12573F1084";         // WTI crude oil
+inline constexpr const char * kBrent = "XC0009677409";       // Brent crude oil
+inline constexpr const char * kSp500 = "US78378X1072";       // S&P 500
+inline constexpr const char * kNasdaq100 = "US6311011026";   // Nasdaq 100
+inline constexpr const char * kUsDollarIndex = "XD0009982303";  // US Dollar Index
+inline constexpr const char * kDax = "DE0008469008";         // DAX
+inline constexpr const char * kCac40 = "FR0003500008";       // CAC 40
+inline constexpr const char * kEuroStoxx50 = "EU0009658145"; // Euro STOXX 50
+inline constexpr const char * kFtse100 = "GB0001383545";     // FTSE 100
+inline constexpr const char * kNikkei225 = "JP9010C00002";   // Nikkei 225
+inline constexpr const char * kHangSeng = "HK0000004322";    // Hang Seng
+inline constexpr const char * kAsx200 = "XC0006013624";      // S&P/ASX 200
 
-inline constexpr const char * kReal[] = {kGold, kSilver, kPlatinum, kPalladium, kCopper, kZinc, kLead, kBricIndia, kBitcoin, kEthereum};
+inline constexpr const char * kReal[] = {kGold, kSilver, kPlatinum, kPalladium, kCopper, kZinc, kLead, kBricIndia, kBitcoin, kEthereum, kWti, kBrent, kSp500, kNasdaq100,
+                                          kUsDollarIndex, kDax, kCac40, kEuroStoxx50, kFtse100, kNikkei225, kHangSeng, kAsx200};
 
 // ---- Ours: private, ZZ and a number counted on from 1, with no gaps.
 inline constexpr const char * kGoldBar = "ZZ0000000016";       //  1: a gold bar held by the gram of fine gold (the physical metals, estimated)

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(stocks LANGUAGES CXX)
+project(stocks LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -80,7 +80,7 @@ FetchContent_MakeAvailable(SQLiteCpp)
 
 # The data model: plain values and the Store they live in. Knows nothing of the screen.
 add_library(stocks_model STATIC src/model/MemoryStore.cpp src/model/Isin.cpp src/model/Period.cpp src/model/NodeKey.cpp src/model/LegacyNodeKey.cpp
-  src/model/FactWriter.cpp src/model/SqliteFactStore.cpp src/model/SummaryRecords.cpp src/model/SummaryWriter.cpp src/model/SqliteSummaryStore.cpp src/portfolio/Portfolio.cpp src/portfolio/Transaction.cpp)
+  src/model/FactWriter.cpp src/model/SqliteFactStore.cpp src/model/SummaryRecords.cpp src/model/SummaryWriter.cpp src/model/BarWriter.cpp src/model/SqliteSummaryStore.cpp src/model/SqliteBarStore.cpp src/portfolio/Portfolio.cpp src/portfolio/Transaction.cpp)
 target_include_directories(stocks_model PUBLIC src)
 target_compile_features(stocks_model PUBLIC cxx_std_20)
 find_package(Threads REQUIRED)
@@ -89,13 +89,39 @@ target_link_libraries(stocks_model PUBLIC immer Threads::Threads)
 target_link_libraries(stocks_model PRIVATE SQLiteCpp nlohmann_json::nlohmann_json)
 
 # The browser: the screen, its commands and the rows it shows, as a library so the tests can drive it.
-add_library(stocks_lib STATIC src/Browser.cpp src/BrowserPortfolio.cpp src/Positions.cpp src/News.cpp src/AttributeView.cpp src/TransactionsView.cpp src/Quotes.cpp src/Synthetic.cpp src/source/Http.cpp src/source/InstrumentLists.cpp
-  src/icons/IconLoader.cpp src/history/HistoryLoader.cpp src/source/NordnetHistory.cpp src/source/YahooSource.cpp src/source/YahooHistory.cpp src/source/NordnetSource.cpp src/source/SourceRunner.cpp src/source/DatasetCodes.cpp src/source/AutoSource.cpp
-  src/source/DataDirectory.cpp src/source/FundRows.cpp src/source/FundSource.cpp src/source/NordnetDetails.cpp src/source/Countries.cpp src/source/KnownMarkets.cpp src/source/NordnetNews.cpp src/source/SuomenPankkiSource.cpp src/source/EcbSource.cpp src/source/PhysicalSource.cpp src/source/GoldApiSource.cpp src/source/GoldPriceSource.cpp src/source/GoldPriceHistory.cpp src/source/SifterSource.cpp)
+# The blocking GET and POST over httpclient, apart from the browser so that the market-data programs need no window toolkit.
+add_library(stocks_http STATIC src/source/Http.cpp)
+target_include_directories(stocks_http PUBLIC src)
+target_link_libraries(stocks_http PUBLIC httpclient::httpclient)
+
+# How the sources make the nodes of the store (the currency, the instrument by its ISIN, the unit a price is in, the markets by their MIC) and where
+# the data directory is: apart from the browser, so that the market-data server makes its instruments in exactly the same way as the application.
+add_library(stocks_nodes STATIC src/source/InstrumentLists.cpp src/source/KnownMarkets.cpp src/source/DataDirectory.cpp)
+target_include_directories(stocks_nodes PUBLIC src)
+target_link_libraries(stocks_nodes PUBLIC stocks_model)
+target_compile_definitions(stocks_nodes PUBLIC STOCKS_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")
+
+add_library(stocks_lib STATIC src/Browser.cpp src/BrowserPortfolio.cpp src/Positions.cpp src/News.cpp src/AttributeView.cpp src/TransactionsView.cpp src/Quotes.cpp src/Synthetic.cpp src/icons/IconLoader.cpp src/history/HistoryLoader.cpp src/source/NordnetHistory.cpp src/source/YahooSource.cpp src/source/YahooHistory.cpp src/source/NordnetSource.cpp src/source/SourceRunner.cpp src/source/DatasetCodes.cpp src/source/AutoSource.cpp
+  src/source/FundRows.cpp src/source/FundSource.cpp src/source/NordnetDetails.cpp src/source/Countries.cpp src/source/NordnetNews.cpp src/source/SuomenPankkiSource.cpp src/source/EcbSource.cpp src/source/PhysicalSource.cpp src/source/GoldApiSource.cpp src/source/GoldPriceSource.cpp src/source/GoldPriceHistory.cpp src/source/SifterSource.cpp)
 target_include_directories(stocks_lib PUBLIC src)
-target_link_libraries(stocks_lib PUBLIC cellui stocks_model httpclient::httpclient nlohmann_json::nlohmann_json pugixml::pugixml)
+target_link_libraries(stocks_lib PUBLIC cellui stocks_model stocks_nodes stocks_http httpclient::httpclient nlohmann_json::nlohmann_json pugixml::pugixml)
 target_compile_definitions(stocks_lib PUBLIC STOCKS_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
   STOCKS_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")
+
+# MariaDB: the stores of the model kept in a MariaDB schema (src/model/MariaDbStores.cpp), over a thin wrapper of libmariadb's prepared
+# statements, for a server. Built where libmariadb is found (pkg-config); not on Windows. The application keeps its own in SQLite.
+if(NOT WIN32)
+  find_package(PkgConfig QUIET)
+  if(PkgConfig_FOUND)
+    pkg_check_modules(MARIADB QUIET IMPORTED_TARGET GLOBAL libmariadb)
+  endif()
+endif()
+if(MARIADB_FOUND)
+  add_library(stocks_mariadb STATIC src/model/MariaDb.cpp src/model/MariaDbStores.cpp)
+  target_link_libraries(stocks_mariadb PUBLIC stocks_model PkgConfig::MARIADB)
+else()
+  message(STATUS "The MariaDB stores are not built: they need libmariadb (pkg-config)")
+endif()
 
 add_executable(stocks src/main.cpp)
 
@@ -142,10 +168,19 @@ endif()
 # The browser on a test display: keys in, what it shows out. cellui's test display
 # (TestBackend) is built where there is a POSIX event loop, so not on Windows.
 if(NOT WIN32)
-  add_executable(stocks_tests tests/test_main.cpp tests/BrowserTests.cpp tests/ModelTests.cpp tests/SourceTests.cpp tests/InstrumentListsTests.cpp tests/NordnetTests.cpp tests/HistoryTests.cpp tests/NordnetHistoryTests.cpp tests/DatesTests.cpp tests/IconTests.cpp tests/FundTests.cpp tests/DataDirectoryTests.cpp tests/FactTests.cpp tests/NodeKeyTests.cpp tests/NordnetDetailsTests.cpp tests/NordnetNewsTests.cpp tests/SuomenPankkiTests.cpp tests/EcbTests.cpp tests/PortfolioTests.cpp tests/PortfolioFileTests.cpp tests/PhysicalTests.cpp tests/KnownIsinsTests.cpp tests/GoldApiTests.cpp tests/GoldPriceTests.cpp tests/SifterTests.cpp tests/SummaryTests.cpp tests/SummaryStoreTests.cpp)
+  add_executable(stocks_tests tests/test_main.cpp tests/BrowserTests.cpp tests/ModelTests.cpp tests/SourceTests.cpp tests/InstrumentListsTests.cpp tests/NordnetTests.cpp tests/HistoryTests.cpp tests/NordnetHistoryTests.cpp tests/DatesTests.cpp tests/IconTests.cpp tests/FundTests.cpp tests/DataDirectoryTests.cpp tests/FactTests.cpp tests/NodeKeyTests.cpp tests/NordnetDetailsTests.cpp tests/NordnetNewsTests.cpp tests/SuomenPankkiTests.cpp tests/EcbTests.cpp tests/PortfolioTests.cpp tests/PortfolioFileTests.cpp tests/PhysicalTests.cpp tests/KnownIsinsTests.cpp tests/GoldApiTests.cpp tests/GoldPriceTests.cpp tests/SifterTests.cpp tests/SummaryTests.cpp tests/SummaryStoreTests.cpp tests/BarStoreTests.cpp)
   target_link_libraries(stocks_tests PRIVATE stocks_lib SQLiteCpp)  # the tests of the file make an old one with it
+  if(TARGET stocks_mariadb)
+    target_sources(stocks_tests PRIVATE tests/MariaDbStoreTests.cpp)
+    target_link_libraries(stocks_tests PRIVATE stocks_mariadb)
+  endif()
   add_test(NAME stocks_tests COMMAND stocks_tests)
   set_tests_properties(stocks_tests PROPERTIES TIMEOUT 60)
+endif()
+
+# The market-data server and its ingest (src/market, plans/server.md). Not built on Windows.
+if(NOT WIN32)
+  add_subdirectory(src/market)
 endif()
 
 # Warnings are errors for our own code (as in synth). They are set on our targets only, never in CMAKE_CXX_FLAGS: that would
