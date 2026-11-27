@@ -166,6 +166,31 @@ TEST(copper_bars_are_asked_as_xcu_and_the_pounds_are_a_tonne) {
   CHECK(bars.size() == 1 && std::abs(bars[0].close - 5.5 * kPoundsPerTonne) < 1e-6 && std::abs(bars[0].low - 4 * kPoundsPerTonne) < 1e-6);
 }
 
+TEST(daily_bars_make_weekly_ones_and_a_week_cut_at_its_start_is_left_out) {
+  const auto day = [](unsigned d, double open, double high, double low, double close, double volume = kUndefined) { return Candle{dayNumber(2026, 11, d), open, high, low, close, volume}; };
+  // The 17th is a Tuesday: its week (from the 16th) is cut at the start. The 23rd is a Monday, the 29th a Sunday; the 30th starts the next week.
+  const auto weeks = GoldPriceHistory::weeks({day(17, 9, 9, 9, 9), day(18, 9, 9, 9, 9), day(23, 10, 12, 9, 11, 5), day(24, 11, 15, 8, 14, 7), day(29, 14, 14, 14, 13), day(30, 20, 21, 19, 20.5)});
+  CHECK(weeks.size() == 2);
+  CHECK(weeks[0].time == dayNumber(2026, 11, 23) && weeks[0].open == 10 && weeks[0].high == 15 && weeks[0].low == 8 && weeks[0].close == 13 && weeks[0].volume == 12);
+  CHECK(weeks[1].time == dayNumber(2026, 11, 30) && weeks[1].open == 20 && weeks[1].close == 20.5 && !isDefined(weeks[1].volume));
+  CHECK(GoldPriceHistory::weeks({}).empty() && GoldPriceHistory::weeks({day(18, 9, 9, 9, 9)}).empty());
+}
+
+TEST(a_load_writes_the_weeks_of_all_the_daily_bars_the_store_has) {
+  Edge edge;
+  GoldPriceHistory history;
+  FakeHttp http;
+  const auto answer = [&](const char * body) { http.answer = [body](const std::string &) { return ok(body); }; };
+  // The first load has the days of the week of the 16th from the Wednesday; the second the Monday and Tuesday of it: the week is whole only then.
+  answer(R"({"bars":[{"bar_start":"2026-11-19T00:00:00Z","open":"3","high":"4","low":"2","close":"3.5"},{"bar_start":"2026-11-18T00:00:00Z","open":"2","high":"3","low":"1","close":"3"}],"next_cursor":null})");
+  CHECK(history.load(*edge.store, http, edge.key, 0, [] { return true; }) == HistoryProvider::Outcome::Ok);
+  CHECK(edge.store->snapshot()->candles(edge.key, Resolution::Week).candles.empty());
+  answer(R"({"bars":[{"bar_start":"2026-11-17T00:00:00Z","open":"1.5","high":"2","low":"1.2","close":"2"},{"bar_start":"2026-11-16T00:00:00Z","open":"1","high":"2","low":"0.5","close":"1.5"}],"next_cursor":null})");
+  CHECK(history.load(*edge.store, http, edge.key, 0, [] { return true; }) == HistoryProvider::Outcome::Ok);
+  const auto weeks = edge.store->snapshot()->candles(edge.key, Resolution::Week).candles;
+  CHECK(weeks.size() == 1 && weeks[0].time == dayNumber(2026, 11, 16) && weeks[0].open == 1 && weeks[0].high == 4 && weeks[0].low == 0.5 && weeks[0].close == 3.5);
+}
+
 TEST(a_page_with_a_cursor_is_followed_and_what_the_plan_refuses_is_missing_not_refused) {
   Edge edge;
   GoldPriceHistory history;

@@ -87,6 +87,29 @@ bool GoldPriceHistory::parse(const std::string & body, Bars & out, std::string &
   return true;
 }
 
+std::vector<Candle> GoldPriceHistory::weeks(const std::vector<Candle> & days) {
+  std::vector<Candle> out;
+  for (const Candle & d : days) {
+    const int64_t start = weekStart(d.time);
+    if (out.empty() || out.back().time != start) {
+      if (out.empty() && d.time != start) {  // the first week lacks its Monday: it is not whole
+        out.push_back(Candle{start, kUndefined, kUndefined, kUndefined, kUndefined, kUndefined});
+        continue;
+      }
+      out.push_back(Candle{start, isDefined(d.open) ? d.open : d.close, isDefined(d.high) ? d.high : d.close, isDefined(d.low) ? d.low : d.close, d.close, d.volume});
+      continue;
+    }
+    Candle & w = out.back();
+    if (!isDefined(w.close)) continue;  // inside the week that is left out
+    w.high = std::max(w.high, isDefined(d.high) ? d.high : d.close);
+    w.low = std::min(w.low, isDefined(d.low) ? d.low : d.close);
+    w.close = d.close;
+    if (isDefined(d.volume)) w.volume = isDefined(w.volume) ? w.volume + d.volume : d.volume;
+  }
+  if (!out.empty() && !isDefined(out.front().close)) out.erase(out.begin());
+  return out;
+}
+
 HistoryProvider::Outcome GoldPriceHistory::load(Store & store, Http & http, const EdgeKey & edge, int, const Wait & wait) {
   const auto snapshot = store.snapshot();
   const auto listing = snapshot->listing(edge);
@@ -127,5 +150,8 @@ HistoryProvider::Outcome GoldPriceHistory::load(Store & store, Http & http, cons
         if (isDefined(*v)) *v *= factor;
     }
   store.appendCandles(edge, Resolution::Day, all);
+  // The weeks of every daily bar the store has, not of this answer alone: a week the window cut at its start is whole with the days an earlier load kept.
+  const auto kept = store.snapshot()->candles(edge, Resolution::Day).candles;
+  store.appendCandles(edge, Resolution::Week, weeks(std::vector<Candle>(kept.begin(), kept.end())));
   return Outcome::Ok;
 }
