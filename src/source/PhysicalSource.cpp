@@ -119,7 +119,7 @@ void PhysicalSource::load(Store & store, Http &, SourceListener & listener) {
   struct Spot {
     size_t rank;
     EdgeKey edge;
-    Candle bar;
+    Quote bar;  // the spot's quote
   };
   std::map<std::string, std::map<uint64_t, Spot>> spots;  // by the metal, then by the quote currency
   std::vector<std::optional<DatasetId>> rowDatasets;     // the dataset each spot row names, if it does and the store has it
@@ -128,15 +128,17 @@ void PhysicalSource::load(Store & store, Http &, SourceListener & listener) {
     for (const EdgeKey & key : snapshot->edges(*market)) {
       const auto listing = snapshot->listing(key);
       if (!listing) continue;
-      const CandleSeries last = snapshot->lastCandles(key, Resolution::Day, 1);
-      if (last.candles.empty() || !isDefined(last.candles.back().close)) continue;
+      // The spot is the quote a source says (the live price is no bar).
+      const auto quote = snapshot->quote(key);
+      if (!quote || !quote->time || !isDefined(quote->last)) continue;
+      const Quote & bar = *quote;
       for (size_t rank = 0; rank < table_.spots.size(); rank++) {
         if (table_.spots[rank].symbol != listing->symbol) continue;
         if (!table_.spots[rank].dataset.empty() && (!rowDatasets[rank] || *rowDatasets[rank] != key.dataset)) continue;
         auto & of = spots[table_.spots[rank].metal];
         const auto found = of.find(key.quote.value);
-        const Candle & bar = last.candles.back();
-        const bool better = found == of.end() || bar.time > found->second.bar.time || (bar.time == found->second.bar.time && rank < found->second.rank);
+        const int64_t day = dayNumberOfInstant(bar.time), foundDay = found == of.end() ? 0 : dayNumberOfInstant(found->second.bar.time);
+        const bool better = found == of.end() || day > foundDay || (day == foundDay && rank < found->second.rank);
         if (better) of[key.quote.value] = {rank, key, bar};
       }
     }
@@ -162,8 +164,11 @@ void PhysicalSource::load(Store & store, Http &, SourceListener & listener) {
       // One edge for each currency the metal's spot is in: a price in euros for an item held in euros, and one in dollars.
       for (const auto & [quote, spot] : metal->second) {
         const EdgeKey edge{instrument, spot.edge.quote, market, dataset};
-        const Candle & bar = spot.bar;
-        b.appendCandles(edge, Resolution::Day, {{bar.time, bar.open * scale, bar.high * scale, bar.low * scale, bar.close * scale, kUndefined}});
+        // A quote and no bar: the estimate is the spot's price now, and the spot's bars are the history's.
+        Quote estimate;
+        estimate.last = spot.bar.last * scale;
+        estimate.time = spot.bar.time;
+        b.setQuote(edge, estimate);
         b.setListing({edge, item.symbol, "", "", "PHYSICAL", item.name});
       }
     }

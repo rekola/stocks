@@ -37,7 +37,7 @@ struct World {
   DatasetId data = store->addDataset(kNordnetDataset);
   EdgeKey spot{gold, usd, none, data};
   void setSpot(double close, int64_t day = kDay) {
-    store->appendCandles(spot, Resolution::Day, {{day, kUndefined, close * 1.01, close * 0.99, close, kUndefined}});
+    store->setQuote(spot, {close, kUndefined, kUndefined, (day - kUnixEpochDayNumber) * 86400 + 52000});
     store->setListing({spot, "GOLD", "", "", "COMMODITY", "Kulta"});
   }
   void setPair() { store->appendCandles({eur, usd, none, data}, Resolution::Day, {{kDay, 1, 1, 1, 1.25, 1}}); }
@@ -85,10 +85,11 @@ TEST(the_two_golds_are_priced_from_the_spot_off_exchange_in_their_own_dataset) {
   CHECK(bar->quote == w.usd && coin->quote == w.usd && bar->dataset == coin->dataset && s->name(bar->dataset) == "Estimate");
   CHECK(s->findDataset(kPhysicalDataset) && bar->market == *s->findMarket(kOffExchange));
   // A gram of fine gold at the dealer's bid, and an ounce coin at its.
-  const Candle b = s->lastCandles(*bar, Resolution::Day, 1).candles.back(), c = s->lastCandles(*coin, Resolution::Day, 1).candles.back();
-  CHECK(b.time == kDay && std::abs(b.close - 3000 / kOunce * 0.97) < 1e-2);
-  CHECK(c.time == kDay && std::abs(c.close - 3000 * 0.98) < 1e-9);
-  CHECK(std::abs(c.high - 3030 * 0.98) < 1e-9 && std::abs(c.low - 2970 * 0.98) < 1e-9 && !isDefined(c.open));
+  // A quote at the time of the spot's, and no bar.
+  const Quote b = *s->quote(*bar), c = *s->quote(*coin);
+  CHECK(dayNumberOfInstant(b.time) == kDay && b.time == (kDay - kUnixEpochDayNumber) * 86400 + 52000 && std::abs(b.last - 3000 / kOunce * 0.97) < 1e-2);
+  CHECK(c.time == b.time && std::abs(c.last - 3000 * 0.98) < 1e-9);
+  CHECK(s->candles(*bar, Resolution::Day).candles.empty() && s->candles(*coin, Resolution::Day).candles.empty());
   // The names, the symbols and the listings, and they are instruments of their own that can be held.
   CHECK(s->name(NodeRef(bar->base)) == "Gold bar (1 g fine)" && s->symbol(*coin) == "GOLDCOIN" && s->kind(bar->base) == InstrumentKind::Commodity);
   CHECK(bar->base != coin->base && bar->base != w.gold);
@@ -96,7 +97,7 @@ TEST(the_two_golds_are_priced_from_the_spot_off_exchange_in_their_own_dataset) {
   CHECK(!portfolio::tradable(*s, w.spot));  // the spot itself is not
 }
 
-TEST(the_estimate_follows_the_spot_and_a_new_day_is_a_new_bar) {
+TEST(the_estimate_follows_the_spot_and_writes_no_bar) {
   World w;
   w.setSpot(3000);
   PhysicalSource source(table());
@@ -106,12 +107,12 @@ TEST(the_estimate_follows_the_spot_and_a_new_day_is_a_new_bar) {
   w.setSpot(3100);  // the spot moved on the same day
   source.load(*w.store, http, listener);
   const auto coin = *w.edgeOf("GOLDCOIN");
-  auto bars = w.store->snapshot()->candles(coin, Resolution::Day).candles;
-  CHECK(bars.size() == 1 && std::abs(bars[0].close - 3100 * 0.98) < 1e-9);
+  CHECK(std::abs(w.store->snapshot()->quote(coin)->last - 3100 * 0.98) < 1e-9);
   w.setSpot(3200, kDay + 1);
   source.load(*w.store, http, listener);
-  bars = w.store->snapshot()->candles(coin, Resolution::Day).candles;
-  CHECK(bars.size() == 2 && bars[1].time == kDay + 1 && std::abs(bars[1].close - 3200 * 0.98) < 1e-9);
+  const auto quote = *w.store->snapshot()->quote(coin);
+  CHECK(dayNumberOfInstant(quote.time) == kDay + 1 && std::abs(quote.last - 3200 * 0.98) < 1e-9);
+  CHECK(w.store->snapshot()->candles(coin, Resolution::Day).candles.empty());
   // Nothing changed: nothing written again.
   const uint64_t version = w.store->snapshot()->version();
   source.load(*w.store, http, listener);

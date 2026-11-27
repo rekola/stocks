@@ -59,11 +59,11 @@ TEST(the_symbols_answer_is_read_and_a_row_without_a_symbol_is_left_out) {
   CHECK(!GoldApiSource::parseSymbols("{}", symbols, error) && !GoldApiSource::parseSymbols("[]", symbols, error));
 }
 
-TEST(a_price_answer_is_read_with_the_date_of_its_update) {
+TEST(a_price_answer_is_read_with_the_time_of_its_update) {
   GoldApiSource::Price p;
   std::string error;
   CHECK(GoldApiSource::parsePrice(fixture("price-XAU-EUR.json"), p, error));
-  CHECK(p.symbol == "XAU" && p.name == "Gold" && p.currency == "EUR" && std::abs(p.price - 3312.7278451306997) < 1e-9 && p.day == dayNumber(2026, 11, 24));
+  CHECK(p.symbol == "XAU" && p.name == "Gold" && p.currency == "EUR" && std::abs(p.price - 3312.7278451306997) < 1e-9 && p.time == (dayNumber(2026, 11, 24) - kUnixEpochDayNumber) * 86400 + 14 * 3600 + 19 * 60 + 44);
   CHECK(GoldApiSource::parsePrice(fixture("price-XAU-USD.json"), p, error) && p.currency == "USD" && std::abs(p.price - 3617.699951) < 1e-9);
   CHECK(GoldApiSource::parsePrice(fixture("price-BTC-USD.json"), p, error) && p.symbol == "BTC");
   for (const char * bad : {"", "[]", "{}", R"({"symbol":"XAU","currency":"EUR","price":"3000","updatedAt":"2026-11-24T14:19:44Z"})",
@@ -93,28 +93,33 @@ TEST(every_symbol_is_priced_in_euros_and_in_dollars_as_edges_of_the_dataset) {
   const DatasetId data = *s->findDataset(kGoldApiDataset);
   CHECK(s->name(NodeRef(data)) == "gold-api.com" && s->edges(none).size() == 14);
   const InstrumentId gold = *s->findInstrument("XAU");
-  const CandleSeries inEuros = s->candles({gold, eur, none, data}, Resolution::Day), inDollars = s->candles({gold, usd, none, data}, Resolution::Day);
-  CHECK(inEuros.candles.size() == 1 && inDollars.candles.size() == 1);
-  CHECK(std::abs(inEuros.candles[0].close - 3240) < 1e-6 && std::abs(inDollars.candles[0].close - 3600) < 1e-9);
-  CHECK(inEuros.candles[0].time == dayNumber(2026, 11, 24) && !isDefined(inEuros.candles[0].open) && !isDefined(inEuros.candles[0].volume));
+  // A live price is a quote and no bar: the bars are history's, and this API has none.
+  const auto inEuros = s->quote({gold, eur, none, data}), inDollars = s->quote({gold, usd, none, data});
+  CHECK(inEuros && inDollars);
+  CHECK(std::abs(inEuros->last - 3240) < 1e-6 && std::abs(inDollars->last - 3600) < 1e-9);
+  CHECK(inEuros->time == (dayNumber(2026, 11, 24) - kUnixEpochDayNumber) * 86400 + 14 * 3600 + 19 * 60 + 44);  // the real time of the price
+  const int64_t noon = (dayNumber(2026, 11, 25) - kUnixEpochDayNumber) * 86400 + 12 * 3600;
+  CHECK(instantOfIsoTimestamp("2026-11-25T12:00:00Z") == noon && instantOfIsoTimestamp("2026-11-25T14:00:00.418143+02:00") == noon);
+  CHECK(!instantOfIsoTimestamp("2026-11-25") && !instantOfIsoTimestamp("2026-11-25T12:00:00") && !instantOfIsoTimestamp("2026-11-25T12:00:00+0200"));
+  CHECK(s->candles({gold, eur, none, data}, Resolution::Day).candles.empty() && s->candles({gold, usd, none, data}, Resolution::Day).candles.empty());
   CHECK(s->symbol(EdgeKey{gold, eur, none, data}) == "XAU" && s->name(NodeRef(gold)) == "Gold");
   // What a price is for is in the name the row shows: the metals by the troy ounce, copper by the pound, a coin by the coin.
   for (auto [symbol, shown] : {std::pair{"XAU", "Gold, per troy oz"}, {"XAG", "Silver, per troy oz"}, {"XPT", "Platinum, per troy oz"},
-                               {"XPD", "Palladium, per troy oz"}, {"HG", "Copper, per tonne"}, {"BTC", "Bitcoin, per coin"}, {"ETH", "Ethereum, per coin"}})
+                               {"XPD", "Palladium, per troy oz"}, {"HG", "Copper, per tonne"}, {"BTC", "₿ Bitcoin, per coin"}, {"ETH", "⟠ Ethereum, per coin"}})
     for (const InstrumentId currency : {eur, usd}) CHECK(s->listing({*s->findInstrument(symbol), currency, none, data})->name == shown);
   // Copper is quoted per pound by the API and is kept per metric tonne, the unit of the instrument (another source's copper has the same ISIN).
-  CHECK(std::abs(s->lastCandles({*s->findInstrument("HG"), usd, none, data}, Resolution::Day, 1).candles.back().close - 5 * 1000 / 0.45359237) < 1e-6);
-  CHECK(std::abs(s->lastCandles({*s->findInstrument("HG"), eur, none, data}, Resolution::Day, 1).candles.back().close - 4.5 * 1000 / 0.45359237) < 1e-6);
-  CHECK(std::abs(s->lastCandles({*s->findInstrument("XAG"), usd, none, data}, Resolution::Day, 1).candles.back().close - 45) < 1e-9);  // the others as they come
+  CHECK(std::abs(s->quote({*s->findInstrument("HG"), usd, none, data})->last - 5 * 1000 / 0.45359237) < 1e-6);
+  CHECK(std::abs(s->quote({*s->findInstrument("HG"), eur, none, data})->last - 4.5 * 1000 / 0.45359237) < 1e-6);
+  CHECK(std::abs(s->quote({*s->findInstrument("XAG"), usd, none, data})->last - 45) < 1e-9);  // the others as they come
   // The metals are commodities (so in the Commodities preset), the coins are of no kind.
   for (const char * metal : {"XAU", "XAG", "XPT", "XPD", "HG"}) CHECK(s->kind(*s->findInstrument(metal)) == InstrumentKind::Commodity);
-  for (const char * coin : {"BTC", "ETH"}) CHECK(s->kind(*s->findInstrument(coin)) == InstrumentKind::Other);
+  for (const char * coin : {"BTC", "ETH"}) CHECK(s->kind(*s->findInstrument(coin)) == InstrumentKind::Crypto);
   CHECK(s->name(NodeRef(*s->findInstrument("XPT"))) == "Platinum" && std::string(s->said(NodeRef(gold), predicate::type)) == "METAL");
   // Not tradable: a spot price is priced and not bought.
   CHECK(!portfolio::tradable(*s, EdgeKey{gold, eur, none, data}));
 }
 
-TEST(a_second_load_replaces_the_days_bar_and_a_new_day_adds_one) {
+TEST(a_second_load_replaces_the_quote_and_leaves_no_bar) {
   auto store = makeMemoryStore();
   FakeHttp http;
   double gold = 3600;
@@ -130,11 +135,12 @@ TEST(a_second_load_replaces_the_days_bar_and_a_new_day_adds_one) {
   source.load(*store, http, said);
   auto s = store->snapshot();
   const EdgeKey usd{*s->findInstrument("XAU"), *s->findInstrument("USD"), *s->findMarket(kNoMarket), *s->findDataset(kGoldApiDataset)};
-  CHECK(s->candles(usd, Resolution::Day).candles.size() == 1 && s->candles(usd, Resolution::Day).candles[0].close == 3650);
+  CHECK(s->quote(usd)->last == 3650 && s->candles(usd, Resolution::Day).candles.empty());
   updated = "2026-11-25T00:00:05Z";
   source.load(*store, http, said);
-  const auto bars = store->snapshot()->candles(usd, Resolution::Day).candles;
-  CHECK(bars.size() == 2 && bars[1].time == dayNumber(2026, 11, 25) && bars[1].close == 3650);
+  const auto quote = store->snapshot()->quote(usd);
+  CHECK(quote->last == 3650 && dayNumberOfInstant(quote->time) == dayNumber(2026, 11, 25));
+  CHECK(store->snapshot()->candles(usd, Resolution::Day).candles.empty());
   const uint64_t version = store->snapshot()->version();
   source.load(*store, http, said);  // the same again
   CHECK(store->snapshot()->version() == version);
@@ -231,11 +237,11 @@ TEST(the_gold_estimate_is_made_in_euros_and_in_dollars_from_gold_api_com_and_bea
   CHECK(s->edges(off).size() == 4);  // the bar and the coin, each in euros and in dollars
   const DatasetId estimateData = *s->findDataset(kPhysicalDataset);
   const InstrumentId coin = *s->findInstrument("GOLDCOIN"), bar = *s->findInstrument("GOLDBAR");
-  const double inEuros = s->lastCandles({coin, eur, off, estimateData}, Resolution::Day, 1).candles.back().close;
-  const double inDollars = s->lastCandles({coin, usd, off, estimateData}, Resolution::Day, 1).candles.back().close;
+  const double inEuros = s->quote({coin, eur, off, estimateData})->last;
+  const double inDollars = s->quote({coin, usd, off, estimateData})->last;
   CHECK(std::abs(inEuros - 3240 * 0.98) < 1e-6);     // gold-api.com's euros
   CHECK(std::abs(inDollars - 3600 * 0.98) < 1e-6);   // and its dollars, not Nordnet's 3500
-  CHECK(std::abs(s->lastCandles({bar, eur, off, estimateData}, Resolution::Day, 1).candles.back().close - 3240 * 0.0321507466 * 0.97) < 1e-6);
+  CHECK(std::abs(s->quote({bar, eur, off, estimateData})->last - 3240 * 0.0321507466 * 0.97) < 1e-6);
   // A portfolio in euros holds the bar and values it in euros directly, with no pair needed.
   const PortfolioId p{portfolioKey(1)->value};
   const DatasetId user = store->addDataset(kUserDataset);
@@ -280,11 +286,11 @@ TEST(a_sample_of_physical_platinum_is_priced_from_the_platinum_spot_in_both_curr
   const InstrumentId bar = *s->findInstrument("PLATBAR"), eur = *s->findInstrument("EUR"), usd = *s->findInstrument("USD");
   CHECK(s->name(NodeRef(bar)) == "Platinum bar (1 g fine)" && s->kind(bar) == InstrumentKind::Commodity && portfolio::tradable(*s, EdgeKey{bar, eur, off, data}));
   const double gram = 0.0321507466;
-  CHECK(std::abs(s->lastCandles({bar, eur, off, data}, Resolution::Day, 1).candles.back().close - 1300 * 0.9 * gram * 0.93) < 1e-6);
-  CHECK(std::abs(s->lastCandles({bar, usd, off, data}, Resolution::Day, 1).candles.back().close - 1300 * gram * 0.93) < 1e-6);
+  CHECK(std::abs(s->quote({bar, eur, off, data})->last - 1300 * 0.9 * gram * 0.93) < 1e-6);
+  CHECK(std::abs(s->quote({bar, usd, off, data})->last - 1300 * gram * 0.93) < 1e-6);
   // The gold bar is the gold's, not the platinum's.
   const InstrumentId goldBar = *s->findInstrument("GOLDBAR");
-  CHECK(std::abs(s->lastCandles({goldBar, usd, off, data}, Resolution::Day, 1).candles.back().close - 3600 * gram * 0.97) < 1e-6);
+  CHECK(std::abs(s->quote({goldBar, usd, off, data})->last - 3600 * gram * 0.97) < 1e-6);
 }
 
 TEST(a_metal_has_the_isin_of_its_commodity_and_is_the_instrument_another_source_made_by_it) {
@@ -301,7 +307,7 @@ TEST(a_metal_has_the_isin_of_its_commodity_and_is_the_instrument_another_source_
   CHECK(s->findInstrumentByIsin("XC0009655157") == std::optional<InstrumentId>(nordnetGold) && s->findInstrument("XAU") == std::optional<InstrumentId>(nordnetGold));
   CHECK(s->name(NodeRef(nordnetGold)) == "Kulta" && s->said(NodeRef(nordnetGold), predicate::type) == "COMMODITY");
   const MarketId none = *s->findMarket(kNoMarket);
-  CHECK(s->edges(none).size() == 14 && s->hasCandles({nordnetGold, *s->findInstrument("EUR"), none, *s->findDataset(kGoldApiDataset)}, Resolution::Day));
+  CHECK(s->edges(none).size() == 14 && s->quote({nordnetGold, *s->findInstrument("EUR"), none, *s->findDataset(kGoldApiDataset)}));
   // Every symbol has a real (valid) ISIN, the ones source/KnownIsins.h names, and none is one of ours: there is no second gold, and the coins are not private.
   for (auto [symbol, isin] : {std::pair{"XAU", "XC0009655157"}, {"XAG", "XC0009653103"}, {"XPT", "XC0009665545"}, {"XPD", "XC0009665529"}, {"HG", "XC0005705501"},
                               {"BTC", "XTV15WLZJMF0"}, {"ETH", "XTD5RG2FHH04"}}) {

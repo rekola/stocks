@@ -157,7 +157,7 @@ inline constexpr double kUndefined = std::numeric_limits<double>::quiet_NaN();
 inline bool isDefined(double v) { return v == v; }
 
 // What an instrument is, in one vocabulary for all providers: each adapter maps its own types onto these. The provider's own type is kept beside it, under `predicate::type`.
-enum class InstrumentKind { Company, Currency, Commodity, Index, Etf, Certificate, Fund, Unit, Other };  // a unit: what an index is quoted in
+enum class InstrumentKind { Company, Currency, Commodity, Index, Etf, Certificate, Fund, Unit, Crypto, Other };  // a unit: what an index is quoted in
 
 inline const char * kindName(InstrumentKind k) {
   switch (k) {
@@ -169,13 +169,14 @@ inline const char * kindName(InstrumentKind k) {
     case InstrumentKind::Certificate: return "certificate";
     case InstrumentKind::Fund: return "fund";
     case InstrumentKind::Unit: return "unit";
+    case InstrumentKind::Crypto: return "crypto";
     case InstrumentKind::Other: break;
   }
   return "other";
 }
 inline InstrumentKind kindOfName(const std::string & s) {
   for (InstrumentKind k : {InstrumentKind::Company, InstrumentKind::Currency, InstrumentKind::Commodity, InstrumentKind::Index,
-                           InstrumentKind::Etf, InstrumentKind::Certificate, InstrumentKind::Fund, InstrumentKind::Unit})
+                           InstrumentKind::Etf, InstrumentKind::Certificate, InstrumentKind::Fund, InstrumentKind::Unit, InstrumentKind::Crypto})
     if (s == kindName(k)) return k;
   return InstrumentKind::Other;
 }

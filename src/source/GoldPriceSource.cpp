@@ -79,11 +79,11 @@ bool GoldPriceSource::parsePrices(const std::string & body, std::vector<Price> &
     p.currency = text(row, "quote_currency");
     p.unit = text(row, "unit");
     const auto price = amount(row, "price");
-    // "2026-11-25T14:22:01.418143+00:00": the date is the first ten characters, which is UTC for the offset +00:00 the API writes.
-    const auto day = dayNumberOfIsoDate(text(row, "computed_at").substr(0, 10));
-    if (p.symbol.empty() || p.currency.empty() || p.unit.empty() || !price || !std::isfinite(*price) || *price <= 0 || !day) continue;
+    // "2026-11-25T14:22:01.418143+00:00": the instant the price was computed, which is the time of its quote.
+    const auto time = instantOfIsoTimestamp(text(row, "computed_at"));
+    if (p.symbol.empty() || p.currency.empty() || p.unit.empty() || !price || !std::isfinite(*price) || *price <= 0 || !time) continue;
     p.price = *price;
-    p.day = *day;
+    p.time = *time;
     if (auto stale = row.find("is_stale"); stale != row.end() && stale->is_boolean()) p.stale = stale->get<bool>();
     // Spot only: the API names the contract (a future would be another price of the metal).
     if (const std::string type = text(row, "contract_type"); !type.empty() && type != "spot") continue;
@@ -118,7 +118,7 @@ void GoldPriceSource::load(Store & store, Http & http, SourceListener & listener
     struct Row {
       std::string currency;
       double value;
-      int64_t day;
+      Timestamp time;
     };
     std::vector<Row> rows;
     for (const Price & p : prices) {
@@ -135,7 +135,7 @@ void GoldPriceSource::load(Store & store, Http & http, SourceListener & listener
         listener.message("goldprice: " + symbol + "/" + p.currency + ": a price per " + p.unit + " is not one this adapter knows");
         continue;
       }
-      rows.push_back({p.currency, p.price * factor, p.day});
+      rows.push_back({p.currency, p.price * factor, p.time});
     }
     if (rows.empty()) continue;
     store.batch([&](Batch & b) {
@@ -147,7 +147,11 @@ void GoldPriceSource::load(Store & store, Http & http, SourceListener & listener
         const InstrumentId quote = currencyNode(b, row.currency);
         if (!quote.valid()) continue;
         const EdgeKey edge{base, quote, market, dataset};
-        b.appendCandles(edge, Resolution::Day, {{row.day, kUndefined, kUndefined, kUndefined, row.value, kUndefined}});
+        // The quote only: the bars are the history's (GoldPriceHistory), the real ones.
+        Quote spot;
+        spot.last = row.value;
+        spot.time = row.time;
+        b.setQuote(edge, spot);
         b.setListing({edge, symbol, "", "", "METAL", std::string(known->name) + ", per " + known->unit});
       }
     });

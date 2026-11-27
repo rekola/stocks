@@ -13,8 +13,8 @@
 // of the currencies (EUR and USD), so a price in euros is the API's own and not a conversion of ours.
 //
 // Each symbol is an instrument (by the ISIN source/KnownIsins.h gives it: the real one of the commodity for the metals, one of ours for the coins), priced as it is quoted on XXXX (the market of what is priced and
-// not traded), one edge for each currency in the dataset "GOLD-API": one daily bar, on the UTC date the API says it was updated,
-// whose close is the last price (no open, high, low or volume: the answer has none), replaced at every load and added on a new day.
+// not traded), one edge for each currency in the dataset "GOLD-API": its quote, at the instant the API says it was updated,
+// whose last price is the price (no bar: a live price is not history, and the API has no history), replaced at every load.
 // A price is for the unit its row names ("Gold, per troy oz", "Copper, per tonne", a coin per coin): the unit goes with the ISIN (every source
 // that has the instrument gives it in that one), and the API says none, so it is the adapter's (the table in GoldApiSource.cpp), which also
 // converts what the API quotes otherwise (copper, per pound, is multiplied to be per metric tonne). The physical estimate (PhysicalSource) uses gold and platinum per troy ounce.
@@ -45,11 +45,11 @@ class GoldApiSource : public Source {
   struct Price {
     std::string symbol, name, currency;
     double price = 0;
-    int64_t day = 0;  // the UTC date of the update, as a day number
+    Timestamp time = 0;  // when the price was updated, in UTC seconds
   };
   // The `/symbols` answer; false, with `error` set, when it is not a list of symbols. A row without a symbol is left out.
   static bool parseSymbols(const std::string & body, std::vector<Symbol> & out, std::string & error);
-  // A `/price` answer; false, with `error` set, when it has no price above zero, or no currency, symbol or update date.
+  // A `/price` answer; false, with `error` set, when it has no price above zero, or no currency, symbol or update time.
   static bool parsePrice(const std::string & body, Price & out, std::string & error);
 
  private:
