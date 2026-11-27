@@ -25,7 +25,7 @@ with no data this year is left out. `--refresh` asks again for the months of the
 pairs.
 
 **The `lme` dataset** is the daily price of gold, silver, platinum, palladium and rhodium in USD, EUR, NOK, SEK and DKK (25 instruments, such as
-`xaueur`, on the dataset `LME` and the market XXXX), as karasmussen.fi's price page publishes it and labels it. It asks for a calendar year at a time
+`xaueur`, on the dataset `LME`; the four London-fixed metals on the market XLBM, rhodium on XXXX), as karasmussen.fi's price page publishes it and labels it. It asks for a calendar year at a time
 (`/wp-json/price-history/v1/prices?from=YYYY-01-01&to=YYYY-12-31`, as a browser does, with a pause of a second), from 2019 (rhodium from 2021, USD from
 December 2020 for the metals that began in euros), and keeps each answer in its own raw cache (`datasets.lme.cache_dir`, default `cache/lme`): a past year is asked
 for once, the current one again with `--refresh`. It builds the `1d` and `1w` bars only (one price a day: no `5m` or `1h`), at the ounce's price of the

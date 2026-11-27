@@ -128,6 +128,8 @@ TEST(lme_has_each_metal_in_five_currencies_by_the_isins_the_sources_share) {
   CHECK(list.size() == 25);
   CHECK(spec("xaueur").baseIsin == known_isin::kGold && spec("xaueur").quote == "EUR" && spec("xaueur").baseKind == InstrumentKind::Commodity);
   CHECK(spec("xagusd").baseIsin == known_isin::kSilver && spec("xptsek").baseIsin == known_isin::kPlatinum && spec("xpddkk").baseIsin == known_isin::kPalladium);
+  CHECK(spec("xaueur").market == "XLBM" && spec("xagusd").market == "XLBM" && spec("xptsek").market == "XLBM" && spec("xpddkk").market == "XLBM");
+  CHECK(spec("xrhnok").market == kNoMarket);
   CHECK(spec("xrhnok").baseIsin == known_isin::kRhodium && spec("xrhnok").firstPeriod == 202102 && spec("xaueur").firstPeriod == 201911);
   LmeSite site;
   Lme adapter(site, market::RawCache("unused"), fast());

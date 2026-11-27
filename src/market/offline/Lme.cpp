@@ -24,13 +24,14 @@ constexpr const char * kPage = "https://karasmussen.fi/paivan-hinnat/";  // the 
 struct Metal {
   const char * code;  // the answer's
   const char * symbol, *name, *isin;
-  int firstPeriod;  // the month of the first price, YYYYMM
+  const char * market;  // the MIC: the London Bullion Market for the four it fixes; no market for rhodium, which neither it nor the LME prices
+  int firstPeriod;      // the month of the first price, YYYYMM
 };
-constexpr Metal kMetals[] = {{"AU", "XAU", "Gold", known_isin::kGold, 201911},
-                             {"AG", "XAG", "Silver", known_isin::kSilver, 201911},
-                             {"PT", "XPT", "Platinum", known_isin::kPlatinum, 201911},
-                             {"PD", "XPD", "Palladium", known_isin::kPalladium, 201911},
-                             {"RH", "XRH", "Rhodium", known_isin::kRhodium, 202102}};
+constexpr Metal kMetals[] = {{"AU", "XAU", "Gold", known_isin::kGold, "XLBM", 201911},
+                             {"AG", "XAG", "Silver", known_isin::kSilver, "XLBM", 201911},
+                             {"PT", "XPT", "Platinum", known_isin::kPlatinum, "XLBM", 201911},
+                             {"PD", "XPD", "Palladium", known_isin::kPalladium, "XLBM", 201911},
+                             {"RH", "XRH", "Rhodium", known_isin::kRhodium, kNoMarket, 202102}};
 constexpr const char * kCurrencies[] = {"USD", "EUR", "NOK", "SEK", "DKK"};
 constexpr int kFirstYear = 2019;  // the first year of any metal's prices
 
@@ -127,7 +128,7 @@ const std::vector<market::InstrumentSpec> & instruments() {
         s.baseIsin = m.isin;
         s.baseKind = InstrumentKind::Commodity;
         s.quote = currency;
-        s.market = kNoMarket;
+        s.market = m.market;
         s.firstPeriod = m.firstPeriod;
         all.push_back(std::move(s));
       }
