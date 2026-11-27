@@ -32,6 +32,7 @@ struct Preset {
 };
 constexpr Preset kPresets[] = {
     {"Commodities", "show-commodities", kNoMarket, InstrumentKind::Commodity},
+    {"Crypto", "show-crypto", kNoMarket, InstrumentKind::Crypto},
     {"Nasdaq Helsinki", "show-nasdaq-helsinki", "XHEL"},
     {"Currencies", "show-currencies", kNoMarket, InstrumentKind::Currency},
     {"Indices", "show-indices", kNoMarket, InstrumentKind::Index},
