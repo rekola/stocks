@@ -5,7 +5,7 @@
 //
 //   market-server [--config FILE] [--port N] [--listen ADDRESS]
 //
-//   GET /health   GET /instruments   GET /summary[?codes=a,b]        (see market/Api.h)
+//   GET /health   GET /instruments   GET /summary[?edge=ID,..&dataset=CODE]        (see market/Api.h)
 #include "market/Api.h"
 #include "market/Backends.h"
 #include "market/Config.h"

@@ -21,7 +21,14 @@ resolution), and hands what changed to its stores. The server restores a store f
 - **Instruments.** An FX pair is an edge between two currency nodes (no ISIN); gold and silver are the commodity by the ISINs the sources share;
   oil and the indices are instruments by their ISINs (given by the owner), an index quoted in points as everywhere in the application. The
   dataset is `HISTDATA`, the market XXXX. A pair with no data in the current year is not carried.
-- **API.** `/health`, `/instruments` and `/summary` (see `src/market/Api.h`), unversioned for now, the periods named as the application's.
+- **API.** `/health`, `/instruments` and `/summary` (see `src/market/Api.h`, which has the contract), unversioned for now. An instrument is its
+  edge: `BASE/QUOTE/MARKET/DATASET`, the four keys as NodeKey text (`EUR/USD/XXXX/HISTDATA`), which is the one id the API returns and takes
+  (`?edge=ID[,ID]`, and `?dataset=CODE`); never its symbol, which two datasets can share. Each instrument carries its edge, its dataset's code and
+  name, its listing and what a client needs to make the base node (its kind, and its name and ISIN where it is an instrument). `/summary` gives
+  each queue the store keeps for the sparklines as it holds it: for each resolution in memory ("5m", "1h", "1d", "1w") the columns `keys`, `open`,
+  `high`, `low`, `close`, `volume`, oldest first, with null for what is undefined (a scalar queue is its value as `close`, `"kind": "scalar"`)
+  and the queue's coverage. No quote, previous close or change is sent, and the bars are not cut into the app's periods. The server does not
+  combine datasets: every edge is under the dataset that wrote it, and the median across datasets is the client's.
 
 How to set it up (the database, the ingest, the server on the local network) is in [docs/market-server.md](../docs/market-server.md).
 
@@ -33,7 +40,15 @@ Where it differs from the plan above, and why:
   The plan's insert-only history is a later change.
 - **Intraday bars are built from the 1-minute quotes, not loaded as the provider gives them** (the plan says nothing is derived from another
   interval): HistData has only 1-minute data, so this is the one dataset where that is how it has to be.
-- **No `/v1` prefix and no columnar chunks yet**: the paths are the task's, and a period is JSON columns (`keys`, `close`).
+- **No `/v1` prefix and no columnar chunks yet**: the paths are the task's, and a queue is JSON columns (`keys`, `open`, `high`, `low`, `close`,
+  `volume`).
+- **An instrument is chosen by its edge id, not by `/v1/series/{base}/{quote}/{market}/{dataset}`'s path** (that is for bars, which the API does
+  not serve yet): `?edge=` and `?dataset=` on the summary, and the market is its MIC, as the model has it.
+- **The summary is the store's queues, not the plan's "latest bar, change and a short trace"**: the latest bar is the last of a queue, and the
+  change and the trace are what the client works out from the bars (the app's rule, `Period.h`); the server sends neither, nor a quote.
+- **The size is not limited yet.** The summary of all 66 HistData pairs, every queue whole, is about 6 MB of JSON (1.8 MB gzipped; weekly bars
+  2.6 MB, 5m 1.5 MB, daily 1.3 MB, hourly 0.6 MB), most of it the digits of doubles that went through the store's single-precision deltas. A
+  `?resolution=` filter and gzip are proposed, not built.
 
 ## Goals and constraints
 

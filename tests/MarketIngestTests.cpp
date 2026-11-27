@@ -290,11 +290,11 @@ TEST(ingest_to_a_database_and_the_server_reads_it_back_whatever_the_database) {
     market::loadQueues(*server);
     const auto instruments = nlohmann::json::parse(market::handleApi(*server, "/instruments", {}).body);
     CHECK(instruments["instruments"].size() == 2);
-    const auto summary = nlohmann::json::parse(market::handleApi(*server, "/summary", {{"codes", "eurusd"}}).body)["instruments"][0];
+    const auto summary = nlohmann::json::parse(market::handleApi(*server, "/summary", {{"edge", "EUR/USD/XXXX/HISTDATA"}}).body)["instruments"][0];
+    CHECK(summary["edge"]["dataset"] == "HISTDATA" && summary["listing"]["symbol"] == "EURUSD");
     CHECK(summary["last_bar_time"].get<int64_t>() > kLast - 86400 && summary["last_bar_time"].get<int64_t>() <= kLast);
-    CHECK(summary["periods"]["day"]["resolution"] == "5m" && summary["periods"]["week"]["resolution"] == "1h");
-    CHECK(summary["periods"]["month"]["resolution"] == "1d" && summary["periods"]["year"]["resolution"] == "1w");
-    CHECK(summary["periods"]["day"]["keys"].size() >= 2);
+    CHECK(summary["queues"].contains("5m") && summary["queues"].contains("1h") && summary["queues"].contains("1d") && summary["queues"].contains("1w"));
+    CHECK(summary["queues"]["5m"]["count"].get<int>() >= 2 && summary["queues"]["5m"]["volume"][0].is_null());
     // the bars of the bar store are the full doubles, the queues the model's records
     const EdgeKey edge = onlyEdge(*server);
     CHECK(!server->snapshot()->queue(edge, Resolution::Day).empty());
