@@ -40,8 +40,8 @@ constexpr Known kKnown[] = {{"XAU", InstrumentKind::Commodity, "METAL", known_is
                             {"XPT", InstrumentKind::Commodity, "METAL", known_isin::kPlatinum, "troy oz", 1, ""},
                             {"XPD", InstrumentKind::Commodity, "METAL", known_isin::kPalladium, "troy oz", 1, ""},
                             {"HG", InstrumentKind::Commodity, "METAL", known_isin::kCopper, "tonne", kPoundsPerTonne, ""},  // the API quotes it per pound
-                            {"BTC", InstrumentKind::Other, "CRYPTO", known_isin::kBitcoin, "coin", 1, "₿ "},
-                            {"ETH", InstrumentKind::Other, "CRYPTO", known_isin::kEthereum, "coin", 1, ""}};
+                            {"BTC", InstrumentKind::Crypto, "CRYPTO", known_isin::kBitcoin, "coin", 1, "₿ "},
+                            {"ETH", InstrumentKind::Crypto, "CRYPTO", known_isin::kEthereum, "coin", 1, "⟠ "}};
 
 const Known * knownSymbol(const std::string & symbol) {
   for (const Known & k : kKnown)
