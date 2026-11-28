@@ -104,6 +104,25 @@ TEST(a_member_that_is_not_live_is_left_out_where_another_is_and_all_stand_where_
   CHECK(mixOf(*closed.snap(), closed.group()).used == 2);
 }
 
+TEST(where_no_member_is_live_the_last_prices_are_combined_and_not_the_freshest_alone) {
+  World w;
+  const Timestamp friday = kNow;  // the last close of a market is a few hours before another's
+  w.say(w.a, 100, friday - 2 * 3600);                 // closed at 16:30
+  w.say(w.b, 104, friday, w.lbm);                      // closed at 18:30
+  w.say(w.c, 102, friday - 5, w.lbm);                  // and a few seconds before it
+  // Sunday: every market is closed, so none is fresher by being later: the median of all.
+  Mix weekend = mixOf(*w.snap(), w.group(), {}, std::nullopt, friday + 2 * 86400);
+  CHECK(weekend.used == 3 && weekend.price == 102);
+  // The same prices with the later one live (it is Friday 18:30): the first, two hours older, is no longer what the others say.
+  Mix live = mixOf(*w.snap(), w.group(), {}, std::nullopt, friday + 600);
+  CHECK(live.used == 2 && live.price == 103 && memberOf(live, w.a).state == MemberState::Stale);
+  // A market shut for days is left out of the weekend's, as a holiday is.
+  World shut;
+  shut.say(shut.a, 90, friday - 6 * 86400);
+  shut.say(shut.b, 104, friday, shut.lbm);
+  CHECK(mixOf(*shut.snap(), shut.group(), {}, std::nullopt, friday + 2 * 86400).used == 1);
+}
+
 TEST(a_closed_market_does_not_stay_in_the_trace_while_another_trades_on) {
   World w;
   const int64_t day = dayNumberOfInstant(kNow);

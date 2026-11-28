@@ -1,6 +1,7 @@
 #include "model/Group.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <optional>
 
@@ -49,7 +50,9 @@ double disagreement(const std::vector<double> & values) {
   return median(distance) / std::abs(c);
 }
 
-Mix mixOf(const Snapshot & snapshot, const GroupKey & group, const DatasetFilter & filter, std::optional<MarketId> market) {
+Timestamp systemNow() { return std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count(); }
+
+Mix mixOf(const Snapshot & snapshot, const GroupKey & group, const DatasetFilter & filter, std::optional<MarketId> market, Timestamp now) {
   Mix mix;
   std::optional<Timestamp> newest;  // of the members that say when
   for (const EdgeKey & e : membersOf(snapshot, group, market)) {
@@ -68,9 +71,11 @@ Mix mixOf(const Snapshot & snapshot, const GroupKey & group, const DatasetFilter
     }
     mix.members.push_back(m);
   }
+  if (now == 0) now = systemNow();
+  const int64_t window = newest && now - *newest <= kLiveWithin ? kStaleAfter : kClosedWindow;  // someone is live, or all are closed
   std::vector<double> prices;
   for (Member & m : mix.members) {
-    if (m.state == MemberState::Used && m.time != 0 && newest && *newest - m.time > kStaleAfter) m.state = MemberState::Stale;  // a time of 0 is not known: not stale
+    if (m.state == MemberState::Used && m.time != 0 && newest && *newest - m.time > window) m.state = MemberState::Stale;  // a time of 0 is not known: not stale
     if (m.state == MemberState::Used) prices.push_back(m.price);
   }
   mix.used = prices.size();

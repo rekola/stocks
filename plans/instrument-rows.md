@@ -1,8 +1,8 @@
 # One row per instrument
 
 Status: built on this branch (steps 1 to 4), after the owner's answers: gold and every commodity is buyable where a member is on a real venue (no rule by kind); staleness is
-relative to the newest member with a window of **one hour** (a live source makes the others stale, a delayed or daily one among them included), no adapter says which is
-live; a position's cost is the pooled average of the buys (applies to cost only: it is money paid, nothing to take a median of; prices of datasets use the median); a preset of one market
+relative to the newest member with a window of **one hour** where the newest is live (said its price within an hour of now), and of **four days** where none is (weekend, night: all the last prices are
+combined, not the freshest alone); no adapter says which is live; a position's cost is the pooled average of the buys (applies to cost only: it is money paid, nothing to take a median of; prices of datasets use the median); a preset of one market
 shows that market's members only; the table says nothing of a row's markets (Show info does). Below is the plan as first written: where it differs, the owner's answers win
 (buyable: no commodity or kind rule; stale: 1 hour; the market preset shows the market alone).
 

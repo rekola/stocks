@@ -54,9 +54,9 @@ key. There are two keymaps: the terminal one (Emacs-like) and the desktop one.
 The tags of Markets are presets: Commodities, Nasdaq Helsinki, Currencies (including the crypto coins), Indices, Funds, Physical, All and
 the Watchlist. Each row is one instrument in one unit (a share in euro, gold in dollars), whatever markets and datasets price it (see the
 [data model](../plans/data-model.md)): the price, the change, the low and high and the trace are the median of their values (the mean where
-there are two), so a share listed on two markets and given by three sources is one row, and one wrong source does not move it. A source that has said
-nothing for an hour while another has (a market that has closed, a delayed or a daily feed) is left out, so the row follows what is live; where none is live, the
-newest stands. A share in euro on one market and in kronor on another is two rows: prices are not converted. The table shows no market: **Show info**
+there are two), so a share listed on two markets and given by three sources is one row, and one wrong source does not move it. While one source is live (it said its price within the last hour), a source that is more than an hour behind it
+(a market that has closed, a delayed or a daily feed) is left out, so the row follows what is live. Where none is live (a weekend, a night),
+they all count, the median of the last prices, and only a source that stopped days before the others is left out. A share in euro on one market and in kronor on another is two rows: prices are not converted. The table shows no market: **Show info**
 has a Sources section with what each market and dataset says, when, and whether it counts, and the chart over the table says how many make the line and how
 much they disagree at the cursor. The presets of kinds (Commodities, Currencies, Indices, Funds) and All take every market; **Nasdaq Helsinki** and **Physical**
 are the exception, a preset of one market, and show what that market says: its own prices, and only its own.

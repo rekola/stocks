@@ -27,10 +27,16 @@ double combine(std::vector<double> values);
 // one per cent off). Undefined for fewer than two values or a combined value of 0.
 double disagreement(const std::vector<double> & values);
 
-// A member that says nothing newer than this much (seconds) before the newest of the members is *stale*: it is not live as the newest is (a
-// market that has closed, a delayed or a daily source), so what it last said is not what the others are saying, and it is left out of the
-// combined number. Where no member is live, the newest of them stands and the rest are as old as it is, so none is left out.
+// What counts as *live*, and what is left out. The newest member of a group is live when it said its price within `kLiveWithin` seconds of now. Where one is,
+// a member that says nothing newer than `kStaleAfter` before it is *stale*: it is not live as the newest is (a market that has closed, a delayed or a daily
+// source), so what it last said is not what the others are saying, and it is left out of the combined number. Where none is live (a weekend, a night, every
+// market closed), nobody is fresher than another by being a few hours later, and the members all count: a member is left out only when it is more than
+// `kClosedWindow` older than the newest (a market shut for days), so the last prices are combined and not the freshest alone.
+inline constexpr int64_t kLiveWithin = 3600;
 inline constexpr int64_t kStaleAfter = 3600;
+inline constexpr int64_t kClosedWindow = 4 * 86400;
+// The time of the machine, UTC seconds: what `now` is where a reader does not say.
+Timestamp systemNow();
 
 enum class MemberState : uint8_t {
   Used,     // counts in the combined numbers
@@ -55,7 +61,7 @@ struct Mix {
   size_t used = 0;                    // how many members count
   bool combined() const { return used > 1; }
 };
-Mix mixOf(const Snapshot &, const GroupKey &, const DatasetFilter & filter = {}, std::optional<MarketId> market = std::nullopt);
+Mix mixOf(const Snapshot &, const GroupKey &, const DatasetFilter & filter = {}, std::optional<MarketId> market = std::nullopt, Timestamp now = 0);  // now 0: `systemNow()`
 
 // The change of a group over a period, in the unit of `PeriodView::change()`: `combine` of the used members' own changes
 // (`Snapshot::changes`); undefined where none says one.

@@ -95,7 +95,7 @@ the same keys.
 
 **A preset is a selection of rows**, a row being a group `(base, quote)` (`GroupKey`) and its *members* every edge of it, whatever market
 and dataset: the row's price, change, high and low and trace are made of them by `combine` (median of three or more, mean of two, the one), a member
-that is not live while another is (older by more than `kStaleAfter`, an hour) left out. A preset of kinds (or none) takes the groups; a preset that
+that is not live while another is (older than the newest by more than `kStaleAfter`, an hour) left out; where none is live (every market closed) they all count, within `kClosedWindow` (four days) of the newest. A preset of kinds (or none) takes the groups; a preset that
 names a market takes the groups with a member there and only that market's members count. The quote currency is in the key: prices are not
 converted, so a share in euro and in kronor is two rows. Built (plans/instrument-rows.md).
 
