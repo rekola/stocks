@@ -1,0 +1,22 @@
+{
+ "name": "tavex",
+ "dataset": "TAVEX",
+ "title": "Tavex",
+ "market": "XXXX",
+ "pauseMs": 1000,
+ "refreshHours": 3,
+ "request": {
+  "url": "https://market-data.tavex.fi/v1/chart-data/xignite-metals?symbol={symbol}&currency={currency}&priceType=Mid&from={from}&to={to}&interval={interval}",
+  "interval": "P1D",
+  "years": 10,
+  "time": "iso"
+ },
+ "dayKey": "end",
+ "foldWeekends": true,
+ "items": [
+  {"symbol": "XAU", "name": "Gold", "isin": "XC0009655157", "currencies": ["USD"]},
+  {"symbol": "XAG", "name": "Silver", "isin": "XC0009653103", "currencies": ["USD"]},
+  {"symbol": "XPT", "name": "Platinum", "isin": "XC0009665545", "currencies": ["USD"]},
+  {"symbol": "XPD", "name": "Palladium", "isin": "XC0009665529", "currencies": ["USD"]}
+ ]
+}

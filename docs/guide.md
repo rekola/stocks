@@ -144,7 +144,7 @@ An item is identified by its dataset and the dataset's own id: two datasets with
 ## Data sources
 
 Each source runs on a thread of its own. With no `--source`, these run: `auto`, `spfb`, `ecb`, `goldprice`,
-`gold-api`, `kar`, `physical`, `sifter` and a `funds:NAME` for every schema in `data/funds`. `--source` chooses instead: one
+`gold-api`, `kar`, `physical`, `sifter`, a `funds:NAME` for every schema in `data/funds` and a `metals:NAME` for every schema in `data/metals`. `--source` chooses instead: one
 name, or several separated by commas.
 
 | source | what it gives |
@@ -158,6 +158,7 @@ name, or several separated by commas.
 | `physical` | estimated prices of [physical metals](#physical-metals) |
 | `sifter` | NAV history of the Sifter Fund's PA, PB and PI share classes, no key |
 | `funds:NAME` | a fund company described by `data/funds/NAME.json` (shown under All) |
+| `metals:NAME` | the daily prices of metals from a provider described by `data/metals/NAME.json` (the schema that comes with the program is `tavex`) |
 | `synthetic` | made-up prices for the instruments in the lists, no network |
 
 ### Instrument lists
@@ -272,7 +273,7 @@ There are no migrations. A file of another schema is moved aside (`.old-<time>`)
 you typed in (as the gold bar and coin did when `src/source/KnownIsins.h` replaced their hashed ISINs),
 `tools/rekey_isin.py` moves them.
 
-The data the program ships with (`data/lists`, `data/funds`, `data/physical`) is looked for in the current
+The data the program ships with (`data/lists`, `data/funds`, `data/metals`, `data/physical`) is looked for in the current
 directory's `data`, beside the program (the build directory has a copy), in `share/stocks` beside the program's
 directory (`cmake --install build --prefix PREFIX` puts it there) and in the source tree.
 

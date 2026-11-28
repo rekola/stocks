@@ -1,4 +1,5 @@
 #include "source/FundSource.h"
+#include "source/SchemaFile.h"
 
 #include "model/Dates.h"
 #include "model/Isin.h"
@@ -314,31 +315,10 @@ bool FundSchema::parse(const std::string & text, FundSchema & out, std::string &
 }
 
 bool FundSchema::load(const std::string & nameOrPath, FundSchema & out, std::string & error) {
-  // A name is a file of the schema directory (data/funds: here, beside the program, installed or in the source tree); anything with a path or an
-  // extension is a file as it is.
-  std::filesystem::path path = nameOrPath;
-  std::error_code ec;
-  if (nameOrPath.find_first_of("/\\") == std::string::npos && path.extension() != ".json") {
-    path.clear();
-    for (const std::filesystem::path & root : dataRoots(executableDirectory()))
-      if (std::filesystem::is_regular_file(root / "funds" / (nameOrPath + ".json"), ec)) {
-        path = root / "funds" / (nameOrPath + ".json");
-        break;
-      }
-    if (path.empty()) {
-      error = "there is no schema \"" + nameOrPath + "\" (data/funds/" + nameOrPath + ".json), nor a file of that name";
-      return false;
-    }
-  }
-  std::ifstream in(path);
-  if (!in) {
-    error = "cannot read the schema file " + path.string();
-    return false;
-  }
-  std::stringstream text;
-  text << in.rdbuf();
-  if (!parse(text.str(), out, error)) {
-    error = path.string() + ": " + error;
+  std::string text, path;
+  if (!readSchemaFile("funds", nameOrPath, text, path, error)) return false;
+  if (!parse(text, out, error)) {
+    error = path + ": " + error;
     return false;
   }
   return true;

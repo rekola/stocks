@@ -1,17 +1,18 @@
 // The stock browser: cellui's Table, TagBar and trace chart over a store of
 // candles that data sources fill on a thread of their own.
 //   stocks                 on the display cellui picks, with Nordnet's data, or
-//   Yahoo's if Nordnet gives nothing, and the small loaders (spfb, ecb, every funds:SCHEMA of data/funds); --source replaces that set stocks --ui terminal   in the terminal;
+//   Yahoo's if Nordnet gives nothing, and the small loaders (spfb, ecb, every funds:SCHEMA of data/funds, every metals:SCHEMA of data/metals); --source replaces that set stocks --ui terminal   in the terminal;
 //   --ui window  in a window stocks --source NAME   the data source (several,
 //   comma-separated, run at once): auto (the default: nordnet, and yahoo if
 //   nordnet gives nothing),
 //                          nordnet, yahoo, spfb (the Bank of Finland: the Euribor rates), ecb (the €STR), goldprice (goldprice.dev: spot prices and
 //                          daily bars of gold, silver and copper, in euros and dollars), gold-api (gold-api.com: spot
-//                          prices of gold and other metals, in euros and dollars), kar (daily prices of gold, silver, platinum and
-//                          palladium in five currencies, with bid and ask), physical (physical metals held in hand: a gold
+//                          prices of gold and other metals, in euros and dollars), kar (daily prices of gold, silver, platinum, palladium and
+//                          rhodium in dollars), physical (physical metals held in hand: a gold
 //                          bar by the gram, a gold coin by the ounce, a platinum bar, estimated from the spot prices another
 //                          source gives; it runs beside the default), sifter (the Sifter Fund's share classes), funds:SCHEMA (a fund company: a
-//                          schema in data/funds, or a schema file) or synthetic
+//                          schema in data/funds, or a schema file), metals:SCHEMA (the daily prices of metals from a provider: a schema in
+//                          data/metals, or a schema file) or synthetic
 //   stocks --lists DIR     the instrument lists of the yahoo and synthetic
 //   sources (default: data/lists) stocks --facts FILE    where what the sources
 //   said of instruments, markets and datasets is kept between runs (default:
@@ -41,6 +42,8 @@
 #include "source/GoldApiSource.h"
 #include "source/GoldPriceSource.h"
 #include "source/KarSource.h"
+#include "source/MetalSource.h"
+#include "source/SchemaFile.h"
 #include "source/PhysicalSource.h"
 #include "source/SifterSource.h"
 #include "source/SuomenPankkiSource.h"
@@ -72,6 +75,11 @@ std::unique_ptr<Source> makeSource(const std::string & name, const ListSpec & li
   if (name == "auto") return std::make_unique<AutoSource>(std::make_unique<NordnetSource>(), std::make_unique<YahooSource>(lists));
   if (name == "yahoo") return std::make_unique<YahooSource>(lists);
   if (name == "nordnet") return std::make_unique<NordnetSource>();
+  if (name.rfind("metals:", 0) == 0) {
+    MetalSchema schema;
+    if (!MetalSchema::load(name.substr(7), schema, error)) return nullptr;
+    return std::make_unique<MetalSource>(std::move(schema));
+  }
   if (name == "ecb") return std::make_unique<EcbSource>();
   if (name == "gold-api") return std::make_unique<GoldApiSource>();
   if (name == "goldprice") return std::make_unique<GoldPriceSource>();
@@ -94,18 +102,12 @@ std::unique_ptr<Source> makeSource(const std::string & name, const ListSpec & li
 // €STR, the spot prices of goldprice.dev and gold-api.com, the estimate of the physical metals and every fund company schema of data/funds), so they are there without being asked for.
 std::string defaultSources() {
   std::string names = "auto,spfb,ecb,goldprice,gold-api,kar,physical,sifter";  // physical estimates the metals held in hand from the spot prices the others give
-  std::vector<std::string> funds;
-  std::error_code ec;
-  const std::filesystem::path dir = findDataDirectory("funds");
-  if (!dir.empty())
-    for (const auto & entry : std::filesystem::directory_iterator(dir, ec))
-      if (entry.is_regular_file(ec) && entry.path().extension() == ".json") funds.push_back(entry.path().stem().string());
-  std::sort(funds.begin(), funds.end());
-  for (const std::string & name : funds) names += ",funds:" + name;
+  for (const std::string & name : schemaNames("funds")) names += ",funds:" + name;
+  for (const std::string & name : schemaNames("metals")) names += ",metals:" + name;
   return names;
 }
 
-constexpr const char * kSourceNames = "auto, nordnet, yahoo, spfb, ecb, goldprice, gold-api, kar, physical, sifter, funds:SCHEMA, synthetic";
+constexpr const char * kSourceNames = "auto, nordnet, yahoo, spfb, ecb, goldprice, gold-api, kar, physical, sifter, funds:SCHEMA, metals:SCHEMA, synthetic";
 
 }  // namespace
 
