@@ -9,9 +9,10 @@
 #include <string>
 #include <vector>
 
-// The daily prices of gold, silver, platinum and palladium in dollars that K. A. Rasmussen's price page (karasmussen.fi) publishes. No key. The page says
-// it uses the London Metal Exchange's data under licence, while the codes in the answer (`XAUFIXPM=`, `LDNXAG=`) are those of London fixings: what
-// the prices are is the publisher's to say, so the dataset is the publisher's, "KAR". Rhodium, which the page has too in rows of another kind, is not carried.
+// The daily prices of gold, silver, platinum and palladium in dollars that K. A. Rasmussen's price page (karasmussen.fi) publishes. No key. We have no licence
+// for the data: the page says it uses the London Metal Exchange's data under a licence of its own, which is not ours. The codes in the answer (`XAUFIXPM=`,
+// `LDNXAG=`) are those of London fixings; what the prices are is the publisher's to say, so the dataset is the publisher's, "KAR". Rhodium, which the page
+// has too in rows of another kind, is not carried.
 //
 // One request answers for a range of days, every metal and currency in it, as the page's script asks (browser headers, the page as Referer):
 //   GET https://karasmussen.fi/wp-json/price-history/v1/prices?from=2019-11-01&to=2026-11-28
