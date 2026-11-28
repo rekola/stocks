@@ -18,6 +18,7 @@ namespace {
 
 constexpr const char * kEndpoint = "https://karasmussen.fi/wp-json/price-history/v1/prices";
 constexpr const char * kPage = "https://karasmussen.fi/paivan-hinnat/";  // the page whose script asks, which is the Referer
+constexpr const char * kMarket = "XLBM";                                  // the London Bullion Market
 constexpr const char * kFirstDay = "2019-11-01";                         // the first price of any metal is of 2019-11-13
 
 struct Metal {
@@ -122,21 +123,25 @@ void KarSource::load(Store & store, Http & http, SourceListener & listener) {
   }
   store.batch([&](Batch & b) {
     const DatasetId dataset = b.addDataset(kKarDataset, "K. A. Rasmussen");
-    const MarketId market = b.addMarket(kNoMarket, marketNameOfMic(kNoMarket));
+    // The fix is the London Bullion Market's price, and it is also the price of the metal: on no market it is one row with the other spot prices.
+    const MarketId markets[] = {b.addMarket(kMarket, marketNameOfMic(kMarket)), b.addMarket(kNoMarket, marketNameOfMic(kNoMarket))};
     const InstrumentId quote = currencyNode(b, "USD");
     for (auto & [code, s] : series) {
       const Metal * metal = metalOfCode(code);
       std::sort(s.bars.begin(), s.bars.end(), [](const Candle & x, const Candle & y) { return x.time < y.time; });
       const InstrumentId base = addInstrumentUnlessSaid(b, metal->symbol, metal->name, InstrumentKind::Commodity, metal->isin, "METAL");
       if (!base.valid() || !quote.valid()) continue;
-      const EdgeKey edge{base, quote, market, dataset};
-      b.appendCandles(edge, Resolution::Day, s.bars, QueueKind::Scalar);
-      b.appendCandles(edge, Resolution::Week, weeksOfDays(s.bars), QueueKind::Scalar);  // the 3 and 10 years read weeks, which the answer has none of
+      const std::vector<Candle> weeks = weeksOfDays(s.bars);  // the 3 and 10 years read weeks, which the answer has none of
       Quote last;
       last.last = s.last.price;
       last.time = s.last.time;
-      b.setQuote(edge, last);
-      b.setListing({edge, metal->symbol, "", "", "METAL", std::string(metal->name) + ", per troy oz"});
+      for (const MarketId market : markets) {
+        const EdgeKey edge{base, quote, market, dataset};
+        b.appendCandles(edge, Resolution::Day, s.bars, QueueKind::Scalar);
+        b.appendCandles(edge, Resolution::Week, weeks, QueueKind::Scalar);
+        b.setQuote(edge, last);
+        b.setListing({edge, metal->symbol, "", "", "METAL", std::string(metal->name) + ", per troy oz"});
+      }
     }
   });
   listener.changed();

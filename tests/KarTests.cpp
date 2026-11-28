@@ -43,11 +43,11 @@ struct Loaded {
     KarSource source(std::chrono::hours(3), [] { return kNow; });
     source.load(*store, http, said);
   }
-  // The dollar edge of a metal (by the ISIN the other sources share), on no market, in the dataset.
-  std::optional<EdgeKey> edge(const char * isin) const {
+  // The dollar edge of a metal (by the ISIN the other sources share) on a market (no market by default), in the dataset.
+  std::optional<EdgeKey> edge(const char * isin, const char * mic = kNoMarket) const {
     const auto snapshot = store->snapshot();
     const auto base = snapshot->findInstrumentByIsin(isin), quote = snapshot->findInstrument("USD");
-    const auto market = snapshot->findMarket(kNoMarket);
+    const auto market = snapshot->findMarket(mic);
     const auto dataset = snapshot->findDataset(kKarDataset);
     if (!base || !quote || !market || !dataset) return std::nullopt;
     return EdgeKey{*base, *quote, *market, *dataset};
@@ -99,14 +99,14 @@ TEST(kar_asks_for_the_whole_history_as_a_browser_does_with_the_pages_referer) {
   CHECK(source.name() == "kar" && source.datasetCodes() == std::vector<std::string>{kKarDataset} && std::string(kKarDataset) == "KAR");
 }
 
-TEST(kar_writes_the_daily_bars_and_the_last_price_of_each_metal_in_dollars_on_no_market) {
+TEST(kar_writes_the_daily_bars_and_the_last_price_of_each_metal_in_dollars_on_the_bullion_market_and_on_no_market) {
   Loaded l;
   CHECK(l.said.changes == 1 && l.said.messages.empty());
   const auto gold = l.edge(known_isin::kGold), silver = l.edge(known_isin::kSilver);
   CHECK(gold.has_value() && silver.has_value());
   if (!gold || !silver) return;
   const auto snapshot = l.store->snapshot();
-  CHECK(snapshot->quoteRowsSince(0).size() == 2);  // gold and silver in dollars: no euros, no rhodium
+  CHECK(snapshot->quoteRowsSince(0).size() == 4);  // gold and silver in dollars, each on two markets: no euros, no rhodium
   const auto listing = snapshot->listing(*gold);
   CHECK(listing && listing->symbol == "XAU" && listing->type == "METAL");
   const auto bars = snapshot->queue(*gold, Resolution::Day);
@@ -120,6 +120,13 @@ TEST(kar_writes_the_daily_bars_and_the_last_price_of_each_metal_in_dollars_on_no
   CHECK(quote && quote->time == kNov26 && std::abs(quote->last - 3578.9) < 1e-9 && !isDefined(quote->bid) && !isDefined(quote->ask));
   const auto silverQuote = snapshot->quote(*silver);
   CHECK(silverQuote && silverQuote->last == 41.54);
+  // the London Bullion Market has the same price and bars: the fix is its price
+  const auto london = l.edge(known_isin::kGold, "XLBM");
+  CHECK(london.has_value() && london->market != gold->market);
+  if (!london) return;
+  CHECK(snapshot->queue(*london, Resolution::Day).size() == 2 && snapshot->quote(*london) == quote);
+  const auto londonListing = snapshot->listing(*london);
+  CHECK(londonListing && londonListing->symbol == "XAU");
 }
 
 TEST(kar_says_what_went_wrong_and_writes_nothing_of_an_answer_that_is_not_one) {
@@ -147,13 +154,14 @@ TEST(kar_loads_again_without_changing_what_the_store_has) {
   CHECK(l.store->snapshot()->queue(edge, Resolution::Day).size() == before && before == 2);
 }
 
-TEST(kar_is_one_row_with_the_other_spot_prices_of_the_metal) {
-  // The same metal in dollars on no market from another dataset: one group, so one row (the mean of the two), as for any two datasets of an edge.
+TEST(kar_is_one_row_with_the_other_spot_prices_of_the_metal_and_a_row_of_its_own_on_the_bullion_market) {
+  // The same metal in dollars on no market from another dataset: one group, so one row (the mean of the two), as for any two datasets of an edge. The
+  // bullion market's edge is another group: its own row.
   Loaded l;
-  const auto kar = *l.edge(known_isin::kGold);
+  const auto kar = *l.edge(known_isin::kGold), london = *l.edge(known_isin::kGold, "XLBM");
   const DatasetId other = l.store->addDataset("spot");
   const EdgeKey spot{kar.base, kar.quote, kar.market, other};
-  CHECK(groupOf(spot) == groupOf(kar));
+  CHECK(groupOf(spot) == groupOf(kar) && groupOf(spot) != groupOf(london));
 }
 
 TEST(kar_makes_the_weekly_bars_the_3_and_10_years_read_of_the_daily_ones) {
