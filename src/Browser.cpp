@@ -29,10 +29,9 @@ struct Preset {
   const char *mic = nullptr;
   KindSet kinds;
   const char * list = nullptr;
-  const char * also = nullptr;  // a second market, where the preset is of two (the commodities of no market and of the London Bullion Market)
 };
 constexpr Preset kPresets[] = {
-    {"Commodities", "show-commodities", kNoMarket, InstrumentKind::Commodity, nullptr, "XLBM"},
+    {"Commodities", "show-commodities", kNoMarket, InstrumentKind::Commodity},
     {"Nasdaq Helsinki", "show-nasdaq-helsinki", "XHEL"},
     {"Currencies", "show-currencies", kNoMarket, {InstrumentKind::Currency, InstrumentKind::Crypto}},  // the coins are money too
     {"Indices", "show-indices", kNoMarket, InstrumentKind::Index},
@@ -83,7 +82,7 @@ constexpr const char * kMenuGlyph = "\xE2\x89\xA1";
 Quotes::Scope scopeOf(const Snapshot & snapshot, const Preset & preset) {
   if (!preset.mic)
     return {.all = true, .kinds = preset.kinds};
-  return {.market = snapshot.findMarket(preset.mic), .also = preset.also ? snapshot.findMarket(preset.also) : std::nullopt, .kinds = preset.kinds};
+  return {.market = snapshot.findMarket(preset.mic), .kinds = preset.kinds};
 }
 
 // The edges of a preset, one for each group that is a row: a list's, a market's, or everything.
@@ -99,13 +98,9 @@ std::vector<EdgeKey> edgesOf(const Snapshot & snapshot, const Preset & preset) {
     std::erase_if(keys, [&](const EdgeKey & k) { return !preset.kinds.admits(snapshot.kind(k.base)); });
     return keys;
   }
-  std::vector<EdgeKey> keys;
-  for (const char * mic : {preset.mic, preset.also})
-    if (const auto market = mic ? snapshot.findMarket(mic) : std::nullopt) {
-      const std::vector<EdgeKey> edges = quoteEdges(snapshot, *market, preset.kinds);
-      keys.insert(keys.end(), edges.begin(), edges.end());
-    }
-  return keys;
+  const std::optional<MarketId> market = snapshot.findMarket(preset.mic);
+  return market ? quoteEdges(snapshot, *market, preset.kinds)
+                : std::vector<EdgeKey>{};
 }
 
 // Whether two lists of edges stand for the same groups, in any order.

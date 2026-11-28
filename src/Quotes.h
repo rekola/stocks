@@ -62,11 +62,10 @@ class Quotes : public cellui::TableModel {
   struct Scope {
     bool all = false;
     std::optional<MarketId> market; // only this market's edges, where set
-    std::optional<MarketId> also;   // and this one's, where set (a preset of two markets)
     KindSet kinds; // only edges whose base is of one of these kinds, where set
     bool resolved() const { return all || market.has_value(); }
     bool has(const Snapshot &snapshot, const EdgeKey &key) const {
-      return (all || (market && key.market == *market) || (also && key.market == *also)) &&
+      return (all || (market && key.market == *market)) &&
              kinds.admits(snapshot.kind(key.base));
     }
   };
