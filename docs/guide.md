@@ -154,7 +154,7 @@ name, or several separated by commas.
 | `ecb` | the euro short-term rate (€STR) from the ECB |
 | `goldprice` | [spot prices](#spot-prices-of-metals) of gold, silver and copper |
 | `gold-api` | [spot prices](#spot-prices-of-metals) of metals and two coins |
-| `kar` | daily prices of gold, silver, platinum and palladium in USD, EUR, NOK, SEK and DKK, with the whole history from 2019 and the bid and ask of the converted currencies, no key |
+| `kar` | daily prices of gold, silver, platinum and palladium in dollars, with the history from 2019, no key |
 | `physical` | estimated prices of [physical metals](#physical-metals) |
 | `sifter` | NAV history of the Sifter Fund's PA, PB and PI share classes, no key |
 | `funds:NAME` | a fund company described by `data/funds/NAME.json` (shown under All) |
@@ -204,11 +204,10 @@ what reads a spot price picks one (see [Physical metals](#physical-metals)).
   bars, which the API has none of: they are made of the daily bars the store keeps, so the history grows with every load
   (load at least once a month, or a gap is left), and a longer history from another source or a paid plan joins it. Its prices
   are 15 minutes late.
-- **`kar`** (no key) asks for one request of the whole history of the daily prices of gold, silver, platinum and palladium on the
-  London Bullion Market, in USD, EUR, NOK, SEK and DKK, as one daily bar each per troy ounce. The answer has one price, the fix in
-  dollars; in the other currencies it is converted with an exchange rate's two sides, which are the bid and the ask of the last
-  day (a few thousandths of a per cent apart, the cost of converting and not the metal's own spread). In dollars there is one price
-  and no bid or ask. The history of bid and ask is not kept.
+- **`kar`** (no key) asks for one request of the whole history of the daily prices of gold, silver, platinum and palladium
+  in dollars per troy ounce, from November 2019 (gold from December 2020), one price a day, and makes the weekly bars of the 3 and 10 years of them. They are on no
+  market, as the spot prices of the others are, so a metal is one row with theirs. The page also gives euros, kroner and kronor, but those are
+  the dollar's price converted with an exchange rate, and are left out. Rhodium is not carried.
 - **`gold-api`** ([gold-api.com](https://gold-api.com), no key) lists its symbols (gold, silver, platinum, palladium,
   copper, Bitcoin and Ethereum) and asks the price of each in euros and dollars. The metals are in the Commodities
   preset and the coins in Currencies, beside the currency pairs (on a terminal without pictures their icon is ₿ or ⟠); all are in All. Its prices

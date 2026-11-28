@@ -8,15 +8,16 @@
 
 namespace {
 
-// The price page's answer, made up: gold on 2026-11-25 and 2026-11-26 (USD at one price; EUR with the rate's two sides), rhodium in dollars (a metal that is not
-// carried) and an unknown code. The numbers are the real ones of those days.
+// The price page's answer, made up: gold on 2026-11-25 and 2026-11-26 in dollars and in euros (the dollar's price converted: not carried), rhodium (a
+// metal that is not carried) and an unknown code. The numbers are the real ones of those days.
 const char * kAnswer = R"([
  {"Code":"AU","RateType":"P","RIC":"XAUFIXPM=","Prices":[
   {"Currency":"EUR","TradeTime":"2026-11-25T15:00:00","Bid":1.0937,"Ask":1.0939,"BidGram":101.879200330146,"AskGram":101.897830521301},
   {"Currency":"USD","TradeTime":"2026-11-25T15:14:00","Bid":3466.35,"Ask":3466.35,"BidGram":111.445657241146,"AskGram":111.445657241146},
   {"Currency":"EUR","TradeTime":"2026-11-26T15:00:00","Bid":1.0978,"Ask":1.098,"BidGram":104.794372557713,"AskGram":104.813464263407},
-  {"Currency":"USD","TradeTime":"2026-11-26T15:03:00","Bid":3578.9,"Ask":3578.9,"BidGram":115.064221068369,"AskGram":115.064221068369},
-  {"Currency":"GBP","TradeTime":"2026-11-26T15:00:00","Bid":1.3,"Ask":1.3,"BidGram":90,"AskGram":90}]},
+  {"Currency":"USD","TradeTime":"2026-11-26T15:03:00","Bid":3578.9,"Ask":3578.9,"BidGram":115.064221068369,"AskGram":115.064221068369}]},
+ {"Code":"AG","RateType":"A","RIC":"LDNXAG=","Prices":[
+  {"Currency":"USD","TradeTime":"2026-11-26T12:00:00","Bid":41.54,"Ask":41.54,"BidGram":1.3355410162843,"AskGram":1.3355410162843}]},
  {"Code":"RH","RateType":"S","RIC":"RH","Prices":[
   {"Currency":"USD","TradeTime":"2026-11-25T09:31:00","Bid":8900,"Ask":8900,"BidGram":286.141431028662,"AskGram":286.141431028662}]},
  {"Code":"XX","RateType":"S","RIC":"XX","Prices":[{"Currency":"USD","TradeTime":"2026-11-25T09:31:00","Bid":1,"Ask":1,"BidGram":1,"AskGram":1}]}
@@ -42,11 +43,11 @@ struct Loaded {
     KarSource source(std::chrono::hours(3), [] { return kNow; });
     source.load(*store, http, said);
   }
-  // The edge of gold (by the ISIN the other sources share) in a currency, on the London Bullion Market, in the dataset.
-  std::optional<EdgeKey> edge(const std::string & currency) const {
+  // The dollar edge of a metal (by the ISIN the other sources share), on no market, in the dataset.
+  std::optional<EdgeKey> edge(const char * isin) const {
     const auto snapshot = store->snapshot();
-    const auto base = snapshot->findInstrumentByIsin(known_isin::kGold), quote = snapshot->findInstrument(currency);
-    const auto market = snapshot->findMarket("XLBM");
+    const auto base = snapshot->findInstrumentByIsin(isin), quote = snapshot->findInstrument("USD");
+    const auto market = snapshot->findMarket(kNoMarket);
     const auto dataset = snapshot->findDataset(kKarDataset);
     if (!base || !quote || !market || !dataset) return std::nullopt;
     return EdgeKey{*base, *quote, *market, *dataset};
@@ -55,32 +56,29 @@ struct Loaded {
 
 }  // namespace
 
-TEST(kar_reads_the_answer_as_prices_per_ounce) {
+TEST(kar_reads_the_dollar_prices_per_ounce_and_leaves_the_converted_currencies_out) {
   KarSource::Parsed parsed;
   std::string error;
   CHECK(KarSource::parse(kAnswer, parsed, error));
-  // the GBP row and the rhodium and XX metals are not carried, and are not rows that failed
-  CHECK(parsed.rows.size() == 4 && parsed.skipped == 0);
-  const auto & usd = parsed.rows[3];
-  CHECK(usd.metal == "AU" && usd.currency == "USD" && usd.time == kNov26);
-  CHECK_NEAR(usd.bid, 3578.9, 0.01);  // the gram's price times 31.1035: the ounce of the fix
-  CHECK(usd.bid == usd.ask);
-  const auto & eur = parsed.rows[2];
-  CHECK(eur.currency == "EUR" && eur.ask > eur.bid && eur.mid() > eur.bid && eur.mid() < eur.ask);
-  CHECK_NEAR(eur.bid, 104.794372557713 * KarSource::kGramsPerTroyOunce, 1e-9);
+  // the euro rows, rhodium and the unknown code are not carried, and are not rows that failed
+  CHECK(parsed.rows.size() == 3 && parsed.skipped == 0);
+  CHECK(parsed.rows[1].metal == "AU" && parsed.rows[1].time == kNov26);
+  CHECK_NEAR(parsed.rows[1].price, 3578.9, 1e-9);
+  CHECK(parsed.rows[2].metal == "AG" && parsed.rows[2].price == 41.54);
 }
 
 TEST(kar_leaves_out_rows_that_are_not_prices_and_refuses_what_is_not_an_answer) {
   KarSource::Parsed parsed;
   std::string error;
   const std::string body = R"([{"Code":"AU","Prices":[
-    {"Currency":"USD","TradeTime":"2026-11-26T15:03:00","BidGram":0,"AskGram":1},
-    {"Currency":"USD","TradeTime":"2026-11-26T15:03:00","BidGram":2,"AskGram":1},
-    {"Currency":"USD","TradeTime":"not a time","BidGram":1,"AskGram":1},
-    {"Currency":"USD","TradeTime":"2026-11-26T15:03:00","BidGram":"1","AskGram":1},
-    {"Currency":"USD","TradeTime":"2026-11-26T15:03:00","BidGram":1,"AskGram":1}]}])";
+    {"Currency":"USD","TradeTime":"2026-11-26T15:03:00","Bid":0,"Ask":1},
+    {"Currency":"USD","TradeTime":"2026-11-26T15:03:00","Bid":2,"Ask":1},
+    {"Currency":"USD","TradeTime":"not a time","Bid":1,"Ask":1},
+    {"Currency":"USD","TradeTime":"2026-11-26T15:03:00","Bid":"1","Ask":1},
+    {"TradeTime":"2026-11-26T15:03:00","Bid":1,"Ask":1},
+    {"Currency":"USD","TradeTime":"2026-11-26T15:03:00","Bid":1,"Ask":1}]}])";
   CHECK(KarSource::parse(body, parsed, error));
-  CHECK(parsed.rows.size() == 1 && parsed.skipped == 4);
+  CHECK(parsed.rows.size() == 1 && parsed.skipped == 4);  // a row with no currency is not the dollar's: left out, not counted
   CHECK(!KarSource::parse("", parsed, error) && !error.empty());
   CHECK(!KarSource::parse("{\"error\":true}", parsed, error));
   CHECK(!KarSource::parse("[]", parsed, error));
@@ -101,34 +99,27 @@ TEST(kar_asks_for_the_whole_history_as_a_browser_does_with_the_pages_referer) {
   CHECK(source.name() == "kar" && source.datasetCodes() == std::vector<std::string>{kKarDataset} && std::string(kKarDataset) == "KAR");
 }
 
-TEST(kar_writes_the_daily_bars_and_the_quote_of_each_metal_in_each_currency_on_the_london_bullion_market) {
+TEST(kar_writes_the_daily_bars_and_the_last_price_of_each_metal_in_dollars_on_no_market) {
   Loaded l;
   CHECK(l.said.changes == 1 && l.said.messages.empty());
-  const auto eur = l.edge("EUR");
-  const auto usd = l.edge("USD");
-  CHECK(eur.has_value() && usd.has_value());
-  if (!eur || !usd) return;
+  const auto gold = l.edge(known_isin::kGold), silver = l.edge(known_isin::kSilver);
+  CHECK(gold.has_value() && silver.has_value());
+  if (!gold || !silver) return;
   const auto snapshot = l.store->snapshot();
-  CHECK(snapshot->quoteRowsSince(0).size() == 2);  // gold in two currencies: nothing of the metals that are not carried
-  const auto listing = snapshot->listing(*eur);
+  CHECK(snapshot->quoteRowsSince(0).size() == 2);  // gold and silver in dollars: no euros, no rhodium
+  const auto listing = snapshot->listing(*gold);
   CHECK(listing && listing->symbol == "XAU" && listing->type == "METAL");
-  // two days of one value each, at the mean of the sides
-  const auto bars = snapshot->queue(*eur, Resolution::Day);
+  const auto bars = snapshot->queue(*gold, Resolution::Day);
   CHECK(bars.size() == 2);
   if (bars.size() != 2) return;
-  CHECK(bars[1].time == dayNumberOfInstant(kNov26));
-  CHECK_NEAR(bars[1].close, (104.794372557713 + 104.813464263407) / 2 * KarSource::kGramsPerTroyOunce, 1e-9);
+  CHECK(bars[1].time == dayNumberOfInstant(kNov26) && std::abs(bars[1].close - 3578.9) < 1e-9);
   // the answer's first week has no Monday (the 25th is a Wednesday): it is not a whole week, and is left out
-  CHECK(snapshot->queue(*eur, Resolution::Week).empty());
-  // euros are converted at the sides of a rate: a bid and an ask beside the last
-  const auto quote = snapshot->quote(*eur);
-  CHECK(quote.has_value());
-  if (!quote) return;
-  CHECK(quote->time == kNov26 - 180);  // 15:00, the euro's row (the dollar's is 15:03)
-  CHECK(isDefined(quote->bid) && isDefined(quote->ask) && quote->bid < quote->last && quote->last < quote->ask);
-  // dollars are one price: a last, and no bid or ask to say it has two sides
-  const auto fix = snapshot->quote(*usd);
-  CHECK(fix && fix->time == kNov26 && !isDefined(fix->bid) && !isDefined(fix->ask) && std::abs(fix->last - 3578.9) < 0.01);
+  CHECK(snapshot->queue(*gold, Resolution::Week).empty());
+  // one price: a last, and no bid or ask to say it has two sides
+  const auto quote = snapshot->quote(*gold);
+  CHECK(quote && quote->time == kNov26 && std::abs(quote->last - 3578.9) < 1e-9 && !isDefined(quote->bid) && !isDefined(quote->ask));
+  const auto silverQuote = snapshot->quote(*silver);
+  CHECK(silverQuote && silverQuote->last == 41.54);
 }
 
 TEST(kar_says_what_went_wrong_and_writes_nothing_of_an_answer_that_is_not_one) {
@@ -149,31 +140,39 @@ TEST(kar_says_what_went_wrong_and_writes_nothing_of_an_answer_that_is_not_one) {
 
 TEST(kar_loads_again_without_changing_what_the_store_has) {
   Loaded l;
-  const auto edge = *l.edge("EUR");
+  const auto edge = *l.edge(known_isin::kGold);
   const auto before = l.store->snapshot()->queue(edge, Resolution::Day).size();
   KarSource source(std::chrono::hours(3), [] { return kNow; });
   source.load(*l.store, l.http, l.said);
   CHECK(l.store->snapshot()->queue(edge, Resolution::Day).size() == before && before == 2);
 }
 
+TEST(kar_is_one_row_with_the_other_spot_prices_of_the_metal) {
+  // The same metal in dollars on no market from another dataset: one group, so one row (the mean of the two), as for any two datasets of an edge.
+  Loaded l;
+  const auto kar = *l.edge(known_isin::kGold);
+  const DatasetId other = l.store->addDataset("spot");
+  const EdgeKey spot{kar.base, kar.quote, kar.market, other};
+  CHECK(groupOf(spot) == groupOf(kar));
+}
+
 TEST(kar_makes_the_weekly_bars_the_3_and_10_years_read_of_the_daily_ones) {
   // Gold in dollars on every weekday from Monday 2026-11-16 to Thursday 2026-11-26, at 1000 plus the day of the month.
   std::string rows;
   for (int day : {16, 17, 18, 19, 20, 23, 24, 25, 26}) {
-    const std::string price = std::to_string(1000 + day);
     char at[32];
     std::snprintf(at, sizeof at, "2026-11-%02dT15:00:00", day);
-    rows += std::string(rows.empty() ? "" : ",") + R"({"Currency":"USD","TradeTime":")" + at + R"(","Bid":1,"Ask":1,"BidGram":)" + std::to_string((1000 + day) / KarSource::kGramsPerTroyOunce) +
-            R"(,"AskGram":)" + std::to_string((1000 + day) / KarSource::kGramsPerTroyOunce) + "}";
+    const std::string price = std::to_string(1000 + day);
+    rows += std::string(rows.empty() ? "" : ",") + R"({"Currency":"USD","TradeTime":")" + at + R"(","Bid":)" + price + R"(,"Ask":)" + price + "}";
   }
   Loaded l(R"([{"Code":"AU","Prices":[)" + rows + "]}]");
-  const auto usd = l.edge("USD");
-  CHECK(usd.has_value());
-  if (!usd) return;
-  const auto weeks = l.store->snapshot()->queue(*usd, Resolution::Week);
+  const auto gold = l.edge(known_isin::kGold);
+  CHECK(gold.has_value());
+  if (!gold) return;
+  const auto weeks = l.store->snapshot()->queue(*gold, Resolution::Week);
   CHECK(weeks.size() == 2);  // the Mondays of the 16th and the 23rd
   if (weeks.size() != 2) return;
   CHECK(weeks[0].time == dayNumber(2026, 11, 16) && weeks[1].time == dayNumber(2026, 11, 23));
-  CHECK_NEAR(weeks[0].close, 1020, 1e-3);  // one value a week, as one a day: the last day's
-  CHECK_NEAR(weeks[1].close, 1026, 1e-3);  // the week that is still going on is the bar of the days there are
+  CHECK_NEAR(weeks[0].close, 1020, 1e-9);  // one value a week, as one a day: the last day's
+  CHECK_NEAR(weeks[1].close, 1026, 1e-9);  // the week that is still going on is the bar of the days there are
 }
