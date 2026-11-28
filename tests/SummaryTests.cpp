@@ -266,7 +266,7 @@ TEST(edges_and_queues_put_in_the_file_come_back_with_their_coverage_and_no_bars_
   CHECK(ea && eb);
   if (ea && eb) {
     CHECK(ea->listing.key == a);
-    CHECK(ea->listing.symbol == "NOKIA" && ea->listing.identifier == "ident" && ea->listing.orderBook == "book-1" && ea->listing.type == "STOCK" && ea->listing.name == "Nokia Oyj");
+    CHECK(ea->listing.symbol == "NOKIA" && ea->listing.identifier == "ident" && ea->listing.nordnetOrderBookId == "book-1" && ea->listing.type == "STOCK" && ea->listing.name == "Nokia Oyj");
     CHECK(ea->quote.last == 10.5 && ea->quote.bid == 10.49 && ea->quote.ask == 10.51 && ea->quote.time == 1'700'000'000);
     CHECK(!isDefined(ea->previous_close));
     CHECK(ea->queues.size() == 2);

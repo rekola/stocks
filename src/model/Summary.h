@@ -115,7 +115,7 @@ struct StoredEdge {
   double previous_close = kUndefined;   // undefined: none
   std::vector<std::pair<Resolution, QueueCoverage>> queues;
   bool hasListing() const {
-    return !listing.symbol.empty() || !listing.identifier.empty() || !listing.orderBook.empty() || !listing.type.empty() || !listing.name.empty();
+    return !listing.symbol.empty() || !listing.identifier.empty() || !listing.nordnetOrderBookId.empty() || !listing.type.empty() || !listing.name.empty();
   }
 };
 

@@ -52,8 +52,7 @@ InstrumentId currencyNode(Store &, const std::string & symbol);
 // The instrument by its ISIN, saying its name and type only where none is said yet: for a source that is not the
 // instrument's own, whose word must not replace another's each time it loads. (Without an ISIN the name is what the
 // instrument is found by, so it is said as it is.)
-InstrumentId addInstrumentUnlessSaid(Batch &, const std::string & symbol, const std::string & name, InstrumentKind, const std::string & isin,
-                                     const std::string & type = {});
+InstrumentId addInstrumentUnlessSaid(Batch &, const std::string & symbol, const std::string & name, InstrumentKind, const std::string & isin);
 // What a price is in: a currency's node, or the unit node for `pts`, index points.
 InstrumentId quoteNode(Batch &, const std::string & code);
 InstrumentId quoteNode(Store &, const std::string & code);

@@ -186,14 +186,13 @@ InstrumentId currencyNode(Batch & store, const std::string & symbol) {
 }
 
 InstrumentId addInstrumentUnlessSaid(Batch & store, const std::string & symbol, const std::string & name, InstrumentKind kind,
-                                     const std::string & isin, const std::string & type) {
-  std::string sayName = name, sayType = type;
+                                     const std::string & isin) {
+  std::string sayName = name;
   if (!isin.empty())
     if (auto known = store.view().findInstrumentByIsin(isin)) {
       if (!store.view().said(NodeRef(*known), predicate::name).empty()) sayName.clear();
-      if (!store.view().said(NodeRef(*known), predicate::type).empty()) sayType.clear();
     }
-  return store.addInstrument(symbol, sayName, kind, isin, sayType);
+  return store.addInstrument(symbol, sayName, kind, isin);
 }
 
 InstrumentId quoteNode(Batch & store, const std::string & code) {

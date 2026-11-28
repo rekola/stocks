@@ -147,10 +147,10 @@ struct Things {
   DatasetId ds;
   explicit Things(Store & s) {
     eur = s.addInstrument("EUR", "Euro", InstrumentKind::Currency);
-    nokia = s.addInstrument("", "Nokia Oyj", InstrumentKind::Company, "FI0009000681", "STOCK");
-    elisa = s.addInstrument("", "Elisa", InstrumentKind::Company, testIsin(7), "STOCK");
-    fund = s.addInstrument("", "A fund", InstrumentKind::Fund, testIsin(8), "FUND");
-    index = s.addInstrument("", "An index", InstrumentKind::Index, testIsin(9), "INDEX");
+    nokia = s.addInstrument("", "Nokia Oyj", InstrumentKind::Company, "FI0009000681");
+    elisa = s.addInstrument("", "Elisa", InstrumentKind::Company, testIsin(7));
+    fund = s.addInstrument("", "A fund", InstrumentKind::Fund, testIsin(8));
+    index = s.addInstrument("", "An index", InstrumentKind::Index, testIsin(9));
     hel = s.addMarket("XHEL", "Nasdaq Helsinki");
     off = s.addMarket(kOffExchange, "Off exchange");
     ds = s.addDataset(kNordnetDataset, "Nordnet");
@@ -670,7 +670,7 @@ TEST(after_a_restart_every_edge_shows_its_price_bid_and_ask_and_a_portfolio_is_v
   CHECK(s->quote(elisa)->bid == 49 && s->quote(elisa)->ask == 51);
   CHECK(s->quote(fund) && s->quote(fund)->last == 109.5);  // a fund edge with no quote said keeps the one its newest bar gave
   const auto l = s->listing(nokia);
-  CHECK(l && l->symbol == "NOKIA" && l->identifier == "id-n" && l->orderBook == "book-n" && l->type == "STOCK" && l->name == "Nokia Oyj");
+  CHECK(l && l->symbol == "NOKIA" && l->identifier == "id-n" && l->nordnetOrderBookId == "book-n" && l->type == "STOCK" && l->name == "Nokia Oyj");
   CHECK(s->previousClose(nokia, kLast) == 5.25 && !s->previousClose(nokia, kLast + 1));
   CHECK(s->findEdge("NOKIA", *s->findMarket("XHEL")) == nokia);
   // Queues are on the disk only: coverage, no bars.
@@ -810,7 +810,7 @@ TEST(over_its_budget_the_queues_not_wanted_for_the_longest_go_and_the_quote_stay
     auto store = makeMemoryStore(d.options());
     Things t(*store);
     for (int i = 0; i < 6; i++) {
-      const InstrumentId base = store->addInstrument("", "Co " + std::to_string(i), InstrumentKind::Company, testIsin(100 + i), "STOCK");
+      const InstrumentId base = store->addInstrument("", "Co " + std::to_string(i), InstrumentKind::Company, testIsin(100 + i));
       edges.push_back(EdgeKey{base, t.eur, t.hel, t.ds});
       store->appendCandles(edges.back(), Resolution::Day, days(50));
       store->setQuote(edges.back(), {1.0 + i, 0.9 + i, 1.1 + i, midnight(kLast) + 3600});
@@ -1026,14 +1026,14 @@ Big populate(Disk & d) {
     b.setQuote(big.held, {5.5, 5.4, 5.6, midnight(kLast) + 50000});
     b.setListing({big.held, "NOKIA", "id-n", "book-n", "STOCK", "Nokia Oyj"});
     for (size_t i = 0; i < kMany; i++) {
-      const InstrumentId base = b.addInstrument("S" + std::to_string(i), "Company " + std::to_string(i), InstrumentKind::Company, testIsin(1000 + static_cast<int>(i)), "STOCK");
+      const InstrumentId base = b.addInstrument("S" + std::to_string(i), "Company " + std::to_string(i), InstrumentKind::Company, testIsin(1000 + static_cast<int>(i)));
       const EdgeKey k{base, t.eur, t.hel, t.ds};
       big.others.push_back(k);
       b.appendCandles(k, Resolution::Day, days(30));
       b.setQuote(k, {10.0 + static_cast<double>(i), 9.5, 10.5, midnight(kLast) + 40000});
       b.setListing({k, "S" + std::to_string(i), "", "book", "STOCK", "Company " + std::to_string(i)});
     }
-    big.orphan = b.addInstrument("", "Orphan", InstrumentKind::Company, testIsin(7777), "STOCK");
+    big.orphan = b.addInstrument("", "Orphan", InstrumentKind::Company, testIsin(7777));
   });
   const portfolio::Transaction buy{1, kLast - 3, portfolio::Side::Buy, t.nokia, t.hel, t.eur, 10, 4, 1, "x"};
   store->setAttributes(NodeRef(big.mine), {{predicate::name, "Mine"}, {predicate::currency, NodeKey{t.eur.value}}});
@@ -1063,7 +1063,7 @@ TEST(the_ui_works_while_the_files_are_read_and_what_the_portfolios_hold_comes_fi
   CHECK(store->snapshot()->portfolios() == std::vector<PortfolioId>{big.mine} && store->snapshot()->quoteRowCount() == 0);
   // A source writes while the restore waits: it does not wait for it.
   const auto written = std::chrono::steady_clock::now();
-  const InstrumentId fresh = store->addInstrument("NEW", "New", InstrumentKind::Company, testIsin(31337), "STOCK");
+  const InstrumentId fresh = store->addInstrument("NEW", "New", InstrumentKind::Company, testIsin(31337));
   const InstrumentId eur = store->addInstrument("EUR", "Euro", InstrumentKind::Currency);
   const EdgeKey freshEdge{fresh, eur, store->addMarket("XHEL", "Nasdaq Helsinki"), store->addDataset(kNordnetDataset, "Nordnet")};
   store->appendCandles(freshEdge, Resolution::Day, days(3));
@@ -1133,7 +1133,7 @@ TEST(a_source_that_writes_while_the_files_are_read_wins_over_what_the_disk_has) 
   const auto s = store->snapshot();
   // What the source said stands; the rest of what the disk had of the same node is added.
   CHECK(s->name(NodeRef(a.base)) == "Said while restoring");
-  CHECK(s->said(NodeRef(a.base), predicate::type) == "STOCK" && s->kind(a.base) == InstrumentKind::Company);
+  CHECK(s->kind(a.base) == InstrumentKind::Company);
   CHECK(s->findByAttribute(NodeType::Instrument, predicate::name, "Said while restoring") == NodeRef(a.base));
   CHECK(!s->findByAttribute(NodeType::Instrument, predicate::name, "Company 100"));  // the old word is not found
   // A quote newer than the disk's stands, the listing that was not said is the disk's, and the rest of the disk's is added.
@@ -1245,7 +1245,7 @@ TEST(the_first_refresh_after_a_start_writes_no_queue_whose_last_bar_it_says_agai
     auto store = makeMemoryStore(d.options());
     Things t(*store);
     for (int i = 0; i < 20; i++) {
-      const InstrumentId base = store->addInstrument("", "Co " + std::to_string(i), InstrumentKind::Company, testIsin(200 + i), "STOCK");
+      const InstrumentId base = store->addInstrument("", "Co " + std::to_string(i), InstrumentKind::Company, testIsin(200 + i));
       edges.push_back(EdgeKey{base, t.eur, t.hel, t.ds});
       store->appendCandles(edges.back(), Resolution::Day, days(40));
     }
@@ -1274,7 +1274,7 @@ TEST(an_instrument_that_gets_its_first_edge_has_the_facts_the_disk_kept_of_it_re
   {
     auto store = makeMemoryStore(d.options());
     Things t(*store);
-    store->resolveInstrument({{predicate::isin, testIsin(555)}}, {{predicate::name, "Old name"}, {"description", "Fetched slowly in an earlier run"}, {predicate::type, "STOCK"}});
+    store->resolveInstrument({{predicate::isin, testIsin(555)}}, {{predicate::name, "Old name"}, {"description", "Fetched slowly in an earlier run"}});
     store->appendCandles(t.edge(t.nokia), Resolution::Day, days(5));  // one edge, so that summaries exist
     store->flush();
   }
@@ -1289,7 +1289,7 @@ TEST(an_instrument_that_gets_its_first_edge_has_the_facts_the_disk_kept_of_it_re
   CHECK(waitFor([&] { return store->snapshot()->attribute(NodeRef(orphan), "description").has_value(); }));
   const auto s = store->snapshot();
   CHECK(std::get<std::string>(*s->attribute(NodeRef(orphan), "description")) == "Fetched slowly in an earlier run");
-  CHECK(s->name(NodeRef(orphan)) == "New name" && s->said(NodeRef(orphan), predicate::type) == "STOCK");
+  CHECK(s->name(NodeRef(orphan)) == "New name");
   CHECK(s->fact(NodeRef(orphan), "description")->updated == 1'800'000'000'000);  // as the disk had it
   CHECK(waitFor([&] { return !store->restoring(); }));
 }

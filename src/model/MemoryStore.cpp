@@ -520,8 +520,8 @@ InstrumentId Snapshot::resolveInstrument(const std::vector<Attribute> & identify
   setAttributes(NodeRef(id), all);
   return id;
 }
-InstrumentId Snapshot::addInstrument(const std::string & symbol, const std::string & name, InstrumentKind kind, const std::string & isin, const std::string & type) {
-  std::vector<Attribute> rest = {{predicate::name, name}, {predicate::type, type}};
+InstrumentId Snapshot::addInstrument(const std::string & symbol, const std::string & name, InstrumentKind kind, const std::string & isin) {
+  std::vector<Attribute> rest = {{predicate::name, name}};
   if (!symbol.empty()) rest.push_back({predicate::symbol, symbol});
   if (!isin.empty()) rest.push_back({predicate::isin, isin});
   if (kind != InstrumentKind::Other) rest.push_back({predicate::kind, kindName(kind)});
@@ -1412,8 +1412,8 @@ class SnapshotBatch : public Batch {
  public:
   explicit SnapshotBatch(Snapshot & s) : s_(s) {}
   const Snapshot & view() const override { return s_; }
-  InstrumentId addInstrument(const std::string & symbol, const std::string & name, InstrumentKind kind, const std::string & isin, const std::string & type) override {
-    return s_.addInstrument(symbol, name, kind, isin, type);
+  InstrumentId addInstrument(const std::string & symbol, const std::string & name, InstrumentKind kind, const std::string & isin) override {
+    return s_.addInstrument(symbol, name, kind, isin);
   }
   InstrumentId resolveInstrument(const std::vector<Attribute> & identifying, const std::vector<Attribute> & rest) override {
     return s_.resolveInstrument(identifying, rest);
@@ -1528,8 +1528,8 @@ class MemoryStore : public Store {
   InstrumentId resolveInstrument(const std::vector<Attribute> & identifying, const std::vector<Attribute> & rest) override {
     return write([&](Snapshot & s) { return s.resolveInstrument(identifying, rest); });
   }
-  InstrumentId addInstrument(const std::string & symbol, const std::string & name, InstrumentKind kind, const std::string & isin, const std::string & type) override {
-    return write([&](Snapshot & s) { return s.addInstrument(symbol, name, kind, isin, type); });
+  InstrumentId addInstrument(const std::string & symbol, const std::string & name, InstrumentKind kind, const std::string & isin) override {
+    return write([&](Snapshot & s) { return s.addInstrument(symbol, name, kind, isin); });
   }
   MarketId addMarket(const std::string &mic, const std::string &name) override {
     return write([&](Snapshot &s) { return s.addMarket(mic, name); });

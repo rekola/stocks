@@ -24,7 +24,7 @@ std::optional<EdgeKey> makeEdge(Batch & b, const Dataset & dataset, const Instru
   const MarketId market = b.addMarket(spec.market, marketNameOfMic(spec.market));
   const InstrumentId base = spec.baseKind == InstrumentKind::Currency
                                 ? currencyNode(b, spec.baseSymbol)
-                                : addInstrumentUnlessSaid(b, spec.baseSymbol, spec.baseName, spec.baseKind, spec.baseIsin, spec.type);
+                                : addInstrumentUnlessSaid(b, spec.baseSymbol, spec.baseName, spec.baseKind, spec.baseIsin);
   const InstrumentId quote = quoteNode(b, spec.quote);
   if (!ds.valid() || !market.valid() || !base.valid() || !quote.valid()) {
     why = "a node of " + spec.symbol + " could not be made (the dataset " + dataset.code() + ", the market " + spec.market + ", " + spec.baseSymbol + ", " +

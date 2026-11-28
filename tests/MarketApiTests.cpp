@@ -58,7 +58,7 @@ Edges seed(Store & store, bool noOpen = false) {
     const InstrumentId eur = b.addInstrument("EUR", "Euro", InstrumentKind::Currency);
     const InstrumentId gbp = b.addInstrument("GBP", "Pound", InstrumentKind::Currency);
     const InstrumentId chf = b.addInstrument("CHF", "Franc", InstrumentKind::Currency);
-    const InstrumentId fund = b.addInstrument("FUNDX", "Fund X", InstrumentKind::Fund, kFundIsin, "FUND");
+    const InstrumentId fund = b.addInstrument("FUNDX", "Fund X", InstrumentKind::Fund, kFundIsin);
     e.eurTest = {eur, usd, none, test};
     e.eurOther = {eur, usd, none, other};
     e.gbpTest = {gbp, usd, none, test};
@@ -181,7 +181,7 @@ TEST(api_names_each_instrument_by_its_edge_as_the_store_has_it) {
         CHECK(i["edge"]["market"] == text(NodeKey{e.market.value}) && i["edge"]["dataset"] == text(NodeKey{e.dataset.value}));
         CHECK(i["dataset"]["code"] == i["edge"]["dataset"] && i["dataset"]["name"] == s.name(e.dataset));
         const Listing listing = *s.listing(e);
-        CHECK(i["listing"]["symbol"] == listing.symbol && i["listing"]["identifier"] == listing.identifier && i["listing"]["order_book"] == listing.orderBook);
+        CHECK(i["listing"]["symbol"] == listing.symbol && i["listing"]["identifier"] == listing.identifier && i["listing"]["nordnet_order_book_id"] == listing.nordnetOrderBookId);
         CHECK(i["listing"]["type"] == listing.type && i["listing"]["name"] == listing.name);
         CHECK(i["base"]["kind"] == kindName(s.kind(e.base)));
       }
@@ -191,7 +191,7 @@ TEST(api_names_each_instrument_by_its_edge_as_the_store_has_it) {
     CHECK(!eur.is_null() && idOf(served.edges.eurTest) == "EUR/USD/XXXX/TESTDS");
     CHECK(eur["edge"] == json({{"base", "EUR"}, {"quote", "USD"}, {"market", "XXXX"}, {"dataset", "TESTDS"}}));
     CHECK(eur["dataset"] == json({{"code", "TESTDS"}, {"name", "Test"}}));
-    CHECK(eur["listing"] == json({{"symbol", "EURUSD"}, {"identifier", ""}, {"order_book", ""}, {"type", "CURRENCY"}, {"name", "EUR/USD"}}));
+    CHECK(eur["listing"] == json({{"symbol", "EURUSD"}, {"identifier", ""}, {"nordnet_order_book_id", ""}, {"type", "CURRENCY"}, {"name", "EUR/USD"}}));
     // a currency is its code alone; a fund is its ISIN, and what a client needs to make it
     CHECK(eur["base"] == json({{"kind", "currency"}, {"name", nullptr}, {"isin", nullptr}}));
     const json fund = instrumentWith(instruments, std::string(kFundIsin) + "/EUR/XOFF/OTHERDS");

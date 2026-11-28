@@ -435,7 +435,7 @@ TEST(the_runner_loads_its_sources_at_once) {
 TEST(yahoo_makes_the_instrument_from_the_isin_in_its_list_and_the_same_node_as_another_source) {
   auto store = makeMemoryStore();
   // Nordnet made it first, by its ISIN, with its own edge.
-  InstrumentId made = store->addInstrument("", "Nokia Oyj", InstrumentKind::Company, kNokia, "ESH");
+  InstrumentId made = store->addInstrument("", "Nokia Oyj", InstrumentKind::Company, kNokia);
   std::string error;
   CHECK(YahooSource::parse(fixture("nokia.json"), entry("NOKIA.HE"), *store, error));
   auto s = store->snapshot();

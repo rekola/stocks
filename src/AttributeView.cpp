@@ -137,7 +137,7 @@ void edgeSections(const Snapshot & snapshot, const EdgeKey & edge, const std::st
   add("symbol", l && !l->symbol.empty() ? l->symbol : snapshot.symbol(edge));
   if (l) {
     add("identifier", l->identifier);
-    add("order book", l->orderBook);
+    add("Nordnet order book id", l->nordnetOrderBookId);
     add("type", l->type);
     add("name", l->name);
   }

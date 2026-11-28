@@ -141,7 +141,7 @@ void GoldPriceSource::load(Store & store, Http & http, SourceListener & listener
     store.batch([&](Batch & b) {
       const DatasetId dataset = b.addDataset(kGoldPriceDataset, "goldprice.dev");
       const MarketId market = b.addMarket(kNoMarket, marketNameOfMic(kNoMarket));
-      const InstrumentId base = addInstrumentUnlessSaid(b, symbol, known->name, InstrumentKind::Commodity, known->isin, "METAL");
+      const InstrumentId base = addInstrumentUnlessSaid(b, symbol, known->name, InstrumentKind::Commodity, known->isin);
       if (!base.valid()) return;
       for (const Row & row : rows) {
         const InstrumentId quote = currencyNode(b, row.currency);

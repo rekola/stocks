@@ -156,8 +156,7 @@ void PhysicalSource::load(Store & store, Http &, SourceListener & listener) {
       if (metal == spots.end()) continue;  // no price for this metal yet: nothing of it is made
       const InstrumentId instrument = b.resolveInstrument({{predicate::isin, item.isin}}, {{predicate::name, item.name},
                                                                {predicate::symbol, item.symbol},
-                                                               {predicate::kind, kindName(InstrumentKind::Commodity)},
-                                                               {predicate::type, "PHYSICAL"}});
+                                                               {predicate::kind, kindName(InstrumentKind::Commodity)}});
       if (!instrument.valid()) continue;
       if (!item.symbol_icon.empty()) b.setAttribute(NodeRef(instrument), {predicate::iconSymbol, item.symbol_icon});
       const double scale = item.ounces * item.bid;  // an undefined open, high or low stays undefined
