@@ -1,6 +1,6 @@
 # Market-data server
 
-Two programs beside the desktop app: `market-ingest` loads external datasets (HistData.com's 1-minute quotes and the daily metal prices of `kar`) into
+Two programs beside the desktop app: `market-ingest` loads external datasets (now HistData.com's 1-minute quotes) into
 a database, and `market-server` serves what it holds to the app. The design is in
 [plans/server.md](../plans/server.md).
 
@@ -23,18 +23,6 @@ are), builds the bars and writes them. Run it again at any time: bars written ag
 now is `histdata` (HistData.com's free 1-minute bid quotes, one file per request with a pause of two seconds); a pair
 with no data this year is left out. `--refresh` asks again for the months of the current year and for the list of
 pairs.
-
-**The `kar` dataset** is the daily price of gold, silver, platinum and palladium in USD, EUR, NOK, SEK and DKK (20 instruments, such as
-`xaueur`, on the dataset `KAR`; on the market XLBM), as K. A. Rasmussen's price page (karasmussen.fi) publishes it. It asks for a calendar year at a time
-(`/wp-json/price-history/v1/prices?from=YYYY-01-01&to=YYYY-12-31`, as a browser does, with a pause of a second), from 2019 (USD from
-December 2020, the other currencies from the start), and keeps each answer in its own raw cache (`datasets.kar.cache_dir`, default `cache/kar`): a past year is asked
-for once, the current one again with `--refresh`. It builds the `1d` and `1w` bars only (one price a day: no `5m` or `1h`), at the ounce's price of the
-metals' ISINs (the answer's gram x 31.1035), the mean of the bid and the ask. The answer gives one price, the fix in dollars, and a bid and an ask only
-for the other currencies, where they are the sides of the exchange rate it was converted with: the price is a mean, and the last day's bid and ask
-go to the instrument's summary `quote` (not for USD, which has one price). The history of bid and ask is not kept: the store has no series for it
-(plans/quotes.md). Run it daily after the page has the day's price:
-
-    build/market-ingest kar all --refresh
 
 **Bars.** These are the bars the application's periods are drawn from, each ending at the instrument's last bar (this
 data lags by weeks), keyed by slot number in UTC (`src/market/Bars.h`):

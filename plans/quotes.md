@@ -43,10 +43,10 @@ each reload, so a history exists only from when it is recorded: the first writer
 quote endpoint is said to carry them and is not checked. Crypto exchanges' public order books are free and keyless (`data-model.md`,
 "Not done"). Each adapter alone knows its endpoint and fields (CLAUDE.md, "Providers"): nothing here names one.
 
-The first dataset that gives two sides is `KAR` (`src/market/offline/Kar.cpp`, `market-ingest kar`): a daily price of a metal in five currencies, whose bid and
+The first source that gives two sides is `kar` (`src/source/KarSource.cpp`, dataset `KAR`): a daily price of a metal in five currencies, whose bid and
 ask are the sides of the exchange rate it was converted with, and one price (equal sides) in dollars. Until the series above exists it writes the
-daily bar at the mean, and the last day's bid and ask as the summary's `Quote` (`LoadResult::quote`, `Ingest`) where they differ; it is the first
-writer of quotes to move to the series, with the bars of the spread, once there is one.
+daily bars at the mean and the last day's bid and ask as the summary's `Quote` where they differ; it is the first writer of quotes to move to the series,
+with the bars of the spread, once there is one.
 
 **Not here: the period's high and low.** The same price block (and Yahoo's meta) also says the session's high and low, and Yahoo the 52 weeks'.
 They are not quotes and not bars: they are the summary's per-period highs and lows (`data-model.md`, `Ranges`, written with `setRanges`),

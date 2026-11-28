@@ -1,11 +1,9 @@
 #pragma once
 
 #include "market/Bars.h"
-#include "model/Summary.h"
 #include "model/Types.h"
 
 #include <functional>
-#include <optional>
 #include <string>
 #include <vector>
 
@@ -43,9 +41,6 @@ struct Series {
 
 struct LoadResult {
   std::vector<Series> series;        // the resolutions that were built whole; one that a file was missing for is not here
-  // What the dataset says the instrument stands at now, for the summary (`Quote`: a last price, and a bid and an ask where the dataset has both
-  // sides). Not a history: a dataset that has one writes its own series. None for a dataset that gives bars only.
-  std::optional<Quote> quote;
   Timestamp lastBarTime = 0;         // the start of the instrument's last available bar of the finest data (UTC seconds); 0 for none
   std::vector<std::string> failed;   // what could not be had, each as "what: why"
   std::vector<std::string> skipped;  // the resolutions left as they are because of that, as "resolution: why"

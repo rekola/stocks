@@ -6,7 +6,7 @@
 //
 //   { "database": { "type": "mariadb", "host": "localhost", "port": 3306, "socket": "", "user": "market", "password": "", "name": "market" },
 //                    or { "type": "sqlite", "path": "market-data" } },
-//     "datasets": { "histdata": { "cache_dir": "cache/histdata" }, "kar": { "cache_dir": "cache/kar" } },
+//     "datasets": { "histdata": { "cache_dir": "cache/histdata" } },
 //     "server":   { "listen": "127.0.0.1", "port": 8080 } }
 //
 // A port is 0 to 65535 (0: any free one, for a server); anything else is refused. A relative path is relative to the directory of the file. The environment variable MARKET_DB_PASSWORD, when set, replaces the
@@ -27,7 +27,6 @@ struct DbConfig {
 struct Config {
   DbConfig database;
   std::string histdataCacheDir = "cache/histdata";
-  std::string karCacheDir = "cache/kar";
   std::string listen = "127.0.0.1";  // there is no authentication: only the local machine can reach it unless this says otherwise
   int port = 8080;
 };
