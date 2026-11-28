@@ -229,18 +229,23 @@ std::vector<Candle> MetalSource::days(const MetalSchema & schema, const series::
   return out;
 }
 
-Timestamp MetalSource::sinceOf(const Snapshot & snapshot, const MetalSchema::Item & item, const std::string & currency) const {
+std::optional<int64_t> MetalSource::lastDayOf(const Snapshot & snapshot, const MetalSchema::Item & item, const std::string & currency) const {
   const auto base = snapshot.findInstrumentByIsin(item.isin);
   const auto quote = snapshot.findInstrument(currency);
   const auto market = snapshot.findMarket(item.market.empty() ? schema_.market : item.market);
   const auto dataset = snapshot.findDataset(schema_.dataset);
-  if (!base || !quote || !market || !dataset) return 0;
+  if (!base || !quote || !market || !dataset) return std::nullopt;
   const EdgeKey edge{*base, *quote, *market, *dataset};
   const auto days = snapshot.coverage(edge, Resolution::Day);
   const auto weeks = snapshot.coverage(edge, Resolution::Week);
   // The first load writes a metal whole, so an edge that has weekly bars has had it. Half a year of them says it is not a stray.
-  if (!days || !weeks || weeks->count < 26) return 0;
-  return (days->last_key - schema_.overlapDays - kUnixEpochDayNumber) * 86400;
+  if (!days || !weeks || weeks->count < 26) return std::nullopt;
+  return days->last_key;
+}
+
+Timestamp MetalSource::sinceOf(const Snapshot & snapshot, const MetalSchema::Item & item, const std::string & currency) const {
+  const auto last = lastDayOf(snapshot, item, currency);
+  return last ? (*last - schema_.overlapDays - kUnixEpochDayNumber) * 86400 : 0;
 }
 
 namespace {
@@ -352,9 +357,14 @@ void MetalSource::load(Store & store, Http & http, SourceListener & listener) {
       for (const std::string & currency : item.currencies) {
         if (listener.cancelled()) return;
         const std::string label = schema_.name + ": " + item.symbol + "/" + currency;
-        const Timestamp since = sinceOf(*snapshot, item, currency);
+        const std::optional<int64_t> lastDay = lastDayOf(*snapshot, item, currency);
+        const Timestamp since = lastDay ? (*lastDay - schema_.overlapDays - kUnixEpochDayNumber) * 86400 : 0;
+        // The recent bars begin the day before the current week does (the first day of a request is part of one, and is left out), or the day before the store's last day where that
+        // is earlier (the loads that were not made): all that has changed since the store was written. At the most as far back as they go.
+        Timestamp recentSince = recentFrom;
+        if (lastDay) recentSince = std::max(recentFrom, (std::min(weekStart(dayNumberOfInstant(now)) - 1, *lastDay - 1) - kUnixEpochDayNumber) * 86400);
         // The history in the long bars: the whole of it when the store has none, and what the recent bars do not reach (the store's last day is older than they go back).
-        const bool history = !hourly || since == 0 || since < recentFrom;
+        const bool history = !hourly || !lastDay || (*lastDay - 1 - kUnixEpochDayNumber) * 86400 < recentFrom;
         series::Result longRead, recentRead;
         bool haveLong = false, haveRecent = false;
         if (history) {
@@ -367,7 +377,7 @@ void MetalSource::load(Store & store, Http & http, SourceListener & listener) {
         if (hourly) {
           if (!first && !listener.pause(schema_.pause)) return;
           first = false;
-          const int got = ask(url(schema_, item, currency, now, std::max(since, recentFrom), schema_.recent.interval), label, recentRead);
+          const int got = ask(url(schema_, item, currency, now, recentSince, schema_.recent.interval), label, recentRead);
           if (got == 2) return;
           haveRecent = got == 0 && single(recentRead, label);
         }

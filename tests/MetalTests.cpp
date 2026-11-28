@@ -456,6 +456,15 @@ TEST(metal_the_first_load_asks_for_the_history_and_the_recent_hours_and_the_late
   http.urls.clear();
   source.load(*store, http, said);
   CHECK(said.messages.empty() && http.urls.size() == 1 && http.urls[0].find("interval=PT1H") != std::string::npos);
+  // From the day before the current week began (the Monday was the 30th: the Sunday the 29th), not from 28 days back: the current week is all that has changed.
+  CHECK(http.urls[0] == MetalSource::url(s, s.items[0], "USD", now, at(2026, 11, 29, 0), "PT1H"));
+  CHECK(http.urls[0].find("from=2026-11-29T00%3A00%3A00Z") != std::string::npos);
+
+  // A store that missed some loads (ten days) asks from the day before its last day, which is earlier than the current week's: the hours alone still reach.
+  http.urls.clear();
+  MetalSource missed(s, [&] { return now + 10 * 86400; });
+  missed.load(*store, http, said);
+  CHECK(http.urls.size() == 1 && http.urls[0] == MetalSource::url(s, s.items[0], "USD", now + 10 * 86400, at(2026, 11, 30, 0), "PT1H"));
 
   // A store that has not been loaded for longer than the hours reach back asks for the daily history from its last day too.
   http.urls.clear();

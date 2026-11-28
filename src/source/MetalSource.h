@@ -8,6 +8,7 @@
 #include <chrono>
 #include <functional>
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -29,8 +30,10 @@
 //   currencyLabel      where an answer of every metal and currency says the currency: the label of the series ("Currency").
 //   request.recent     {interval, days}: the recent history in finer bars (PT1H, 28), for a provider that has them for the last weeks only (an hourly range longer than a month
 //                      comes back daily). The days and the weeks of the last `days` are made of them, and the bars themselves are written (5 minutes and 1 hour, which the
-//                      store keeps for a day and a week). The first load asks for the whole history in `interval` and then for the recent in `recent.interval`; a load after it asks
-//                      for the recent only (one request), and for the daily history from the last day it has only where the recent does not reach back to it.
+//                      store keeps for a day and a week). The first load asks for the whole history in `interval` and then for the last `days` in `recent.interval`; a load after it asks for
+//                      the recent only (one request), and only for the current week and the day before it begins (or the day before the last day the store has, if that is earlier):
+//                      the days since the last load and the current week are made of them, which is all that has changed. The daily history is asked for again, from the last
+//                      day the store has, only where the recent does not reach back to it.
 //   dayKey             which day a bar is of: "start" (the date it starts on, the default) or "end" (the date of its last second: a bar from 15:00 to 15:00 is of the day it ends,
 //                      so the one that starts on a Sunday evening is Monday's)
 //   dayBoundaryHour    the hour (UTC) at which a provider's day begins, where it is not midnight (0): the bars before it are of the day before. Bars of any length up to a day are made
@@ -91,7 +94,9 @@ class MetalSource : public Source {
   static std::vector<Candle> days(const MetalSchema &, const series::Series &, bool dropFirstDay = false);
 
  private:
-  // The day (UTC seconds) the next request for an edge begins: where the store has its daily and weekly bars, the overlap before the last day it has; else 0, the whole history.
+  // The last day (a day number) the store has of an edge that was loaded whole (its daily bars, and half a year of weekly ones); none for an edge that was not.
+  std::optional<int64_t> lastDayOf(const Snapshot &, const MetalSchema::Item &, const std::string & currency) const;
+  // The day (UTC seconds) the next request for the daily bars of an edge begins: the overlap before the last day the store has; 0 where it has none, the whole history.
   Timestamp sinceOf(const Snapshot &, const MetalSchema::Item &, const std::string & currency) const;
   // One metal in one currency, its series in hand (the long one, the recent one, or both): checked, made into bars and written. False where it was not.
   bool write(Store &, const MetalSchema::Item &, const std::string & currency, const series::Series * history, const series::Series * recent, Timestamp now, const std::string & label,

@@ -212,8 +212,7 @@ what reads a spot price picks one (see [Physical metals](#physical-metals)).
     November 2019 (rhodium from 2021, gold in dollars from December 2020), one price a day. The same page gives euros, kroner and kronor, but those are the dollar's price converted
     with an exchange rate, and are left out.
   - `tavex`: gold, silver, platinum and palladium in dollars on no market, one request for each metal. The provider has hourly bars for the last month only and daily bars
-    for ten years, so the first load asks for the daily history and then for the last 28 days in hours, and a load after it asks for the hours alone (one request): the days of the
-    last month and the weeks are made of the hours, and the hourly bars themselves are written (the store keeps a week of them). A provider's day runs from 15:00 to 15:00 UTC
+    for ten years, so the first load asks for the daily history and then for the last 28 days in hours, and a load after it asks for the hours alone (one request, from the day before the current week began: the days since the last load and the current week are all that has changed): the days and the weeks are made of the hours, and the hourly bars themselves are written (the store keeps a week of them). A provider's day runs from 15:00 to 15:00 UTC
     (`dayBoundaryHour`), so a bar is of the day it ends on (the one that starts on a Sunday evening is Monday's), and the few hours of a Friday evening are Friday's. A day made of
     hours is the provider's own daily bar, to the cent. Where the hours do not reach back to the store's last day (a long time since the last load), the daily history is asked for
     from that day too.
