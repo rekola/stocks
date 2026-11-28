@@ -28,7 +28,7 @@ TEST(every_isin_the_adapters_supply_is_valid_different_and_the_private_ones_are_
     CHECK(isValidIsin(isin) && seen.insert(isin).second);
     CHECK(std::stoi(std::string(isin).substr(2, 9)) == ++number);
   }
-  CHECK(number == 4);  // the gold bar, the gold coin, the platinum bar and rhodium: the coins and the other metals have real ones
+  CHECK(number == 3);  // the gold bar, the gold coin, the platinum bar: the coins and the metals have real ones
   // The ones the physical items name.
   CHECK(std::string(known_isin::kBitcoin) == "XTV15WLZJMF0" && std::string(known_isin::kEthereum) == "XTD5RG2FHH04" && std::string(known_isin::kGoldBar) == "ZZ0000000016" && std::string(known_isin::kZinc) == "XC0005705584" && std::string(known_isin::kLead) == "XC0005705527");
   CHECK(std::string(known_isin::kBricIndia) == "US26075E1047");

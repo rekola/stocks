@@ -12,10 +12,10 @@
 #include <vector>
 
 // The daily prices of the precious metals that karasmussen.fi's price page publishes and labels as the London Metal Exchange's, as a market-data
-// dataset: gold, silver, platinum, palladium and rhodium, each in USD, EUR, NOK, SEK and DKK. (The codes in the answer, `XAUFIXPM=`, `LDNXAG=`, are
+// dataset: gold, silver, platinum and palladium, each in USD, EUR, NOK, SEK and DKK. (The codes in the answer, `XAUFIXPM=`, `LDNXAG=`, are
 // those of London fixings, which the page's label does not say: whether the prices are the exchange's, or a reseller's of the London market's, is
 // the provider's to say. The dataset is named for the label, `LME`, which the page says it has the data under licence from; the four fixed metals are
-// priced on the London Bullion Market (XLBM), and rhodium, which neither it nor the exchange prices and whose rows are of another kind, on no market.) Everything that names the
+// priced on the London Bullion Market (XLBM). The page has rhodium too, whose rows are of another kind and which neither market prices: it is not carried.) Everything that names the
 // endpoint, its fields and its formats is in this adapter. It is an offline dataset, loaded by market-ingest on request (src/market/offline/).
 //
 // One request answers for a range of days, every metal and currency in it:

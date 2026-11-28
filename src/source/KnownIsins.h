@@ -43,9 +43,8 @@ inline constexpr const char * kReal[] = {kGold, kSilver, kPlatinum, kPalladium, 
 inline constexpr const char * kGoldBar = "ZZ0000000016";       //  1: a gold bar held by the gram of fine gold (the physical metals, estimated)
 inline constexpr const char * kGoldCoin = "ZZ0000000024";      //  2: a gold coin held by the ounce of fine gold
 inline constexpr const char * kPlatinumBar = "ZZ0000000032";   //  3: a platinum bar held by the gram of fine platinum
-inline constexpr const char * kRhodium = "ZZ0000000040";       //  4: rhodium, per troy ounce (no exchange numbers it)
 
-inline constexpr const char * kPrivate[] = {kGoldBar, kGoldCoin, kPlatinumBar, kRhodium};
+inline constexpr const char * kPrivate[] = {kGoldBar, kGoldCoin, kPlatinumBar};
 
 // ---- What the compiler checks.
 

@@ -24,14 +24,13 @@ constexpr const char * kPage = "https://karasmussen.fi/paivan-hinnat/";  // the 
 struct Metal {
   const char * code;  // the answer's
   const char * symbol, *name, *isin;
-  const char * market;  // the MIC: the London Bullion Market for the four it fixes; no market for rhodium, which neither it nor the LME prices
+  const char * market;  // the MIC
   int firstPeriod;      // the month of the first price, YYYYMM
 };
 constexpr Metal kMetals[] = {{"AU", "XAU", "Gold", known_isin::kGold, "XLBM", 201911},
                              {"AG", "XAG", "Silver", known_isin::kSilver, "XLBM", 201911},
                              {"PT", "XPT", "Platinum", known_isin::kPlatinum, "XLBM", 201911},
-                             {"PD", "XPD", "Palladium", known_isin::kPalladium, "XLBM", 201911},
-                             {"RH", "XRH", "Rhodium", known_isin::kRhodium, kNoMarket, 202102}};
+                             {"PD", "XPD", "Palladium", known_isin::kPalladium, "XLBM", 201911}};
 constexpr const char * kCurrencies[] = {"USD", "EUR", "NOK", "SEK", "DKK"};
 constexpr int kFirstYear = 2019;  // the first year of any metal's prices
 

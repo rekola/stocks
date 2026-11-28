@@ -15,7 +15,7 @@ namespace {
 const market::Log kQuiet = [](const std::string &) {};
 
 // The price page's answer, made up: gold on 2026-11-25 and 2026-11-26 (USD at one price; EUR with the rate's two sides) and rhodium on the 25th
-// in dollars only. The numbers are the real ones of those days.
+// in dollars only (a metal the dataset does not carry). The numbers are the real ones of those days.
 const char * kAnswer = R"([
  {"Code":"AU","RateType":"P","RIC":"XAUFIXPM=","Prices":[
   {"Currency":"EUR","TradeTime":"2026-11-25T15:00:00","Bid":1.0937,"Ask":1.0939,"BidGram":101.879200330146,"AskGram":101.897830521301},
@@ -125,16 +125,15 @@ TEST(lme_asks_by_the_year_with_a_browsers_headers_and_the_pages_referer) {
 
 TEST(lme_has_each_metal_in_five_currencies_by_the_isins_the_sources_share) {
   const auto & list = instruments();
-  CHECK(list.size() == 25);
+  CHECK(list.size() == 20);
   CHECK(spec("xaueur").baseIsin == known_isin::kGold && spec("xaueur").quote == "EUR" && spec("xaueur").baseKind == InstrumentKind::Commodity);
   CHECK(spec("xagusd").baseIsin == known_isin::kSilver && spec("xptsek").baseIsin == known_isin::kPlatinum && spec("xpddkk").baseIsin == known_isin::kPalladium);
   CHECK(spec("xaueur").market == "XLBM" && spec("xagusd").market == "XLBM" && spec("xptsek").market == "XLBM" && spec("xpddkk").market == "XLBM");
-  CHECK(spec("xrhnok").market == kNoMarket);
-  CHECK(spec("xrhnok").baseIsin == known_isin::kRhodium && spec("xrhnok").firstPeriod == 202102 && spec("xaueur").firstPeriod == 201911);
+  CHECK(spec("xaueur").firstPeriod == 201911 && spec("xrhusd").code.empty());  // rhodium is not carried
   LmeSite site;
   Lme adapter(site, market::RawCache("unused"), fast());
   CHECK(adapter.code() == "LME");
-  CHECK(adapter.discover(kQuiet, false).size() == 25);
+  CHECK(adapter.discover(kQuiet, false).size() == 20);
 }
 
 TEST(lme_builds_the_daily_and_weekly_bars_and_the_quote_of_the_last_day) {
@@ -250,14 +249,14 @@ TEST(lme_ingest_writes_the_bars_the_quote_and_the_listing_under_the_dataset_lme)
   auto store = makeMemoryStore(std::move(options));
   Lme adapter(site, market::RawCache(dir.path), fast());
   market::IngestOptions ingest;
-  ingest.codes = {"xaueur", "xauusd", "xrhusd", "xagusd"};
+  ingest.codes = {"xaueur", "xauusd", "xagusd"};
   ingest.resolutions = {Resolution::Day, Resolution::Week};
   const auto report = market::runIngest(adapter, *store, ingest, kQuiet);
   // silver has no price in the made-up year: left out, which an ingest of several instruments does not call failed
-  CHECK(report.instruments.size() == 4 && report.inactive == 1 && report.failedWrites == 0);
+  CHECK(report.instruments.size() == 3 && report.inactive == 1 && report.failedWrites == 0);
   const auto snapshot = store->snapshot();
   const auto edges = snapshot->quoteRowsSince(0);
-  CHECK(edges.size() == 3);
+  CHECK(edges.size() == 2);
   bool bidAsk = false, fixOnly = false;
   for (const EdgeKey & edge : edges) {
     const auto quote = snapshot->quote(edge);
