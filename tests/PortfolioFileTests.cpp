@@ -304,6 +304,37 @@ TEST(a_file_of_schema_one_is_upgraded_to_the_keys_of_codes_as_they_are_packed_no
   CHECK(said.empty() && again->loadEvents().size() == 1 && again->loadEvents()[0].dataset == user);
 }
 
+TEST(a_file_of_schema_three_keeps_its_facts_and_events_and_its_lists_lose_the_dataset) {
+  Dir d;
+  const uint64_t mine = portfolioKey(7)->value;
+  {
+    SQLite::Database db(d.portfolios.string(), SQLite::OPEN_READWRITE | SQLite::OPEN_CREATE);
+    db.exec("CREATE TABLE facts (node_key INTEGER NOT NULL, predicate TEXT NOT NULL, value, tag INTEGER NOT NULL DEFAULT 0, updated INTEGER NOT NULL, "
+            "PRIMARY KEY (node_key, predicate)) WITHOUT ROWID");
+    db.exec("CREATE TABLE events (portfolio INTEGER NOT NULL, dataset INTEGER NOT NULL, id INTEGER NOT NULL, time INTEGER NOT NULL, body TEXT NOT NULL, "
+            "PRIMARY KEY (portfolio, dataset, id)) WITHOUT ROWID");
+    db.exec("CREATE TABLE list_members (list TEXT NOT NULL, base INTEGER NOT NULL, quote INTEGER NOT NULL, market INTEGER NOT NULL, dataset INTEGER NOT NULL, "
+            "PRIMARY KEY (list, base, quote, market, dataset)) WITHOUT ROWID");
+    db.exec("INSERT INTO facts VALUES (" + std::to_string(mine) + ", 'name', 'Mine', 0, 1)");
+    db.exec("INSERT INTO events VALUES (" + std::to_string(mine) + ", 5, 1, 100, '{}')");
+    db.exec("INSERT INTO list_members VALUES ('/watchlist', 1, 2, 3, 10)");
+    db.exec("INSERT INTO list_members VALUES ('/watchlist', 1, 2, 3, 11)");  // the same group by another dataset
+    db.exec("INSERT INTO list_members VALUES ('/watchlist', 4, 2, 3, 10)");
+    db.exec("PRAGMA user_version = 3");
+  }
+  std::vector<std::string> said;
+  auto store = openSqlitePortfolioStore(d.portfolios, [&](const std::string & t) { said.push_back(t); });
+  CHECK(d.files(".old-") == 0 && d.files(".bad-") == 0);
+  bool told = false;
+  for (const std::string & line : said) told |= line.find("schema 3 upgraded") != std::string::npos;
+  CHECK(told);
+  CHECK(store->loadAll().size() == 1 && store->loadEvents().size() == 1);
+  store.reset();
+  SQLite::Database db(d.portfolios.string(), SQLite::OPEN_READONLY);
+  CHECK(db.execAndGet("PRAGMA user_version").getInt() == 4);
+  CHECK(db.execAndGet("SELECT count(*) FROM list_members").getInt() == 2);
+}
+
 TEST(a_damaged_file_is_moved_aside_and_nothing_throws) {
   Dir d;
   {
