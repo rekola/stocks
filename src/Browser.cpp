@@ -186,19 +186,22 @@ Browser::Browser(Application & app, std::shared_ptr<Store> store, std::shared_pt
     else if (const auto positions = std::dynamic_pointer_cast<Positions>(table_.model())) status_.setMessage(positions->summary());
   });
   changed_ = table_.on<StoreChanged>([this](const StoreChanged &, EventContext &) {
-    requestRefresh();
+    pending_ = true;
+    flushUpdates();
     app_.requestFrame();  // the data came from another thread, not from an input
     return Handled::no;
   });
   // An icon arrived on the loader's thread: draw the table again where it is (no new model, so the scroll position, the
   // selection and the sort stay).
   loaded_ = table_.on<IconsLoaded>([this](const IconsLoaded &, EventContext &) {
-    table_.render();
+    icons_pending_ = true;
+    flushUpdates();
     app_.requestFrame();
     return Handled::no;
   });
   said_ = table_.on<SourceMessage>([this](const SourceMessage & m, EventContext &) {
-    status_.setMessage(m.text);
+    message_pending_ = m.text;
+    flushUpdates();
     app_.requestFrame();
     return Handled::no;
   });
@@ -209,8 +212,8 @@ Browser::Browser(Application & app, std::shared_ptr<Store> store, std::shared_pt
   frame_ = app.frame_started.connect([this](double seconds) {
     requestIcons();
     requestHistory();
-    if (pending_) requestRefresh();
-    if (table_.tick(seconds) || pending_) app_.requestFrame();
+    const bool waiting = flushUpdates();
+    if (table_.tick(seconds) || waiting) app_.requestFrame();
   });
 }
 
@@ -286,19 +289,31 @@ void Browser::showPreset(int i) {
   showEmptyHint();
 }
 
-void Browser::requestRefresh() {
+bool Browser::flushUpdates() {
+  if (!pending_ && !icons_pending_ && !message_pending_) return false;
   const auto now = std::chrono::steady_clock::now();
   // A refresh lists every row again and sorts them (tens of milliseconds at 30 000 rows) and data keeps arriving for minutes: wait
-  // at least ten times what the last one cost, so it takes a tenth of the time at most. A test that sets no wait gets none.
+  // at least ten times what the last one cost, so it takes a tenth of the time at most. A test that sets no wait gets none. The
+  // wait is one for all that changes the view, so a screen that is blurred under a dialog, or a trace that moves, changes at one
+  // moment and not at several.
   const double wait = min_refresh_ > 0 ? std::max(min_refresh_, 10 * refresh_cost_) : 0;
-  if (std::chrono::duration<double>(now - last_refresh_).count() < wait) {
-    pending_ = true;  // the next frame asks again
-    return;
-  }
-  pending_ = false;
+  if (std::chrono::duration<double>(now - last_refresh_).count() < wait) return true;  // the next frame asks again
   last_refresh_ = now;
-  refresh();
-  refresh_cost_ = std::chrono::duration<double>(std::chrono::steady_clock::now() - now).count();
+  if (message_pending_) {
+    status_.setMessage(*message_pending_);
+    message_pending_.reset();
+  }
+  if (pending_) {
+    pending_ = false;
+    icons_pending_ = false;  // a refresh draws the table again, icons and all
+    refresh();
+    refresh_cost_ = std::chrono::duration<double>(std::chrono::steady_clock::now() - now).count();
+  }
+  if (icons_pending_) {
+    icons_pending_ = false;
+    table_.render();  // no new model, so the scroll position, the selection and the sort stay
+  }
+  return false;
 }
 
 void Browser::requestIcons() {
