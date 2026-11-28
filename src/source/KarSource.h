@@ -9,9 +9,7 @@
 #include <string>
 #include <vector>
 
-// The daily prices of gold, silver, platinum and palladium in dollars that K. A. Rasmussen's price page (karasmussen.fi) publishes. No key. The page says
-// it uses the London Metal Exchange's data under licence, while the codes in the answer (`XAUFIXPM=`, `LDNXAG=`) are those of London fixings: what
-// the prices are is the publisher's to say, so the dataset is the publisher's, "KAR". Rhodium, which the page has too in rows of another kind, is not carried.
+// The daily prices of gold, silver, platinum and palladium in dollars.
 //
 // One request answers for a range of days, every metal and currency in it, as the page's script asks (browser headers, the page as Referer):
 //   GET https://karasmussen.fi/wp-json/price-history/v1/prices?from=2019-11-01&to=2026-11-28
@@ -35,7 +33,7 @@ class KarSource : public Source {
 
   std::string name() const override { return "kar"; }
   std::vector<std::string> datasetCodes() const override { return {kKarDataset}; }
-  std::string description() const override { return "K. A. Rasmussen: daily prices of gold, silver, platinum and palladium in dollars (no key)"; }
+  std::string description() const override { return "daily prices of gold, silver, platinum and palladium in dollars (no key)"; }
   void load(Store &, Http &, SourceListener &) override;
   std::chrono::milliseconds refreshInterval() const override { return refresh_; }
 
