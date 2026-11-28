@@ -211,8 +211,12 @@ what reads a spot price picks one (see [Physical metals](#physical-metals)).
   - `kar`: gold, silver, platinum and palladium in dollars on the LBM, whose price the fix is, and rhodium, which has no fix, on no market; one request has every metal, from
     November 2019 (rhodium from 2021, gold in dollars from December 2020), one price a day. The same page gives euros, kroner and kronor, but those are the dollar's price converted
     with an exchange rate, and are left out.
-  - `tavex`: gold, silver, platinum and palladium in dollars on no market, ten years of daily bars with an open, a high, a low and a close, one request for each metal, and the later loads ask for the last 60 days (a range shorter than about 45 days comes back as hourly bars, whatever is asked for, which the adapter does not write). A bar runs from 15:00
-    to 15:00 UTC, so it is of the day it ends on (the one that starts on a Sunday evening is Monday's), and the few hours of a Friday evening are Friday's.
+  - `tavex`: gold, silver, platinum and palladium in dollars on no market, one request for each metal. The provider has hourly bars for the last month only and daily bars
+    for ten years, so the first load asks for the daily history and then for the last 28 days in hours, and a load after it asks for the hours alone (one request): the days of the
+    last month and the weeks are made of the hours, and the hourly bars themselves are written (the store keeps a week of them). A provider's day runs from 15:00 to 15:00 UTC
+    (`dayBoundaryHour`), so a bar is of the day it ends on (the one that starts on a Sunday evening is Monday's), and the few hours of a Friday evening are Friday's. A day made of
+    hours is the provider's own daily bar, to the cent. Where the hours do not reach back to the store's last day (a long time since the last load), the daily history is asked for
+    from that day too.
 - **`gold-api`** ([gold-api.com](https://gold-api.com), no key) lists its symbols (gold, silver, platinum, palladium,
   copper, Bitcoin and Ethereum) and asks the price of each in euros and dollars. The metals are in the Commodities
   preset and the coins in Currencies, beside the currency pairs (on a terminal without pictures their icon is ₿ or ⟠); all are in All. Its prices

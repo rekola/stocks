@@ -9,10 +9,11 @@
   "url": "https://market-data.tavex.fi/v1/chart-data/xignite-metals?symbol={symbol}&currency={currency}&priceType=Mid&from={from}&to={to}&interval={interval}",
   "interval": "P1D",
   "years": 10,
-  "overlapDays": 60,
+  "recent": {"interval": "PT1H", "days": 28},
   "time": "iso"
  },
  "dayKey": "end",
+ "dayBoundaryHour": 15,
  "foldWeekends": true,
  "items": [
   {"symbol": "XAU", "name": "Gold", "isin": "XC0009655157", "currencies": ["USD"]},

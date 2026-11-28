@@ -199,10 +199,10 @@ TEST(metal_says_what_went_wrong_and_goes_on_to_the_next_metal) {
   CHECK(html.first == std::vector<std::string>{"dealer: XAU/USD: not JSON"});
   const auto empty = one(ok(R"({"statusCode":200,"data":[]})"));
   CHECK(empty.first == std::vector<std::string>{"dealer: XAU/USD: no bars in the answer"});
-  // The answer gives finer bars than a day (an endpoint may, whatever it was asked for): not written, and said.
-  const auto hourly = one(ok(R"({"data":[{"open":1,"close":2,"high":3,"low":1,"startDateTime":"2026-11-20T00:00:00+00:00","endDateTime":"2026-11-20T01:00:00+00:00"},
-                                          {"open":2,"close":3,"high":3,"low":1,"startDateTime":"2026-11-20T01:00:00+00:00","endDateTime":"2026-11-20T02:00:00+00:00"}]})"));
-  CHECK(hourly.first.size() == 1 && hourly.first[0].find("asked for daily bars, the answer's are 3600 seconds long") != std::string::npos && hourly.second == 0);
+  // The answer gives longer bars than a day (an endpoint may, whatever it was asked for): not written, and said.
+  const auto weekly = one(ok(R"({"data":[{"open":1,"close":2,"high":3,"low":1,"startDateTime":"2026-11-02T00:00:00+00:00","endDateTime":"2026-11-09T00:00:00+00:00"},
+                                          {"open":2,"close":3,"high":3,"low":1,"startDateTime":"2026-11-09T00:00:00+00:00","endDateTime":"2026-11-16T00:00:00+00:00"}]})"));
+  CHECK(weekly.first.size() == 1 && weekly.first[0].find("604800 seconds long, longer than a day; not written") != std::string::npos && weekly.second == 0);
   // Several series in an answer that is for one metal.
   const auto several = one(ok(R"({"a":[[1700000000,1],[1700086400,2]],"b":[[1700000000,3],[1700086400,4]]})"));
   CHECK(several.first.size() == 1 && several.first[0].find("2 series, not the one asked for") != std::string::npos);
@@ -361,4 +361,105 @@ TEST(metal_an_answer_of_every_metal_asks_from_the_earliest_day_any_of_them_needs
   source.load(*store, http, said);
   // Two days of bars are not what a store has of a metal that was loaded whole (half a year of weeks), so the second asks for the whole history again.
   CHECK(http.urls.size() == 2 && http.urls[0] == http.urls[1]);
+}
+
+namespace {
+
+// The hourly bars of the weekdays from `first` to `last` (day numbers) as a provider whose day begins at 15:00 UTC has them: round the clock from Sunday 22:00 to Friday 22:00, an
+// hour of each at 1000 plus its hour of the week, so that a day's open is its first hour's and its close its last's.
+std::string hoursAnswer(Timestamp from, Timestamp to) {
+  std::string bars;
+  for (Timestamp t = from - from % 3600; t < to; t += 3600) {
+    const int64_t d = t / 86400 + kUnixEpochDayNumber;
+    const int hour = static_cast<int>(t % 86400 / 3600);
+    const int wd = weekday(d);
+    const bool closed = (wd == 4 && hour >= 22) || wd == 5 || (wd == 6 && hour < 22);  // from Friday 22:00 to Sunday 22:00 UTC
+    if (closed) continue;
+    const double v = 1000 + static_cast<double>((t / 3600) % 1000);
+    bars += (bars.empty() ? "" : ",") + bar(t, t + 3600, v, v + 2, v - 2, v + 1);
+  }
+  return "{\"statusCode\":200,\"data\":[" + bars + "]}";
+}
+
+MetalSchema hourly() {
+  MetalSchema s = schema(R"({
+   "name": "dealer", "dataset": "DEALER", "market": "XXXX", "pauseMs": 10,
+   "request": {"url": "https://example.test/chart?symbol={symbol}&currency={currency}&from={from}&to={to}&interval={interval}", "interval": "P1D", "years": 10,
+               "recent": {"interval": "PT1H", "days": 28}},
+   "dayKey": "end", "dayBoundaryHour": 15, "foldWeekends": true,
+   "items": [{"symbol": "XAU", "name": "Gold", "isin": "XC0009655157"}]})");
+  return s;
+}
+
+}  // namespace
+
+TEST(metal_hours_make_the_days_of_a_provider_whose_day_begins_at_a_set_hour) {
+  const MetalSchema s = hourly();
+  CHECK(s.dayBoundaryHour == 15 && s.recent.interval == "PT1H" && s.recent.days == 28);
+  // Wednesday 2026-11-25 15:00 to Friday 2026-11-27 15:00: hourly bars of two days, whose first begins on the Wednesday afternoon.
+  const series::Result r = series::read(hoursAnswer(at(2026, 11, 25, 15), at(2026, 11, 27, 15)));
+  CHECK(r.ok && r.series[0].barSeconds == 3600 && r.series[0].bars.size() == 48);
+  const std::vector<Candle> days = MetalSource::days(s, r.series[0]);
+  CHECK(days.size() == 2 && days[0].time == dayNumber(2026, 11, 26) && days[1].time == dayNumber(2026, 11, 27));  // each of the day it ends on
+  const double firstHour = 1000 + static_cast<double>((at(2026, 11, 25, 15) / 3600) % 1000);
+  CHECK(days[0].open == firstHour && days[0].high == days[0].close + 1 + 0 + (days[0].high - days[0].close - 1) && days[0].low < days[0].open);
+  // A request that begins in the middle of a day has only part of its first: that one is left out.
+  const series::Result part = series::read(hoursAnswer(at(2026, 11, 25, 20), at(2026, 11, 27, 15)));
+  const std::vector<Candle> rest = MetalSource::days(s, part.series[0], /*dropFirstDay=*/true);
+  CHECK(rest.size() == 1 && rest[0].time == dayNumber(2026, 11, 27) && rest[0].open == days[1].open && rest[0].close == days[1].close);
+  // A week of them, over a weekend: Friday's evening is Friday's, and Sunday evening's is Monday's.
+  const series::Result weekOf = series::read(hoursAnswer(at(2026, 11, 22, 0), at(2026, 11, 28, 22)));
+  const std::vector<Candle> days2 = MetalSource::days(s, weekOf.series[0]);
+  bool noWeekend = true;
+  for (const Candle & c : days2) noWeekend = noWeekend && weekday(c.time) < 5;
+  CHECK(noWeekend && days2.size() == 5 && days2.front().time == dayNumber(2026, 11, 23));  // Monday the 23rd to Friday the 27th
+}
+
+TEST(metal_the_first_load_asks_for_the_history_and_the_recent_hours_and_the_later_loads_for_the_hours_alone) {
+  const MetalSchema s = hourly();
+  auto store = makeMemoryStore();
+  FakeHttp http;
+  const Timestamp now = at(2026, 12, 1, 12);  // a Tuesday
+  http.answer = [&](const std::string & address) {
+    if (address.find("interval=PT1H") != std::string::npos) {
+      const size_t f = address.find("from=") + 5;
+      // the request's from, read back from the text: 2026-11-03T12%3A00%3A00Z
+      const int y = std::stoi(address.substr(f, 4)), mo = std::stoi(address.substr(f + 5, 2)), d = std::stoi(address.substr(f + 8, 2)), h = std::stoi(address.substr(f + 11, 2));
+      return ok(hoursAnswer(at(y, static_cast<unsigned>(mo), static_cast<unsigned>(d), h), now));
+    }
+    return ok(daysAnswer(dayNumber(2025, 10, 1), dayNumber(2026, 12, 1), 3000));
+  };
+  Said said;
+  MetalSource source(s, [&] { return now; });
+  source.load(*store, http, said);
+  CHECK(said.messages.empty() && http.urls.size() == 2 && said.pauses == 1);
+  CHECK(http.urls[0] == MetalSource::url(s, s.items[0], "USD", now) && http.urls[0].find("interval=P1D") != std::string::npos);
+  CHECK(http.urls[1] == MetalSource::url(s, s.items[0], "USD", now, now - 28 * 86400, "PT1H"));
+  const auto snapshot = store->snapshot();
+  const auto gold = edgeOf(*snapshot, known_isin::kGold, "XXXX", "DEALER");
+  CHECK(gold.has_value());
+  if (!gold) return;
+  // The days of the last four weeks are the hours', the ones before are the daily bars'.
+  const auto days = snapshot->queue(*gold, Resolution::Day);
+  const auto hours = snapshot->queue(*gold, Resolution::Hour1);
+  CHECK(!hours.empty() && days.size() > 250 && days.back().time == dayNumber(2026, 12, 1));
+  const int64_t recent = dayNumber(2026, 11, 5);  // the hours begin on the 3rd of November, and the day they begin in is only part of one
+  bool fromHours = true, fromDays = true;
+  for (const Candle & c : days) {
+    if (c.time >= recent) fromHours = fromHours && c.high - c.low > 10;                                      // a day of hours has the range of its hours, which climb by one an hour
+    else if (c.time >= dayNumber(2026, 1, 1) && c.time < dayNumber(2026, 11, 3)) fromDays = fromDays && c.high - c.low == 10;  // a daily bar of the made-up answer: 5 either side
+  }
+  CHECK(fromHours && fromDays);
+  CHECK(snapshot->quote(*gold)->time == now);
+
+  // Now the store has them, and the hours alone are asked for: one request.
+  http.urls.clear();
+  source.load(*store, http, said);
+  CHECK(said.messages.empty() && http.urls.size() == 1 && http.urls[0].find("interval=PT1H") != std::string::npos);
+
+  // A store that has not been loaded for longer than the hours reach back asks for the daily history from its last day too.
+  http.urls.clear();
+  MetalSource later(s, [&] { return now + 40 * 86400; });
+  later.load(*store, http, said);
+  CHECK(http.urls.size() == 2 && http.urls[0].find("interval=P1D") != std::string::npos && http.urls[1].find("interval=PT1H") != std::string::npos);
 }

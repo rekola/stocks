@@ -27,8 +27,14 @@
 //                      the first request goes, `overlapDays` (14) how far before the last day the store has the later ones begin (so a load after the first asks for two weeks,
 //                      not ten years), `time` how `{from}` and `{to}` are written: "iso" (2026-11-28T11:36:00Z, the colons percent-encoded, for a URL) or "date" (2026-11-28).
 //   currencyLabel      where an answer of every metal and currency says the currency: the label of the series ("Currency").
-//   dayKey             which day a daily bar is of: "start" (the date it starts on, the default) or "end" (the date of its last second: a bar from 15:00 to 15:00 is of the day it ends,
+//   request.recent     {interval, days}: the recent history in finer bars (PT1H, 28), for a provider that has them for the last weeks only (an hourly range longer than a month
+//                      comes back daily). The days and the weeks of the last `days` are made of them, and the bars themselves are written (5 minutes and 1 hour, which the
+//                      store keeps for a day and a week). The first load asks for the whole history in `interval` and then for the recent in `recent.interval`; a load after it asks
+//                      for the recent only (one request), and for the daily history from the last day it has only where the recent does not reach back to it.
+//   dayKey             which day a bar is of: "start" (the date it starts on, the default) or "end" (the date of its last second: a bar from 15:00 to 15:00 is of the day it ends,
 //                      so the one that starts on a Sunday evening is Monday's)
+//   dayBoundaryHour    the hour (UTC) at which a provider's day begins, where it is not midnight (0): the bars before it are of the day before. Bars of any length up to a day are made
+//                      into days by it, so a day of hourly bars is the same as a daily bar of the provider.
 //   foldWeekends       a bar that comes to a Saturday or a Sunday (the few hours of a Friday evening) is added to the day before (false)
 //   fields, rows       hints for the reader (SeriesReader.h `Hints`): which key is which role, a JSON pointer to the rows. Only where its heuristics do not tell.
 //   items              [{symbol, name, isin, currencies, type, unit, market, labels}]: what is asked for. `isin` is the metal's (the gold of the other sources), `currencies` ["USD"],
@@ -49,7 +55,11 @@ struct MetalSchema {
   std::chrono::milliseconds pause{1000}, refresh{std::chrono::hours(3)};
   HttpHeaders headers;
   std::string url, interval = "P1D", time = "iso", dayKey = "start";
-  int years = 10, overlapDays = 14;
+  int years = 10, overlapDays = 14, dayBoundaryHour = 0;
+  struct Recent {
+    std::string interval;  // empty: none
+    int days = 0;
+  } recent;
   bool foldWeekends = false;
   bool perItem() const { return url.find("{symbol}") != std::string::npos; }
   series::Hints hints;
@@ -73,17 +83,19 @@ class MetalSource : public Source {
   std::chrono::milliseconds refreshInterval() const override { return schema_.refresh; }
 
   // The request for one metal in one currency (for an answer of every metal, the one request: the item and the currency are not used), as the schema makes it, for the days from
-  // `since` (UTC seconds; 0: the schema's `years` back) to `now`.
-  static std::string url(const MetalSchema &, const MetalSchema::Item &, const std::string & currency, Timestamp now, Timestamp since = 0);
-  // The daily bars of a series, each of its day (by the schema's `dayKey`), the days of two bars of one day joined, and the bars that come to a weekend folded into the day
-  // before where the schema says so. Oldest first.
-  static std::vector<Candle> days(const MetalSchema &, const series::Series &);
+  // `since` (UTC seconds; 0: the schema's `years` back) to `now`, in the schema's `interval` or the one given.
+  static std::string url(const MetalSchema &, const MetalSchema::Item &, const std::string & currency, Timestamp now, Timestamp since = 0, const std::string & interval = {});
+  // The daily bars of a series, each of its day (by the schema's `dayKey` and `dayBoundaryHour`), the days of several bars of one day joined (the first open, the last close, the extremes),
+  // and the bars that come to a weekend folded into the day before where the schema says so. Oldest first. `dropFirstDay`: the first day is left out (of bars shorter than a
+  // day, a request that begins in the middle of a day has only part of it).
+  static std::vector<Candle> days(const MetalSchema &, const series::Series &, bool dropFirstDay = false);
 
  private:
   // The day (UTC seconds) the next request for an edge begins: where the store has its daily and weekly bars, the overlap before the last day it has; else 0, the whole history.
   Timestamp sinceOf(const Snapshot &, const MetalSchema::Item &, const std::string & currency) const;
-  // One metal in one currency, its series in hand: checked, made into bars and written. False where it was not.
-  bool write(Store &, const MetalSchema::Item &, const std::string & currency, const series::Series &, Timestamp now, const std::string & label, SourceListener &);
+  // One metal in one currency, its series in hand (the long one, the recent one, or both): checked, made into bars and written. False where it was not.
+  bool write(Store &, const MetalSchema::Item &, const std::string & currency, const series::Series * history, const series::Series * recent, Timestamp now, const std::string & label,
+             SourceListener &);
   MetalSchema schema_;
   std::function<Timestamp()> now_;
 };
