@@ -128,7 +128,7 @@ TEST(every_symbol_is_priced_in_euros_and_in_dollars_as_edges_of_the_dataset) {
   CHECK(!s->attribute(gold, predicate::iconColor));
   CHECK(s->name(NodeRef(*s->findInstrument("XPT"))) == "Platinum" && std::string(s->said(NodeRef(gold), predicate::type)) == "METAL");
   // Not tradable: a spot price is priced and not bought.
-  CHECK(!portfolio::tradable(*s, EdgeKey{gold, eur, none, data}));
+  CHECK(!portfolio::tradable(*s, GroupKey{gold, eur}));
 }
 
 TEST(a_second_load_replaces_the_quote_and_leaves_no_bar) {
@@ -296,7 +296,7 @@ TEST(a_sample_of_physical_platinum_is_priced_from_the_platinum_spot_in_both_curr
   CHECK(s->edges(off).size() == 6);  // the gold bar, the gold coin and the platinum bar, each in euros and in dollars
   const DatasetId data = *s->findDataset(kPhysicalDataset);
   const InstrumentId bar = *s->findInstrument("PLATBAR"), eur = *s->findInstrument("EUR"), usd = *s->findInstrument("USD");
-  CHECK(s->name(NodeRef(bar)) == "Platinum bar (1 g fine)" && s->kind(bar) == InstrumentKind::Commodity && portfolio::tradable(*s, EdgeKey{bar, eur, off, data}));
+  CHECK(s->name(NodeRef(bar)) == "Platinum bar (1 g fine)" && s->kind(bar) == InstrumentKind::Commodity && portfolio::tradable(*s, GroupKey{bar, eur}));
   const double gram = 0.0321507466;
   CHECK(std::abs(s->quote({bar, eur, off, data})->last - 1300 * 0.9 * gram * 0.93) < 1e-6);
   CHECK(std::abs(s->quote({bar, usd, off, data})->last - 1300 * gram * 0.93) < 1e-6);

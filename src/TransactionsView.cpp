@@ -39,13 +39,13 @@ const char * TransactionTable::heading(Column c) {
 
 bool TransactionTable::numeric(Column c) { return c == QUANTITY || c == PRICE || c == FEE || c == TOTAL || c == HELD; }
 
-TransactionTable buildTransactionTable(const Snapshot & snapshot, PortfolioId id, InstrumentId instrument, MarketId market, InstrumentId quote) {
+TransactionTable buildTransactionTable(const Snapshot & snapshot, PortfolioId id, InstrumentId instrument, InstrumentId quote) {
   TransactionTable out;
   out.currency = snapshot.symbol(quote);
   if (out.currency.empty()) out.currency = snapshot.name(NodeRef(quote));
   std::vector<portfolio::Transaction> mine;
   for (const portfolio::Transaction & t : snapshot.transactions({id, portfolio::ledgerOf(snapshot, id)}))
-    if (t.instrument == instrument && t.market == market && t.quote == quote) mine.push_back(t);
+    if (t.instrument == instrument && t.quote == quote) mine.push_back(t);
   // In the order derivePositions applies them, and left out where it leaves them out: a position's arithmetic is its own.
   std::stable_sort(mine.begin(), mine.end(), [](const portfolio::Transaction & a, const portfolio::Transaction & b) {
     return std::make_tuple(a.day, a.side == portfolio::Side::Sell, a.id) < std::make_tuple(b.day, b.side == portfolio::Side::Sell, b.id);

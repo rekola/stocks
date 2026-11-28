@@ -1,6 +1,10 @@
 # One row per instrument
 
-Status: plan, nothing built. Waiting on the owner's answers under "For the owner" (they are the ones not already decided).
+Status: built on this branch (steps 1 to 4), after the owner's answers: gold and every commodity is buyable where a member is on a real venue (no rule by kind); staleness is
+relative to the newest member with a window of **one hour** (a live source makes the others stale, a delayed or daily one among them included), no adapter says which is
+live; a position's cost is the pooled average of the buys (applies to cost only: it is money paid, nothing to take a median of; prices of datasets use the median); a preset of one market
+shows that market's members only; the table says nothing of a row's markets (Show info does). Below is the plan as first written: where it differs, the owner's answers win
+(buyable: no commodity or kind rule; stale: 1 hour; the market preset shows the market alone).
 
 ## Goal
 

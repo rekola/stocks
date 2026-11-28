@@ -17,7 +17,7 @@ constexpr double kEpsilon = 1e-9;  // what is left of a position that was sold: 
 bool finite(double v) { return std::isfinite(v); }
 
 std::string checkTransaction(const Transaction & t) {
-  if (!t.instrument.valid() || !t.market.valid() || !t.quote.valid()) return "it has no instrument, market or currency";
+  if (!t.instrument.valid() || !t.quote.valid()) return "it has no instrument or currency";
   if (!finite(t.quantity) || t.quantity <= 0) return "its quantity is not above zero";
   if (!finite(t.price) || t.price < 0) return "its price is not a number of zero or more";
   if (!finite(t.fee) || t.fee < 0) return "its fee is not a number of zero or more";
@@ -37,18 +37,17 @@ Derived derivePositions(std::vector<Transaction> transactions) {
     return std::make_tuple(a.day, a.side == Side::Sell, a.id) < std::make_tuple(b.day, b.side == Side::Sell, b.id);
   });
   Derived out;
-  std::map<std::tuple<uint64_t, uint64_t, uint64_t>, Group> groups;
+  std::map<std::tuple<uint64_t, uint64_t>, Group> groups;
   size_t order = 0;
   for (const Transaction & t : transactions) {
     if (const std::string why = checkTransaction(t); !why.empty()) {
       out.refused.push_back({t.id, why});
       continue;
     }
-    auto [it, fresh] = groups.try_emplace({t.instrument.value, t.market.value, t.quote.value});
+    auto [it, fresh] = groups.try_emplace({t.instrument.value, t.quote.value});
     Group & g = it->second;
     if (fresh) {
       g.position.instrument = t.instrument;
-      g.position.market = t.market;
       g.position.quote = t.quote;
       g.order = order++;
     }
@@ -101,7 +100,12 @@ bool tradable(MarketId market) {
   return market.valid() && market.value != none;
 }
 
-bool tradable(const Snapshot &, const EdgeKey & edge) { return edge.base.valid() && tradable(edge.market); }
+bool tradable(const Snapshot & snapshot, const GroupKey & group) {
+  if (!group.base.valid()) return false;
+  for (const EdgeKey & member : membersOf(snapshot, group))
+    if (tradable(member.market)) return true;
+  return false;
+}
 
 namespace {
 
@@ -130,8 +134,19 @@ std::optional<double> direct(const Snapshot & snapshot, InstrumentId from, Instr
 
 }  // namespace
 
-std::optional<Price> latestPrice(const Snapshot & snapshot, InstrumentId instrument, MarketId market, InstrumentId quote) {
-  return latestOf(snapshot, snapshot.edgesOf(instrument), [&](const EdgeKey & k) { return k.market == market && k.quote == quote; });
+std::optional<Price> latestPrice(const Snapshot & snapshot, InstrumentId instrument, InstrumentId quote) {
+  const Mix mix = mixOf(snapshot, GroupKey{instrument, quote});
+  if (!isDefined(mix.price)) return std::nullopt;
+  const Member * newest = nullptr;
+  for (const Member & m : mix.members)
+    if (m.state == MemberState::Used && (!newest || m.time > newest->time)) newest = &m;
+  Price out;
+  out.edge = newest->edge;
+  out.close = mix.price;
+  out.time = newest->time;
+  out.day = newest->time != 0 ? dayNumberOfInstant(newest->time) : 0;
+  out.mix = mix;
+  return out;
 }
 
 std::optional<double> rate(const Snapshot & snapshot, InstrumentId from, InstrumentId to) {
@@ -160,7 +175,7 @@ Valuation value(const std::vector<Position> & positions, const Snapshot & snapsh
   for (const Position & p : positions) {
     PositionValue row;
     row.position = p;
-    row.price = latestPrice(snapshot, p.instrument, p.market, p.quote);
+    row.price = latestPrice(snapshot, p.instrument, p.quote);
     if (row.price) {
       row.market_value = p.quantity * row.price->close;
       row.profit = row.market_value - p.cost();

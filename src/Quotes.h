@@ -16,15 +16,15 @@
 #include <unordered_set>
 #include <vector>
 
-// One table row is one group (model/Group.h): what one unit of `base` costs in `quote` on one market, as the datasets that report it say together.
+// One table row is one group (model/Group.h): what one unit of `base` costs in `quote`, as the markets and datasets that report it say together.
 // The symbol that stands for an instrument's icon where there is no picture: the one it says itself (iconSymbol), else one of its
 // kind (an index 📈, a currency 💱: quoted in another, it is a currency pair); empty for none.
 std::string iconSymbolOf(const Snapshot & snapshot, InstrumentId instrument);
 // The colour the instrument says its symbol has (iconColor); none for the text colour.
 std::optional<cellui::Color> iconColorOf(const Snapshot & snapshot, InstrumentId instrument);
 
-// One edge for each group that has daily bars, in a market or in every market (in market order): what a table shows. The edge is the
-// group's first member, the one that stands for it where the datasets say the same (its base, quote and market).
+// One edge for each group that has a row, with a member in a market or in any (in market order): what a table shows. The edge is the
+// first member found, the one that stands for the group where its members have things in common (its base and quote).
 std::vector<EdgeKey>
 quoteEdges(const Snapshot &snapshot, MarketId market,
            KindSet kinds = {});
@@ -38,13 +38,13 @@ std::string changeTitle(Period);
 std::string highTitle(Period);
 std::string lowTitle(Period);
 
-// A list of groups as a table: base, quote, name, market, price, the change over a period and a trace of its closes. The rows are not
+// A list of groups as a table: base, quote, name, price, the change over a period and a trace of its closes. The rows are not
 // built: a cell is read from the snapshot when the table asks for it, which is for the rows in view, so the cost of
 // showing tens of thousands of rows, and of showing them again when the store changes, does not grow with their number.
 // Only a sort reads a whole column, once, and keeps it until the rows change.
 class Quotes : public cellui::TableModel {
  public:
-  enum Column { ICON, BASE, QUOTE, NAME, MARKET, PRICE, CHANGE, LOW, HIGH, HISTORY };
+  enum Column { ICON, BASE, QUOTE, NAME, PRICE, CHANGE, LOW, HIGH, HISTORY };
 
   // `icons` supplies the pictures of the icon column; without it the column is empty.
   Quotes(std::shared_ptr<const Snapshot> snapshot, std::vector<EdgeKey> keys, std::shared_ptr<IconLoader> icons = nullptr);
@@ -62,11 +62,10 @@ class Quotes : public cellui::TableModel {
   struct Scope {
     bool all = false;
     std::optional<MarketId> market; // only this market's edges, where set
-    std::optional<MarketId> also;   // and this one's, where set (a preset of two markets)
     KindSet kinds; // only edges whose base is of one of these kinds, where set
     bool resolved() const { return all || market.has_value(); }
     bool has(const Snapshot &snapshot, const EdgeKey &key) const {
-      return (all || (market && key.market == *market) || (also && key.market == *also)) &&
+      return (all || (market && key.market == *market)) &&
              kinds.admits(snapshot.kind(key.base));
     }
   };
@@ -85,7 +84,7 @@ class Quotes : public cellui::TableModel {
 
   int rowCount() const override { return static_cast<int>(keys_.size()); }
   std::string text(int r, int c) const override;
-  // The edge that stands for a row: one member of its group, for what the members have in common (base, quote and market). Not its identity:
+  // The edge that stands for a row: one member of its group, for what the members have in common (base and quote). Not its identity:
   // that is `group`.
   const EdgeKey & edge(int r) const { return keys_[static_cast<size_t>(r)]; }
   GroupKey group(int r) const { return groupOf(edge(r)); }
@@ -93,6 +92,8 @@ class Quotes : public cellui::TableModel {
   const Mix & mix(int r) const;
   // The members of the row that count: the edges whose bars it is made from.
   std::vector<EdgeKey> members(int r) const;
+  // The market a preset of one market shows: only its members count, so the row says what that market says. None: every market's.
+  void setMarket(std::optional<MarketId> market);
   // Which datasets count; empty: all. The user's switches. The caches go.
   void setFilter(DatasetFilter);
   const DatasetFilter & filter() const { return filter_; }
@@ -118,7 +119,6 @@ class Quotes : public cellui::TableModel {
   double high(int r) const;    // the highest and the lowest price of the period, in the row's price unit; undefined for no number
   double low(int r) const;
   std::string priceText(int r, double) const;  // a price as the Price column shows it: a rate in per cent
-  const std::string & marketLabel(MarketId) const;
 
   int own(int c) const { return narrow_ && c >= LOW ? c + 2 : c; }
   bool narrow_ = false;
@@ -127,7 +127,7 @@ class Quotes : public cellui::TableModel {
   std::shared_ptr<const Snapshot> snapshot_;
   std::vector<EdgeKey> keys_;
   size_t rows_seen_ = 0;  // how many of the store's rows (Snapshot::quoteRowCount()) the rows above are made from
-  mutable std::unordered_map<uint64_t, std::string> marketLabels_;
+  std::optional<MarketId> market_;
   DatasetFilter filter_;
   std::unordered_set<GroupKey> groups_;                  // the groups the rows are
   mutable std::unordered_map<int, Mix> mixes_;           // the rows drawn or sorted lately

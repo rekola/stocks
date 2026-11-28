@@ -19,23 +19,21 @@ using namespace cellui;
 
 namespace {
 
-// A preset is a selection of edges: a market (by its MIC; the indices, spot
-// prices and currency pairs are on no market, XXXX) and, where that holds
-// several kinds, the kinds of the base. No mic is every market, of the kind where there is one. A preset with a `list` is none of
-// that: it is the edges the user put on that list (kLists, below).
+// A preset is a selection of rows: of the groups (an instrument in a unit, whatever markets list it) of the kinds it names, or of a list the user keeps. One
+// that names a market (by its MIC) is the exception: it shows what that market says, the groups with a member there and the member's own
+// numbers. No mic is every market. A preset with a `list` is the groups the user put on that list (kLists, below).
 struct Preset {
   const char * tag;
   const char * command;
   const char *mic = nullptr;
   KindSet kinds;
   const char * list = nullptr;
-  const char * also = nullptr;  // a second market, where the preset is of two (the commodities of no market and of the London Bullion Market)
 };
 constexpr Preset kPresets[] = {
-    {"Commodities", "show-commodities", kNoMarket, InstrumentKind::Commodity, nullptr, "XLBM"},
+    {"Commodities", "show-commodities", nullptr, InstrumentKind::Commodity},
     {"Nasdaq Helsinki", "show-nasdaq-helsinki", "XHEL"},
-    {"Currencies", "show-currencies", kNoMarket, {InstrumentKind::Currency, InstrumentKind::Crypto}},  // the coins are money too
-    {"Indices", "show-indices", kNoMarket, InstrumentKind::Index},
+    {"Currencies", "show-currencies", nullptr, {InstrumentKind::Currency, InstrumentKind::Crypto}},  // the coins are money too
+    {"Indices", "show-indices", nullptr, InstrumentKind::Index},
     {"Funds", "show-funds", nullptr, InstrumentKind::Fund},  // of every market, whoever lists them
     // What is held in hand and traded off exchange: the estimated gold bar and coin now, platinum and scrap gold when they come. Commodities on XOFF.
     {"Physical", "show-physical", kOffExchange, InstrumentKind::Commodity},
@@ -83,7 +81,7 @@ constexpr const char * kMenuGlyph = "\xE2\x89\xA1";
 Quotes::Scope scopeOf(const Snapshot & snapshot, const Preset & preset) {
   if (!preset.mic)
     return {.all = true, .kinds = preset.kinds};
-  return {.market = snapshot.findMarket(preset.mic), .also = preset.also ? snapshot.findMarket(preset.also) : std::nullopt, .kinds = preset.kinds};
+  return {.market = snapshot.findMarket(preset.mic), .kinds = preset.kinds};
 }
 
 // The edges of a preset, one for each group that is a row: a list's, a market's, or everything.
@@ -99,13 +97,8 @@ std::vector<EdgeKey> edgesOf(const Snapshot & snapshot, const Preset & preset) {
     std::erase_if(keys, [&](const EdgeKey & k) { return !preset.kinds.admits(snapshot.kind(k.base)); });
     return keys;
   }
-  std::vector<EdgeKey> keys;
-  for (const char * mic : {preset.mic, preset.also})
-    if (const auto market = mic ? snapshot.findMarket(mic) : std::nullopt) {
-      const std::vector<EdgeKey> edges = quoteEdges(snapshot, *market, preset.kinds);
-      keys.insert(keys.end(), edges.begin(), edges.end());
-    }
-  return keys;
+  if (const auto market = snapshot.findMarket(preset.mic)) return quoteEdges(snapshot, *market, preset.kinds);
+  return {};
 }
 
 // Whether two lists of edges stand for the same groups, in any order.
@@ -227,17 +220,16 @@ void Browser::setColumns() {
     return;
   }
   if (context_ == Context::Markets) {
-    // Three steps by the width of the display (Fit). The longest market labels the app shows are 25 cells ("Spotlight Stock Market DK"; most are under 24),
-    // so the wide ones are cut: no width fits them with a Name left over. There is no column for the dataset: a row is what its datasets say together.
-    //   narrow (80)   no Low and High columns (the table has 9): icon 2, Base 7, Quote 5, Market 8, Price 9, Change 10, trace 10, menu 1 and 8 gaps
-    //                 leave the Name 19 cells at 80 columns (the scrollbar has the last one);
-    //   medium (110)  all 11: Base 8, Quote 6, Market 10, Price 9, Change 11, Low 9, High 9, trace 12, menu 1 and 10 gaps leave the Name 22 at 110;
-    //   wide (140)    Market 16 and trace 16: the Name has 38 at 140.
+    // Three steps by the width of the display (Fit). There is no column for the market or the dataset: a row is what its markets and datasets say
+    // together, and Show info says which.
+    //   narrow (80)   no Low and High columns (the table has 8): icon 2, Base 7, Quote 5, Price 9, Change 10, trace 10, menu 1 and 7 gaps
+    //                 leave the Name 28 cells at 80 columns (the scrollbar has the last one);
+    //   medium (110)  all 10: Base 8, Quote 6, Price 9, Change 11, Low 9, High 9, trace 12, menu 1 and 9 gaps leave the Name 33 at 110;
+    //   wide (140)    trace 16: the Name has 55 at 140.
     std::vector<cellui::TableColumn> columns = {{.title = "", .width = 2, .sortable = false, .icon = true, .icon_fallback = true},
                                                 {.title = "Base", .width = fit_ == Fit::Narrow ? 7 : 8},
                                                 {.title = "Quote", .width = fit_ == Fit::Narrow ? 5 : 6},
                                                 {.title = "Name", .width = 0},
-                                                {.title = "Market", .width = fit_ == Fit::Narrow ? 8 : fit_ == Fit::Medium ? 10 : 16},
                                                 {.title = "Price", .width = 9, .align = Align::RIGHT},
                                                 {.title = changeTitle(period_), .width = fit_ == Fit::Narrow ? 10 : 11, .align = Align::RIGHT}};
     if (fit_ != Fit::Narrow) {
@@ -282,6 +274,7 @@ void Browser::showPreset(int i) {
   auto quotes = std::make_shared<Quotes>(snapshot, edgesOf(*snapshot, kPresets[i]), icons_);
   quotes->setPeriod(period_);
   quotes->setNarrow(fit_ == Fit::Narrow);
+  if (kPresets[i].mic && !kPresets[i].list) quotes->setMarket(snapshot->findMarket(kPresets[i].mic));
   table_.setModel(quotes);
   shown_version_ = snapshot->version();
   shown_preset_ = i;
@@ -350,7 +343,7 @@ void Browser::requestHistory() {
     if (quotes) {
       for (const EdgeKey & member : quotes->members(row)) edges.push_back(member);  // every dataset's bars make the row's
     }
-    else if (const auto edge = positions->priceEdge(row)) edges.push_back(*edge);  // the edges of the positions on screen
+    else for (const EdgeKey & member : positions->members(row)) edges.push_back(member);  // the edges of the positions on screen
   };
   // Each is a request a second: what is on screen, then the screen after and the one before.
   for (int p = first; p < std::min(count, first + 2 * view); p++) add(p);
@@ -669,9 +662,8 @@ void Browser::showTransactions() {
   }
   auto snapshot = store_->snapshot();
   const portfolio::Position & p = positions->row(row).position;
-  TransactionTable table = buildTransactionTable(*snapshot, positions->portfolio(), p.instrument, p.market, p.quote);
-  const std::string market = snapshot->name(NodeRef(p.market));
-  const std::string title = "Transactions: " + rowLabel(row) + (market.empty() ? "" : " on " + market) + " in " + snapshot->name(NodeRef(positions->portfolio()));
+  TransactionTable table = buildTransactionTable(*snapshot, positions->portfolio(), p.instrument, p.quote);
+  const std::string title = "Transactions: " + rowLabel(row) + " in " + snapshot->name(NodeRef(positions->portfolio()));
   const size_t count = table.rows.size();
   const std::string summary = std::to_string(count) + (count == 1 ? " transaction" : " transactions") + ", prices in " + table.currency + ". Held " +
                               realText(p.quantity) + " at an average cost of " + fixed(p.average_cost, 2) + " " + table.currency + ", fees included";
@@ -698,7 +690,7 @@ int Browser::rowOfKey(const EdgeKey & key) const {
       if (groupOf(quotes->edge(r)) == groupOf(key)) return r;
   } else if (auto * positions = dynamic_cast<const Positions *>(table_.model().get())) {
     for (int r = 0; r < positions->rowCount(); r++)
-      if (positions->key(r) == key) return r;
+      if (groupOf(positions->key(r)) == groupOf(key)) return r;
   }
   return -1;
 }
@@ -872,7 +864,7 @@ void Browser::openMenu(int row) {
   std::vector<Entry> entries{{"Show info", "show-info"}};
   if (positions) entries.push_back({"Show transactions", "show-transactions"});
   // A position is of something that is traded; an edge of Markets is, unless it is an index, a spot price, a currency pair or a rate.
-  if (!quotes || portfolio::tradable(*snapshot, quotes->edge(row))) {
+  if (!quotes || portfolio::tradable(*snapshot, quotes->group(row))) {
     entries.push_back({"Buy", "buy"});
     entries.push_back({"Sell", "sell"});
   }

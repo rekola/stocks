@@ -47,7 +47,7 @@ std::optional<Transaction> decodeTransaction(uint64_t id, int64_t day, const std
     else if (side == "sell") t.side = Side::Sell;
     else return std::nullopt;
     t.instrument = InstrumentId{j.at("instrument").get<uint64_t>()};
-    t.market = MarketId{j.at("market").get<uint64_t>()};
+    t.market = MarketId{j.value("market", uint64_t{0})};
     t.quote = InstrumentId{j.at("quote").get<uint64_t>()};
     t.quantity = j.at("quantity").get<double>();
     t.price = j.at("price").get<double>();

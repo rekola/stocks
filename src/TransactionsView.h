@@ -28,7 +28,7 @@ struct TransactionTable {
   static const char * heading(Column);
   static bool numeric(Column);
 };
-TransactionTable buildTransactionTable(const Snapshot &, PortfolioId, InstrumentId instrument, MarketId market, InstrumentId quote);
+TransactionTable buildTransactionTable(const Snapshot &, PortfolioId, InstrumentId instrument, InstrumentId quote);
 
 // A modal that shows a TransactionTable: a heading row that stays, the rows scrolling under it, and a line under them (what is
 // held, at what average cost). Escape closes it.

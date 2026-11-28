@@ -46,7 +46,7 @@ void Positions::setPeriod(Period period) {
 
 EdgeKey Positions::key(int r) const {
   const portfolio::Position & p = row(r).position;
-  return EdgeKey{p.instrument, p.quote, p.market, DatasetId{}};
+  return EdgeKey{p.instrument, p.quote, MarketId{}, DatasetId{}};
 }
 
 std::optional<EdgeKey> Positions::priceEdge(int r) const {
@@ -78,9 +78,18 @@ std::string Positions::symbolOf(int r) const {
   return snapshot_->symbol(row(r).position.instrument);
 }
 
+std::vector<EdgeKey> Positions::members(int r) const {
+  std::vector<EdgeKey> out;
+  if (const auto & price = row(r).price)
+    for (const Member & m : price->mix.members)
+      if (m.state == MemberState::Used) out.push_back(m.edge);
+  return out;
+}
+
+// The change of the group's members together, as a row of Markets has it.
 double Positions::change(int r) const {
-  const auto edge = priceEdge(r);
-  return edge ? snapshot_->changes(*edge).pct[static_cast<size_t>(period_)] : kUndefined;
+  const auto & price = row(r).price;
+  return price ? groupChange(*snapshot_, price->mix, period_) : kUndefined;
 }
 
 std::string Positions::text(int r, int c) const {
@@ -117,8 +126,9 @@ std::span<const float> Positions::traceLight(int r, int) const { return traceOf(
 const PeriodView & Positions::traceOf(int r) const {
   auto it = traces_.find(r);
   if (it == traces_.end()) {
-    const auto edge = priceEdge(r);
-    it = traces_.emplace(r, edge ? periodView(*snapshot_, *edge, period_, true) : PeriodView{}).first;
+    const auto & price = row(r).price;
+    const portfolio::Position & p = row(r).position;
+    it = traces_.emplace(r, price ? groupPeriodView(*snapshot_, GroupKey{p.instrument, p.quote}, period_, true, {}, &price->mix) : PeriodView{}).first;
   }
   return it->second;
 }

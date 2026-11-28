@@ -4,9 +4,10 @@
 #include "model/Store.h"
 
 #include <functional>
+#include <optional>
 #include <vector>
 
-// One instrument priced in one unit on one market is one *group* (`GroupKey`, Types.h); the edges in it, one for each dataset that prices it, are its
+// One instrument priced in one unit is one *group* (`GroupKey`, Types.h); the edges in it, one for each market and dataset that prices it, are its
 // *members*. A table shows a group as one row and reads every number of it from its members, so a row is what the datasets say together
 // and not what one of them says. The store keeps the edges apart, as they were written: nothing here is stored.
 // The quote instrument is part of the group's key, so every member is priced in the same unit (a currency, or per cent for a rate):
@@ -15,8 +16,9 @@
 // Which datasets count: the user's switches. Empty: every dataset does.
 using DatasetFilter = std::function<bool(DatasetId)>;
 
-// The edges of a group that have a row (`Snapshot::listed`), sorted by key (so by dataset).
-std::vector<EdgeKey> membersOf(const Snapshot &, const GroupKey &);
+// The edges of a group that have a row (`Snapshot::listed`), sorted by key (market, then dataset). `market`, where given, keeps only that
+// market's: a preset of one market shows what that market says and no other.
+std::vector<EdgeKey> membersOf(const Snapshot &, const GroupKey &, std::optional<MarketId> market = std::nullopt);
 
 // How the members' values are made one: the median where there are three or more, the mean of two, the value itself of one; none
 // for no value. A value that is not defined is not one. The median keeps a single wrong dataset from moving the number.
@@ -25,9 +27,10 @@ double combine(std::vector<double> values);
 // one per cent off). Undefined for fewer than two values or a combined value of 0.
 double disagreement(const std::vector<double> & values);
 
-// A member that says nothing newer than this much (seconds) before the newest of the members is *stale*: its dataset has stopped, and what
-// it last said is no longer what the others are saying, so it is left out of the combined number.
-inline constexpr int64_t kStaleAfter = 4 * 86400;
+// A member that says nothing newer than this much (seconds) before the newest of the members is *stale*: it is not live as the newest is (a
+// market that has closed, a delayed or a daily source), so what it last said is not what the others are saying, and it is left out of the
+// combined number. Where no member is live, the newest of them stands and the rest are as old as it is, so none is left out.
+inline constexpr int64_t kStaleAfter = 3600;
 
 enum class MemberState : uint8_t {
   Used,     // counts in the combined numbers
@@ -52,7 +55,7 @@ struct Mix {
   size_t used = 0;                    // how many members count
   bool combined() const { return used > 1; }
 };
-Mix mixOf(const Snapshot &, const GroupKey &, const DatasetFilter & filter = {});
+Mix mixOf(const Snapshot &, const GroupKey &, const DatasetFilter & filter = {}, std::optional<MarketId> market = std::nullopt);
 
 // The change of a group over a period, in the unit of `PeriodView::change()`: `combine` of the used members' own changes
 // (`Snapshot::changes`); undefined where none says one.

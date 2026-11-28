@@ -93,8 +93,8 @@ TEST(the_two_golds_are_priced_from_the_spot_off_exchange_in_their_own_dataset) {
   // The names, the symbols and the listings, and they are instruments of their own that can be held.
   CHECK(s->name(NodeRef(bar->base)) == "Gold bar (1 g fine)" && s->symbol(*coin) == "GOLDCOIN" && s->kind(bar->base) == InstrumentKind::Commodity);
   CHECK(bar->base != coin->base && bar->base != w.gold);
-  CHECK(portfolio::tradable(*s, *bar) && portfolio::tradable(*s, *coin));
-  CHECK(!portfolio::tradable(*s, w.spot));  // the spot itself is not
+  CHECK(portfolio::tradable(*s, groupOf(*bar)) && portfolio::tradable(*s, groupOf(*coin)));
+  CHECK(!portfolio::tradable(*s, groupOf(w.spot)));  // the spot itself is not
 }
 
 TEST(the_estimate_follows_the_spot_and_writes_no_bar) {

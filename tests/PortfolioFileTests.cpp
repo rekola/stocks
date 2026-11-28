@@ -56,17 +56,20 @@ std::unique_ptr<Store> openStore(const Dir & d, std::vector<std::string> * said 
 }
 
 struct Things {
-  InstrumentId eur, nokia;
+  InstrumentId eur, usd, nokia;
   MarketId hel, none;
   DatasetId user;
 };
 Things makeThings(Store & store) {
   Things t;
   t.eur = store.addInstrument("EUR", "Euro", InstrumentKind::Currency);
+  t.usd = store.addInstrument("USD", "Dollar", InstrumentKind::Currency);
   t.nokia = store.addInstrument("", "Nokia Oyj", InstrumentKind::Company, "FI0009000681");
   t.hel = store.addMarket("XHEL", "Nasdaq Helsinki");
   t.none = store.addMarket(kNoMarket);
   t.user = store.addDataset(kUserDataset);
+  // Nokia is priced on a market: a row that something is bought on.
+  store.appendCandles(EdgeKey{t.nokia, t.eur, t.hel, t.user}, Resolution::Day, {{1, 1, 1, 1, 1, 1}});
   return t;
 }
 
@@ -297,7 +300,7 @@ TEST(a_file_of_schema_one_is_upgraded_to_the_keys_of_codes_as_they_are_packed_no
   store.reset();
   {
     SQLite::Database db(d.portfolios.string(), SQLite::OPEN_READONLY);
-    CHECK(db.execAndGet("PRAGMA user_version").getInt() == 4);
+    CHECK(db.execAndGet("PRAGMA user_version").getInt() == 5);
   }
   said.clear();
   auto again = openSqlitePortfolioStore(d.portfolios, [&](const std::string & t) { said.push_back(t); });
@@ -331,8 +334,68 @@ TEST(a_file_of_schema_three_keeps_its_facts_and_events_and_its_lists_lose_the_da
   CHECK(store->loadAll().size() == 1 && store->loadEvents().size() == 1);
   store.reset();
   SQLite::Database db(d.portfolios.string(), SQLite::OPEN_READONLY);
-  CHECK(db.execAndGet("PRAGMA user_version").getInt() == 4);
+  CHECK(db.execAndGet("PRAGMA user_version").getInt() == 5);
   CHECK(db.execAndGet("SELECT count(*) FROM list_members").getInt() == 2);
+}
+
+TEST(a_file_of_schema_four_is_upgraded_in_place_its_lists_lose_the_market_and_its_trades_on_two_markets_are_one_position) {
+  Dir d;
+  const uint64_t mine = portfolioKey(7)->value, user = datasetKey(kUserDataset)->value;
+  const uint64_t nokia = instrumentKey("FI0009000681")->value, eur = currencyKey("EUR")->value;
+  const uint64_t hel = marketKey("XHEL")->value, sto = marketKey("XSTO")->value;
+  auto body = [&](const char * side, uint64_t market, double quantity, double price) {
+    return std::string("{\"side\":\"") + side + "\",\"instrument\":" + std::to_string(nokia) + ",\"market\":" + std::to_string(market) + ",\"quote\":" +
+           std::to_string(eur) + ",\"quantity\":" + std::to_string(quantity) + ",\"price\":" + std::to_string(price) + ",\"fee\":0}";
+  };
+  // Ten bought on Helsinki at 100, ten on Stockholm at 200, and five sold on Helsinki.
+  const std::vector<std::string> bodies = {body("buy", hel, 10, 100), body("buy", sto, 10, 200), body("sell", hel, 5, 150)};
+  {
+    SQLite::Database db(d.portfolios.string(), SQLite::OPEN_READWRITE | SQLite::OPEN_CREATE);
+    db.exec("CREATE TABLE facts (node_key INTEGER NOT NULL, predicate TEXT NOT NULL, value, tag INTEGER NOT NULL DEFAULT 0, updated INTEGER NOT NULL, "
+            "PRIMARY KEY (node_key, predicate)) WITHOUT ROWID");
+    db.exec("CREATE TABLE events (portfolio INTEGER NOT NULL, dataset INTEGER NOT NULL, id INTEGER NOT NULL, time INTEGER NOT NULL, body TEXT NOT NULL, "
+            "PRIMARY KEY (portfolio, dataset, id)) WITHOUT ROWID");
+    db.exec("CREATE TABLE list_members (list TEXT NOT NULL, base INTEGER NOT NULL, quote INTEGER NOT NULL, market INTEGER NOT NULL, "
+            "PRIMARY KEY (list, base, quote, market)) WITHOUT ROWID");
+    db.exec("INSERT INTO facts VALUES (" + std::to_string(mine) + ", 'name', 'Mine', 0, 1)");
+    for (size_t i = 0; i < bodies.size(); i++)
+      db.exec("INSERT INTO events VALUES (" + std::to_string(mine) + ", " + std::to_string(user) + ", " + std::to_string(i + 1) + ", " + std::to_string(100 + i) + ", '" + bodies[i] + "')");
+    db.exec("INSERT INTO list_members VALUES ('watchlist', " + std::to_string(nokia) + ", " + std::to_string(eur) + ", " + std::to_string(hel) + ")");
+    db.exec("INSERT INTO list_members VALUES ('watchlist', " + std::to_string(nokia) + ", " + std::to_string(eur) + ", " + std::to_string(sto) + ")");  // the same share on another market
+    db.exec("INSERT INTO list_members VALUES ('watchlist', 9, " + std::to_string(eur) + ", " + std::to_string(hel) + ")");
+    db.exec("PRAGMA user_version = 4");
+  }
+  std::vector<std::string> said;
+  auto store = openSqlitePortfolioStore(d.portfolios, [&](const std::string & t) { said.push_back(t); });
+  CHECK(d.files(".old-") == 0 && d.files(".bad-") == 0);  // in place: nothing is moved aside
+  bool told = false;
+  for (const std::string & line : said) told |= line.find("schema 4 upgraded") != std::string::npos;
+  CHECK(told);
+  // Every transaction is as it was, byte for byte, with the market it named.
+  const auto events = store->loadEvents();
+  CHECK(events.size() == 3);
+  for (const StoredEvent & e : events) CHECK(e.id >= 1 && e.id <= 3 && e.body == bodies[e.id - 1]);
+  CHECK(store->loadAll().size() == 1);
+  CHECK(store->loadMembers().size() == 2);
+  store.reset();
+  {
+    SQLite::Database db(d.portfolios.string(), SQLite::OPEN_READONLY);
+    CHECK(db.execAndGet("PRAGMA user_version").getInt() == 5);
+  }
+  // Opened by the model: one position in the share, of what was bought less what was sold, whatever market it was on.
+  StoreOptions o;
+  o.portfolios = openSqlitePortfolioStore(d.portfolios);
+  auto model = makeMemoryStore(std::move(o));
+  auto snapshot = model->snapshot();
+  const LedgerKey ledger{PortfolioId{mine}, DatasetId{user}};
+  CHECK(snapshot->transactions(ledger).size() == 3);
+  const portfolio::Derived held = portfolio::holdings(*snapshot, PortfolioId{mine});
+  CHECK(held.refused.empty() && held.positions.size() == 1);
+  const portfolio::Position & p = held.positions[0];
+  CHECK(p.instrument.value == nokia && p.quote.value == eur && p.quantity == 15);
+  // The pooled average of the buys (150), and a sell takes cost out at it: 15 * 150. Apart, the markets would have 5 at 100 and 10 at 200.
+  CHECK_NEAR(p.average_cost, 150.0, 1e-9);
+  CHECK(snapshot->listMembers("watchlist").size() == 2);
 }
 
 TEST(a_damaged_file_is_moved_aside_and_nothing_throws) {
@@ -382,7 +445,7 @@ TEST(with_no_file_portfolios_live_for_the_session_and_the_cache_never_sees_them)
   CHECK(makeMemoryStore(std::move(o))->snapshot()->portfolios().empty());
 }
 
-TEST(a_transaction_the_file_holds_that_can_no_longer_be_bought_or_read_is_left_out) {
+TEST(a_transaction_the_file_holds_is_kept_whatever_market_it_names_and_one_that_cannot_be_read_is_left_out) {
   Dir d;
   const Things dummy{};
   {
@@ -401,13 +464,13 @@ TEST(a_transaction_the_file_holds_that_can_no_longer_be_bought_or_read_is_left_o
   }
   (void)dummy;
   auto store = openStore(d);
-  CHECK(store->snapshot()->transactions({kMine, DatasetId{datasetKey(kUserDataset)->value}}).size() == 1);
+  CHECK(store->snapshot()->transactions({kMine, DatasetId{datasetKey(kUserDataset)->value}}).size() == 2);  // the one on XXXX is a note: what is held is not decided by it
 }
 
 namespace {
-// Nokia quoted in euro on the Helsinki market, and on no market.
-GroupKey nokiaOnHel(const Things & t) { return GroupKey{t.hel, t.nokia, t.eur}; }
-GroupKey nokiaOnNone(const Things & t) { return GroupKey{t.none, t.nokia, t.eur}; }
+// Nokia quoted in euro, and in dollars.
+GroupKey nokiaOnHel(const Things & t) { return GroupKey{t.nokia, t.eur}; }
+GroupKey nokiaOnNone(const Things & t) { return GroupKey{t.nokia, t.usd}; }
 }  // namespace
 
 TEST(a_group_is_on_a_list_or_not_whatever_else_the_instrument_is_on_and_a_list_is_made_by_its_first) {
@@ -434,7 +497,7 @@ TEST(a_group_is_on_a_list_or_not_whatever_else_the_instrument_is_on_and_a_list_i
   const uint64_t refused_at = store->snapshot()->version();
   bool refused_list = false, refused_edge = false;
   try { store->addToList("", {one}); } catch (const std::invalid_argument &) { refused_list = true; }
-  try { store->addToList("watchlist", {one, GroupKey{MarketId{}, t.nokia, t.eur}}); } catch (const std::invalid_argument &) { refused_edge = true; }
+  try { store->addToList("watchlist", {one, GroupKey{InstrumentId{}, t.eur}}); } catch (const std::invalid_argument &) { refused_edge = true; }
   CHECK(refused_list && refused_edge && store->snapshot()->version() == refused_at && store->snapshot()->listMembers("watchlist").empty());
   // A batch is one version.
   store->batch([&](Batch & b) {
@@ -479,8 +542,8 @@ TEST(a_list_member_with_a_part_that_is_none_in_the_file_is_not_read) {
   {
     auto file = openSqlitePortfolioStore(d.portfolios);
     FactBatch planted;
-    planted.members.push_back({"watchlist", 0, 0, 0});
-    planted.members.push_back({"", 1, 2, 3});
+    planted.members.push_back({"watchlist", 0, 0});
+    planted.members.push_back({"", 1, 2});
     file->apply(planted);
   }
   auto store = openStore(d);

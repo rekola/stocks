@@ -16,13 +16,14 @@ struct World {
   InstrumentId eur = store->addInstrument("EUR", "Euro", InstrumentKind::Currency);
   InstrumentId usd = store->addInstrument("USD", "Dollar", InstrumentKind::Currency);
   MarketId off = store->addMarket("XOFF", "Off exchange");
+  MarketId lbm = store->addMarket("XLBM", "London Bullion Market");
   DatasetId a = store->addDataset("DSA"), b = store->addDataset("DSB"), c = store->addDataset("DSC");
   std::shared_ptr<const Snapshot> snap() const { return store->snapshot(); }
-  EdgeKey key(DatasetId d, InstrumentId quote = InstrumentId{}) const { return {gold, quote.value ? quote : eur, off, d}; }
-  GroupKey group() const { return {off, gold, eur}; }
+  EdgeKey key(DatasetId d, InstrumentId quote = InstrumentId{}, MarketId market = MarketId{}) const { return {gold, quote.value ? quote : eur, market.value ? market : off, d}; }
+  GroupKey group() const { return {gold, eur}; }
   // The edge says a price at a time, and has daily bars to the same close.
-  void say(DatasetId d, double price, Timestamp time = kNow) {
-    const EdgeKey k = key(d);
+  void say(DatasetId d, double price, Timestamp time = kNow, MarketId market = MarketId{}) {
+    const EdgeKey k = key(d, InstrumentId{}, market);
     Quote q;
     q.last = price;
     q.time = time;
@@ -57,8 +58,72 @@ TEST(the_members_of_a_group_are_the_edges_in_one_unit_and_a_group_in_another_uni
   w.store->appendCandles(w.key(w.c, w.usd), Resolution::Day, {{dayNumberOfInstant(kNow), 110, 110, 110, 110, 1}});
   const auto members = membersOf(*w.snap(), w.group());
   CHECK(members.size() == 2 && members[0].dataset == w.a && members[1].dataset == w.b);
-  CHECK(membersOf(*w.snap(), {w.off, w.gold, w.usd}).size() == 1);
+  CHECK(membersOf(*w.snap(), {w.gold, w.usd}).size() == 1);
   CHECK(groupOf(w.key(w.a)) == w.group());
+}
+
+TEST(the_members_of_a_group_are_of_every_market_and_a_market_can_be_asked_for_alone) {
+  World w;
+  w.say(w.a, 100);
+  w.say(w.a, 104, kNow, w.lbm);  // the same instrument in the same unit on another market
+  w.say(w.b, 102, kNow, w.lbm);
+  const auto all = membersOf(*w.snap(), w.group());
+  CHECK(all.size() == 3);
+  CHECK(membersOf(*w.snap(), w.group(), w.lbm).size() == 2 && membersOf(*w.snap(), w.group(), w.off).size() == 1);
+  CHECK(groupOf(w.key(w.a, InstrumentId{}, w.lbm)) == groupOf(w.key(w.a)));
+  const Mix mix = mixOf(*w.snap(), w.group());
+  CHECK(mix.used == 3 && mix.price == 102);  // the median of the three, whatever market each is on
+  const Mix only = mixOf(*w.snap(), w.group(), {}, w.lbm);  // a preset of one market says what that market says
+  CHECK(only.used == 2 && only.price == 103 && only.members[0].edge.market == w.lbm);
+}
+
+static const Member & memberOf(const Mix & mix, DatasetId d) {
+  for (const Member & m : mix.members)
+    if (m.edge.dataset == d) return m;
+  return mix.members.front();
+}
+
+TEST(a_member_that_is_not_live_is_left_out_where_another_is_and_all_stand_where_none_is) {
+  World w;
+  w.say(w.a, 100, kNow);
+  w.say(w.b, 120, kNow - 3 * 86400, w.lbm);  // a market that has been closed for three days (a holiday): no longer what the others say
+  Mix mix = mixOf(*w.snap(), w.group());
+  CHECK(mix.used == 1 && mix.price == 100 && memberOf(mix, w.b).state == MemberState::Stale);
+  w.say(w.c, 102, kNow - 1800);  // half an hour behind the newest: a delayed feed is still live
+  mix = mixOf(*w.snap(), w.group());
+  CHECK(mix.used == 2 && mix.price == 101);
+  World slow;
+  slow.say(slow.a, 100, kNow);
+  slow.say(slow.c, 102, kNow - 3 * 3600);  // three hours behind: the other is live, this is not
+  mix = mixOf(*slow.snap(), slow.group());
+  CHECK(mix.used == 1 && mix.price == 100 && memberOf(mix, slow.c).state == MemberState::Stale);
+  // Where none is live (all closed), the newest stands and the others are no older than it by a night: they all count.
+  World closed;
+  closed.say(closed.a, 100, kNow - 20 * 86400);
+  closed.say(closed.b, 110, kNow - 20 * 86400 - 600);
+  CHECK(mixOf(*closed.snap(), closed.group()).used == 2);
+}
+
+TEST(a_closed_market_does_not_stay_in_the_trace_while_another_trades_on) {
+  World w;
+  const int64_t day = dayNumberOfInstant(kNow);
+  auto bars = [&](const EdgeKey & k, double close, int from, int to) {
+    std::vector<Candle> v;
+    for (int s = from; s <= to; s++) v.push_back({slotOfInstant(Resolution::Min5, (day - kUnixEpochDayNumber) * 86400 + 7 * 3600 + s * 300), close, close, close, close, 1});
+    w.store->appendCandles(k, Resolution::Min5, v);
+  };
+  w.store->appendCandles(w.key(w.a), Resolution::Day, {{day, 100, 100, 100, 100, 1}});
+  w.store->appendCandles(w.key(w.b, InstrumentId{}, w.lbm), Resolution::Day, {{day, 100, 100, 100, 100, 1}});
+  bars(w.key(w.a), 100, 0, 40);                          // one trades all morning at 100
+  bars(w.key(w.b, InstrumentId{}, w.lbm), 200, 0, 5);    // the other closed after half an hour at 200
+  const Quote q{100, kUndefined, kUndefined, kNow + 8400};  // both have just said a price, so both count in the row
+  w.store->setQuote(w.key(w.a), q);
+  w.store->setQuote(w.key(w.b, InstrumentId{}, w.lbm), q);
+  const PeriodView v = groupPeriodView(*w.snap(), w.group(), Period::Day, true);
+  CHECK(v.closes.size() >= 30);
+  CHECK(v.closes.front() == 150.0f);  // both trade
+  CHECK(v.closes[10] == 150.0f);      // the closed one's last close is still what it says, for an hour
+  CHECK(v.closes.back() == 100.0f);   // and is not carried on for the rest of the day
 }
 
 TEST(a_mix_combines_the_used_members_and_says_what_each_is_off_by) {
@@ -160,9 +225,9 @@ TEST(the_info_of_a_group_says_what_each_dataset_says_and_whether_it_counts) {
     return std::string();
   };
   CHECK(row("combined").find("101") != std::string::npos && row("combined").find("mean of 2") != std::string::npos);
-  CHECK(row("DSA").find("100") != std::string::npos && row("DSC").find("left out: older") != std::string::npos);
+  CHECK(row("Off exchange \xC2\xB7 DSA").find("100") != std::string::npos && row("Off exchange \xC2\xB7 DSC").find("left out: older") != std::string::npos);
   bool own_sections = false;
-  for (const InfoSection & s : info) own_sections = own_sections || s.title == "Summary \xC2\xB7 DSB";
+  for (const InfoSection & s : info) own_sections = own_sections || s.title == "Summary \xC2\xB7 Off exchange \xC2\xB7 DSB";
   CHECK(own_sections);
   CHECK(buildInfo(*w.snap(), w.key(w.a))[0].title == "Listing");  // no mix: as it was
 }

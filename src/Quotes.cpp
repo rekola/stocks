@@ -9,12 +9,6 @@
 
 namespace {
 
-// What a market is called in a row: its name, else its code.
-std::string labelOf(const Snapshot & snapshot, MarketId id) {
-  if (std::string name = snapshot.name(id); !name.empty()) return name;
-  return marketCode(id);
-}
-
 // A currency is its code ("EUR" of EUR/USD); anything else what the market calls it.
 std::string baseOf(const Snapshot & snapshot, const EdgeKey & key) {
   // Two facts and no view of the instrument: this is read for every row, and to put them in order.
@@ -37,7 +31,8 @@ std::string quoteOf(const Snapshot & snapshot, const EdgeKey & key) {
 
 // The rows of a market in the order of their keys: the instrument, then the quote. That order is stable
 // and costs nothing; a heading sorts by what a person looks for.
-// One edge for each group: the first member (the edges are sorted by market, base, quote and dataset, so the members of a group are together).
+// One edge for each group that has a member on the market: the first (the edges of a market are sorted by base, quote and dataset, so the
+// members of a group on it are together).
 void appendEdges(const Snapshot & snapshot, MarketId market, std::vector<EdgeKey> & out) {
   const size_t first = out.size();
   for (const EdgeKey & key : snapshot.edges(market)) {
@@ -58,8 +53,15 @@ std::vector<EdgeKey> quoteEdges(const Snapshot &snapshot, MarketId market,
 }
 
 std::vector<EdgeKey> allQuoteEdges(const Snapshot & snapshot) {
+  // A group is on every market that lists it, and a row once: the first edge found stands for it.
   std::vector<EdgeKey> keys;
-  for (MarketId m : snapshot.edgeMarkets()) appendEdges(snapshot, m, keys);
+  std::unordered_set<GroupKey> seen;
+  for (MarketId m : snapshot.edgeMarkets()) {
+    std::vector<EdgeKey> of;
+    appendEdges(snapshot, m, of);
+    for (const EdgeKey & key : of)
+      if (seen.insert(groupOf(key)).second) keys.push_back(key);
+  }
   return keys;
 }
 
@@ -171,8 +173,16 @@ void Quotes::reset(std::shared_ptr<const Snapshot> snapshot, std::vector<EdgeKey
   setSnapshot(std::move(snapshot));
 }
 
+void Quotes::setMarket(std::optional<MarketId> market) {
+  market_ = market;
+  mixes_.clear();
+  traces_.clear();
+  for (bool & b : built_) b = false;
+}
+
 bool Quotes::addRows(std::shared_ptr<const Snapshot> snapshot, const Scope & scope) {
   bool added = false;
+  if (scope.market != market_) setMarket(scope.market);
   if (scope.resolved()) {  // until it is, the rows stay unread: the market may be the one they are in
     for (const EdgeKey & key : snapshot->quoteRowsSince(rows_seen_))
       if (scope.has(*snapshot, key) && groups_.insert(groupOf(key)).second) {  // an edge of a group that is a row is no new row
@@ -187,23 +197,16 @@ bool Quotes::addRows(std::shared_ptr<const Snapshot> snapshot, const Scope & sco
 
 void Quotes::setSnapshot(std::shared_ptr<const Snapshot> snapshot) {
   snapshot_ = std::move(snapshot);
-  marketLabels_.clear();
   mixes_.clear();
   traces_.clear();
   for (bool & b : built_) b = false;
-}
-
-const std::string & Quotes::marketLabel(MarketId id) const {
-  auto it = marketLabels_.find(id.value);
-  if (it == marketLabels_.end()) it = marketLabels_.emplace(id.value, labelOf(*snapshot_, id)).first;
-  return it->second;
 }
 
 const Mix & Quotes::mix(int r) const {
   auto it = mixes_.find(r);
   if (it == mixes_.end()) {
     if (mixes_.size() > 65536) mixes_.clear();
-    it = mixes_.emplace(r, mixOf(*snapshot_, group(r), filter_)).first;
+    it = mixes_.emplace(r, mixOf(*snapshot_, group(r), filter_, market_)).first;
   }
   return it->second;
 }
@@ -222,7 +225,7 @@ void Quotes::setFilter(DatasetFilter filter) {
   for (bool & b : built_) b = false;
 }
 
-// The price of a row is the datasets' together; none: 0.
+// The price of a row is the members' together; none: 0.
 double Quotes::price(int r) const {
   const double p = mix(r).price;
   return isDefined(p) ? p : 0;
@@ -259,7 +262,6 @@ std::string Quotes::text(int r, int c) const {
     case BASE: return baseOf(*snapshot_, edge(r));
     case QUOTE: return quoteOf(*snapshot_, edge(r));
     case NAME: return nameOf(*snapshot_, edge(r));
-    case MARKET: return marketLabel(edge(r).market);
     case PRICE: return priceText(r, price(r));
     case HIGH:
     case LOW: {

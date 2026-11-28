@@ -227,18 +227,15 @@ struct EdgeKey {
   }
 };
 
-// One instrument priced in one unit on one market, whichever dataset says it: the edges that differ only in their dataset are the
-// *members* of one group, and a row of a table is a group (model/Group.h). The user's lists are of groups. The quote instrument is part
-// of the key, so every member is priced in the same unit.
+// One instrument priced in one unit, whichever market lists it and whichever dataset says it: the edges that differ only in their market or
+// their dataset are the *members* of one group, and a row of a table is a group (model/Group.h). The user's lists are of groups. The quote
+// instrument is part of the key, so every member is priced in the same unit.
 struct GroupKey {
-  MarketId market;
   InstrumentId base, quote;
   friend bool operator==(const GroupKey &, const GroupKey &) = default;
-  friend bool operator<(const GroupKey & a, const GroupKey & b) {
-    return std::tie(a.market, a.base, a.quote) < std::tie(b.market, b.base, b.quote);
-  }
+  friend bool operator<(const GroupKey & a, const GroupKey & b) { return std::tie(a.base, a.quote) < std::tie(b.base, b.quote); }
 };
-inline GroupKey groupOf(const EdgeKey & e) { return {e.market, e.base, e.quote}; }
+inline GroupKey groupOf(const EdgeKey & e) { return {e.base, e.quote}; }
 
 // The key of what is said about one instrument itself rather than about a price: announcements and corporate actions.
 struct EventKey {
@@ -422,8 +419,7 @@ template <>
 struct std::hash<GroupKey> {
   size_t operator()(const GroupKey & k) const {
     size_t h = std::hash<InstrumentId>()(k.base);
-    h = hashCombine(h, std::hash<InstrumentId>()(k.quote));
-    return hashCombine(h, std::hash<MarketId>()(k.market));
+    return hashCombine(h, std::hash<InstrumentId>()(k.quote));
   }
 };
 template <>

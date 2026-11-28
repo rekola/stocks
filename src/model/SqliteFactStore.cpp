@@ -25,9 +25,10 @@ constexpr int kPlain = 0, kBoolean = 1, kNode = 2;
 constexpr int kCorrupt = 11, kNotADatabase = 26;
 
 // The portfolio file's own schema, which shares no table and no version with the cache's: `facts` as the cache has it, and
-// `events` for the transactions and `list_members` for the groups on the lists. 4: a list holds groups (market, base, quote), no dataset (a file of 3 is upgraded, `upgradeV3`); 3: the lists (a file of 2 only gets the table); 2: the keys of codes are
+// `events` for the transactions and `list_members` for the groups on the lists. 5: a list holds groups (base, quote), no market and no dataset (a file of 3 or 4 is
+// upgraded, `upgradeLists`; the events are as they were: a position is derived from them, whatever market they name); 4: a list holds groups (market, base, quote), no dataset; 3: the lists (a file of 2 only gets the table); 2: the keys of codes are
 // of eleven capitals or digits, base 37 (a file of 1 is upgraded, `upgradeV1`); 1: the first.
-constexpr int kPortfoliosVersion = 4;
+constexpr int kPortfoliosVersion = 5;
 
 // A file that cannot be used as it is: damaged or not a database.
 struct Unusable {
@@ -138,13 +139,12 @@ class SqliteFactStore : public FactStore {
     if (!db_ || kind_ != Kind::Portfolios) return out;
     std::lock_guard lock(mutex_);
     try {
-      SQLite::Statement q(*db_, "SELECT list, base, quote, market FROM list_members");
+      SQLite::Statement q(*db_, "SELECT list, base, quote FROM list_members");
       while (q.executeStep()) {
         StoredMember m;
         m.list = q.getColumn(0).getString();
         m.base = static_cast<uint64_t>(q.getColumn(1).getInt64());
         m.quote = static_cast<uint64_t>(q.getColumn(2).getInt64());
-        m.market = static_cast<uint64_t>(q.getColumn(3).getInt64());
         out.push_back(std::move(m));
       }
     } catch (const std::exception & ex) {
@@ -261,12 +261,12 @@ class SqliteFactStore : public FactStore {
       q.exec();
     }
     for (const StoredMember & m : batch.members_removed) {
-      SQLite::Statement q(*db_, "DELETE FROM list_members WHERE list = ? AND base = ? AND quote = ? AND market = ?");
+      SQLite::Statement q(*db_, "DELETE FROM list_members WHERE list = ? AND base = ? AND quote = ?");
       bindMember(q, m);
       q.exec();
     }
     for (const StoredMember & m : batch.members) {
-      SQLite::Statement q(*db_, "INSERT OR IGNORE INTO list_members (list, base, quote, market) VALUES (?, ?, ?, ?)");
+      SQLite::Statement q(*db_, "INSERT OR IGNORE INTO list_members (list, base, quote) VALUES (?, ?, ?)");
       bindMember(q, m);
       q.exec();
     }
@@ -276,7 +276,6 @@ class SqliteFactStore : public FactStore {
     q.bind(1, m.list);
     q.bind(2, static_cast<int64_t>(m.base));
     q.bind(3, static_cast<int64_t>(m.quote));
-    q.bind(4, static_cast<int64_t>(m.market));
   }
 
   bool hasTables() {
@@ -304,10 +303,10 @@ class SqliteFactStore : public FactStore {
       // A new file has no version and no table: it only gets its version. Another schema is emptied for the cache and moved aside for
       // the portfolios.
       if (kind_ == Kind::Portfolios && hasTables()) {
-        if (version < 1 || version > 3) throw OtherSchema{version};
+        if (version < 1 || version > 4) throw OtherSchema{version};
         if (version == 1) upgradeV1();
-        // A file of 3 has the lists with a dataset on each member: one group of each, whatever the datasets were.
-        if (version == 3) upgradeV3();
+        // A file of 3 has the lists with a dataset on each member, one of 4 with a market: one group of each, whatever the datasets and the markets were.
+        if (version == 3 || version == 4) upgradeLists(version);
         // A file of 2 has what 3 has but the table of the lists, which `createTable` makes.
         createTable();
         db_->exec("PRAGMA user_version = " + std::to_string(schemaVersion()));
@@ -383,20 +382,21 @@ class SqliteFactStore : public FactStore {
     say(file_.string() + ": schema 1 upgraded to " + std::to_string(schemaVersion()) + " (the keys of codes are packed another way)");
   }
 
-  // The user's own file of schema 3, whose list members were edges of four keys (market, base, quote, dataset): a list holds groups now, so
-  // the members are kept without the dataset, and the ones that differed only in it are one. The facts and the events do not change.
-  void upgradeV3() {
+  // The user's own file of schema 3 or 4, whose list members were edges of four keys (market, base, quote, dataset) or groups of three (market, base,
+  // quote): a list holds groups of two now, an instrument in a unit, so the members are kept without the market and the dataset, and the ones that
+  // differed only in them are one. The facts and the events do not change (a position is derived from the events, whatever market they name).
+  void upgradeLists(int from) {
     SQLite::Transaction transaction(*db_);
     db_->exec(
-        "CREATE TABLE list_members_v4 ("
-        "list TEXT NOT NULL, base INTEGER NOT NULL, quote INTEGER NOT NULL, market INTEGER NOT NULL, "
-        "PRIMARY KEY (list, base, quote, market)) WITHOUT ROWID");
-    db_->exec("INSERT OR IGNORE INTO list_members_v4 (list, base, quote, market) SELECT list, base, quote, market FROM list_members");
+        "CREATE TABLE list_members_v5 ("
+        "list TEXT NOT NULL, base INTEGER NOT NULL, quote INTEGER NOT NULL, "
+        "PRIMARY KEY (list, base, quote)) WITHOUT ROWID");
+    db_->exec("INSERT OR IGNORE INTO list_members_v5 (list, base, quote) SELECT list, base, quote FROM list_members");
     db_->exec("DROP TABLE list_members");
-    db_->exec("ALTER TABLE list_members_v4 RENAME TO list_members");
+    db_->exec("ALTER TABLE list_members_v5 RENAME TO list_members");
     db_->exec("PRAGMA user_version = " + std::to_string(schemaVersion()));
     transaction.commit();
-    say(file_.string() + ": schema 3 upgraded to " + std::to_string(schemaVersion()) + " (the lists hold groups, no dataset)");
+    say(file_.string() + ": schema " + std::to_string(from) + " upgraded to " + std::to_string(schemaVersion()) + " (the lists hold instruments, no market and no dataset)");
   }
 
   // A file of another schema, older or newer, is emptied in place: the sources say everything again.
@@ -426,11 +426,11 @@ class SqliteFactStore : public FactStore {
           "CREATE TABLE IF NOT EXISTS events ("
           "portfolio INTEGER NOT NULL, dataset INTEGER NOT NULL, id INTEGER NOT NULL, time INTEGER NOT NULL, body TEXT NOT NULL, "
           "PRIMARY KEY (portfolio, dataset, id)) WITHOUT ROWID");
-      // The edges on the user's lists: a list is its code, an edge its four keys.
+      // The groups on the user's lists: a list is its code, a group its two keys.
       db_->exec(
           "CREATE TABLE IF NOT EXISTS list_members ("
-          "list TEXT NOT NULL, base INTEGER NOT NULL, quote INTEGER NOT NULL, market INTEGER NOT NULL, "
-          "PRIMARY KEY (list, base, quote, market)) WITHOUT ROWID");
+          "list TEXT NOT NULL, base INTEGER NOT NULL, quote INTEGER NOT NULL, "
+          "PRIMARY KEY (list, base, quote)) WITHOUT ROWID");
     }
   }
 

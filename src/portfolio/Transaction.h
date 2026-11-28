@@ -10,7 +10,7 @@ namespace portfolio {
 
 enum class Side : uint8_t { Buy, Sell };
 
-// One thing the user did: bought or sold some of an instrument on a market, at a price in a currency. Its `id` is minted when
+// One thing the user did: bought or sold some of an instrument at a price in a currency. Its `id` is minted when
 // it is made (`mintId()`), so that it can be corrected or deleted; the transactions of a portfolio are events on it
 // (Store.h), never summed from several datasets.
 struct Transaction {
@@ -18,7 +18,7 @@ struct Transaction {
   int64_t day = 0;  // the day it was done, as a day number (Dates.h)
   Side side = Side::Buy;
   InstrumentId instrument;
-  MarketId market;      // the listing it was done on: a real venue, or XOFF for a fund
+  MarketId market;      // a note: the listing it was done on, where it said (the transactions of before a row was of every market); none now. Not part of what is held
   InstrumentId quote;   // the currency the price and the fee are in
   double quantity = 0;  // always positive; the side says which way
   double price = 0;     // per unit, in `quote`

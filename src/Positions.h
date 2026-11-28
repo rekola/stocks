@@ -50,10 +50,12 @@ class Positions : public cellui::TableModel {
   std::optional<double> number(int r, int c) const override;
 
   const portfolio::PositionValue & row(int r) const { return valuation_.rows[static_cast<size_t>(r)]; }
-  // What the position is: instrument, market and currency (no dataset). Its identity across a refresh.
+  // What the position is: instrument and currency (no market, no dataset). Its identity across a refresh.
   EdgeKey key(int r) const;
-  // The edge of its price, which the row's change, trace and history are of; none where no edge has bars.
+  // The edge that stands for its price (the newest member's); the row's change, trace and history are of all its members; none where no edge has bars.
   std::optional<EdgeKey> priceEdge(int r) const;
+  // The edges its price is made of: the members that count.
+  std::vector<EdgeKey> members(int r) const;
   std::string iconUrl(int r) const;
 
  private:

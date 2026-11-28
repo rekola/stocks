@@ -4,10 +4,10 @@
 #include <cmath>
 #include <optional>
 
-std::vector<EdgeKey> membersOf(const Snapshot & snapshot, const GroupKey & group) {
+std::vector<EdgeKey> membersOf(const Snapshot & snapshot, const GroupKey & group, std::optional<MarketId> market) {
   std::vector<EdgeKey> out;
   for (const EdgeKey & e : snapshot.edgesOf(group.base))  // sorted by market, base, quote, dataset
-    if (e.market == group.market && e.quote == group.quote && snapshot.listed(e)) out.push_back(e);
+    if (e.quote == group.quote && (!market || e.market == *market) && snapshot.listed(e)) out.push_back(e);
   return out;
 }
 
@@ -49,10 +49,10 @@ double disagreement(const std::vector<double> & values) {
   return median(distance) / std::abs(c);
 }
 
-Mix mixOf(const Snapshot & snapshot, const GroupKey & group, const DatasetFilter & filter) {
+Mix mixOf(const Snapshot & snapshot, const GroupKey & group, const DatasetFilter & filter, std::optional<MarketId> market) {
   Mix mix;
   std::optional<Timestamp> newest;  // of the members that say when
-  for (const EdgeKey & e : membersOf(snapshot, group)) {
+  for (const EdgeKey & e : membersOf(snapshot, group, market)) {
     Member m;
     m.edge = e;
     const std::optional<Quote> quote = snapshot.quote(e);
@@ -141,6 +141,13 @@ PeriodView groupPeriodView(const Snapshot & snapshot, const GroupKey & group, Pe
   }
   std::sort(times.begin(), times.end());
   times.erase(std::unique(times.begin(), times.end()), times.end());
+  // A member's last close is carried over only as far as it is still live: the stale window, or four of its own bars where they are further apart (daily bars
+  // over a holiday; four days at least), so a market that has closed does not stay in the median while another trades on.
+  std::vector<int64_t> reach(views.size(), kStaleAfter);
+  for (size_t i = 0; i < views.size(); i++) {
+    if (views[i].dated) reach[i] = 4 * 86400;  // a bar is a day: a market that was shut for a holiday is carried over it
+    if (views[i].times.size() > 1) reach[i] = std::max<int64_t>(reach[i], 4 * (views[i].times.back() - views[i].times.front()) / static_cast<int64_t>(views[i].times.size() - 1));
+  }
   std::vector<size_t> at(views.size(), 0);  // the member's next bar to look at
   std::vector<double> values, traded;
   for (Timestamp t : times) {
@@ -152,6 +159,7 @@ PeriodView groupPeriodView(const Snapshot & snapshot, const GroupKey & group, Pe
       while (at[i] < v.times.size() && v.times[at[i]] <= t) at[i]++;
       if (at[i] == 0) continue;  // not begun
       const size_t bar = at[i] - 1;
+      if (t - v.times[bar] > reach[i]) continue;  // it has stopped: no longer what the others say
       values.push_back(v.closes[bar]);
       if (v.times[bar] != t) continue;  // carried over from an earlier bar: no volume of its own here
       if (bar < v.volumes.size() && isDefined(v.volumes[bar])) traded.push_back(v.volumes[bar]);

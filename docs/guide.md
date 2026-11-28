@@ -52,17 +52,20 @@ key. There are two keymaps: the terminal one (Emacs-like) and the desktop one.
 ## Markets
 
 The tags of Markets are presets: Commodities, Nasdaq Helsinki, Currencies (including the crypto coins), Indices, Funds, Physical, All and
-the Watchlist. Each row is one instrument on one market in one unit (see the
-[data model](../plans/data-model.md)). The datasets that price it are its inputs and make one row: the price, the change and the trace
-are the median of their values (the mean where there are two), so a share from three sources is one row and one wrong source does not move it.
-A dataset that has said nothing for four days is left out. The info dialog (**Show info**) has a Sources section with what each dataset
-says and whether it counts, and the chart over the table says how many datasets make the line and how much they disagree at the cursor.
+the Watchlist. Each row is one instrument in one unit (a share in euro, gold in dollars), whatever markets and datasets price it (see the
+[data model](../plans/data-model.md)): the price, the change, the low and high and the trace are the median of their values (the mean where
+there are two), so a share listed on two markets and given by three sources is one row, and one wrong source does not move it. A source that has said
+nothing for an hour while another has (a market that has closed, a delayed or a daily feed) is left out, so the row follows what is live; where none is live, the
+newest stands. A share in euro on one market and in kronor on another is two rows: prices are not converted. The table shows no market: **Show info**
+has a Sources section with what each market and dataset says, when, and whether it counts, and the chart over the table says how many make the line and how
+much they disagree at the cursor. The presets of kinds (Commodities, Currencies, Indices, Funds) and All take every market; **Nasdaq Helsinki** and **Physical**
+are the exception, a preset of one market, and show what that market says: its own prices, and only its own.
 
 The sources fill the table on a thread of their own. The table follows as the data arrives, a few times a second at
 most, and reads only the rows it draws, so it stays quick with tens of thousands of rows.
 
 `i` (or **Show info** in the row menu) shows everything known about the row, including the latest news of its
-instrument, market and country.
+instrument, its markets and their countries.
 
 ## The period and charts
 
@@ -75,7 +78,7 @@ the program runs, and starts at three months.
 - Beside the change are the period's **low** and **high** (`10y low`, `10y high`), in the row's price unit (a rate in per cent), sortable and
   blank where not known. They come from the bars of the period where there are some (with the last price, so the price is always inside them), and
   before that from what a provider says (the day's range, Yahoo's 52 weeks for the year). On a display narrower than 110 cells the two columns
-  are hidden, and the other columns are narrower; from 140 cells the Market and the trace are wider.
+  are hidden, and the other columns are narrower; from 140 cells the trace is wider.
 - For a rate (a row quoted in per cent, such as Euribor or €STR), the change is the difference in basis points.
 - The colour is the sign of the change.
 - A row with no bars for the period shows no number and no trace.
@@ -94,9 +97,9 @@ At the end of each row is the **≡** button. Click it, or move the cursor onto 
 (`row-menu` does the same from the palette). It lists:
 
 - **Show info**
-- **Buy** and **Sell**: only on a row that can be bought, that is a real market or a fund priced by its company.
-  An index, a spot price, a currency pair or an interest rate cannot be bought, and `buy` and `sell` from the
-  palette say so.
+- **Buy** and **Sell**: only on a row that can be bought, that is one with a price on a real market or a fund priced by its company.
+  A row whose prices are all on no market (an index, a spot price, a currency pair, an interest rate) cannot be bought, and `buy` and `sell` from the
+  palette say so. Gold, which the London Bullion Market prices as well, can be. You buy the row, not a market: what you bought on two markets is one position.
 - **Put on the Watchlist**, or **Take off** it if the row is on it.
 
 A row of the Portfolio context always has Buy and Sell, and **Show transactions** instead of the list entries.
@@ -127,8 +130,8 @@ The portfolios are kept in `portfolios.sqlite` (see [Where data is kept](#where-
 
 ## Lists and the Watchlist
 
-The **Watchlist** preset shows the rows you put on it. A list member is one row, an instrument on a market in a unit, whichever datasets
-say it: it does not put the same share on another market there. Lists are kept in `portfolios.sqlite`, and `undo` takes a change back.
+The **Watchlist** preset shows the rows you put on it. A list member is one row, an instrument in a unit, whichever markets and datasets
+say it. Lists are kept in `portfolios.sqlite`, and `undo` takes a change back.
 
 To add another list, add a line to `kLists` and a preset in `src/Browser.cpp`; the menu entries and the
 `add-to-<list>` and `remove-from-<list>` commands follow.
@@ -206,7 +209,7 @@ what reads a spot price picks one (see [Physical metals](#physical-metals)).
   are 15 minutes late.
 - **`kar`** (no key) asks for one request of the whole history of the daily prices of gold, silver, platinum and palladium
   in dollars per troy ounce, from November 2019 (gold from December 2020), one price a day, and makes the weekly bars of the 3 and 10 years of them. They are
-  on the London Bullion Market, whose price the fix is, so for now a metal has a row of its own beside the spot prices of the others (on no market). The page also gives euros, kroner and kronor, but those are
+  on the London Bullion Market, whose price the fix is, so a metal is one row with the spot prices of the others (on no market), and a daily fix is left out while a spot price is live. The page also gives euros, kroner and kronor, but those are
   the dollar's price converted with an exchange rate, and are left out. Rhodium is not carried.
 - **`gold-api`** ([gold-api.com](https://gold-api.com), no key) lists its symbols (gold, silver, platinum, palladium,
   copper, Bitcoin and Ethereum) and asks the price of each in euros and dollars. The metals are in the Commodities
