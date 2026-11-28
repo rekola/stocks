@@ -161,6 +161,7 @@ struct IconFixture {
       store->appendCandles({i, usd, market, dataset}, Resolution::Day, {{0, 1, 1, 1, 1.0, 1}, {1000, 1, 1, 1, 2.0, 1}});
     }
     browser = std::make_unique<Browser>(*app, store, std::shared_ptr<IconLoader>(rig->loader.get(), [](IconLoader *) {}));
+    browser->setMinRefreshInterval(0);  // a test posts one change after another, and looks at once
   }
 };
 

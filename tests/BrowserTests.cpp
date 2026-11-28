@@ -750,6 +750,17 @@ TEST(a_busy_source_is_shown_at_most_so_often_and_the_last_change_is_shown_when_i
   CHECK(t.model()->rowCount() == 2);
 }
 
+TEST(a_sources_message_waits_for_the_same_tick_as_the_data_and_the_icons) {
+  Fixture f(false);
+  addNokia(*f.store);
+  f.app->execute("show-nasdaq-helsinki");
+  f.browser->setMinRefreshInterval(3600);  // not for an hour
+  f.app->widgets().postToRoot(SourceMessage{"over the wire"});
+  CHECK(f.text().find("over the wire") == std::string::npos);  // said, and not yet shown
+  f.browser->setMinRefreshInterval(0);
+  CHECK(f.text().find("over the wire") != std::string::npos);  // the next frame shows it
+}
+
 TEST(show_info_from_the_keyboard_shows_the_isin_the_symbol_a_number_and_a_date_and_escape_closes_it) {
   Fixture f(false);
   addNokia(*f.store);
