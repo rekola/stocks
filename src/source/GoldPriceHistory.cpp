@@ -3,6 +3,7 @@
 #include "model/Dates.h"
 #include "source/GoldPriceSource.h"
 #include "source/MetalUnits.h"
+#include "source/WeeklyBars.h"
 
 #include <cellui/NumberParse.h>
 #include <nlohmann/json.hpp>
@@ -87,28 +88,7 @@ bool GoldPriceHistory::parse(const std::string & body, Bars & out, std::string &
   return true;
 }
 
-std::vector<Candle> GoldPriceHistory::weeks(const std::vector<Candle> & days) {
-  std::vector<Candle> out;
-  for (const Candle & d : days) {
-    const int64_t start = weekStart(d.time);
-    if (out.empty() || out.back().time != start) {
-      if (out.empty() && d.time != start) {  // the first week lacks its Monday: it is not whole
-        out.push_back(Candle{start, kUndefined, kUndefined, kUndefined, kUndefined, kUndefined});
-        continue;
-      }
-      out.push_back(Candle{start, isDefined(d.open) ? d.open : d.close, isDefined(d.high) ? d.high : d.close, isDefined(d.low) ? d.low : d.close, d.close, d.volume});
-      continue;
-    }
-    Candle & w = out.back();
-    if (!isDefined(w.close)) continue;  // inside the week that is left out
-    w.high = std::max(w.high, isDefined(d.high) ? d.high : d.close);
-    w.low = std::min(w.low, isDefined(d.low) ? d.low : d.close);
-    w.close = d.close;
-    if (isDefined(d.volume)) w.volume = isDefined(w.volume) ? w.volume + d.volume : d.volume;
-  }
-  if (!out.empty() && !isDefined(out.front().close)) out.erase(out.begin());
-  return out;
-}
+std::vector<Candle> GoldPriceHistory::weeks(const std::vector<Candle> & days) { return weeksOfDays(days); }
 
 HistoryProvider::Outcome GoldPriceHistory::load(Store & store, Http & http, const EdgeKey & edge, int, const Wait & wait) {
   const auto snapshot = store.snapshot();

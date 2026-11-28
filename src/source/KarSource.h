@@ -24,7 +24,8 @@
 // thousandths of a per cent apart, which is what converting costs and not the metal's own spread. USD rows have `Bid` equal to `Ask`.
 //
 // What is written, for each metal in each currency, an edge of the metal's ISIN (the gold of the other sources), the currency, XLBM and "KAR":
-//   - the daily bars, one value a day, per troy ounce (the unit of the metals' ISINs: the gram x 31.1035), at the mean of the bid and the ask;
+//   - the daily bars, one value a day, per troy ounce (the unit of the metals' ISINs: the gram x 31.1035), at the mean of the bid and the ask, and the
+//     weekly bars of those (the 3 and 10 years read weeks, which the answer has none of);
 //   - the last day's price as the edge's `Quote`: last, and a bid and an ask where the answer gives them apart (not for USD, which is one price). The
 //     history of bid and ask is not kept: the store has no series for it (plans/quotes.md).
 // The whole history is asked for at each load (about 1 MB, a few hundred kB compressed): what the store has already it keeps.

@@ -118,6 +118,8 @@ TEST(kar_writes_the_daily_bars_and_the_quote_of_each_metal_in_each_currency_on_t
   if (bars.size() != 2) return;
   CHECK(bars[1].time == dayNumberOfInstant(kNov26));
   CHECK_NEAR(bars[1].close, (104.794372557713 + 104.813464263407) / 2 * KarSource::kGramsPerTroyOunce, 1e-9);
+  // the answer's first week has no Monday (the 25th is a Wednesday): it is not a whole week, and is left out
+  CHECK(snapshot->queue(*eur, Resolution::Week).empty());
   // euros are converted at the sides of a rate: a bid and an ask beside the last
   const auto quote = snapshot->quote(*eur);
   CHECK(quote.has_value());
@@ -152,4 +154,26 @@ TEST(kar_loads_again_without_changing_what_the_store_has) {
   KarSource source(std::chrono::hours(3), [] { return kNow; });
   source.load(*l.store, l.http, l.said);
   CHECK(l.store->snapshot()->queue(edge, Resolution::Day).size() == before && before == 2);
+}
+
+TEST(kar_makes_the_weekly_bars_the_3_and_10_years_read_of_the_daily_ones) {
+  // Gold in dollars on every weekday from Monday 2026-11-16 to Thursday 2026-11-26, at 1000 plus the day of the month.
+  std::string rows;
+  for (int day : {16, 17, 18, 19, 20, 23, 24, 25, 26}) {
+    const std::string price = std::to_string(1000 + day);
+    char at[32];
+    std::snprintf(at, sizeof at, "2026-11-%02dT15:00:00", day);
+    rows += std::string(rows.empty() ? "" : ",") + R"({"Currency":"USD","TradeTime":")" + at + R"(","Bid":1,"Ask":1,"BidGram":)" + std::to_string((1000 + day) / KarSource::kGramsPerTroyOunce) +
+            R"(,"AskGram":)" + std::to_string((1000 + day) / KarSource::kGramsPerTroyOunce) + "}";
+  }
+  Loaded l(R"([{"Code":"AU","Prices":[)" + rows + "]}]");
+  const auto usd = l.edge("USD");
+  CHECK(usd.has_value());
+  if (!usd) return;
+  const auto weeks = l.store->snapshot()->queue(*usd, Resolution::Week);
+  CHECK(weeks.size() == 2);  // the Mondays of the 16th and the 23rd
+  if (weeks.size() != 2) return;
+  CHECK(weeks[0].time == dayNumber(2026, 11, 16) && weeks[1].time == dayNumber(2026, 11, 23));
+  CHECK_NEAR(weeks[0].close, 1020, 1e-3);  // one value a week, as one a day: the last day's
+  CHECK_NEAR(weeks[1].close, 1026, 1e-3);  // the week that is still going on is the bar of the days there are
 }

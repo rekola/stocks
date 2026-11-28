@@ -3,6 +3,7 @@
 #include "source/InstrumentLists.h"
 #include "source/KnownIsins.h"
 #include "source/KnownMarkets.h"
+#include "source/WeeklyBars.h"
 
 #include <nlohmann/json.hpp>
 
@@ -134,6 +135,7 @@ void KarSource::load(Store & store, Http & http, SourceListener & listener) {
       if (!base.valid() || !quote.valid()) continue;
       const EdgeKey edge{base, quote, market, dataset};
       b.appendCandles(edge, Resolution::Day, s.bars, QueueKind::Scalar);
+      b.appendCandles(edge, Resolution::Week, weeksOfDays(s.bars), QueueKind::Scalar);  // the 3 and 10 years read weeks, which the answer has none of
       Quote last;
       last.last = s.last.mid();
       last.time = s.last.time;
