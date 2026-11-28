@@ -19,8 +19,8 @@ std::string amount(double v) { return fixed(v, 2); }
 
 }  // namespace
 
-Positions::Positions(std::shared_ptr<const Snapshot> snapshot, PortfolioId portfolio, std::shared_ptr<IconLoader> icons)
-    : icons_(std::move(icons)), portfolio_(portfolio) {
+Positions::Positions(std::shared_ptr<const Snapshot> snapshot, PortfolioId portfolio, std::shared_ptr<IconLoader> icons, Clock clock)
+    : icons_(std::move(icons)), portfolio_(portfolio), clock_(std::move(clock)) {
   setSnapshot(std::move(snapshot));
 }
 
@@ -36,7 +36,7 @@ void Positions::setSnapshot(std::shared_ptr<const Snapshot> snapshot) {
     if (const auto said = portfolio::currencyOf(*snapshot_, portfolio_)) currency = *said;
   }
   if (!currency.valid() && !held.empty()) currency = held.front().quote;
-  valuation_ = portfolio::value(held, *snapshot_, currency);
+  valuation_ = portfolio::value(held, *snapshot_, currency, clock_ ? clock_() : 0);
 }
 
 void Positions::setPeriod(Period period) {

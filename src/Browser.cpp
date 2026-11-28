@@ -272,6 +272,7 @@ void Browser::showPeriod(Period period) {
 void Browser::showPreset(int i) {
   auto snapshot = store_->snapshot();
   auto quotes = std::make_shared<Quotes>(snapshot, edgesOf(*snapshot, kPresets[i]), icons_);
+  quotes->setClock(clock_);
   quotes->setPeriod(period_);
   quotes->setNarrow(fit_ == Fit::Narrow);
   if (kPresets[i].mic && !kPresets[i].list) quotes->setMarket(snapshot->findMarket(kPresets[i].mic));
@@ -704,7 +705,7 @@ void Browser::showTag(int i) {
 void Browser::showPortfolio(int i) {
   portfolio_ = i >= 0 && i < static_cast<int>(portfolio_ids_.size()) ? portfolio_ids_[static_cast<size_t>(i)] : PortfolioId{};
   auto snapshot = store_->snapshot();
-  auto positions = std::make_shared<Positions>(snapshot, portfolio_, icons_);
+  auto positions = std::make_shared<Positions>(snapshot, portfolio_, icons_, clock_);
   positions->setPeriod(period_);
   table_.setModel(positions);
   setColumns();  // the value's heading names the portfolio's currency

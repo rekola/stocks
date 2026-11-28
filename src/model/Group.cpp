@@ -50,11 +50,15 @@ double disagreement(const std::vector<double> & values) {
   return median(distance) / std::abs(c);
 }
 
+Timeliness timelinessOf(const Snapshot & snapshot, DatasetId dataset) {
+  const std::string said = snapshot.said(NodeRef(dataset), predicate::timeliness);
+  return said == "realtime" ? Timeliness::Realtime : said == "daily" ? Timeliness::Daily : Timeliness::Delayed;
+}
+
 Timestamp systemNow() { return std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count(); }
 
 Mix mixOf(const Snapshot & snapshot, const GroupKey & group, const DatasetFilter & filter, std::optional<MarketId> market, Timestamp now) {
   Mix mix;
-  std::optional<Timestamp> newest;  // of the members that say when
   for (const EdgeKey & e : membersOf(snapshot, group, market)) {
     Member m;
     m.edge = e;
@@ -67,15 +71,42 @@ Mix mixOf(const Snapshot & snapshot, const GroupKey & group, const DatasetFilter
     else if (!isDefined(m.price)) m.state = MemberState::NoPrice;
     else {
       m.state = MemberState::Used;
-      if (m.time != 0) newest = newest ? std::max(*newest, m.time) : m.time;
     }
+    m.timeliness = timelinessOf(snapshot, e.dataset);
     mix.members.push_back(m);
   }
   if (now == 0) now = systemNow();
-  const int64_t window = newest && now - *newest <= kLiveWithin ? kStaleAfter : kClosedWindow;  // someone is live, or all are closed
+  // The fastest kind that has a member that counts and is not long dead (a realtime dataset that stopped days ago does not hide the others).
+  std::optional<Timestamp> overall;
+  for (const Member & m : mix.members)
+    if (m.state == MemberState::Used && m.time != 0) overall = overall ? std::max(*overall, m.time) : m.time;
+  auto newestOf = [&](Timeliness kind) {
+    std::optional<Timestamp> t;
+    for (const Member & m : mix.members)
+      if (m.state == MemberState::Used && m.timeliness == kind && m.time != 0) t = t ? std::max(*t, m.time) : m.time;
+    return t;
+  };
+  std::optional<Timeliness> kind;
+  for (Timeliness k : {Timeliness::Realtime, Timeliness::Delayed, Timeliness::Daily}) {
+    bool any = false;
+    for (const Member & m : mix.members) any = any || (m.state == MemberState::Used && m.timeliness == k && (m.time == 0 || !overall || *overall - m.time <= kClosedWindow));
+    if (any) {
+      kind = k;
+      break;
+    }
+  }
+  std::optional<Timestamp> newest;
+  int64_t window = kClosedWindow;
+  if (kind) {
+    newest = newestOf(*kind);
+    const int64_t live = *kind == Timeliness::Realtime ? kRealtimeWindow : *kind == Timeliness::Delayed ? kDelayedWindow : -1;
+    if (newest && live >= 0 && now - *newest <= live) window = live;  // someone is live: the others of the kind are as late as they are behind it
+  }
   std::vector<double> prices;
   for (Member & m : mix.members) {
-    if (m.state == MemberState::Used && m.time != 0 && newest && *newest - m.time > window) m.state = MemberState::Stale;  // a time of 0 is not known: not stale
+    if (m.state != MemberState::Used) continue;
+    if (kind && m.timeliness != *kind) m.state = m.time != 0 && overall && *overall - m.time > kClosedWindow ? MemberState::Stale : MemberState::Behind;
+    else if (m.time != 0 && newest && *newest - m.time > window) m.state = MemberState::Stale;  // a time of 0 is not known: not stale
     if (m.state == MemberState::Used) prices.push_back(m.price);
   }
   mix.used = prices.size();
@@ -146,9 +177,9 @@ PeriodView groupPeriodView(const Snapshot & snapshot, const GroupKey & group, Pe
   }
   std::sort(times.begin(), times.end());
   times.erase(std::unique(times.begin(), times.end()), times.end());
-  // A member's last close is carried over only as far as it is still live: the stale window, or four of its own bars where they are further apart (daily bars
+  // A member's last close is carried over only as far as it is still live: an hour, or four of its own bars where they are further apart (daily bars
   // over a holiday; four days at least), so a market that has closed does not stay in the median while another trades on.
-  std::vector<int64_t> reach(views.size(), kStaleAfter);
+  std::vector<int64_t> reach(views.size(), kDelayedWindow);
   for (size_t i = 0; i < views.size(); i++) {
     if (views[i].dated) reach[i] = 4 * 86400;  // a bar is a day: a market that was shut for a holiday is carried over it
     if (views[i].times.size() > 1) reach[i] = std::max<int64_t>(reach[i], 4 * (views[i].times.back() - views[i].times.front()) / static_cast<int64_t>(views[i].times.size() - 1));

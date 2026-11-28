@@ -2,6 +2,7 @@
 
 #include "AttributeView.h"
 #include "model/Dates.h"
+#include "Quotes.h"
 #include "model/Group.h"
 
 #include <cmath>
@@ -121,6 +122,74 @@ TEST(where_no_member_is_live_the_last_prices_are_combined_and_not_the_freshest_a
   shut.say(shut.a, 90, friday - 6 * 86400);
   shut.say(shut.b, 104, friday, shut.lbm);
   CHECK(mixOf(*shut.snap(), shut.group(), {}, std::nullopt, friday + 2 * 86400).used == 1);
+}
+
+namespace {
+void say_is(World & w, DatasetId d, const char * how) { w.store->setAttribute(NodeRef(d), {predicate::timeliness, how}); }
+}  // namespace
+
+TEST(realtime_prices_are_the_row_and_a_delayed_one_is_left_out_whether_the_market_is_open_or_closed) {
+  World w;
+  say_is(w, w.a, "realtime");
+  say_is(w, w.b, "realtime");
+  say_is(w, w.c, "delayed");
+  w.say(w.a, 100, kNow);
+  w.say(w.b, 104, kNow - 5, w.lbm);
+  w.say(w.c, 150, kNow - 600);  // a pipeline that is ten minutes late, or slow: older than it looks
+  // Open: two realtime ones, and the delayed one is behind them.
+  Mix open = mixOf(*w.snap(), w.group(), {}, std::nullopt, kNow + 10);
+  CHECK(open.used == 2 && open.price == 102 && memberOf(open, w.c).state == MemberState::Behind);
+  // Closed (a weekend): all are stale, and the realtime ones alone make the median, as the delayed one does not say when.
+  Mix closed = mixOf(*w.snap(), w.group(), {}, std::nullopt, kNow + 2 * 86400);
+  CHECK(closed.used == 2 && closed.price == 102 && memberOf(closed, w.c).state == MemberState::Behind);
+  // Without realtime ones the delayed one is the row.
+  CHECK(mixOf(*w.snap(), w.group(), [&](DatasetId d) { return d == w.c; }, std::nullopt, kNow + 10).price == 150);
+}
+
+TEST(a_realtime_source_more_than_a_minute_late_is_dropped_while_another_is_live_and_all_count_when_none_is) {
+  World w;
+  for (DatasetId d : {w.a, w.b, w.c}) say_is(w, d, "realtime");
+  w.say(w.a, 100, kNow);
+  w.say(w.b, 101, kNow - 30, w.lbm);
+  w.say(w.c, 130, kNow - 120);  // two minutes behind: its feed has stalled
+  Mix live = mixOf(*w.snap(), w.group(), {}, std::nullopt, kNow + 5);
+  CHECK(live.used == 2 && live.price == 100.5 && memberOf(live, w.c).state == MemberState::Stale);
+  // The market is shut: who said last is a matter of seconds, not of what is true.
+  Mix shut = mixOf(*w.snap(), w.group(), {}, std::nullopt, kNow + 3 * 3600);
+  CHECK(shut.used == 3 && shut.price == 101);
+}
+
+TEST(a_daily_dataset_is_the_row_only_where_nothing_faster_says_a_price_and_a_dead_fast_one_hides_nothing) {
+  World w;
+  say_is(w, w.a, "daily");
+  say_is(w, w.b, "delayed");
+  say_is(w, w.c, "realtime");
+  w.say(w.a, 90, kNow - 20 * 3600);  // a fix of yesterday, no exact time
+  w.say(w.b, 100, kNow - 600);
+  Mix mix = mixOf(*w.snap(), w.group(), {}, std::nullopt, kNow);
+  CHECK(mix.used == 1 && mix.price == 100 && memberOf(mix, w.a).state == MemberState::Behind);
+  // Dailies alone are all the row, a day apart as they are: they never go stale among themselves.
+  World d;
+  say_is(d, d.a, "daily");
+  say_is(d, d.b, "daily");
+  d.say(d.a, 90, kNow - 86400);
+  d.say(d.b, 100, kNow, d.lbm);
+  CHECK(mixOf(*d.snap(), d.group(), {}, std::nullopt, kNow).used == 2);
+  // A realtime source that stopped a week ago does not hide the others.
+  w.say(w.c, 500, kNow - 7 * 86400);
+  mix = mixOf(*w.snap(), w.group(), {}, std::nullopt, kNow);
+  CHECK(mix.used == 1 && mix.price == 100 && memberOf(mix, w.c).state == MemberState::Stale);
+}
+
+TEST(a_table_asks_the_clock_it_is_given_what_is_live) {
+  World w;
+  w.say(w.a, 100, kNow);
+  w.say(w.b, 110, kNow - 2 * 3600, w.lbm);
+  Quotes quotes(w.snap(), {w.key(w.a)});
+  quotes.setClock([] { return kNow + 60; });  // a live market: the one two hours behind is not what it says
+  CHECK(quotes.mix(0).used == 1);
+  quotes.setClock([] { return kNow + 2 * 86400; });  // the weekend: both are the last prices
+  CHECK(quotes.mix(0).used == 2 && quotes.mix(0).price == 105);
 }
 
 TEST(a_closed_market_does_not_stay_in_the_trace_while_another_trades_on) {

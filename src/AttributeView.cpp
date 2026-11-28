@@ -201,6 +201,7 @@ InfoSection sourcesSection(const Snapshot & snapshot, const Mix & mix) {
     switch (m.state) {
       case MemberState::Used: break;
       case MemberState::Stale: text += "  left out: older than the others"; break;
+      case MemberState::Behind: text += "  left out: a faster dataset says the price"; break;
       case MemberState::Off: text += "  left out: switched off"; break;
       case MemberState::NoPrice: text += "  left out"; break;
     }

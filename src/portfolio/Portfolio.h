@@ -72,7 +72,7 @@ struct Price {
   Timestamp time = 0;  // of the newest quote (seconds)
   Mix mix;  // what it is made of
 };
-std::optional<Price> latestPrice(const Snapshot &, InstrumentId instrument, InstrumentId quote);
+std::optional<Price> latestPrice(const Snapshot &, InstrumentId instrument, InstrumentId quote, Timestamp now = 0);  // now 0: the machine's
 
 // How many `to` one `from` costs: the latest close of an edge between the two currencies, or its inverse, or through one
 // other currency by two such edges. Only currencies are converted (not a unit such as points or a rate); none where the store
@@ -103,6 +103,6 @@ struct Valuation {
 
 // The positions at the prices the store has, in the portfolio's currency. A position with no rate is shown in its own
 // currency, left out of the total, and the total is marked incomplete.
-Valuation value(const std::vector<Position> &, const Snapshot &, InstrumentId currency);
+Valuation value(const std::vector<Position> &, const Snapshot &, InstrumentId currency, Timestamp now = 0);
 
 }  // namespace portfolio

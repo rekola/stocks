@@ -173,6 +173,13 @@ void Quotes::reset(std::shared_ptr<const Snapshot> snapshot, std::vector<EdgeKey
   setSnapshot(std::move(snapshot));
 }
 
+void Quotes::setClock(Clock clock) {
+  clock_ = std::move(clock);
+  mixes_.clear();
+  traces_.clear();
+  for (bool & b : built_) b = false;
+}
+
 void Quotes::setMarket(std::optional<MarketId> market) {
   market_ = market;
   mixes_.clear();
@@ -206,7 +213,7 @@ const Mix & Quotes::mix(int r) const {
   auto it = mixes_.find(r);
   if (it == mixes_.end()) {
     if (mixes_.size() > 65536) mixes_.clear();
-    it = mixes_.emplace(r, mixOf(*snapshot_, group(r), filter_, market_)).first;
+    it = mixes_.emplace(r, mixOf(*snapshot_, group(r), filter_, market_, clock_ ? clock_() : 0)).first;
   }
   return it->second;
 }

@@ -92,6 +92,8 @@ class Quotes : public cellui::TableModel {
   const Mix & mix(int r) const;
   // The members of the row that count: the edges whose bars it is made from.
   std::vector<EdgeKey> members(int r) const;
+  // The clock that says what is live (Group.h); empty: the machine's. The caches go.
+  void setClock(Clock clock);
   // The market a preset of one market shows: only its members count, so the row says what that market says. None: every market's.
   void setMarket(std::optional<MarketId> market);
   // Which datasets count; empty: all. The user's switches. The caches go.
@@ -128,6 +130,7 @@ class Quotes : public cellui::TableModel {
   std::vector<EdgeKey> keys_;
   size_t rows_seen_ = 0;  // how many of the store's rows (Snapshot::quoteRowCount()) the rows above are made from
   std::optional<MarketId> market_;
+  Clock clock_;
   DatasetFilter filter_;
   std::unordered_set<GroupKey> groups_;                  // the groups the rows are
   mutable std::unordered_map<int, Mix> mixes_;           // the rows drawn or sorted lately

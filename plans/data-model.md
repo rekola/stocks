@@ -95,7 +95,7 @@ the same keys.
 
 **A preset is a selection of rows**, a row being a group `(base, quote)` (`GroupKey`) and its *members* every edge of it, whatever market
 and dataset: the row's price, change, high and low and trace are made of them by `combine` (median of three or more, mean of two, the one), a member
-that is not live while another is (older than the newest by more than `kStaleAfter`, an hour) left out; where none is live (every market closed) they all count, within `kClosedWindow` (four days) of the newest. A preset of kinds (or none) takes the groups; a preset that
+of the fastest kind that has a price (`Timeliness`: realtime, delayed, daily, a fact of the dataset; never mixed), and in the kind one that is behind the newest by more than its window (a minute realtime, an hour delayed) left out while the newest is live; where none is live (every market closed) they all count, within `kClosedWindow` (four days) of the newest. A preset of kinds (or none) takes the groups; a preset that
 names a market takes the groups with a member there and only that market's members count. The quote currency is in the key: prices are not
 converted, so a share in euro and in kronor is two rows. Built (plans/instrument-rows.md).
 
@@ -676,7 +676,7 @@ and a resolution:
 
 - the slots are the union of the times of the members' bars at that resolution (a member at another resolution is not mixed in);
 - in a slot the **close** is `combine` of the members' closes (median of three or more, mean of two, the value of one). A member that has no bar in the
-  slot counts with its last close only while that is live (within `kStaleAfter`, or four of its own bars, four days at least for daily bars, apart) and not at all
+  slot counts with its last close only while that is live (within an hour, or four of its own bars, four days at least for daily bars, apart) and not at all
   before its first bar, so a market that has closed does not stay in the median while another trades on;
 - the **volume** is the sum of the volumes of the bars the members have *in* that slot, never combined (a median of volumes is no volume), and none where none says one;
 - open, high and low are left to that step (each combined as `groupRange` does, or the first and the extremes of the closes).

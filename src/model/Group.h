@@ -27,20 +27,30 @@ double combine(std::vector<double> values);
 // one per cent off). Undefined for fewer than two values or a combined value of 0.
 double disagreement(const std::vector<double> & values);
 
-// What counts as *live*, and what is left out. The newest member of a group is live when it said its price within `kLiveWithin` seconds of now. Where one is,
-// a member that says nothing newer than `kStaleAfter` before it is *stale*: it is not live as the newest is (a market that has closed, a delayed or a daily
-// source), so what it last said is not what the others are saying, and it is left out of the combined number. Where none is live (a weekend, a night, every
-// market closed), nobody is fresher than another by being a few hours later, and the members all count: a member is left out only when it is more than
-// `kClosedWindow` older than the newest (a market shut for days), so the last prices are combined and not the freshest alone.
-inline constexpr int64_t kLiveWithin = 3600;
-inline constexpr int64_t kStaleAfter = 3600;
+// How timely a dataset says it is (the `timeliness` fact of the dataset, which its source states): a *realtime* one says what is happening now, a
+// *delayed* one (also one that says nothing: it is not known to be faster) is late by a pipeline or a feed, and a *daily* one says a price a day and
+// not the second. The faster say what the slower only say later, so the numbers of a row are the first of these that a row has, never mixed with the next:
+// a delayed price is older than it looks, and a daily one has no exact time.
+enum class Timeliness : uint8_t { Realtime, Delayed, Daily };
+Timeliness timelinessOf(const Snapshot &, DatasetId);
+
+// What counts as *live*, and what is left out, among the members of one kind of timeliness. The newest of them is live when it said its price within
+// `liveWithin` (a minute for realtime, an hour for delayed) of now. Where one is, a member more than that behind it is *stale*: it has stopped (a market
+// that has closed, a feed that fell behind), so what it last said is not what the others say, and it is left out. Where none is live (a weekend, a night,
+// every market closed), nobody is fresher than another by being later, and they all count, the median of the last prices: a member is left out only
+// when it is more than `kClosedWindow` older than the newest (a market shut for days). A daily dataset is never live (its time is a date).
+inline constexpr int64_t kRealtimeWindow = 60;
+inline constexpr int64_t kDelayedWindow = 3600;
 inline constexpr int64_t kClosedWindow = 4 * 86400;
 // The time of the machine, UTC seconds: what `now` is where a reader does not say.
 Timestamp systemNow();
+// What tells the time to a reader that works out a mix: the machine's by default (an empty one), a test's own.
+using Clock = std::function<Timestamp()>;
 
 enum class MemberState : uint8_t {
   Used,     // counts in the combined numbers
-  Stale,    // says nothing as new as the others: left out
+  Stale,    // says nothing as new as the others of its kind: left out
+  Behind,   // a faster kind of dataset (realtime before delayed before daily) says the price: left out
   Off,      // its dataset is switched off (the filter): left out
   NoPrice,  // has no price to say: left out
 };
@@ -48,6 +58,7 @@ enum class MemberState : uint8_t {
 struct Member {
   EdgeKey edge;
   MemberState state = MemberState::NoPrice;
+  Timeliness timeliness = Timeliness::Delayed;
   double price = kUndefined;   // the member's own last price
   Timestamp time = 0;          // when it said it, UTC seconds; 0 where not known
   double offset = kUndefined;  // its price against the combined one as a fraction (0.01: one per cent above); undefined for a combined 0

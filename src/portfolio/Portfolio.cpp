@@ -134,8 +134,8 @@ std::optional<double> direct(const Snapshot & snapshot, InstrumentId from, Instr
 
 }  // namespace
 
-std::optional<Price> latestPrice(const Snapshot & snapshot, InstrumentId instrument, InstrumentId quote) {
-  const Mix mix = mixOf(snapshot, GroupKey{instrument, quote});
+std::optional<Price> latestPrice(const Snapshot & snapshot, InstrumentId instrument, InstrumentId quote, Timestamp now) {
+  const Mix mix = mixOf(snapshot, GroupKey{instrument, quote}, {}, std::nullopt, now);
   if (!isDefined(mix.price)) return std::nullopt;
   const Member * newest = nullptr;
   for (const Member & m : mix.members)
@@ -169,13 +169,13 @@ std::optional<double> rate(const Snapshot & snapshot, InstrumentId from, Instrum
   return std::nullopt;
 }
 
-Valuation value(const std::vector<Position> & positions, const Snapshot & snapshot, InstrumentId currency) {
+Valuation value(const std::vector<Position> & positions, const Snapshot & snapshot, InstrumentId currency, Timestamp now) {
   Valuation out;
   out.currency = currency;
   for (const Position & p : positions) {
     PositionValue row;
     row.position = p;
-    row.price = latestPrice(snapshot, p.instrument, p.quote);
+    row.price = latestPrice(snapshot, p.instrument, p.quote, now);
     if (row.price) {
       row.market_value = p.quantity * row.price->close;
       row.profit = row.market_value - p.cost();
