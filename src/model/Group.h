@@ -45,7 +45,7 @@ inline constexpr int64_t kClosedWindow = 4 * 86400;
 // The time of the machine, UTC seconds: what `now` is where a reader does not say.
 Timestamp systemNow();
 // What tells the time to a reader that works out a mix: the machine's by default (an empty one), a test's own.
-using Clock = std::function<Timestamp()>;
+using TimeFn = std::function<Timestamp()>;
 
 enum class MemberState : uint8_t {
   Used,     // counts in the combined numbers

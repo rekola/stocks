@@ -31,11 +31,22 @@ class SourceRunner::Listener : public SourceListener {
 };
 
 SourceRunner::SourceRunner(std::shared_ptr<Store> store, std::vector<std::unique_ptr<Source>> sources,
-                           std::function<void()> onChanged, std::function<void(std::string)> onMessage) {
+                           std::function<void()> onChanged, std::function<void(std::string)> onMessage,
+                           std::chrono::milliseconds realtimePeriod) {
+  // What each source says of its datasets' timeliness: a row follows the fastest kind it has (Group.h).
+  for (const std::unique_ptr<Source> & source : sources) {
+    const char * text = source->timeliness() == Timeliness::Realtime ? "realtime" : source->timeliness() == Timeliness::Daily ? "daily" : "delayed";
+    for (const std::string & code : source->datasetCodes()) {
+      try {
+        store->setAttribute(NodeRef(store->addDataset(code)), {predicate::timeliness, text});
+      } catch (const std::exception &) {  // a code that is no dataset's: the source says so when it loads
+      }
+    }
+  }
   // A source of its own thread each, with an Http of its own: one that is slow or waits between requests does not hold up the others.
   for (std::unique_ptr<Source> & owned : sources) {
     https_.push_back(makeHttp());
-    threads_.emplace_back([this, store, source = std::move(owned), http = https_.back().get(), onChanged, onMessage]() {
+    threads_.emplace_back([this, store, source = std::move(owned), http = https_.back().get(), onChanged, onMessage, realtimePeriod]() {
       using Clock = std::chrono::steady_clock;
       Listener listener(stop_, mutex_, wake_, onChanged, onMessage);
       // When the source is loaded again, and when it is asked for another batch of its details; max: not again.
@@ -58,7 +69,13 @@ SourceRunner::SourceRunner(std::shared_ptr<Store> store, std::vector<std::unique
             listener.message(source->name() + ": failed");
           }
           const auto interval = source->refreshInterval();
-          loadDue = interval.count() > 0 ? Clock::now() + interval : Clock::time_point::max();
+          if (source->timeliness() == Timeliness::Realtime && realtimePeriod.count() > 0) {
+            // The next multiple of the period on the clock: the realtime sources start together, whatever each load took.
+            const auto sinceEpoch = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch());
+            loadDue = Clock::now() + (realtimePeriod - sinceEpoch % realtimePeriod);
+          } else {
+            loadDue = interval.count() > 0 ? Clock::now() + interval : Clock::time_point::max();
+          }
           if (detailsDue == Clock::time_point::max()) detailsDue = Clock::now();  // a load may have found instruments to fill in
         }
         if (!stop_ && detailsDue <= Clock::now()) {

@@ -420,6 +420,59 @@ class MeetingSource : public Source {
 };
 }  // namespace
 
+namespace {
+// A source that is realtime, and says when each load began (milliseconds on the clock).
+class RealtimeSource : public Source {
+ public:
+  RealtimeSource(std::string code, std::vector<int64_t> & starts, std::mutex & mutex) : code_(std::move(code)), starts_(starts), mutex_(mutex) {}
+  std::string name() const override { return "realtime-" + code_; }
+  std::string description() const override { return ""; }
+  std::vector<std::string> datasetCodes() const override { return {code_}; }
+  Timeliness timeliness() const override { return Timeliness::Realtime; }
+  void load(Store &, Http &, SourceListener &) override {
+    std::lock_guard lock(mutex_);
+    starts_.push_back(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
+  }
+  std::chrono::milliseconds refreshInterval() const override { return std::chrono::hours(1); }  // not asked of a realtime source
+
+ private:
+  std::string code_;
+  std::vector<int64_t> & starts_;
+  std::mutex & mutex_;
+};
+}  // namespace
+
+TEST(realtime_sources_are_loaded_often_and_together_on_the_clock_and_their_datasets_say_how_timely_they_are) {
+  std::shared_ptr<Store> store = makeMemoryStore();
+  std::vector<int64_t> first, second;
+  std::mutex mutex;
+  {
+    std::vector<std::unique_ptr<Source>> sources;
+    sources.push_back(std::make_unique<RealtimeSource>("RTA", first, mutex));
+    sources.push_back(std::make_unique<RealtimeSource>("RTB", second, mutex));
+    SourceRunner runner(store, std::move(sources), [] {}, [](std::string) {}, std::chrono::milliseconds(200));
+    CHECK(waitFor([&] { std::lock_guard lock(mutex); return first.size() >= 4 && second.size() >= 4; }));
+    // The facts are said as soon as the runner is made.
+    CHECK(store->snapshot()->said(NodeRef(*store->snapshot()->findDataset("RTA")), predicate::timeliness) == "realtime");
+  }
+  CHECK(first.size() >= 4 && second.size() >= 4);
+  for (size_t i = 1; i < 4; i++) {
+    CHECK(std::abs(first[i] - second[i]) < 40);                           // the two start together, though they run on threads of their own
+    CHECK(std::min(first[i] % 200, 200 - first[i] % 200) < 60);          // at a multiple of the period of the clock, not an hour (their own interval) later
+  }
+}
+
+TEST(a_runner_says_a_source_is_daily_or_delayed_by_a_fact_of_its_datasets) {
+  std::shared_ptr<Store> store = makeMemoryStore();
+  std::vector<std::unique_ptr<Source>> sources;
+  sources.push_back(std::make_unique<EcbSource>());
+  sources.push_back(std::make_unique<GoldPriceSource>());
+  SourceRunner runner(store, std::move(sources), [] {}, [](std::string) {});
+  const auto snapshot = store->snapshot();
+  CHECK(snapshot->said(NodeRef(*snapshot->findDataset(kEcbDataset)), predicate::timeliness) == "daily");
+  CHECK(snapshot->said(NodeRef(*snapshot->findDataset(kGoldPriceDataset)), predicate::timeliness) == "delayed");
+}
+
 TEST(the_runner_loads_its_sources_at_once) {
   std::shared_ptr<Store> store = makeMemoryStore();
   std::atomic<int> arrived{0};

@@ -49,7 +49,7 @@ class Browser {
   // What today is, as a day number, for the date a trade starts with (the system's clock by default; a test sets its own).
   void setToday(std::function<int64_t()> today) { today_ = std::move(today); }
   // The clock that says what is live in a row (Group.h); the machine's by default; a test sets its own. Set before a table is shown.
-  void setClock(Clock clock) { clock_ = std::move(clock); }
+  void setClock(TimeFn clock) { clock_ = std::move(clock); }
   // How many of the user's changes can be taken back, and made again.
   size_t undoDepth() const { return undo_.size(); }
   size_t redoDepth() const { return redo_.size(); }
@@ -180,7 +180,7 @@ class Browser {
   View views_[kContextCount];
   std::vector<Change> undo_, redo_;
   std::function<int64_t()> today_;
-  Clock clock_;
+  TimeFn clock_;
   PortfolioId last_traded_;  // the portfolio the last trade went to: where the next is offered
   // What the history loader was last told is wanted: the edges, in the order sent, and the period. The edges themselves and
   // not where the view is, as a sort (a click on a heading, or a store change that sorts again) puts other edges at the

@@ -173,7 +173,7 @@ void Quotes::reset(std::shared_ptr<const Snapshot> snapshot, std::vector<EdgeKey
   setSnapshot(std::move(snapshot));
 }
 
-void Quotes::setClock(Clock clock) {
+void Quotes::setClock(TimeFn clock) {
   clock_ = std::move(clock);
   mixes_.clear();
   traces_.clear();

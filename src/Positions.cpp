@@ -19,7 +19,7 @@ std::string amount(double v) { return fixed(v, 2); }
 
 }  // namespace
 
-Positions::Positions(std::shared_ptr<const Snapshot> snapshot, PortfolioId portfolio, std::shared_ptr<IconLoader> icons, Clock clock)
+Positions::Positions(std::shared_ptr<const Snapshot> snapshot, PortfolioId portfolio, std::shared_ptr<IconLoader> icons, TimeFn clock)
     : icons_(std::move(icons)), portfolio_(portfolio), clock_(std::move(clock)) {
   setSnapshot(std::move(snapshot));
 }

@@ -18,6 +18,7 @@ class SuomenPankkiSource : public Source {
   std::vector<std::string> datasetCodes() const override { return {kSuomenPankkiDataset}; }
   std::string description() const override { return "Bank of Finland: the daily Euribor rates, 1 week to 12 months (no key)"; }
   void load(Store &, Http &, SourceListener &) override;
+  Timeliness timeliness() const override { return Timeliness::Daily; }  // one price a day
   std::chrono::milliseconds refreshInterval() const override { return refresh_; }
 
   // One report into the store. False, with `error` set, when it holds no rates. What was skipped (a rate it does not know, a day

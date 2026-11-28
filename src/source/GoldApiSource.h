@@ -37,6 +37,7 @@ class GoldApiSource : public Source {
   std::vector<std::string> datasetCodes() const override { return {kGoldApiDataset}; }
   std::string description() const override { return "gold-api.com: spot prices of gold, silver, platinum, palladium, copper and two coins, in euros and dollars (no key)"; }
   void load(Store &, Http &, SourceListener &) override;
+  Timeliness timeliness() const override { return Timeliness::Realtime; }  // the price is the API's of the moment (its `updatedAt` says when)
   std::chrono::milliseconds refreshInterval() const override { return refresh_; }
 
   struct Symbol {

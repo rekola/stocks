@@ -19,6 +19,7 @@ class EcbSource : public Source {
   std::vector<std::string> datasetCodes() const override { return {kEcbDataset}; }
   std::string description() const override { return "European Central Bank: the euro short-term rate (€STR) and its compounded index (no key)"; }
   void load(Store &, Http &, SourceListener &) override;
+  Timeliness timeliness() const override { return Timeliness::Daily; }  // one price a day
   std::chrono::milliseconds refreshInterval() const override { return refresh_; }
 
   // One SDMX answer (the structure-specific XML) into the store. False, with `error` set, when it holds none of the series wanted.

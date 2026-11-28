@@ -35,6 +35,7 @@ class KarSource : public Source {
   std::vector<std::string> datasetCodes() const override { return {kKarDataset}; }
   std::string description() const override { return "daily prices of gold, silver, platinum and palladium in dollars (no key)"; }
   void load(Store &, Http &, SourceListener &) override;
+  Timeliness timeliness() const override { return Timeliness::Daily; }  // one price a day
   std::chrono::milliseconds refreshInterval() const override { return refresh_; }
 
   // One metal on one day, as the price of a troy ounce in dollars.

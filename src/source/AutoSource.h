@@ -23,6 +23,7 @@ class AutoSource : public Source {
     return primary_->name() + ", and " + fallback_->name() + " if " + primary_->name() + " gives nothing";
   }
   void load(Store &, Http &, SourceListener &) override;
+  Timeliness timeliness() const override { return chosen()->timeliness(); }
   std::chrono::milliseconds refreshInterval() const override { return chosen()->refreshInterval(); }
   bool loadDetails(Store & store, Http & http, SourceListener & listener) override {
     return decided_ && chosen()->loadDetails(store, http, listener);
