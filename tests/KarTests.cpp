@@ -8,8 +8,7 @@
 
 namespace {
 
-// The price page's answer, made up: gold on 2026-11-25 and 2026-11-26 in dollars and in euros (the dollar's price converted: not carried), rhodium (a
-// metal that is not carried) and an unknown code. The numbers are the real ones of those days.
+// The price page's answer, made up: gold on 2026-11-25 and 2026-11-26 in dollars and in euros (the dollar's price converted: not carried), rhodium (on no market) and an unknown code. The numbers are the real ones of those days.
 const char * kAnswer = R"([
  {"Code":"AU","RateType":"P","RIC":"XAUFIXPM=","Prices":[
   {"Currency":"EUR","TradeTime":"2026-11-25T15:00:00","Bid":1.0937,"Ask":1.0939,"BidGram":101.879200330146,"AskGram":101.897830521301},
@@ -60,8 +59,8 @@ TEST(kar_reads_the_dollar_prices_per_ounce_and_leaves_the_converted_currencies_o
   KarSource::Parsed parsed;
   std::string error;
   CHECK(KarSource::parse(kAnswer, parsed, error));
-  // the euro rows, rhodium and the unknown code are not carried, and are not rows that failed
-  CHECK(parsed.rows.size() == 3 && parsed.skipped == 0);
+  // the euro rows and the unknown code are not carried, and are not rows that failed
+  CHECK(parsed.rows.size() == 4 && parsed.skipped == 0);
   CHECK(parsed.rows[1].metal == "AU" && parsed.rows[1].time == kNov26);
   CHECK_NEAR(parsed.rows[1].price, 3578.9, 1e-9);
   CHECK(parsed.rows[2].metal == "AG" && parsed.rows[2].price == 41.54);
@@ -106,7 +105,7 @@ TEST(kar_writes_the_daily_bars_and_the_last_price_of_each_metal_in_dollars_on_th
   CHECK(gold.has_value() && silver.has_value());
   if (!gold || !silver) return;
   const auto snapshot = l.store->snapshot();
-  CHECK(snapshot->quoteRowsSince(0).size() == 2);  // gold and silver in dollars: no euros, no rhodium
+  CHECK(snapshot->quoteRowsSince(0).size() == 3);  // gold, silver and rhodium in dollars: no euros
   const auto listing = snapshot->listing(*gold);
   CHECK(listing && listing->symbol == "XAU" && listing->type == "METAL");
   const auto bars = snapshot->queue(*gold, Resolution::Day);
@@ -120,6 +119,13 @@ TEST(kar_writes_the_daily_bars_and_the_last_price_of_each_metal_in_dollars_on_th
   CHECK(quote && quote->time == kNov26 && std::abs(quote->last - 3578.9) < 1e-9 && !isDefined(quote->bid) && !isDefined(quote->ask));
   const auto silverQuote = snapshot->quote(*silver);
   CHECK(silverQuote && silverQuote->last == 41.54);
+  // rhodium has no fix: it is on no market, and the others are on the London Bullion Market
+  const auto rhodium = l.edge(known_isin::kRhodium, kNoMarket);
+  CHECK(rhodium.has_value());
+  const auto rhodiumOnLbm = l.edge(known_isin::kRhodium), goldOnNoMarket = l.edge(known_isin::kGold, kNoMarket);
+  CHECK(!(rhodiumOnLbm && snapshot->quote(*rhodiumOnLbm)) && !(goldOnNoMarket && snapshot->quote(*goldOnNoMarket)));
+  const auto rhodiumQuote = rhodium ? snapshot->quote(*rhodium) : std::nullopt;
+  CHECK(rhodiumQuote && rhodiumQuote->last == 8900);
 }
 
 TEST(kar_says_what_went_wrong_and_writes_nothing_of_an_answer_that_is_not_one) {
