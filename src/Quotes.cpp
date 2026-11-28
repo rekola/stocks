@@ -15,12 +15,6 @@ std::string labelOf(const Snapshot & snapshot, MarketId id) {
   return marketCode(id);
 }
 
-// The price of a row is the last price of its quote; none: 0.
-double priceOf(const Snapshot & snapshot, const EdgeKey & key) {
-  const auto quote = snapshot.quote(key);
-  return quote && isDefined(quote->last) ? quote->last : 0;
-}
-
 // A currency is its code ("EUR" of EUR/USD); anything else what the market calls it.
 std::string baseOf(const Snapshot & snapshot, const EdgeKey & key) {
   // Two facts and no view of the instrument: this is read for every row, and to put them in order.
@@ -41,48 +35,19 @@ std::string quoteOf(const Snapshot & snapshot, const EdgeKey & key) {
   return snapshot.symbol(key.quote);
 }
 
-// The rows of a market in the order of their keys: an instrument's ISIN, then the quote, then the dataset. That order is stable
+// The rows of a market in the order of their keys: the instrument, then the quote. That order is stable
 // and costs nothing; a heading sorts by what a person looks for.
+// One edge for each group: the first member (the edges are sorted by market, base, quote and dataset, so the members of a group are together).
 void appendEdges(const Snapshot & snapshot, MarketId market, std::vector<EdgeKey> & out) {
-  for (const EdgeKey & key : snapshot.edges(market))
-    if (snapshot.listed(key)) out.push_back(key);  // no price and no daily queue: a book alone has no row
-}
-
-void appendRows(const Snapshot & snapshot, MarketId market, Period period, std::vector<QuoteRow> & rows) {
-  const std::string label = labelOf(snapshot, market);
-  std::vector<EdgeKey> keys;
-  appendEdges(snapshot, market, keys);
-  for (const EdgeKey & key : keys) {
-    PeriodView view = periodView(snapshot, key, period, true);
-    QuoteRow r;
-    r.key = key;
-    r.market = label;
-    r.base = baseOf(snapshot, key);
-    if (auto url = snapshot.attribute(key.base, predicate::iconUrl)) r.icon_url = asText(*url).value_or("");
-    r.name = nameOf(snapshot, key);
-    r.quote = quoteOf(snapshot, key);
-    r.dataset = snapshot.name(key.dataset);
-    r.history = std::move(view.closes);
-    r.price = priceOf(snapshot, key);
-    r.rate = view.rate;
-    r.change = snapshot.changes(key).pct[static_cast<size_t>(period)];
-    rows.push_back(std::move(r));
+  const size_t first = out.size();
+  for (const EdgeKey & key : snapshot.edges(market)) {
+    if (!snapshot.listed(key)) continue;  // no price and no daily queue: a book alone has no row
+    if (out.size() > first && groupOf(out.back()) == groupOf(key)) continue;
+    out.push_back(key);
   }
 }
 
 }  // namespace
-
-std::vector<QuoteRow> makeRows(const Snapshot & snapshot, MarketId market, Period period) {
-  std::vector<QuoteRow> rows;
-  appendRows(snapshot, market, period, rows);
-  return rows;
-}
-
-std::vector<QuoteRow> makeAllRows(const Snapshot & snapshot, Period period) {
-  std::vector<QuoteRow> rows;
-  for (MarketId m : snapshot.edgeMarkets()) appendRows(snapshot, m, period, rows);
-  return rows;
-}
 
 std::vector<EdgeKey> quoteEdges(const Snapshot &snapshot, MarketId market,
                                 KindSet kinds) {
@@ -199,6 +164,8 @@ std::optional<cellui::Color> Quotes::iconFallbackColor(int r, int c) const { ret
 
 void Quotes::reset(std::shared_ptr<const Snapshot> snapshot, std::vector<EdgeKey> keys) {
   keys_ = std::move(keys);
+  groups_.clear();
+  for (const EdgeKey & k : keys_) groups_.insert(groupOf(k));
   // `keys` are made from this snapshot; with none, the store's rows are read again when one comes (a market not found yet has none)
   rows_seen_ = keys_.empty() ? 0 : snapshot->quoteRowCount();
   setSnapshot(std::move(snapshot));
@@ -208,7 +175,7 @@ bool Quotes::addRows(std::shared_ptr<const Snapshot> snapshot, const Scope & sco
   bool added = false;
   if (scope.resolved()) {  // until it is, the rows stay unread: the market may be the one they are in
     for (const EdgeKey & key : snapshot->quoteRowsSince(rows_seen_))
-      if (scope.has(*snapshot, key)) {
+      if (scope.has(*snapshot, key) && groups_.insert(groupOf(key)).second) {  // an edge of a group that is a row is no new row
         keys_.push_back(key);
         added = true;
       }
@@ -221,7 +188,7 @@ bool Quotes::addRows(std::shared_ptr<const Snapshot> snapshot, const Scope & sco
 void Quotes::setSnapshot(std::shared_ptr<const Snapshot> snapshot) {
   snapshot_ = std::move(snapshot);
   marketLabels_.clear();
-  datasetNames_.clear();
+  mixes_.clear();
   traces_.clear();
   for (bool & b : built_) b = false;
 }
@@ -232,23 +199,42 @@ const std::string & Quotes::marketLabel(MarketId id) const {
   return it->second;
 }
 
-const std::string & Quotes::datasetName(DatasetId id) const {
-  auto it = datasetNames_.find(id.value);
-  if (it == datasetNames_.end()) {
-    it = datasetNames_.emplace(id.value, snapshot_->name(id)).first;
+const Mix & Quotes::mix(int r) const {
+  auto it = mixes_.find(r);
+  if (it == mixes_.end()) {
+    if (mixes_.size() > 65536) mixes_.clear();
+    it = mixes_.emplace(r, mixOf(*snapshot_, group(r), filter_)).first;
   }
   return it->second;
 }
 
-double Quotes::price(int r) const { return priceOf(*snapshot_, edge(r)); }
+std::vector<EdgeKey> Quotes::members(int r) const {
+  std::vector<EdgeKey> out;
+  for (const Member & m : mix(r).members)
+    if (m.state == MemberState::Used) out.push_back(m.edge);
+  return out;
+}
 
-// The edge's own number for the period (Summary.h): there from the first list a source gave, so a table sorts by it before any history is
-// loaded, and the bars keep it up to date.
-double Quotes::change(int r) const { return snapshot_->changes(edge(r)).pct[static_cast<size_t>(period_)]; }
+void Quotes::setFilter(DatasetFilter filter) {
+  filter_ = std::move(filter);
+  mixes_.clear();
+  traces_.clear();
+  for (bool & b : built_) b = false;
+}
+
+// The price of a row is the datasets' together; none: 0.
+double Quotes::price(int r) const {
+  const double p = mix(r).price;
+  return isDefined(p) ? p : 0;
+}
+
+// The members' own numbers for the period (Summary.h) made one: there from the first list a source gave, so a table sorts by it before any
+// history is loaded, and the bars keep it up to date.
+double Quotes::change(int r) const { return groupChange(*snapshot_, mix(r), period_); }
 
 // The highest and the lowest price of the period (Summary.h `Ranges`), kept like the change.
-double Quotes::high(int r) const { return snapshot_->ranges(edge(r)).high[static_cast<size_t>(period_)]; }
-double Quotes::low(int r) const { return snapshot_->ranges(edge(r)).low[static_cast<size_t>(period_)]; }
+double Quotes::high(int r) const { return groupRange(*snapshot_, mix(r), period_, true); }
+double Quotes::low(int r) const { return groupRange(*snapshot_, mix(r), period_, false); }
 
 void Quotes::setPeriod(Period period) {
   period_ = period;
@@ -274,7 +260,6 @@ std::string Quotes::text(int r, int c) const {
     case QUOTE: return quoteOf(*snapshot_, edge(r));
     case NAME: return nameOf(*snapshot_, edge(r));
     case MARKET: return marketLabel(edge(r).market);
-    case DATASET: return datasetName(edge(r).dataset);
     case PRICE: return priceText(r, price(r));
     case HIGH:
     case LOW: {
@@ -300,7 +285,7 @@ const PeriodView & Quotes::traceOf(int r) const {
   auto it = traces_.find(r);
   if (it == traces_.end()) {
     if (traces_.size() > 1024) traces_.clear();  // far more than a screen draws at once
-    it = traces_.emplace(r, periodView(*snapshot_, edge(r), period_, true)).first;
+    it = traces_.emplace(r, groupPeriodView(*snapshot_, group(r), period_, true, filter_, &mix(r))).first;
   }
   return it->second;
 }

@@ -693,10 +693,13 @@ TEST(after_a_restart_every_edge_shows_its_price_bid_and_ask_and_a_portfolio_is_v
   // The change the bars gave before the restart is kept with the edge: the table sorts by it with no queue read.
   CHECK(isDefined(quarterBefore) && s->changes(nokia).pct[static_cast<size_t>(Period::Quarter)] == quarterBefore);
   // The table's rows are the same: every edge, with its price and its name, and no trace until the queue is read.
-  const std::vector<QuoteRow> rows = makeAllRows(*s, Period::Quarter);
-  CHECK(rows.size() == 3);
-  for (const QuoteRow & row : rows)
-    if (row.key == nokia) CHECK(row.price == 5.5 && row.name == "Nokia Oyj" && row.history.empty() && row.change == quarterBefore);
+  Quotes rows(s, allQuoteEdges(*s));
+  rows.setPeriod(Period::Quarter);
+  CHECK(rows.rowCount() == 3);
+  for (int r = 0; r < rows.rowCount(); r++)
+    if (groupOf(rows.edge(r)) == groupOf(nokia))
+      CHECK(rows.number(r, Quotes::PRICE) == 5.5 && rows.text(r, Quotes::NAME) == "Nokia Oyj" && rows.trace(r, Quotes::HISTORY).empty() &&
+            rows.number(r, Quotes::CHANGE) == quarterBefore);
 }
 
 TEST(the_info_of_an_edge_shows_its_summary_and_where_each_queue_is) {

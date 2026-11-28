@@ -253,8 +253,8 @@ void Browser::trade(portfolio::Side side) {
     label = snapshot->symbol(edge);
     if (label.empty()) label = snapshot->name(NodeRef(edge.base));
     buyable = portfolio::tradable(*snapshot, edge);
-    const auto last = snapshot->quote(edge);
-    if (last && isDefined(last->last)) offered = realText(last->last);  // the last price
+    const double last = quotes->mix(row).price;
+    if (isDefined(last)) offered = realText(last);  // the last price: the datasets' together
   } else {
     const portfolio::PositionValue & v = positions->row(row);
     instrument = v.position.instrument;
