@@ -144,7 +144,7 @@ An item is identified by its dataset and the dataset's own id: two datasets with
 ## Data sources
 
 Each source runs on a thread of its own. With no `--source`, these run: `auto`, `spfb`, `ecb`, `goldprice`,
-`gold-api`, `physical`, `sifter` and a `funds:NAME` for every schema in `data/funds`. `--source` chooses instead: one
+`gold-api`, `kar`, `physical`, `sifter` and a `funds:NAME` for every schema in `data/funds`. `--source` chooses instead: one
 name, or several separated by commas.
 
 | source | what it gives |
@@ -154,6 +154,7 @@ name, or several separated by commas.
 | `ecb` | the euro short-term rate (€STR) from the ECB |
 | `goldprice` | [spot prices](#spot-prices-of-metals) of gold, silver and copper |
 | `gold-api` | [spot prices](#spot-prices-of-metals) of metals and two coins |
+| `kar` | daily prices of gold, silver, platinum and palladium in USD, EUR, NOK, SEK and DKK, with the whole history from 2019 and the bid and ask of the converted currencies, no key |
 | `physical` | estimated prices of [physical metals](#physical-metals) |
 | `sifter` | NAV history of the Sifter Fund's PA, PB and PI share classes, no key |
 | `funds:NAME` | a fund company described by `data/funds/NAME.json` (shown under All) |
@@ -203,6 +204,11 @@ what reads a spot price picks one (see [Physical metals](#physical-metals)).
   bars, which the API has none of: they are made of the daily bars the store keeps, so the history grows with every load
   (load at least once a month, or a gap is left), and a longer history from another source or a paid plan joins it. Its prices
   are 15 minutes late.
+- **`kar`** (no key) asks for one request of the whole history of the daily prices of gold, silver, platinum and palladium on the
+  London Bullion Market, in USD, EUR, NOK, SEK and DKK, as one daily bar each per troy ounce. The answer has one price, the fix in
+  dollars; in the other currencies it is converted with an exchange rate's two sides, which are the bid and the ask of the last
+  day (a few thousandths of a per cent apart, the cost of converting and not the metal's own spread). In dollars there is one price
+  and no bid or ask. The history of bid and ask is not kept.
 - **`gold-api`** ([gold-api.com](https://gold-api.com), no key) lists its symbols (gold, silver, platinum, palladium,
   copper, Bitcoin and Ethereum) and asks the price of each in euros and dollars. The metals are in the Commodities
   preset and the coins in Currencies, beside the currency pairs (on a terminal without pictures their icon is ₿ or ⟠); all are in All. Its prices
