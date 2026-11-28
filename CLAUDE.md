@@ -12,6 +12,17 @@ compatibility, no migrations of `facts.sqlite` or any other kept data (a file of
 another schema starts over), and no compatibility shims or fallbacks for old
 data or keys. Change the format and bump the schema version.
 
+**One exception: the portfolios.** What the user has typed in cannot be
+fetched again, and the author's own portfolio is already in use. When the schema
+of the portfolio file (`portfolios.sqlite`: the portfolios, their transactions
+and ledgers) changes, the change comes with a migration that carries the existing
+file over to the new schema, a test of it on a file of the old one, and a bumped
+schema version. A file that cannot be migrated is never discarded or overwritten:
+it is left as it is and the program says so. The watchlists and the other lists
+kept beside the portfolios are easy to rebuild and may start over when a change
+makes them hard to carry; the portfolios may not. Everything else, what a source
+writes and the caches, still starts over.
+
 ## Providers
 
 One adapter per provider: only that adapter knows its endpoints, headers and formats (what it asks for, how it asks, how an answer
