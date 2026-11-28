@@ -409,7 +409,7 @@ TEST(the_funds_preset_shows_the_funds_of_every_market_and_nothing_else_and_follo
   f.app->widgets().postToRoot(StoreChanged{});
   CHECK(t.model()->rowCount() == 2);
   f.app->execute("show-all");
-  CHECK(t.model()->rowCount() == 4);
+  CHECK(t.model()->rowCount() == 3);  // Nokia in euro on two markets is one row
 }
 
 TEST(the_table_follows_the_store_when_told_it_changed_and_keeps_the_sort_and_the_selection) {
@@ -462,7 +462,7 @@ TEST(without_a_sort_the_rows_stay_where_they_are_and_a_new_row_goes_last) {
   CHECK(t.model()->text(t.rowAt(1), Quotes::BASE) == "AUD");
 }
 
-TEST(a_new_row_in_another_market_is_not_shown_and_one_in_the_shown_market_goes_last) {
+TEST(a_new_row_goes_last_whatever_market_it_is_on_and_a_new_market_of_a_row_shown_is_no_new_row) {
   Fixture f(false);
   InstrumentId eur = f.store->addInstrument("EUR", "Euro", InstrumentKind::Currency);
   InstrumentId usd = f.store->addInstrument("USD", "US dollar", InstrumentKind::Currency);
@@ -478,15 +478,37 @@ TEST(a_new_row_in_another_market_is_not_shown_and_one_in_the_shown_market_goes_l
   Table & t = f.browser->table();
   CHECK(t.model()->rowCount() == 1);
 
-  f.store->appendCandles(gbpusd, Resolution::Day, bars);  // another market: nothing to show
+  f.store->appendCandles({eur, usd, other, a}, Resolution::Day, bars);  // the same pair on another market: one row, no new
   f.store->appendCandles(eurusd, Resolution::Day, {{2000, 1, 1, 1, 1.2, 1}});  // a new bar for a row listed: no new row
   f.app->widgets().postToRoot(StoreChanged{});
   CHECK(t.model()->rowCount() == 1);
 
-  f.store->appendCandles(audusd, Resolution::Day, bars);
+  f.store->appendCandles(gbpusd, Resolution::Day, bars);  // another pair, on another market: shown, last
   f.app->widgets().postToRoot(StoreChanged{});
   CHECK(t.model()->rowCount() == 2);
-  CHECK(t.model()->text(t.rowAt(0), Quotes::BASE) == "EUR" && t.model()->text(t.rowAt(1), Quotes::BASE) == "AUD");
+  f.store->appendCandles(audusd, Resolution::Day, bars);
+  f.app->widgets().postToRoot(StoreChanged{});
+  CHECK(t.model()->rowCount() == 3);
+  CHECK(t.model()->text(t.rowAt(0), Quotes::BASE) == "EUR" && t.model()->text(t.rowAt(1), Quotes::BASE) == "GBP" && t.model()->text(t.rowAt(2), Quotes::BASE) == "AUD");
+}
+
+TEST(a_preset_of_one_market_shows_what_that_market_says_and_another_preset_says_what_all_do) {
+  Fixture f(false);
+  InstrumentId eur = f.store->addInstrument("EUR", "Euro", InstrumentKind::Currency);
+  InstrumentId nokia = f.store->addInstrument("", "Nokia Oyj", InstrumentKind::Company, "FI0009000681");
+  MarketId hel = f.store->addMarket("XHEL", "Nasdaq Helsinki"), sto = f.store->addMarket("XSTO", "Nasdaq Stockholm");
+  DatasetId a = f.store->addDataset("providera");
+  // The same share in euro on two markets, which say 4 and 6 at the same time.
+  for (const auto & [market, close] : {std::pair{hel, 4.0}, std::pair{sto, 6.0}}) {
+    f.store->appendCandles({nokia, eur, market, a}, Resolution::Day, {{0, close, close, close, close, 1}});
+    f.store->setQuote({nokia, eur, market, a}, Quote{close, kUndefined, kUndefined, 1'700'000'000});
+  }
+  f.app->execute("show-all");
+  auto quotes = std::dynamic_pointer_cast<Quotes>(f.browser->table().model());
+  CHECK(quotes->rowCount() == 1 && quotes->text(0, Quotes::PRICE) == "5.00" && quotes->mix(0).used == 2);  // together
+  f.app->execute("show-nasdaq-helsinki");
+  quotes = std::dynamic_pointer_cast<Quotes>(f.browser->table().model());
+  CHECK(quotes->rowCount() == 1 && quotes->text(0, Quotes::PRICE) == "4.00" && quotes->mix(0).used == 1);  // Helsinki alone
 }
 
 TEST(a_row_shows_what_the_dataset_calls_the_listing_so_the_rows_of_one_base_are_told_apart) {
@@ -695,27 +717,19 @@ TEST(a_sort_still_tells_the_history_loader_the_edges_where_the_day_is_asked_agai
   CHECK(http.urls.size() == requested);
 }
 
-TEST(the_all_preset_shows_every_market_and_the_market_column_tells_the_rows_apart) {
+TEST(the_all_preset_shows_a_row_for_each_instrument_in_a_unit_and_has_no_market_column) {
   Fixture f;
   f.app->execute("show-all");
   Table & t = f.browser->table();
   auto snapshot = f.store->snapshot();
   CHECK(static_cast<size_t>(t.model()->rowCount()) == allQuoteEdges(*snapshot).size());
   CHECK(t.model()->rowCount() > 100);
-  std::set<std::string> markets;
-  for (int r = 0; r < t.model()->rowCount(); r++) markets.insert(t.model()->text(r, Quotes::MARKET));
-  CHECK(markets.count("No market") && markets.count("Nasdaq Helsinki") &&
-        markets.count("Nasdaq Stockholm")); // the made-up data's markets
-
-  // A market with no name said is told by its code.
-  Fixture g(false);
-  InstrumentId eur = g.store->addInstrument("EUR", "Euro", InstrumentKind::Currency);
-  InstrumentId usd = g.store->addInstrument("USD", "US dollar", InstrumentKind::Currency);
-  MarketId unnamed = g.store->addMarket("XNYS");
-  DatasetId a = g.store->addDataset(kNordnetDataset);
-  g.store->appendCandles({eur, usd, unnamed, a}, Resolution::Day, {{0, 1, 1, 1, 1.0, 1}});
-  g.app->execute("show-all");
-  CHECK(g.browser->table().model()->text(0, Quotes::MARKET) == "XNYS");
+  // No two rows are of one instrument in one unit, whatever markets list it.
+  const auto quotes = std::dynamic_pointer_cast<Quotes>(t.model());
+  std::set<std::pair<uint64_t, uint64_t>> pairs;
+  for (int r = 0; r < quotes->rowCount(); r++) pairs.insert({quotes->edge(r).base.value, quotes->edge(r).quote.value});
+  CHECK(pairs.size() == static_cast<size_t>(quotes->rowCount()));
+  for (const cellui::TableColumn & c : t.columns()) CHECK(c.title != "Market");
 }
 
 TEST(a_currency_pair_shows_its_first_currency_as_the_base_and_not_the_listing_symbol) {
@@ -1379,7 +1393,7 @@ TEST(at_80_columns_the_high_and_low_are_hidden_and_the_rest_is_there_with_the_me
   periodWorld(*f.store);
   f.app->execute("show-currencies");
   const std::string screen = f.text();
-  CHECK(showsColumns(screen, {"Base", "Quote", "Name", "Market", "Price", "Change 3m", "3 months"}));
+  CHECK(showsColumns(screen, {"Base", "Quote", "Name", "Price", "Change 3m", "3 months"}));
   CHECK(screen.find("3m high") == std::string::npos && screen.find("3m low") == std::string::npos);
   CHECK(f.browser->table().model()->text(0, Quotes::HISTORY - 2).empty());  // the table has no columns for them: the trace is its column 7, which says no text
   CHECK(f.browser->table().sortColumn() == -1);
@@ -1388,12 +1402,12 @@ TEST(at_80_columns_the_high_and_low_are_hidden_and_the_rest_is_there_with_the_me
   CHECK(f.browser->table().model()->text(f.browser->table().rowAt(0), Quotes::CHANGE) == "+100.00%");
 }
 
-TEST(at_110_columns_every_column_is_there_and_at_140_the_market_and_the_trace_are_wider) {
+TEST(at_110_columns_every_column_is_there_and_at_140_the_trace_is_wider) {
   for (int cols : {110, 140}) {
     Fixture f(false, cols);
     periodWorld(*f.store);
     f.app->execute("show-currencies");
-    CHECK(showsColumns(f.text(), {"Base", "Quote", "Name", "Market", "Price", "Change 3m", "3m high", "3m low", "3 months"}));
+    CHECK(showsColumns(f.text(), {"Base", "Quote", "Name", "Price", "Change 3m", "3m high", "3m low", "3 months"}));
     CHECK(!f.browser->table().model()->text(f.browser->table().rowAt(0), Quotes::HIGH).empty());
   }
 }
@@ -1752,7 +1766,7 @@ size_t countOf(const std::string & text, const std::string & needle) {
 double heldOf(Fixture & f, PortfolioId p, const EdgeKey & e) {
   const auto held = portfolio::holdings(*f.store->snapshot(), p);
   for (const portfolio::Position & x : held.positions)
-    if (x.instrument == e.base && x.market == e.market) return x.quantity;
+    if (x.instrument == e.base && x.quote == e.quote) return x.quantity;
   return 0;
 }
 
@@ -1837,7 +1851,7 @@ TEST(the_transactions_of_a_position_are_its_own_in_the_order_they_are_applied_wi
   Fixture f(false);
   Holdings h = addHoldings(*f.store);
   addNokiaSells(*f.store, h);
-  const TransactionTable table = buildTransactionTable(*f.store->snapshot(), h.retirement, h.nokia.base, h.nokia.market, h.nokia.quote);
+  const TransactionTable table = buildTransactionTable(*f.store->snapshot(), h.retirement, h.nokia.base, h.nokia.quote);
   CHECK(table.currency == "EUR");
   CHECK(table.rows.size() == 3);  // not Apple's, nor Trading's
   using T = TransactionTable;
@@ -1847,7 +1861,7 @@ TEST(the_transactions_of_a_position_are_its_own_in_the_order_they_are_applied_wi
   CHECK(cells(2)[T::HELD] == "-" && cells(2)[T::NOTE] == "Left out: it sells more than is held" && table.rows[2].refused == "it sells more than is held");
   CHECK(table.rows[0].refused.empty() && table.rows[1].refused.empty());
   // Nothing of a portfolio that holds none.
-  CHECK(buildTransactionTable(*f.store->snapshot(), h.trading, h.apple.base, h.apple.market, h.apple.quote).rows.empty());
+  CHECK(buildTransactionTable(*f.store->snapshot(), h.trading, h.apple.base, h.apple.quote).rows.empty());
 }
 
 TEST(the_menu_of_a_position_shows_its_transactions_as_a_table_and_markets_rows_do_not_offer_it) {
@@ -1872,7 +1886,7 @@ TEST(the_menu_of_a_position_shows_its_transactions_as_a_table_and_markets_rows_d
   const bool closed = f.inModal([&] { f.app->execute("row-menu"); },
                                 {[&] { f.press(Key::Down); f.press(Key::Enter); }, [&] { shown = f.text(); }, [&] { f.press(Key::Escape); }});
   CHECK(closed);
-  CHECK(shown.find("Transactions: NOKIA on Nasdaq Helsinki in Retirement") != std::string::npos);
+  CHECK(shown.find("Transactions: NOKIA in Retirement") != std::string::npos);
   for (const char * text : {"Date", "Side", "Quantity", "Held", "Note", "half", "19.00", "Left out: it sells more than is held", "3 transactions, prices in EUR. Held 6"})
     CHECK(shown.find(text) != std::string::npos);
   CHECK(shown.find(dateText(kNow - 50)) < shown.find(dateText(kNow - 10)) && shown.find(dateText(kNow - 10)) < shown.find(dateText(kNow - 5)));
@@ -1911,7 +1925,7 @@ TEST(a_click_on_the_menu_button_and_buy_opens_the_form_for_that_row_and_not_the_
   const bool closed = f.inModal([&] { f.click(target_row, target_col); },
                                 {[&] { f.press(Key::Down); f.press(Key::Enter); }, [&] { shown = f.text(); }, [&] { f.press(Key::Escape); }});
   CHECK(closed);
-  CHECK(shown.find("Buy NOKIA on Nasdaq Helsinki") != std::string::npos);
+  CHECK(shown.find("Buy NOKIA") != std::string::npos);
   CHECK(shown.find("2026-12-01") != std::string::npos && shown.find("Retirement") != std::string::npos);
   CHECK(f.browser->table().selectedRow() == rowOfBase(f, "AFUND"));  // the click did not select its row
   CHECK(f.text().find("Nothing bought") != std::string::npos);
@@ -1971,7 +1985,7 @@ TEST(buying_writes_a_transaction_the_status_line_says_so_and_undo_and_redo_take_
   portfolio::Transaction bought;
   for (const auto & t : kept)
     if (t.quantity == 10 && t.price == 5) bought = t;
-  CHECK(bought.id != 0 && bought.fee == 1 && bought.day == kNow && bought.side == portfolio::Side::Buy && bought.quote == h.eur && bought.market == h.hel);
+  CHECK(bought.id != 0 && bought.fee == 1 && bought.day == kNow && bought.side == portfolio::Side::Buy && bought.quote == h.eur && !bought.market.valid());
   CHECK(f.text().find("Bought 10 NOKIA at 5 EUR in Retirement") != std::string::npos);
   CHECK(f.browser->undoDepth() == 1);
   f.app->execute("undo");
@@ -2431,7 +2445,7 @@ std::pair<EdgeKey, EdgeKey> addNokiaTwice(Store & store) {
 }
 }  // namespace
 
-TEST(a_row_is_put_on_the_watchlist_from_its_menu_and_it_is_the_group_whichever_datasets_say_it_and_not_the_instrument_on_its_other_market) {
+TEST(a_row_is_put_on_the_watchlist_from_its_menu_and_it_is_the_group_whichever_markets_and_datasets_say_it) {
   Fixture f(false);
   const auto [one, two] = addNokiaTwice(*f.store);
   const MarketId sto = f.store->addMarket("XSTO", "Nasdaq Stockholm");
@@ -2447,7 +2461,7 @@ TEST(a_row_is_put_on_the_watchlist_from_its_menu_and_it_is_the_group_whichever_d
   f.inModal([&] { f.app->execute("row-menu"); },
             {[&] { menu = f.text(); }, [&] { f.press(Key::Down); f.press(Key::Down); f.press(Key::Down); f.press(Key::Enter); }, [&] { f.press(Key::Escape); }});
   CHECK(menu.find("Put on the Watchlist") != std::string::npos);
-  CHECK(f.store->snapshot()->onList("watchlist", groupOf(one)) && !f.store->snapshot()->onList("watchlist", groupOf(other)));
+  CHECK(f.store->snapshot()->onList("watchlist", groupOf(one)) && f.store->snapshot()->onList("watchlist", groupOf(other)));  // the same group
   CHECK(f.text().find("Put NOKIA on the Watchlist") != std::string::npos && f.browser->undoDepth() == 1);
   // The menu now offers the way back, and the preset shows that row alone.
   table.select(0);

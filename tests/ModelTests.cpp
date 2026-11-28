@@ -23,6 +23,9 @@ struct World {
   EdgeKey key(MarketId m, DatasetId d) const { return {nokia, eur, m, d}; }
 };
 
+// Nokia in euro is priced on Helsinki, so it can be bought (a position needs something that a market trades).
+void listNokia(World & w) { w.store->appendCandles(w.key(w.hel, w.a), Resolution::Day, {{1, 1, 1, 1, 1, 1}}); }
+
 Candle bar(Timestamp t, double close) { return {t, close, close, close, close, 1}; }
 
 }  // namespace
@@ -645,24 +648,35 @@ PortfolioId somePortfolio(uint64_t identity = 1) { return PortfolioId{portfolioK
 
 }  // namespace
 
-TEST(a_transaction_on_a_market_that_prices_and_does_not_sell_is_refused_and_says_so) {
+// Something that is priced on no market and so cannot be held: an index.
+static portfolio::Transaction indexTrade(World & w, uint64_t id) {
+  const InstrumentId index = w.store->addInstrument("OMXH25", "OMX Helsinki 25", InstrumentKind::Index);
+  w.store->appendCandles({index, w.eur, w.store->addMarket(kNoMarket, "No market"), w.a}, Resolution::Day, {{1, 1, 1, 1, 1, 1}});
+  portfolio::Transaction t = tradeOf(w, id, w.hel);
+  t.instrument = index;
+  return t;
+}
+
+TEST(a_transaction_in_what_is_priced_and_traded_nowhere_is_refused_and_says_so) {
   World w;
+  listNokia(w);
   const PortfolioId p = somePortfolio();
   const LedgerKey ledger = ledgerOf(w, p);
-  const MarketId none = w.store->addMarket(kNoMarket, "No market"), off = w.store->addMarket(kOffExchange, "Off exchange");
+  const MarketId off = w.store->addMarket(kOffExchange, "Off exchange");
   std::string why;
+  const portfolio::Transaction bad = indexTrade(w, 1);
   const uint64_t start = w.snap()->version();
   try {
-    w.store->appendTransactions(ledger, {tradeOf(w, 1, none)});
+    w.store->appendTransactions(ledger, {bad});
   } catch (const std::invalid_argument & e) {
     why = e.what();
   }
-  CHECK(why.find("XXXX") != std::string::npos && why.find("refused") != std::string::npos);
+  CHECK(why.find("cannot be held") != std::string::npos);
   CHECK(w.snap()->transactions(ledger).empty() && w.snap()->portfolios().empty() && w.snap()->version() == start);  // nothing written
   // One bad one among good ones writes none of them.
   bool thrown = false;
   try {
-    w.store->appendTransactions(ledger, {tradeOf(w, 2, w.hel), tradeOf(w, 3, none)});
+    w.store->appendTransactions(ledger, {tradeOf(w, 2, w.hel), indexTrade(w, 3)});
   } catch (const std::invalid_argument &) { thrown = true; }
   CHECK(thrown && w.snap()->transactions(ledger).empty());
   // A fund off exchange and a real market are kept.
@@ -681,6 +695,7 @@ TEST(a_transaction_on_a_market_that_prices_and_does_not_sell_is_refused_and_says
 
 TEST(a_portfolio_exists_when_something_is_said_of_it_and_a_name_alone_shows) {
   World w;
+  listNokia(w);
   const PortfolioId p = somePortfolio();
   CHECK(w.snap()->portfolios().empty() && !w.snap()->known(NodeRef(p)));  // a key with nothing said of it is not shown
   w.store->setAttribute(NodeRef(p), {predicate::name, "Retirement"});
@@ -692,6 +707,7 @@ TEST(a_portfolio_exists_when_something_is_said_of_it_and_a_name_alone_shows) {
 
 TEST(positions_and_no_name_show_under_the_key_shortened_until_it_is_named) {
   World w;
+  listNokia(w);
   const PortfolioId p = somePortfolio(0xabcdef12345ull);
   w.store->appendTransactions(ledgerOf(w, p), {tradeOf(w, 1, w.hel)});
   CHECK(w.snap()->portfolios() == std::vector<PortfolioId>{p} && !w.snap()->known(NodeRef(p)));
@@ -704,6 +720,7 @@ TEST(positions_and_no_name_show_under_the_key_shortened_until_it_is_named) {
 
 TEST(a_delete_makes_a_portfolio_vanish_whatever_was_said_of_it) {
   World w;
+  listNokia(w);
   const PortfolioId p = somePortfolio(), other = somePortfolio(2);
   w.store->setAttributes(NodeRef(p), {{predicate::name, "Gone"}, {predicate::currency, NodeKey{w.eur.value}}});
   w.store->appendTransactions(ledgerOf(w, p), {tradeOf(w, 1, w.hel)});
@@ -735,6 +752,7 @@ TEST(a_delete_makes_a_portfolio_vanish_whatever_was_said_of_it) {
 
 TEST(several_portfolios_are_listed_by_name_and_each_has_its_own_transactions) {
   World w;
+  listNokia(w);
   const PortfolioId b = somePortfolio(1), a = somePortfolio(2), c = somePortfolio(3);
   w.store->setAttribute(NodeRef(b), {predicate::name, "Bonds"});
   w.store->setAttribute(NodeRef(a), {predicate::name, "Active"});
@@ -748,6 +766,7 @@ TEST(several_portfolios_are_listed_by_name_and_each_has_its_own_transactions) {
 
 TEST(a_transaction_is_replaced_by_its_id_and_taken_back_by_it) {
   World w;
+  listNokia(w);
   const PortfolioId p = somePortfolio();
   const LedgerKey ledger = ledgerOf(w, p);
   w.store->appendTransactions(ledger, {tradeOf(w, 1, w.hel, 10, 4)});
@@ -766,6 +785,7 @@ TEST(a_transaction_is_replaced_by_its_id_and_taken_back_by_it) {
 
 TEST(holdings_come_from_the_transactions_of_the_one_dataset_the_portfolio_names) {
   World w;
+  listNokia(w);
   const PortfolioId p = somePortfolio();
   const LedgerKey mine = ledgerOf(w, p), broker = ledgerOf(w, p, "broker");
   w.store->setAttribute(NodeRef(p), {predicate::name, "Both"});
@@ -789,14 +809,15 @@ TEST(holdings_come_from_the_transactions_of_the_one_dataset_the_portfolio_names)
 
 TEST(what_is_said_of_a_portfolio_is_one_version_in_a_batch_and_a_refused_transaction_applies_none_of_it) {
   World w;
+  listNokia(w);
   const PortfolioId p = somePortfolio();
-  const MarketId none = w.store->addMarket(kNoMarket);
+  const portfolio::Transaction bad = indexTrade(w, 1);
   const uint64_t before = w.snap()->version();
   bool thrown = false;
   try {
     w.store->batch([&](Batch & b) {
       b.setAttribute(NodeRef(p), {predicate::name, "Half"});
-      b.appendTransactions({p, b.addDataset("user")}, {tradeOf(w, 1, none)});
+      b.appendTransactions({p, b.addDataset("user")}, {bad});
     });
   } catch (const std::invalid_argument &) { thrown = true; }
   CHECK(thrown && w.snap()->version() == before && w.snap()->portfolios().empty());

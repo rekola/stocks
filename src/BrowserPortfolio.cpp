@@ -242,24 +242,21 @@ void Browser::trade(portfolio::Side side) {
     return;
   }
   InstrumentId instrument, quote;
-  MarketId market;
   std::string label, offered;
   bool buyable = true;
   if (quotes) {
     const EdgeKey & edge = quotes->edge(row);
     instrument = edge.base;
     quote = edge.quote;
-    market = edge.market;
     label = snapshot->symbol(edge);
     if (label.empty()) label = snapshot->name(NodeRef(edge.base));
-    buyable = portfolio::tradable(*snapshot, edge);
+    buyable = portfolio::tradable(*snapshot, quotes->group(row));
     const double last = quotes->mix(row).price;
     if (isDefined(last)) offered = realText(last);  // the last price: the datasets' together
   } else {
     const portfolio::PositionValue & v = positions->row(row);
     instrument = v.position.instrument;
     quote = v.position.quote;
-    market = v.position.market;
     label = positions->text(row, Positions::SYMBOL);
     if (label.empty()) label = snapshot->name(NodeRef(instrument));
     offered = realText(v.price ? v.price->close : v.position.average_cost);
@@ -308,7 +305,6 @@ void Browser::trade(portfolio::Side side) {
     x.day = *day;
     x.side = side;
     x.instrument = instrument;
-    x.market = market;
     x.quote = quote;
     x.quantity = *q;
     x.price = *p;
@@ -317,8 +313,7 @@ void Browser::trade(portfolio::Side side) {
     return std::make_pair(*who, x);
   };
 
-  const std::string market_name = snapshot->name(NodeRef(market));
-  FormModal form(app_.widgets(), app_.root(), app_.backend().eventLoop(), std::string(buying ? "Buy " : "Sell ") + label + (market_name.empty() ? "" : " on " + market_name),
+  FormModal form(app_.widgets(), app_.root(), app_.backend().eventLoop(), std::string(buying ? "Buy " : "Sell ") + label,
                  {portfolio_field, quantity, price, date, fee, note});
   // The live total: what it costs with the fee, or what it brings in less the fee.
   form.setSummary([=](const std::vector<std::string> & t) {
@@ -347,7 +342,7 @@ void Browser::trade(portfolio::Side side) {
       if (!refused) return {};
       double held = 0;
       for (const portfolio::Position & p : portfolio::holdings(*snapshot, made->first).positions)
-        if (p.instrument == instrument && p.market == market && p.quote == quote) held = p.quantity;
+        if (p.instrument == instrument && p.quote == quote) held = p.quantity;
       return std::string("Sells more than is held: you hold ") + (held > 0 ? realText(held) : std::string("none")) + " in " + snapshot->name(NodeRef(made->first));
     });
   }

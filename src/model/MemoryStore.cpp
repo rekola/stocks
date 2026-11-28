@@ -1148,13 +1148,11 @@ void requireLedger(const LedgerKey & k) {
     throw std::invalid_argument("a ledger needs a portfolio and a dataset");
 }
 
-// A transaction that can be kept: all of its parts, and a market that something is bought on.
+// A transaction that can be kept: all of its parts, of something that is bought somewhere (`portfolio::tradable`).
 void requireBuyable(const Snapshot & s, const LedgerKey & ledger, const portfolio::Transaction & t) {
-  if (t.id == 0 || !t.instrument.valid() || !t.market.valid() || !t.quote.valid())
-    throw std::invalid_argument("a transaction needs an id, an instrument, a market and a currency");
-  if (!portfolio::tradable(s, EdgeKey{t.instrument, t.quote, t.market, ledger.dataset}))
-    throw std::invalid_argument("a transaction on the market " + marketCode(t.market) +
-                                " is refused: what is priced there and not bought (an index, a spot price, a currency pair, a rate) cannot be held");
+  if (t.id == 0 || !t.instrument.valid() || !t.quote.valid()) throw std::invalid_argument("a transaction needs an id, an instrument and a currency");
+  if (!portfolio::tradable(s, GroupKey{t.instrument, t.quote}))
+    throw std::invalid_argument("what is priced and traded on no market (an index, a spot price, a currency pair, a rate) cannot be held");
 }
 
 // Where a transaction goes in a ledger kept by day and then id.
@@ -1302,8 +1300,8 @@ void Snapshot::removeTransactions(const LedgerKey & k, const std::vector<uint64_
 }
 
 namespace {
-bool whole(const GroupKey & k) { return k.base.valid() && k.quote.valid() && k.market.valid(); }
-StoredMember storedMember(const std::string & list, const GroupKey & k) { return {list, k.base.value, k.quote.value, k.market.value}; }
+bool whole(const GroupKey & k) { return k.base.valid() && k.quote.valid(); }
+StoredMember storedMember(const std::string & list, const GroupKey & k) { return {list, k.base.value, k.quote.value}; }
 }  // namespace
 
 std::vector<GroupKey> Snapshot::listMembers(const std::string & list) const { return sorted(lists_.find(list)); }
@@ -1315,7 +1313,7 @@ bool Snapshot::onList(const std::string & list, const GroupKey & k) const {
 void Snapshot::addToList(const std::string & list, const std::vector<GroupKey> & edges) {
   if (list.empty()) throw std::invalid_argument("a list needs a code");
   for (const GroupKey & k : edges)
-    if (!whole(k)) throw std::invalid_argument("a group on a list needs an instrument, a currency and a market");
+    if (!whole(k)) throw std::invalid_argument("a group on a list needs an instrument and a currency");
   const auto * old = lists_.find(list);
   immer::set<GroupKey> members = old ? *old : immer::set<GroupKey>{};
   bool changed = false;
@@ -1350,8 +1348,8 @@ void Snapshot::removeFromList(const std::string & list, const std::vector<GroupK
 
 void Snapshot::loadMembers(const std::vector<StoredMember> & stored) {
   for (const StoredMember & m : stored) {
-    const GroupKey k{MarketId{m.market}, InstrumentId{m.base}, InstrumentId{m.quote}};
-    if (m.list.empty() || !whole(k) || NodeKey{m.market}.kind() != NodeKind::Market) continue;
+    const GroupKey k{InstrumentId{m.base}, InstrumentId{m.quote}};
+    if (m.list.empty() || !whole(k)) continue;
     const auto * old = lists_.find(m.list);
     lists_ = lists_.set(m.list, (old ? *old : immer::set<GroupKey>{}).insert(k));
   }
@@ -1364,7 +1362,7 @@ void Snapshot::loadEvents(const std::vector<StoredEvent> & events) {
     if (portfolioKey.kind() != NodeKind::Portfolio || datasetKey.kind() != NodeKind::Dataset) continue;
     const LedgerKey key{PortfolioId{e.portfolio}, DatasetId{e.dataset}};
     auto t = portfolio::decodeTransaction(e.id, e.time, e.body);
-    if (!t || t->id == 0 || !t->instrument.valid() || !t->market.valid() || !t->quote.valid() || !portfolio::tradable(t->market)) continue;
+    if (!t || t->id == 0 || !t->instrument.valid() || !t->quote.valid()) continue;  // what the file has is kept, whatever market it names
     grouped[key].push_back(std::move(*t));
   }
   for (auto & [key, list] : grouped) {
@@ -1741,7 +1739,7 @@ class MemoryStore : public Store {
       for (const portfolio::Position & p : portfolio::holdings(snapshot, id).positions) {
         held.instruments.insert(p.instrument.value);
         held.currencies.insert(p.quote.value);
-        held.nodes.insert({p.instrument.value, p.quote.value, p.market.value});
+        held.nodes.insert({p.instrument.value, p.quote.value});
       }
     }
     return held;

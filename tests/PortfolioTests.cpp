@@ -75,7 +75,7 @@ TEST(buys_make_a_position_at_the_average_cost_fees_included) {
   const Derived d = derivePositions({buy(w, 1, kDay, 10, 4, 1), buy(w, 2, kDay + 1, 10, 6)});
   CHECK(d.refused.empty() && d.positions.size() == 1);
   const Position & p = d.positions[0];
-  CHECK(p.instrument == w.nokia && p.market == w.hel && p.quote == w.eur);
+  CHECK(p.instrument == w.nokia && p.quote == w.eur);
   CHECK(p.quantity == 20);
   CHECK_NEAR(p.average_cost, (10 * 4 + 1 + 10 * 6) / 20.0, 1e-12);
   CHECK_NEAR(p.cost(), 101, 1e-9);
@@ -123,7 +123,7 @@ TEST(a_transaction_that_makes_no_sense_is_refused) {
   World w;
   Transaction nothing = buy(w, 1, kDay, 0, 4), negative = buy(w, 2, kDay, 1, -1), fee = buy(w, 3, kDay, 1, 1, -1), nan = buy(w, 4, kDay, 1, kUndefined);
   Transaction nowhere = buy(w, 5, kDay, 1, 1);
-  nowhere.market = MarketId{};
+  nowhere.quote = InstrumentId{};
   const Derived d = derivePositions({nothing, negative, fee, nan, nowhere, buy(w, 6, kDay, 1, 1)});
   CHECK(d.refused.size() == 5 && d.positions.size() == 1 && d.positions[0].quantity == 1);
 }
@@ -177,31 +177,47 @@ TEST(a_rate_is_found_through_one_other_currency_but_not_through_a_unit) {
   CHECK(!rate(*w.snap(), w.eur, w.pct) && !rate(*w.snap(), w.eur, InstrumentId{}));  // a unit is no currency
 }
 
-TEST(of_two_edges_for_one_price_the_one_with_the_latest_bar_stands) {
+TEST(the_price_is_the_members_together_and_a_member_that_is_not_live_is_left_out) {
   World w;
-  w.price(w.nokia, w.eur, w.hel, 7, w.b, kDay + 1);  // a later bar, in another dataset
-  const auto price = latestPrice(*w.snap(), w.nokia, w.hel, w.eur);
-  CHECK(price && price->close == 7 && price->edge.dataset == w.b && price->day == kDay + 1);
-  // An older bar elsewhere does not take over, and a price in another currency or on another market is not this one.
+  w.price(w.nokia, w.eur, w.hel, 7, w.b, kDay + 1);  // a later bar, in another dataset: the first is no longer live
+  const auto price = latestPrice(*w.snap(), w.nokia, w.eur);
+  CHECK(price && price->close == 7 && price->edge.dataset == w.b && price->day == kDay + 1 && price->mix.used == 1);
+  // An older bar elsewhere does not take over, and a price in another currency is not this one.
   w.price(w.nokia, w.eur, w.hel, 1, w.b, kDay - 5);
-  CHECK(latestPrice(*w.snap(), w.nokia, w.hel, w.eur)->close == 7);
-  CHECK(!latestPrice(*w.snap(), w.nokia, w.hel, w.usd) && !latestPrice(*w.snap(), w.nokia, w.sto, w.eur));
-  // The same day in two datasets: the first by key.
+  CHECK(latestPrice(*w.snap(), w.nokia, w.eur)->close == 7);
+  CHECK(!latestPrice(*w.snap(), w.nokia, w.usd));
+  // The same day in two datasets: both count, and the first by key stands for them.
   World same;
   same.price(same.nokia, same.eur, same.hel, 6, same.b);
-  CHECK(latestPrice(*same.snap(), same.nokia, same.hel, same.eur)->edge.dataset == same.a);
+  const auto both = latestPrice(*same.snap(), same.nokia, same.eur);
+  CHECK(both && both->close == 5.5 && both->edge.dataset == same.a && both->mix.used == 2);
+}
+
+TEST(a_price_on_another_market_of_the_same_unit_is_a_member_of_the_same_price) {
+  World w;
+  w.price(w.nokia, w.eur, w.sto, 6, w.a);  // the same day, in euro, on Stockholm
+  const auto price = latestPrice(*w.snap(), w.nokia, w.eur);
+  CHECK(price && price->close == 5.5 && price->mix.used == 2 && price->mix.members.size() == 2);
+  CHECK(price->mix.members[0].edge.market != price->mix.members[1].edge.market);
 }
 
 TEST(only_what_a_venue_trades_or_a_company_prices_can_be_held) {
   World w;
   const auto s = w.snap();
-  CHECK(tradable(*s, EdgeKey{w.nokia, w.eur, w.hel, w.a}));           // a real venue
-  CHECK(tradable(*s, EdgeKey{w.fund, w.eur, w.off, w.a}));            // XOFF: a fund priced by its company
-  CHECK(!tradable(*s, EdgeKey{w.index, w.pct, w.none, w.a}));         // an index
-  CHECK(!tradable(*s, EdgeKey{w.eur, w.usd, w.none, w.a}));           // a currency pair
-  CHECK(!tradable(*s, EdgeKey{w.euribor, w.pct, w.none, w.a}));       // a rate
-  CHECK(!tradable(*s, EdgeKey{w.nokia, w.eur, MarketId{}, w.a}));     // no market at all
+  CHECK(tradable(*s, GroupKey{w.nokia, w.eur}));           // a real venue
+  CHECK(tradable(*s, GroupKey{w.fund, w.eur}));            // XOFF: a fund priced by its company
+  CHECK(!tradable(*s, GroupKey{w.index, w.pct}));          // an index
+  CHECK(!tradable(*s, GroupKey{w.eur, w.usd}));            // a currency pair that only has a price
+  CHECK(!tradable(*s, GroupKey{w.euribor, w.pct}));        // a rate
+  CHECK(!tradable(*s, GroupKey{w.volvo, w.eur}));          // nothing says it
   CHECK(tradable(w.hel) && tradable(w.off) && !tradable(w.none) && !tradable(MarketId{}));
+  // One member on a venue is enough, whatever else says its price: a spot price that is also fixed on a market is bought there, and a
+  // currency pair once a forex market lists it.
+  w.price(w.eur, w.usd, w.sto, 1.26, w.b);
+  CHECK(tradable(*w.snap(), GroupKey{w.eur, w.usd}));
+  // A share that a list priced on no market and another dataset on a venue is held too.
+  w.price(w.apple, w.usd, w.none, 201, w.b);
+  CHECK(tradable(*w.snap(), GroupKey{w.apple, w.usd}));
 }
 
 TEST(minted_ids_are_not_zero_and_fit_a_key) {

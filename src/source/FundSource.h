@@ -136,6 +136,7 @@ class FundSource : public Source {
     return schema_.name + ": funds and their NAV history (no key)";
   }
   void load(Store &, Http &, SourceListener &) override;
+  Timeliness timeliness() const override { return Timeliness::Daily; }  // one price a day
   std::chrono::milliseconds refreshInterval() const override { return schema_.refresh; }
 
   using Entry = FundEntry;

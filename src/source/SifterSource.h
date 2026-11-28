@@ -19,6 +19,7 @@ class SifterSource : public Source {
   std::vector<std::string> datasetCodes() const override { return {kSifterDataset}; }
   std::string description() const override { return "Sifter Fund Global: the NAV history of its PA, PB and PI share classes (no key)"; }
   void load(Store &, Http &, SourceListener &) override;
+  Timeliness timeliness() const override { return Timeliness::Daily; }  // one price a day
   std::chrono::milliseconds refreshInterval() const override { return refresh_; }
 
   // The answer into the store. False, with `error` set, when it is not a list of days. A row that cannot be read (no date, or a value that

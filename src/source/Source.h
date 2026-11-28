@@ -1,5 +1,6 @@
 #pragma once
 
+#include "model/Group.h"
 #include "model/Store.h"
 #include "history/HistoryProvider.h"
 #include "source/Http.h"
@@ -37,6 +38,10 @@ class Source {
   // would be putting its data under another's). Empty for a source that writes none, such as a test's.
   virtual std::vector<std::string> datasetCodes() const { return {}; }
   virtual void load(Store &, Http &, SourceListener &) = 0;
+  // How timely what this source writes is (Group.h): the runner says it as a fact of each of the datasets above, and a row follows the fastest kind it has a
+  // price of. A realtime source is loaded often, and together with the other realtime sources, on a grid of the clock (SourceRunner), so that their prices are
+  // of the same moment; its own `refreshInterval` is not asked. Delayed unless the source says otherwise.
+  virtual Timeliness timeliness() const { return Timeliness::Delayed; }
   // How often to load again, measured from when the last load ended; zero (the default) is once.
   virtual std::chrono::milliseconds refreshInterval() const { return std::chrono::milliseconds(0); }
   // What loads the history of this source's edges when they are wanted, if it does not load it with the rest (null: it does).

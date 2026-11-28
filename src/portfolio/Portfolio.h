@@ -1,5 +1,6 @@
 #pragma once
 
+#include "model/Group.h"
 #include "model/Store.h"
 #include "portfolio/Transaction.h"
 
@@ -24,15 +25,14 @@ struct QuantityPoint {
   double quantity = 0;
 };
 
-// What is held of an instrument on a market in a currency: the position edge `portfolio -> instrument`, whose series is
+// What is held of an instrument in a currency, on whatever markets it was bought and sold: the position edge `portfolio -> instrument`, whose series is
 // `history`, the quantity held over time (it goes to zero when the position is closed, and starts again when it is opened
 // again).
 struct Position {
   InstrumentId instrument;
-  MarketId market;
   InstrumentId quote;
   double quantity = 0;
-  // Average cost by the unit, in `quote`: the quantity-weighted mean of what the buys cost, their fees included. A sell
+  // Average cost by the unit, in `quote`: the quantity-weighted mean of what the buys cost, their fees included, on every market together. A sell
   // leaves it as it is. A position closed and opened again starts again.
   double average_cost = 0;
   std::vector<QuantityPoint> history;
@@ -54,22 +54,25 @@ struct Derived {
 // no quantity, a negative price or fee, or a part that is none; the rest are applied.
 Derived derivePositions(std::vector<Transaction> transactions);
 
-// Whether what is shown on this edge can be bought: its market is a real venue or XOFF (a fund priced by its company), never
-// XXXX (`kNoMarket`), the market of what is priced and not traded: indices, spot prices, currency pairs, and the rate sources
-// (Euribor, the €STR). The buttons, the commands and the model's write all ask this.
-bool tradable(const Snapshot &, const EdgeKey &);
+// Whether what a row shows can be bought: at least one of its members is on a market that is a real venue or XOFF (a fund priced by its
+// company), never only on XXXX (`kNoMarket`), the market of what is priced and not traded: indices, spot prices, currency pairs, and the
+// rate sources (Euribor, the €STR). Gold is on the London Bullion Market as well as in the spot prices, so it can be bought, and a currency
+// pair can once a forex market lists it. The buttons, the commands and the model's write all ask this.
+bool tradable(const Snapshot &, const GroupKey &);
 // The same by the market alone.
 bool tradable(MarketId);
 
-// The price of an instrument on a market in a currency: the last price of the quote of the edge with the newest quote
-// (the first by key if two have the same), and the edge.
+// The price of an instrument in a currency: the members' last prices made one (`mixOf`: the median of three or more, the mean of two, the one
+// that is live where the others are not), and the member with the newest quote (the first by key if two have the same), which stands for the
+// price where an edge is wanted.
 struct Price {
   EdgeKey edge;
   double close = 0;
-  int64_t day = 0;  // of the quote (a day number)
-  Timestamp time = 0;  // of the quote (seconds): the newest says
+  int64_t day = 0;  // of the newest quote (a day number)
+  Timestamp time = 0;  // of the newest quote (seconds)
+  Mix mix;  // what it is made of
 };
-std::optional<Price> latestPrice(const Snapshot &, InstrumentId instrument, MarketId, InstrumentId quote);
+std::optional<Price> latestPrice(const Snapshot &, InstrumentId instrument, InstrumentId quote, Timestamp now = 0);  // now 0: the machine's
 
 // How many `to` one `from` costs: the latest close of an edge between the two currencies, or its inverse, or through one
 // other currency by two such edges. Only currencies are converted (not a unit such as points or a rate); none where the store
@@ -100,6 +103,6 @@ struct Valuation {
 
 // The positions at the prices the store has, in the portfolio's currency. A position with no rate is shown in its own
 // currency, left out of the total, and the total is marked incomplete.
-Valuation value(const std::vector<Position> &, const Snapshot &, InstrumentId currency);
+Valuation value(const std::vector<Position> &, const Snapshot &, InstrumentId currency, Timestamp now = 0);
 
 }  // namespace portfolio

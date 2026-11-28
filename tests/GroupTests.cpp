@@ -2,6 +2,7 @@
 
 #include "AttributeView.h"
 #include "model/Dates.h"
+#include "Quotes.h"
 #include "model/Group.h"
 
 #include <cmath>
@@ -16,13 +17,14 @@ struct World {
   InstrumentId eur = store->addInstrument("EUR", "Euro", InstrumentKind::Currency);
   InstrumentId usd = store->addInstrument("USD", "Dollar", InstrumentKind::Currency);
   MarketId off = store->addMarket("XOFF", "Off exchange");
+  MarketId lbm = store->addMarket("XLBM", "London Bullion Market");
   DatasetId a = store->addDataset("DSA"), b = store->addDataset("DSB"), c = store->addDataset("DSC");
   std::shared_ptr<const Snapshot> snap() const { return store->snapshot(); }
-  EdgeKey key(DatasetId d, InstrumentId quote = InstrumentId{}) const { return {gold, quote.value ? quote : eur, off, d}; }
-  GroupKey group() const { return {off, gold, eur}; }
+  EdgeKey key(DatasetId d, InstrumentId quote = InstrumentId{}, MarketId market = MarketId{}) const { return {gold, quote.value ? quote : eur, market.value ? market : off, d}; }
+  GroupKey group() const { return {gold, eur}; }
   // The edge says a price at a time, and has daily bars to the same close.
-  void say(DatasetId d, double price, Timestamp time = kNow) {
-    const EdgeKey k = key(d);
+  void say(DatasetId d, double price, Timestamp time = kNow, MarketId market = MarketId{}) {
+    const EdgeKey k = key(d, InstrumentId{}, market);
     Quote q;
     q.last = price;
     q.time = time;
@@ -57,8 +59,159 @@ TEST(the_members_of_a_group_are_the_edges_in_one_unit_and_a_group_in_another_uni
   w.store->appendCandles(w.key(w.c, w.usd), Resolution::Day, {{dayNumberOfInstant(kNow), 110, 110, 110, 110, 1}});
   const auto members = membersOf(*w.snap(), w.group());
   CHECK(members.size() == 2 && members[0].dataset == w.a && members[1].dataset == w.b);
-  CHECK(membersOf(*w.snap(), {w.off, w.gold, w.usd}).size() == 1);
+  CHECK(membersOf(*w.snap(), {w.gold, w.usd}).size() == 1);
   CHECK(groupOf(w.key(w.a)) == w.group());
+}
+
+TEST(the_members_of_a_group_are_of_every_market_and_a_market_can_be_asked_for_alone) {
+  World w;
+  w.say(w.a, 100);
+  w.say(w.a, 104, kNow, w.lbm);  // the same instrument in the same unit on another market
+  w.say(w.b, 102, kNow, w.lbm);
+  const auto all = membersOf(*w.snap(), w.group());
+  CHECK(all.size() == 3);
+  CHECK(membersOf(*w.snap(), w.group(), w.lbm).size() == 2 && membersOf(*w.snap(), w.group(), w.off).size() == 1);
+  CHECK(groupOf(w.key(w.a, InstrumentId{}, w.lbm)) == groupOf(w.key(w.a)));
+  const Mix mix = mixOf(*w.snap(), w.group());
+  CHECK(mix.used == 3 && mix.price == 102);  // the median of the three, whatever market each is on
+  const Mix only = mixOf(*w.snap(), w.group(), {}, w.lbm);  // a preset of one market says what that market says
+  CHECK(only.used == 2 && only.price == 103 && only.members[0].edge.market == w.lbm);
+}
+
+static const Member & memberOf(const Mix & mix, DatasetId d) {
+  for (const Member & m : mix.members)
+    if (m.edge.dataset == d) return m;
+  return mix.members.front();
+}
+
+TEST(a_member_that_is_not_live_is_left_out_where_another_is_and_all_stand_where_none_is) {
+  World w;
+  w.say(w.a, 100, kNow);
+  w.say(w.b, 120, kNow - 3 * 86400, w.lbm);  // a market that has been closed for three days (a holiday): no longer what the others say
+  Mix mix = mixOf(*w.snap(), w.group());
+  CHECK(mix.used == 1 && mix.price == 100 && memberOf(mix, w.b).state == MemberState::Stale);
+  w.say(w.c, 102, kNow - 1800);  // half an hour behind the newest: a delayed feed is still live
+  mix = mixOf(*w.snap(), w.group());
+  CHECK(mix.used == 2 && mix.price == 101);
+  World slow;
+  slow.say(slow.a, 100, kNow);
+  slow.say(slow.c, 102, kNow - 3 * 3600);  // three hours behind: the other is live, this is not
+  mix = mixOf(*slow.snap(), slow.group());
+  CHECK(mix.used == 1 && mix.price == 100 && memberOf(mix, slow.c).state == MemberState::Stale);
+  // Where none is live (all closed), the newest stands and the others are no older than it by a night: they all count.
+  World closed;
+  closed.say(closed.a, 100, kNow - 20 * 86400);
+  closed.say(closed.b, 110, kNow - 20 * 86400 - 600);
+  CHECK(mixOf(*closed.snap(), closed.group()).used == 2);
+}
+
+TEST(where_no_member_is_live_the_last_prices_are_combined_and_not_the_freshest_alone) {
+  World w;
+  const Timestamp friday = kNow;  // the last close of a market is a few hours before another's
+  w.say(w.a, 100, friday - 2 * 3600);                 // closed at 16:30
+  w.say(w.b, 104, friday, w.lbm);                      // closed at 18:30
+  w.say(w.c, 102, friday - 5, w.lbm);                  // and a few seconds before it
+  // Sunday: every market is closed, so none is fresher by being later: the median of all.
+  Mix weekend = mixOf(*w.snap(), w.group(), {}, std::nullopt, friday + 2 * 86400);
+  CHECK(weekend.used == 3 && weekend.price == 102);
+  // The same prices with the later one live (it is Friday 18:30): the first, two hours older, is no longer what the others say.
+  Mix live = mixOf(*w.snap(), w.group(), {}, std::nullopt, friday + 600);
+  CHECK(live.used == 2 && live.price == 103 && memberOf(live, w.a).state == MemberState::Stale);
+  // A market shut for days is left out of the weekend's, as a holiday is.
+  World shut;
+  shut.say(shut.a, 90, friday - 6 * 86400);
+  shut.say(shut.b, 104, friday, shut.lbm);
+  CHECK(mixOf(*shut.snap(), shut.group(), {}, std::nullopt, friday + 2 * 86400).used == 1);
+}
+
+namespace {
+void say_is(World & w, DatasetId d, const char * how) { w.store->setAttribute(NodeRef(d), {predicate::timeliness, how}); }
+}  // namespace
+
+TEST(realtime_prices_are_the_row_and_a_delayed_one_is_left_out_whether_the_market_is_open_or_closed) {
+  World w;
+  say_is(w, w.a, "realtime");
+  say_is(w, w.b, "realtime");
+  say_is(w, w.c, "delayed");
+  w.say(w.a, 100, kNow);
+  w.say(w.b, 104, kNow - 5, w.lbm);
+  w.say(w.c, 150, kNow - 600);  // a pipeline that is ten minutes late, or slow: older than it looks
+  // Open: two realtime ones, and the delayed one is behind them.
+  Mix open = mixOf(*w.snap(), w.group(), {}, std::nullopt, kNow + 10);
+  CHECK(open.used == 2 && open.price == 102 && memberOf(open, w.c).state == MemberState::Behind);
+  // Closed (a weekend): all are stale, and the realtime ones alone make the median, as the delayed one does not say when.
+  Mix closed = mixOf(*w.snap(), w.group(), {}, std::nullopt, kNow + 2 * 86400);
+  CHECK(closed.used == 2 && closed.price == 102 && memberOf(closed, w.c).state == MemberState::Behind);
+  // Without realtime ones the delayed one is the row.
+  CHECK(mixOf(*w.snap(), w.group(), [&](DatasetId d) { return d == w.c; }, std::nullopt, kNow + 10).price == 150);
+}
+
+TEST(a_realtime_source_more_than_a_minute_late_is_dropped_while_another_is_live_and_all_count_when_none_is) {
+  World w;
+  for (DatasetId d : {w.a, w.b, w.c}) say_is(w, d, "realtime");
+  w.say(w.a, 100, kNow);
+  w.say(w.b, 101, kNow - 30, w.lbm);
+  w.say(w.c, 130, kNow - 120);  // two minutes behind: its feed has stalled
+  Mix live = mixOf(*w.snap(), w.group(), {}, std::nullopt, kNow + 5);
+  CHECK(live.used == 2 && live.price == 100.5 && memberOf(live, w.c).state == MemberState::Stale);
+  // The market is shut: who said last is a matter of seconds, not of what is true.
+  Mix shut = mixOf(*w.snap(), w.group(), {}, std::nullopt, kNow + 3 * 3600);
+  CHECK(shut.used == 3 && shut.price == 101);
+}
+
+TEST(a_daily_dataset_is_the_row_only_where_nothing_faster_says_a_price_and_a_dead_fast_one_hides_nothing) {
+  World w;
+  say_is(w, w.a, "daily");
+  say_is(w, w.b, "delayed");
+  say_is(w, w.c, "realtime");
+  w.say(w.a, 90, kNow - 20 * 3600);  // a fix of yesterday, no exact time
+  w.say(w.b, 100, kNow - 600);
+  Mix mix = mixOf(*w.snap(), w.group(), {}, std::nullopt, kNow);
+  CHECK(mix.used == 1 && mix.price == 100 && memberOf(mix, w.a).state == MemberState::Behind);
+  // Dailies alone are all the row, a day apart as they are: they never go stale among themselves.
+  World d;
+  say_is(d, d.a, "daily");
+  say_is(d, d.b, "daily");
+  d.say(d.a, 90, kNow - 86400);
+  d.say(d.b, 100, kNow, d.lbm);
+  CHECK(mixOf(*d.snap(), d.group(), {}, std::nullopt, kNow).used == 2);
+  // A realtime source that stopped a week ago does not hide the others.
+  w.say(w.c, 500, kNow - 7 * 86400);
+  mix = mixOf(*w.snap(), w.group(), {}, std::nullopt, kNow);
+  CHECK(mix.used == 1 && mix.price == 100 && memberOf(mix, w.c).state == MemberState::Stale);
+}
+
+TEST(a_table_asks_the_clock_it_is_given_what_is_live) {
+  World w;
+  w.say(w.a, 100, kNow);
+  w.say(w.b, 110, kNow - 2 * 3600, w.lbm);
+  Quotes quotes(w.snap(), {w.key(w.a)});
+  quotes.setClock([] { return kNow + 60; });  // a live market: the one two hours behind is not what it says
+  CHECK(quotes.mix(0).used == 1);
+  quotes.setClock([] { return kNow + 2 * 86400; });  // the weekend: both are the last prices
+  CHECK(quotes.mix(0).used == 2 && quotes.mix(0).price == 105);
+}
+
+TEST(a_closed_market_does_not_stay_in_the_trace_while_another_trades_on) {
+  World w;
+  const int64_t day = dayNumberOfInstant(kNow);
+  auto bars = [&](const EdgeKey & k, double close, int from, int to) {
+    std::vector<Candle> v;
+    for (int s = from; s <= to; s++) v.push_back({slotOfInstant(Resolution::Min5, (day - kUnixEpochDayNumber) * 86400 + 7 * 3600 + s * 300), close, close, close, close, 1});
+    w.store->appendCandles(k, Resolution::Min5, v);
+  };
+  w.store->appendCandles(w.key(w.a), Resolution::Day, {{day, 100, 100, 100, 100, 1}});
+  w.store->appendCandles(w.key(w.b, InstrumentId{}, w.lbm), Resolution::Day, {{day, 100, 100, 100, 100, 1}});
+  bars(w.key(w.a), 100, 0, 40);                          // one trades all morning at 100
+  bars(w.key(w.b, InstrumentId{}, w.lbm), 200, 0, 5);    // the other closed after half an hour at 200
+  const Quote q{100, kUndefined, kUndefined, kNow + 8400};  // both have just said a price, so both count in the row
+  w.store->setQuote(w.key(w.a), q);
+  w.store->setQuote(w.key(w.b, InstrumentId{}, w.lbm), q);
+  const PeriodView v = groupPeriodView(*w.snap(), w.group(), Period::Day, true);
+  CHECK(v.closes.size() >= 30);
+  CHECK(v.closes.front() == 150.0f);  // both trade
+  CHECK(v.closes[10] == 150.0f);      // the closed one's last close is still what it says, for an hour
+  CHECK(v.closes.back() == 100.0f);   // and is not carried on for the rest of the day
 }
 
 TEST(a_mix_combines_the_used_members_and_says_what_each_is_off_by) {
@@ -160,9 +313,9 @@ TEST(the_info_of_a_group_says_what_each_dataset_says_and_whether_it_counts) {
     return std::string();
   };
   CHECK(row("combined").find("101") != std::string::npos && row("combined").find("mean of 2") != std::string::npos);
-  CHECK(row("DSA").find("100") != std::string::npos && row("DSC").find("left out: older") != std::string::npos);
+  CHECK(row("Off exchange \xC2\xB7 DSA").find("100") != std::string::npos && row("Off exchange \xC2\xB7 DSC").find("left out: older") != std::string::npos);
   bool own_sections = false;
-  for (const InfoSection & s : info) own_sections = own_sections || s.title == "Summary \xC2\xB7 DSB";
+  for (const InfoSection & s : info) own_sections = own_sections || s.title == "Summary \xC2\xB7 Off exchange \xC2\xB7 DSB";
   CHECK(own_sections);
   CHECK(buildInfo(*w.snap(), w.key(w.a))[0].title == "Listing");  // no mix: as it was
 }

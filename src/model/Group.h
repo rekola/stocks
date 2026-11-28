@@ -4,9 +4,10 @@
 #include "model/Store.h"
 
 #include <functional>
+#include <optional>
 #include <vector>
 
-// One instrument priced in one unit on one market is one *group* (`GroupKey`, Types.h); the edges in it, one for each dataset that prices it, are its
+// One instrument priced in one unit is one *group* (`GroupKey`, Types.h); the edges in it, one for each market and dataset that prices it, are its
 // *members*. A table shows a group as one row and reads every number of it from its members, so a row is what the datasets say together
 // and not what one of them says. The store keeps the edges apart, as they were written: nothing here is stored.
 // The quote instrument is part of the group's key, so every member is priced in the same unit (a currency, or per cent for a rate):
@@ -15,8 +16,9 @@
 // Which datasets count: the user's switches. Empty: every dataset does.
 using DatasetFilter = std::function<bool(DatasetId)>;
 
-// The edges of a group that have a row (`Snapshot::listed`), sorted by key (so by dataset).
-std::vector<EdgeKey> membersOf(const Snapshot &, const GroupKey &);
+// The edges of a group that have a row (`Snapshot::listed`), sorted by key (market, then dataset). `market`, where given, keeps only that
+// market's: a preset of one market shows what that market says and no other.
+std::vector<EdgeKey> membersOf(const Snapshot &, const GroupKey &, std::optional<MarketId> market = std::nullopt);
 
 // How the members' values are made one: the median where there are three or more, the mean of two, the value itself of one; none
 // for no value. A value that is not defined is not one. The median keeps a single wrong dataset from moving the number.
@@ -25,13 +27,30 @@ double combine(std::vector<double> values);
 // one per cent off). Undefined for fewer than two values or a combined value of 0.
 double disagreement(const std::vector<double> & values);
 
-// A member that says nothing newer than this much (seconds) before the newest of the members is *stale*: its dataset has stopped, and what
-// it last said is no longer what the others are saying, so it is left out of the combined number.
-inline constexpr int64_t kStaleAfter = 4 * 86400;
+// How timely a dataset says it is (the `timeliness` fact of the dataset, which its source states): a *realtime* one says what is happening now, a
+// *delayed* one (also one that says nothing: it is not known to be faster) is late by a pipeline or a feed, and a *daily* one says a price a day and
+// not the second. The faster say what the slower only say later, so the numbers of a row are the first of these that a row has, never mixed with the next:
+// a delayed price is older than it looks, and a daily one has no exact time.
+enum class Timeliness : uint8_t { Realtime, Delayed, Daily };
+Timeliness timelinessOf(const Snapshot &, DatasetId);
+
+// What counts as *live*, and what is left out, among the members of one kind of timeliness. The newest of them is live when it said its price within
+// `liveWithin` (a minute for realtime, an hour for delayed) of now. Where one is, a member more than that behind it is *stale*: it has stopped (a market
+// that has closed, a feed that fell behind), so what it last said is not what the others say, and it is left out. Where none is live (a weekend, a night,
+// every market closed), nobody is fresher than another by being later, and they all count, the median of the last prices: a member is left out only
+// when it is more than `kClosedWindow` older than the newest (a market shut for days). A daily dataset is never live (its time is a date).
+inline constexpr int64_t kRealtimeWindow = 60;
+inline constexpr int64_t kDelayedWindow = 3600;
+inline constexpr int64_t kClosedWindow = 4 * 86400;
+// The time of the machine, UTC seconds: what `now` is where a reader does not say.
+Timestamp systemNow();
+// What tells the time to a reader that works out a mix: the machine's by default (an empty one), a test's own.
+using TimeFn = std::function<Timestamp()>;
 
 enum class MemberState : uint8_t {
   Used,     // counts in the combined numbers
-  Stale,    // says nothing as new as the others: left out
+  Stale,    // says nothing as new as the others of its kind: left out
+  Behind,   // a faster kind of dataset (realtime before delayed before daily) says the price: left out
   Off,      // its dataset is switched off (the filter): left out
   NoPrice,  // has no price to say: left out
 };
@@ -39,6 +58,7 @@ enum class MemberState : uint8_t {
 struct Member {
   EdgeKey edge;
   MemberState state = MemberState::NoPrice;
+  Timeliness timeliness = Timeliness::Delayed;
   double price = kUndefined;   // the member's own last price
   Timestamp time = 0;          // when it said it, UTC seconds; 0 where not known
   double offset = kUndefined;  // its price against the combined one as a fraction (0.01: one per cent above); undefined for a combined 0
@@ -52,7 +72,7 @@ struct Mix {
   size_t used = 0;                    // how many members count
   bool combined() const { return used > 1; }
 };
-Mix mixOf(const Snapshot &, const GroupKey &, const DatasetFilter & filter = {});
+Mix mixOf(const Snapshot &, const GroupKey &, const DatasetFilter & filter = {}, std::optional<MarketId> market = std::nullopt, Timestamp now = 0);  // now 0: `systemNow()`
 
 // The change of a group over a period, in the unit of `PeriodView::change()`: `combine` of the used members' own changes
 // (`Snapshot::changes`); undefined where none says one.

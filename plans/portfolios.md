@@ -225,3 +225,11 @@ What was open when it was built, and what was picked (the simplest option):
   Not checked in a real terminal or on a real desktop font here (see the report in the commit messages): the info glyph was chosen the same way.
 - Where the average cost leaves the plan open: fees of buys are in it; the ledger of a portfolio is the user's own dataset unless a
   `ledger` fact says another; a portfolio is picked in the form by typing its name.
+
+
+## One position for an instrument on every market (plans/instrument-rows.md)
+
+A position is `(portfolio, instrument, currency)`: what is bought and sold on different markets adds up, quantity and cost (the average cost is the one
+of all the buys, a sell takes cost out at it). `Transaction::market` is a note, kept for what was typed before and not set now; the file's events are
+unchanged (schema 5 is for the lists). A position is valued at the price of its group, the members' made one, and it can be bought where one member is on a
+real venue or XOFF (`tradable(snapshot, GroupKey)`). The load keeps every transaction of the file whatever market it names.

@@ -93,8 +93,11 @@ the same keys.
 
 ## What the application shows
 
-**A preset is a selection of edges**, and the table shows **one row per edge** in it. If two datasets have data for the same
-instrument on a market, they are two rows. Merging such rows is later work.
+**A preset is a selection of rows**, a row being a group `(base, quote)` (`GroupKey`) and its *members* every edge of it, whatever market
+and dataset: the row's price, change, high and low and trace are made of them by `combine` (median of three or more, mean of two, the one), a member
+of the fastest kind that has a price (`Timeliness`: realtime, delayed, daily, a fact of the dataset; never mixed), and in the kind one that is behind the newest by more than its window (a minute realtime, an hour delayed) left out while the newest is live; where none is live (every market closed) they all count, within `kClosedWindow` (four days) of the newest. A preset of kinds (or none) takes the groups; a preset that
+names a market takes the groups with a member there and only that market's members count. The quote currency is in the key: prices are not
+converted, so a share in euro and in kronor is two rows. Built (plans/instrument-rows.md).
 
 Today a preset is one market by name (or All), the simplest selection, and it will not stay the only one. The ones to expect:
 
@@ -663,3 +666,17 @@ model's types become a schema.
 Chosen: C behind a `Snapshot`/`Store` split, because the prediction models are
 the readers that most need a stable view, and the UI gets lock-free reads. A is
 still the way to tell the UI that something changed.
+
+
+## Combined bars (not built; how they are made when they are)
+
+A row's trace is already made when it is read, from its members' bars (`groupPeriodView`); the continuous series across markets that machine
+learning wants is the same made over longer spans, and is **never stored** (no series is derived from another in the store). For a group `(base, quote)`
+and a resolution:
+
+- the slots are the union of the times of the members' bars at that resolution (a member at another resolution is not mixed in);
+- in a slot the **close** is `combine` of the members' closes (median of three or more, mean of two, the value of one). A member that has no bar in the
+  slot counts with its last close only while that is live (within an hour, or four of its own bars, four days at least for daily bars, apart) and not at all
+  before its first bar, so a market that has closed does not stay in the median while another trades on;
+- the **volume** is the sum of the volumes of the bars the members have *in* that slot, never combined (a median of volumes is no volume), and none where none says one;
+- open, high and low are left to that step (each combined as `groupRange` does, or the first and the extremes of the closes).

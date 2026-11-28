@@ -24,7 +24,7 @@ class Positions : public cellui::TableModel {
   enum Column { ICON, SYMBOL, NAME, QUANTITY, COST, PRICE, VALUE, WEIGHT, PROFIT, PROFIT_PERCENT, CHANGE, HISTORY };
 
   // `portfolio` need not exist (none, or one nothing is said of): the table is empty.
-  Positions(std::shared_ptr<const Snapshot> snapshot, PortfolioId portfolio, std::shared_ptr<IconLoader> icons = nullptr);
+  Positions(std::shared_ptr<const Snapshot> snapshot, PortfolioId portfolio, std::shared_ptr<IconLoader> icons = nullptr, TimeFn clock = {});
   // The same portfolio from a newer snapshot: the positions are worked out again, the rows come in the same order.
   void setSnapshot(std::shared_ptr<const Snapshot> snapshot);
   void setPeriod(Period);
@@ -50,10 +50,12 @@ class Positions : public cellui::TableModel {
   std::optional<double> number(int r, int c) const override;
 
   const portfolio::PositionValue & row(int r) const { return valuation_.rows[static_cast<size_t>(r)]; }
-  // What the position is: instrument, market and currency (no dataset). Its identity across a refresh.
+  // What the position is: instrument and currency (no market, no dataset). Its identity across a refresh.
   EdgeKey key(int r) const;
-  // The edge of its price, which the row's change, trace and history are of; none where no edge has bars.
+  // The edge that stands for its price (the newest member's); the row's change, trace and history are of all its members; none where no edge has bars.
   std::optional<EdgeKey> priceEdge(int r) const;
+  // The edges its price is made of: the members that count.
+  std::vector<EdgeKey> members(int r) const;
   std::string iconUrl(int r) const;
 
  private:
@@ -64,6 +66,7 @@ class Positions : public cellui::TableModel {
   std::shared_ptr<const Snapshot> snapshot_;
   PortfolioId portfolio_;
   Period period_ = kDefaultPeriod;
+  TimeFn clock_;
   portfolio::Valuation valuation_;
   std::string name_;
   const PeriodView & traceOf(int r) const;  // the row's period view with its trace, kept while it is drawn

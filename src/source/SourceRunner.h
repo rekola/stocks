@@ -12,11 +12,13 @@
 
 // Runs sources one after another on a thread of its own, and then again whenever one of them asks to be refreshed (its
 // refreshInterval, from the end of its last load). Its callbacks run on that thread: a program hands them to the UI
-// thread (cellui's ThreadInbox). Stops, even in the middle of a load or a request, and joins when destroyed.
+// thread (cellui's ThreadInbox). The runner says each source's `timeliness()` as a fact of its datasets. The sources that are realtime are loaded again
+// all at once, every `realtimePeriod` on the clock (at the multiples of it since the epoch, so that what they say is of the same moment and they
+// can be compared), and not by their own intervals. Stops, even in the middle of a load or a request, and joins when destroyed.
 class SourceRunner {
  public:
   SourceRunner(std::shared_ptr<Store> store, std::vector<std::unique_ptr<Source>> sources, std::function<void()> onChanged,
-               std::function<void(std::string)> onMessage);
+               std::function<void(std::string)> onMessage, std::chrono::milliseconds realtimePeriod = std::chrono::seconds(20));
   ~SourceRunner();
   SourceRunner(const SourceRunner &) = delete;
   SourceRunner & operator=(const SourceRunner &) = delete;

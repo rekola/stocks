@@ -179,7 +179,13 @@ void seriesSections(const Snapshot & snapshot, const EdgeKey & edge, const std::
   if (!summary.rows.empty()) out.push_back(std::move(summary));
 }
 
-// What the datasets say together, and what each says and whether it counts.
+// A member is named by where and who says it: "Nasdaq Helsinki · KAR".
+std::string memberName(const Snapshot & snapshot, const EdgeKey & edge) {
+  const std::string market = snapshot.name(NodeRef(edge.market));
+  return (market.empty() ? marketCode(edge.market) : market) + " · " + snapshot.name(edge.dataset);
+}
+
+// What the members say together, and what each says and whether it counts.
 InfoSection sourcesSection(const Snapshot & snapshot, const Mix & mix) {
   InfoSection sources{"Sources", {}};
   auto row = [&](std::string predicate, std::string text) { sources.rows.push_back({std::move(predicate), {std::move(text), std::nullopt}}); };
@@ -195,10 +201,11 @@ InfoSection sourcesSection(const Snapshot & snapshot, const Mix & mix) {
     switch (m.state) {
       case MemberState::Used: break;
       case MemberState::Stale: text += "  left out: older than the others"; break;
+      case MemberState::Behind: text += "  left out: a faster dataset says the price"; break;
       case MemberState::Off: text += "  left out: switched off"; break;
       case MemberState::NoPrice: text += "  left out"; break;
     }
-    row(snapshot.name(m.edge.dataset), std::move(text));
+    row(memberName(snapshot, m.edge), std::move(text));
   }
   return sources;
 }
@@ -212,16 +219,22 @@ std::vector<InfoSection> buildInfo(const Snapshot & snapshot, const EdgeKey & ed
   else edgeSections(snapshot, edge, "", true, out);
 
   out.push_back({"Instrument", attributeRows(snapshot, NodeRef(edge.base), {predicate::isin, predicate::name, predicate::kind})});
-  out.push_back(
-      {"Market", attributeRows(snapshot, NodeRef(edge.market),
-                               {predicate::name, predicate::mic,
-                                predicate::country, predicate::timezone})});
+  // The markets of the members, each once (the one edge's where the row is not a group).
+  std::vector<MarketId> markets = {edge.market};
+  if (grouped) {
+    markets.clear();
+    for (const Member & m : mix->members)
+      if (std::find(markets.begin(), markets.end(), m.edge.market) == markets.end()) markets.push_back(m.edge.market);
+  }
+  for (const MarketId market : markets)
+    out.push_back({markets.size() > 1 ? "Market · " + snapshot.name(NodeRef(market)) : std::string("Market"),
+                   attributeRows(snapshot, NodeRef(market), {predicate::name, predicate::mic, predicate::country, predicate::timezone})});
   if (auto rows = attributeRows(snapshot, NodeRef(edge.quote), {predicate::isin, predicate::name, predicate::kind}); !rows.empty())
     out.push_back({"Quote currency", std::move(rows)});
 
   if (grouped) {
     for (const Member & m : mix->members) {
-      const std::string suffix = " · " + snapshot.name(m.edge.dataset);
+      const std::string suffix = " · " + memberName(snapshot, m.edge);
       edgeSections(snapshot, m.edge, suffix, false, out);
       seriesSections(snapshot, m.edge, suffix, out);
     }
@@ -232,9 +245,13 @@ std::vector<InfoSection> buildInfo(const Snapshot & snapshot, const EdgeKey & ed
   // The latest news of the instrument, of its market and of the market's country: a few headlines, newest first.
   {
     InfoSection latest{"Latest news", {}};
-    std::vector<NodeRef> nodes = {NodeRef(edge.base), NodeRef(edge.market)};
-    if (const std::string code = snapshot.said(NodeRef(edge.market), predicate::country); !code.empty())
-      if (const auto key = countryKey(code)) nodes.push_back(nodeOf(*key));
+    std::vector<NodeRef> nodes = {NodeRef(edge.base)};
+    for (const MarketId market : markets) {
+      nodes.push_back(NodeRef(market));
+      if (const std::string code = snapshot.said(NodeRef(market), predicate::country); !code.empty())
+        if (const auto key = countryKey(code))
+          if (const NodeRef country = nodeOf(*key); std::find(nodes.begin(), nodes.end(), country) == nodes.end()) nodes.push_back(country);
+    }
     std::vector<NewsItem> items;
     for (const NodeRef & node : nodes) {
       NewsQuery q;
