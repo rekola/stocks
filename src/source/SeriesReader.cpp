@@ -123,11 +123,15 @@ bool columnar(const json & o) {
   return time;
 }
 
+// Series by name: every member holds rows (or is an empty list, a series with none), and at least two have rows.
 bool named(const json & o) {
   if (!o.is_object() || o.size() < 2) return false;
-  for (const auto & item : o.items())
-    if (!seriesLike(item.value())) return false;
-  return true;
+  size_t withRows = 0;
+  for (const auto & item : o.items()) {
+    if (seriesLike(item.value())) withRows++;
+    else if (!(item.value().is_array() && item.value().empty())) return false;
+  }
+  return withRows >= 2;
 }
 
 bool preferredName(const std::string & key) {
@@ -294,6 +298,35 @@ using Labels = std::vector<std::pair<std::string, std::string>>;
 
 bool readNode(const json & node, const Labels & labels, Shape inherited, Context & ctx, std::string & why);
 
+// The member of an object that is the time of columns that are elsewhere in it: an array of scalars with the name of a time.
+const json * timeColumn(const json & holder) {
+  if (!holder.is_object()) return nullptr;
+  for (const auto & item : holder.items())
+    if (roleByName(item.key()) == Role::Time && item.value().is_array() && item.value().size() >= 1 && !item.value()[0].is_object() && !item.value()[0].is_array())
+      return &item.value();
+  return nullptr;
+}
+
+// Every array of scalars of the length of the time, anywhere under `node` (the first of a key stands): the columns of a table whose time is apart from its values.
+void gatherColumns(const json & node, size_t length, const std::string & skip, json & columns, std::set<std::string> & seen, std::vector<std::string> & dropped, int depth) {
+  if (depth > 6) return;
+  if (node.is_object()) {
+    for (const auto & item : node.items()) {
+      const json & v = item.value();
+      if (v.is_array() && v.size() == length && length > 0 && !v[0].is_object() && !v[0].is_array()) {
+        if (item.key() == skip && depth == 0) continue;
+        if (!seen.insert(item.key()).second) dropped.push_back(item.key());
+        else columns[item.key()] = v;
+      } else if (v.is_array() || v.is_object()) {
+        gatherColumns(v, length, skip, columns, seen, dropped, depth + 1);
+      }
+    }
+  } else if (node.is_array()) {
+    for (const json & v : node)
+      if (v.is_object() || v.is_array()) gatherColumns(v, length, skip, columns, seen, dropped, depth + 1);
+  }
+}
+
 // Rows that are structs with a time: the series, one for each combination of the labels the rows differ in.
 bool readStructs(const json & node, const Labels & labels, Shape shape, Context & ctx, std::string & why) {
   std::vector<const json *> rows;
@@ -439,6 +472,29 @@ bool hasTime(const json & row, const Hints & hints) {
   return false;
 }
 
+// An object whose time is an array and whose values are arrays of the same length somewhere under it (a chart: `timestamp` beside `indicators.quote[0].open`).
+bool readJoined(const json & holder, const Labels & labels, Context & ctx, std::string & why) {
+  const json * time = timeColumn(holder);
+  std::string timeKey;
+  for (const auto & item : holder.items())
+    if (&item.value() == time) timeKey = item.key();
+  json columns = json::object();
+  columns[timeKey] = *time;
+  std::set<std::string> seen{timeKey};
+  std::vector<std::string> dropped;
+  gatherColumns(holder, time->size(), timeKey, columns, seen, dropped, 0);
+  if (columns.size() < 2) {
+    why = "the time (" + timeKey + ") has no values of its length beside it";
+    return false;
+  }
+  if (!dropped.empty()) {
+    std::string names;
+    for (const std::string & k : dropped) names += (names.empty() ? "" : ", ") + k;
+    ctx.result.notes.push_back("columns named twice, the first kept: " + names);
+  }
+  return readColumns(columns, labels, Shape::Columns, ctx, why);
+}
+
 bool readNode(const json & node, const Labels & labels, Shape inherited, Context & ctx, std::string & why) {
   if (node.is_array()) {
     if (node.empty()) {
@@ -449,6 +505,16 @@ bool readNode(const json & node, const Labels & labels, Shape inherited, Context
     }
     if (node[0].is_array()) return readRowsOfArrays(node, labels, inherited, ctx, why);
     if (node[0].is_object()) {
+      if (timeColumn(node[0])) {  // a table of columns for each: a chart's results
+        for (const json & holder : node) {
+          if (!timeColumn(holder)) {
+            ctx.skipped++;
+            continue;
+          }
+          if (!readJoined(holder, labels, ctx, why)) return false;
+        }
+        return true;
+      }
       if (hasTime(node[0], ctx.hints)) return readStructs(node, labels, inherited == Shape::Nested || inherited == Shape::Named ? inherited : Shape::Structs, ctx, why);
       return readNested(node, labels, ctx, why);
     }
@@ -457,6 +523,7 @@ bool readNode(const json & node, const Labels & labels, Shape inherited, Context
   }
   if (node.is_object()) {
     if (columnar(node)) return readColumns(node, labels, inherited, ctx, why);
+    if (timeColumn(node)) return readJoined(node, labels, ctx, why);
     for (const auto & item : node.items()) {
       Labels own = labels;
       own.push_back({"key", item.key()});
@@ -492,6 +559,20 @@ const json * locate(const json & doc, std::string & why) {
     if (candidates.empty()) {
       why = "no series in the answer";
       return nullptr;
+    }
+    // Empty arrays beside rows (a list that has nothing in it this time) are not the series.
+    if (candidates.size() > 1) {
+      std::vector<const json *> filled;
+      std::vector<std::string> filledNames;
+      for (size_t i = 0; i < candidates.size(); i++)
+        if (!(candidates[i]->is_array() && candidates[i]->empty())) {
+          filled.push_back(candidates[i]);
+          filledNames.push_back(names[i]);
+        }
+      if (!filled.empty()) {
+        candidates = filled;
+        names = filledNames;
+      }
     }
     if (candidates.size() > 1) {
       std::vector<const json *> preferred;
