@@ -11,11 +11,10 @@
 #include <string>
 #include <vector>
 
-// The daily prices of the precious metals that karasmussen.fi's price page publishes and labels as the London Metal Exchange's, as a market-data
-// dataset: gold, silver, platinum and palladium, each in USD, EUR, NOK, SEK and DKK. (The codes in the answer, `XAUFIXPM=`, `LDNXAG=`, are
-// those of London fixings, which the page's label does not say: whether the prices are the exchange's, or a reseller's of the London market's, is
-// the provider's to say. The dataset is named for the label, `LME`, which the page says it has the data under licence from; the four fixed metals are
-// priced on the London Bullion Market (XLBM). The page has rhodium too, whose rows are of another kind and which neither market prices: it is not carried.) Everything that names the
+// The daily prices of gold, silver, platinum and palladium that K. A. Rasmussen's price page (karasmussen.fi) publishes, as a market-data dataset, each in
+// USD, EUR, NOK, SEK and DKK. The dataset is the publisher's, `KAR`: the page says it uses the London Metal Exchange's data under licence, while the codes in
+// the answer (`XAUFIXPM=`, `LDNXAG=`) are those of London fixings, and what the prices are, and whose, is the publisher's to say. They are on the London
+// Bullion Market (XLBM). The page has rhodium too, whose rows are of another kind and which neither market prices: it is not carried. Everything that names the
 // endpoint, its fields and its formats is in this adapter. It is an offline dataset, loaded by market-ingest on request (src/market/offline/).
 //
 // One request answers for a range of days, every metal and currency in it:
@@ -33,8 +32,8 @@
 //     weekly bars of those. The mean of the bid and the ask where there are two sides. No 5 minute or 1 hour bars: there is one price a day.
 //   - the last row, as the instrument's `Quote` (the summary's last, bid and ask). Bid and ask are written only where the answer gives them apart, since a row
 //     with the two equal says one price. The history of bid and ask is not kept, because the store has no series for it (plans/quotes.md, "The quote series").
-// A year's answer is kept in the raw cache as it came (`lme_YYYY.json`). A year that is past is asked for once; the current year again when asked to refresh.
-namespace lme {
+// A year's answer is kept in the raw cache as it came (`kar_YYYY.json`). A year that is past is asked for once; the current year again when asked to refresh.
+namespace kar {
 
 constexpr double kGramsPerTroyOunce = 31.1035;  // the figure the provider divides by
 
@@ -56,7 +55,7 @@ struct Parsed {
 bool parse(const std::string & body, Parsed & out, std::string & error);
 
 std::string url(int year);       // the request for a calendar year
-std::string fileName(int year);  // "lme_2026.json"
+std::string fileName(int year);  // "kar_2026.json"
 
 // The instruments: each metal in each currency, as built into the adapter (the endpoint has no list). The code of one is "xaueur".
 const std::vector<market::InstrumentSpec> & instruments();
@@ -68,11 +67,11 @@ struct Settings {
   std::function<void(std::chrono::milliseconds)> sleep;  // the thread's sleep where empty
 };
 
-class Lme : public market::Dataset {
+class Kar : public market::Dataset {
  public:
-  Lme(Http & http, market::RawCache cache, Settings settings = {});
-  std::string code() const override { return "LME"; }
-  std::string name() const override { return "London Metal Exchange (karasmussen.fi)"; }
+  Kar(Http & http, market::RawCache cache, Settings settings = {});
+  std::string code() const override { return "KAR"; }
+  std::string name() const override { return "K. A. Rasmussen (karasmussen.fi)"; }
   std::vector<market::InstrumentSpec> discover(const market::Log & log, bool refresh) override;
   market::LoadResult load(const market::InstrumentSpec & instrument, const market::LoadOptions & options, const market::Log & log) override;
 
@@ -95,4 +94,4 @@ class Lme : public market::Dataset {
   bool requested_ = false;
 };
 
-}  // namespace lme
+}  // namespace kar

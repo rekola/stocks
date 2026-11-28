@@ -43,7 +43,7 @@ each reload, so a history exists only from when it is recorded: the first writer
 quote endpoint is said to carry them and is not checked. Crypto exchanges' public order books are free and keyless (`data-model.md`,
 "Not done"). Each adapter alone knows its endpoint and fields (CLAUDE.md, "Providers"): nothing here names one.
 
-The first dataset that gives two sides is `LME` (`src/market/offline/Lme.cpp`, `market-ingest lme`): a daily price of a metal in five currencies, whose bid and
+The first dataset that gives two sides is `KAR` (`src/market/offline/Kar.cpp`, `market-ingest kar`): a daily price of a metal in five currencies, whose bid and
 ask are the sides of the exchange rate it was converted with, and one price (equal sides) in dollars. Until the series above exists it writes the
 daily bar at the mean, and the last day's bid and ask as the summary's `Quote` (`LoadResult::quote`, `Ingest`) where they differ; it is the first
 writer of quotes to move to the series, with the bars of the spread, once there is one.

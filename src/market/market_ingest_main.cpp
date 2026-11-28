@@ -1,6 +1,6 @@
 // market-ingest: loads an external dataset into the market-data database, through the application's own Store.
 //
-//   market-ingest histdata|lme [codes...|all] [--level 5m|1h|1d|1w|all] [--refresh] [--config FILE]
+//   market-ingest histdata|kar [codes...|all] [--level 5m|1h|1d|1w|all] [--refresh] [--config FILE]
 //
 // One run does everything for the dataset: finds its instruments, makes the instrument records that are missing, gets the files
 // (from the raw cache when they are there), reads them, builds the levels and replaces what the database holds of each. Run it
@@ -10,7 +10,7 @@
 #include "market/Ingest.h"
 #include "market/Backends.h"
 #include "market/offline/HistData.h"
-#include "market/offline/Lme.h"
+#include "market/offline/Kar.h"
 #include "source/Http.h"
 
 #include <cstdio>
@@ -25,15 +25,15 @@ namespace {
 
 constexpr const char * kUsage =
     "usage: market-ingest DATASET [CODE...|all] [--level 5m|1h|1d|1w|all] [--refresh] [--config FILE]\n"
-    "  datasets: histdata, lme\n"
+    "  datasets: histdata, kar\n"
     "  --level    the one resolution of bars to build (default all: 5m for a day, 1h for 7 days, 1d for a year, 1w for 10 years)\n"
-    "  --refresh  ask again for the months of the current year (lme: the year) and for the list of pairs (past years' files are never fetched again)\n"
+    "  --refresh  ask again for the months of the current year (kar: the year) and for the list of pairs (past years' files are never fetched again)\n"
     "  --config   the settings file (default: $MARKET_CONFIG, else ./market.json; without one the built-in defaults)\n";
 
 // The datasets, by the name the command line gives them.
 std::unique_ptr<market::Dataset> makeDataset(const std::string & name, const market::Config & config, Http & http) {
   if (name == "histdata") return std::make_unique<histdata::HistData>(http, market::RawCache(config.histdataCacheDir));
-  if (name == "lme") return std::make_unique<lme::Lme>(http, market::RawCache(config.lmeCacheDir));
+  if (name == "kar") return std::make_unique<kar::Kar>(http, market::RawCache(config.karCacheDir));
   return nullptr;
 }
 

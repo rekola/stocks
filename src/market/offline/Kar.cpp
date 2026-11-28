@@ -1,4 +1,4 @@
-#include "market/offline/Lme.h"
+#include "market/offline/Kar.h"
 
 #include "market/Bars.h"
 #include "model/Dates.h"
@@ -14,7 +14,7 @@
 
 using json = nlohmann::json;
 
-namespace lme {
+namespace kar {
 
 namespace {
 
@@ -110,7 +110,7 @@ std::string url(int year) {
   return std::string(kEndpoint) + "?from=" + y + "-01-01&to=" + y + "-12-31";
 }
 
-std::string fileName(int year) { return "lme_" + std::to_string(year) + ".json"; }
+std::string fileName(int year) { return "kar_" + std::to_string(year) + ".json"; }
 
 const std::vector<market::InstrumentSpec> & instruments() {
   static const std::vector<market::InstrumentSpec> list = [] {
@@ -136,21 +136,21 @@ const std::vector<market::InstrumentSpec> & instruments() {
   return list;
 }
 
-Lme::Lme(Http & http, market::RawCache cache, Settings settings) : http_(http), cache_(std::move(cache)), settings_(std::move(settings)) {
+Kar::Kar(Http & http, market::RawCache cache, Settings settings) : http_(http), cache_(std::move(cache)), settings_(std::move(settings)) {
   if (!settings_.now) settings_.now = [] { return static_cast<Timestamp>(std::time(nullptr)); };
   if (!settings_.sleep) settings_.sleep = [](std::chrono::milliseconds d) { std::this_thread::sleep_for(d); };
 }
 
-std::vector<market::InstrumentSpec> Lme::discover(const market::Log &, bool) { return instruments(); }
+std::vector<market::InstrumentSpec> Kar::discover(const market::Log &, bool) { return instruments(); }
 
-void Lme::pace() {
+void Kar::pace() {
   const auto now = std::chrono::steady_clock::now();
   if (requested_ && now - lastRequest_ < settings_.pause) settings_.sleep(std::chrono::duration_cast<std::chrono::milliseconds>(settings_.pause - (now - lastRequest_)));
   requested_ = true;
   lastRequest_ = std::chrono::steady_clock::now();
 }
 
-Timestamp Lme::fetchedAt(const std::string & file) const {
+Timestamp Kar::fetchedAt(const std::string & file) const {
   const auto note = cache_.read(file + ".fetched");
   if (!note) return 0;
   char * end = nullptr;
@@ -158,19 +158,19 @@ Timestamp Lme::fetchedAt(const std::string & file) const {
   return end != note->c_str() ? static_cast<Timestamp>(value) : 0;
 }
 
-void Lme::noteFetched(const std::string & file) {
+void Kar::noteFetched(const std::string & file) {
   std::string error;
   cache_.store(file + ".fetched", std::to_string(settings_.now()) + "\n", error);  // a note that cannot be kept only makes the file asked for again
 }
 
-const Lme::Year & Lme::year(int y, bool refresh, int currentYear, market::LoadResult & result, const market::Log & log) {
+const Kar::Year & Kar::year(int y, bool refresh, int currentYear, market::LoadResult & result, const market::Log & log) {
   if (const auto it = years_.find(y); it != years_.end()) return it->second;
   Year & out = years_[y];
   const std::string file = fileName(y);
   const auto read = [&](const std::string & body) {
     Parsed parsed;
     if (!parse(body, parsed, out.why)) return false;
-    if (parsed.skipped > 0) log("lme: " + file + ": " + std::to_string(parsed.skipped) + " rows are not prices and were left out");
+    if (parsed.skipped > 0) log("kar: " + file + ": " + std::to_string(parsed.skipped) + " rows are not prices and were left out");
     out.rows = std::move(parsed.rows);
     out.ok = true;
     return true;
@@ -180,18 +180,18 @@ const Lme::Year & Lme::year(int y, bool refresh, int currentYear, market::LoadRe
   const Timestamp yearEnd = static_cast<Timestamp>((dayNumber(y + 1, 1, 1) - kUnixEpochDayNumber) * 86400);
   const bool cached = cache_.has(file);
   const bool unfinished = cached && y < currentYear && fetchedAt(file) < yearEnd;
-  if (unfinished) log("lme: " + file + ": it was fetched before the year was over; asking again");
+  if (unfinished) log("kar: " + file + ": it was fetched before the year was over; asking again");
   const bool again = (refresh && y == currentYear) || unfinished;
   std::optional<std::string> kept = cached ? cache_.read(file) : std::nullopt;
   if (kept && !again) {
     result.cached++;
-    if (!read(*kept)) log("lme: " + file + ": " + out.why);
+    if (!read(*kept)) log("kar: " + file + ": " + out.why);
     return out;
   }
 
   std::string why;
   for (int attempt = 0; attempt <= settings_.retries; attempt++) {
-    if (attempt > 0) log("lme: " + file + ": " + why + "; trying again (" + std::to_string(attempt) + " of " + std::to_string(settings_.retries) + ")");
+    if (attempt > 0) log("kar: " + file + ": " + why + "; trying again (" + std::to_string(attempt) + " of " + std::to_string(settings_.retries) + ")");
     pace();
     const std::string address = url(y);
     result.downloads++;
@@ -205,14 +205,14 @@ const Lme::Year & Lme::year(int y, bool refresh, int currentYear, market::LoadRe
       continue;
     }
     std::string error;
-    if (!cache_.store(file, answer.body, error)) log("lme: " + file + ": not cached: " + error);  // the data is still used this time
+    if (!cache_.store(file, answer.body, error)) log("kar: " + file + ": not cached: " + error);  // the data is still used this time
     else noteFetched(file);
     return out;
   }
   out = {};
   // The file we have is the last one that was good; a year that cannot be asked for again is read from it.
   if (kept && read(*kept)) {
-    log("lme: " + file + ": " + why + "; using the cached copy");
+    log("kar: " + file + ": " + why + "; using the cached copy");
     result.cached++;
     return out;
   }
@@ -220,7 +220,7 @@ const Lme::Year & Lme::year(int y, bool refresh, int currentYear, market::LoadRe
   return out;
 }
 
-market::LoadResult Lme::load(const market::InstrumentSpec & instrument, const market::LoadOptions & options, const market::Log & log) {
+market::LoadResult Kar::load(const market::InstrumentSpec & instrument, const market::LoadOptions & options, const market::Log & log) {
   market::LoadResult result;
   const Metal * metal = metalOfSymbol(instrument.baseSymbol);
   if (!metal) {
@@ -238,7 +238,7 @@ market::LoadResult Lme::load(const market::InstrumentSpec & instrument, const ma
     const Year & got = year(y, options.refresh, currentYear, result, log);
     if (!got.ok) {
       result.failed.push_back(std::to_string(y) + ": " + got.why);
-      log("lme: " + instrument.code + " " + std::to_string(y) + ": " + got.why);
+      log("kar: " + instrument.code + " " + std::to_string(y) + ": " + got.why);
       incomplete = true;
       continue;
     }
@@ -281,4 +281,4 @@ market::LoadResult Lme::load(const market::InstrumentSpec & instrument, const ma
   return result;
 }
 
-}  // namespace lme
+}  // namespace kar

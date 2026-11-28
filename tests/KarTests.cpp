@@ -2,13 +2,13 @@
 #include "MarketTestSupport.h"
 #include "market/Bars.h"
 #include "market/Ingest.h"
-#include "market/offline/Lme.h"
+#include "market/offline/Kar.h"
 #include "model/Store.h"
 #include "source/KnownIsins.h"
 
 #include <map>
 
-using namespace lme;
+using namespace kar;
 
 namespace {
 
@@ -31,7 +31,7 @@ const char * kAnswer = R"([
 // An empty year, as the site answers for one before its data.
 const char * kEmpty = R"([{"Code":"AU","RateType":"P","RIC":"XAUFIXPM=","Prices":[]},{"Code":"RH","RateType":"S","RIC":"RH","Prices":[]}])";
 
-class LmeSite : public Http {
+class KarSite : public Http {
  public:
   std::map<int, std::string> years;  // the body for a year; a year not here is answered with 500
   int failures = 0;                  // answers to give with a 500 first
@@ -53,15 +53,15 @@ class LmeSite : public Http {
   }
 };
 
-lme::Settings fast(Timestamp now = kTestNow) {
-  lme::Settings s;
+kar::Settings fast(Timestamp now = kTestNow) {
+  kar::Settings s;
   s.pause = std::chrono::milliseconds(0);
   s.now = [now] { return now; };
   s.sleep = [](std::chrono::milliseconds) {};
   return s;
 }
 
-void madeUp(LmeSite & site) {
+void madeUp(KarSite & site) {
   for (int y = 2019; y <= 2026; y++) site.years[y] = y == 2026 ? kAnswer : kEmpty;
 }
 
@@ -74,7 +74,7 @@ market::InstrumentSpec spec(const std::string & code) {
 const Timestamp kNov26 = 1795705380;  // 2026-11-26 15:03:00 UTC
 }  // namespace
 
-TEST(lme_reads_the_answer_as_prices_per_ounce) {
+TEST(kar_reads_the_answer_as_prices_per_ounce) {
   Parsed parsed;
   std::string error;
   CHECK(parse(kAnswer, parsed, error));
@@ -89,7 +89,7 @@ TEST(lme_reads_the_answer_as_prices_per_ounce) {
   CHECK_NEAR(eur.bid, 104.794372557713 * kGramsPerTroyOunce, 1e-9);
 }
 
-TEST(lme_leaves_out_rows_that_are_not_prices_and_refuses_what_is_not_an_answer) {
+TEST(kar_leaves_out_rows_that_are_not_prices_and_refuses_what_is_not_an_answer) {
   Parsed parsed;
   std::string error;
   const std::string body = R"([{"Code":"AU","Prices":[
@@ -106,13 +106,13 @@ TEST(lme_leaves_out_rows_that_are_not_prices_and_refuses_what_is_not_an_answer) 
   CHECK(parse(kEmpty, parsed, error) && parsed.rows.empty());  // a year without prices is an answer
 }
 
-TEST(lme_asks_by_the_year_with_a_browsers_headers_and_the_pages_referer) {
+TEST(kar_asks_by_the_year_with_a_browsers_headers_and_the_pages_referer) {
   CHECK(url(2026) == "https://karasmussen.fi/wp-json/price-history/v1/prices?from=2026-01-01&to=2026-12-31");
-  CHECK(fileName(2026) == "lme_2026.json");
-  LmeSite site;
+  CHECK(fileName(2026) == "kar_2026.json");
+  KarSite site;
   madeUp(site);
   TempDir dir;
-  Lme adapter(site, market::RawCache(dir.path), fast());
+  Kar adapter(site, market::RawCache(dir.path), fast());
   adapter.load(spec("xaueur"), {{Resolution::Day}, false}, kQuiet);
   CHECK(site.urls.size() == 8 && site.urls.front() == url(2019) && site.urls.back() == url(2026));
   bool agent = false, referer = false;
@@ -123,24 +123,24 @@ TEST(lme_asks_by_the_year_with_a_browsers_headers_and_the_pages_referer) {
   CHECK(agent && referer);
 }
 
-TEST(lme_has_each_metal_in_five_currencies_by_the_isins_the_sources_share) {
+TEST(kar_has_each_metal_in_five_currencies_by_the_isins_the_sources_share) {
   const auto & list = instruments();
   CHECK(list.size() == 20);
   CHECK(spec("xaueur").baseIsin == known_isin::kGold && spec("xaueur").quote == "EUR" && spec("xaueur").baseKind == InstrumentKind::Commodity);
   CHECK(spec("xagusd").baseIsin == known_isin::kSilver && spec("xptsek").baseIsin == known_isin::kPlatinum && spec("xpddkk").baseIsin == known_isin::kPalladium);
   CHECK(spec("xaueur").market == "XLBM" && spec("xagusd").market == "XLBM" && spec("xptsek").market == "XLBM" && spec("xpddkk").market == "XLBM");
   CHECK(spec("xaueur").firstPeriod == 201911 && spec("xrhusd").code.empty());  // rhodium is not carried
-  LmeSite site;
-  Lme adapter(site, market::RawCache("unused"), fast());
-  CHECK(adapter.code() == "LME");
+  KarSite site;
+  Kar adapter(site, market::RawCache("unused"), fast());
+  CHECK(adapter.code() == "KAR");
   CHECK(adapter.discover(kQuiet, false).size() == 20);
 }
 
-TEST(lme_builds_the_daily_and_weekly_bars_and_the_quote_of_the_last_day) {
-  LmeSite site;
+TEST(kar_builds_the_daily_and_weekly_bars_and_the_quote_of_the_last_day) {
+  KarSite site;
   madeUp(site);
   TempDir dir;
-  Lme adapter(site, market::RawCache(dir.path), fast());
+  Kar adapter(site, market::RawCache(dir.path), fast());
   const auto eur = adapter.load(spec("xaueur"), {{Resolution::Min5, Resolution::Hour1, Resolution::Day, Resolution::Week}, false}, kQuiet);
   CHECK(eur.failed.empty() && eur.skipped.empty() && !eur.inactive);
   CHECK(eur.series.size() == 2);  // one price a day has no 5 minute or hourly bars
@@ -165,89 +165,89 @@ TEST(lme_builds_the_daily_and_weekly_bars_and_the_quote_of_the_last_day) {
   CHECK(usd.lastBarTime == kNov26);
 }
 
-TEST(lme_asks_for_each_year_once_and_keeps_the_answers_in_the_cache) {
-  LmeSite site;
+TEST(kar_asks_for_each_year_once_and_keeps_the_answers_in_the_cache) {
+  KarSite site;
   madeUp(site);
   site.years[2027] = kEmpty;
   TempDir dir;
   {
-    Lme adapter(site, market::RawCache(dir.path), fast());
+    Kar adapter(site, market::RawCache(dir.path), fast());
     const auto first = adapter.load(spec("xaueur"), {{Resolution::Day}, false}, kQuiet);
     adapter.load(spec("xagusd"), {{Resolution::Day}, false}, kQuiet);
     adapter.load(spec("xauusd"), {{Resolution::Day}, true}, kQuiet);
     CHECK(site.urls.size() == 8 && first.downloads == 8);  // every instrument of a run reads the years already in hand, a refresh included
   }
-  CHECK(market::RawCache(dir.path).has("lme_2026.json") && market::RawCache(dir.path).has("lme_2019.json"));
+  CHECK(market::RawCache(dir.path).has("kar_2026.json") && market::RawCache(dir.path).has("kar_2019.json"));
   {
-    Lme adapter(site, market::RawCache(dir.path), fast());
+    Kar adapter(site, market::RawCache(dir.path), fast());
     const auto again = adapter.load(spec("xaueur"), {{Resolution::Day}, false}, kQuiet);
     CHECK(site.urls.size() == 8 && again.downloads == 0 && again.cached == 8);
   }
   {
-    Lme adapter(site, market::RawCache(dir.path), fast());
+    Kar adapter(site, market::RawCache(dir.path), fast());
     adapter.load(spec("xaueur"), {{Resolution::Day}, true}, kQuiet);
     CHECK(site.urls.size() == 9 && site.urls.back() == url(2026));  // --refresh asks again for the current year only
   }
   {
     // the next year: 2026 was fetched before it was over, so it is asked for again, once; the years before it are not, and the new one is new
-    Lme adapter(site, market::RawCache(dir.path), fast(kTestNow + 400 * 86400));
+    Kar adapter(site, market::RawCache(dir.path), fast(kTestNow + 400 * 86400));
     adapter.load(spec("xaueur"), {{Resolution::Day}, false}, kQuiet);
     CHECK(site.urls.size() == 11 && site.urls[9] == url(2026) && site.urls[10] == url(2027));
   }
 }
 
-TEST(lme_retries_a_year_and_falls_back_to_the_cached_one) {
-  LmeSite site;
+TEST(kar_retries_a_year_and_falls_back_to_the_cached_one) {
+  KarSite site;
   madeUp(site);
   TempDir dir;
   {
-    Lme adapter(site, market::RawCache(dir.path), fast());
+    Kar adapter(site, market::RawCache(dir.path), fast());
     site.failures = 2;
     const auto loaded = adapter.load(spec("xaueur"), {{Resolution::Day}, false}, kQuiet);
     CHECK(loaded.failed.empty() && !loaded.series.empty());
     CHECK(site.urls.size() == 8 + 2);  // two answers of 500 to the first year, then the answer
   }
   {
-    Lme adapter(site, market::RawCache(dir.path), fast());
+    Kar adapter(site, market::RawCache(dir.path), fast());
     site.failures = 100;
     const auto loaded = adapter.load(spec("xaueur"), {{Resolution::Day}, true}, kQuiet);
     CHECK(loaded.failed.empty() && !loaded.series.empty() && loaded.quote);  // asked for again, not had: the copy in the cache is used
   }
   {
     TempDir empty;
-    Lme adapter(site, market::RawCache(empty.path), fast());
+    Kar adapter(site, market::RawCache(empty.path), fast());
     const auto loaded = adapter.load(spec("xaueur"), {{Resolution::Day, Resolution::Week}, false}, kQuiet);
     CHECK(!loaded.failed.empty() && loaded.series.empty() && !loaded.quote && !loaded.inactive);  // nothing had: a failure, which leaves the stored bars as they are
   }
 }
 
-TEST(lme_a_year_that_is_not_an_answer_is_a_failure_and_a_metal_with_no_recent_price_is_left_out) {
-  LmeSite site;
+TEST(kar_a_year_that_is_not_an_answer_is_a_failure_and_a_metal_with_no_recent_price_is_left_out) {
+  KarSite site;
   madeUp(site);
   site.years[2023] = "<html>maintenance</html>";
   TempDir dir;
-  Lme adapter(site, market::RawCache(dir.path), fast());
+  Kar adapter(site, market::RawCache(dir.path), fast());
   const auto loaded = adapter.load(spec("xaueur"), {{Resolution::Day, Resolution::Week}, false}, kQuiet);
   CHECK(loaded.failed.size() == 1 && loaded.failed[0].rfind("2023:", 0) == 0);
   CHECK(loaded.series.empty() && loaded.skipped.size() == 2);  // a gap in the middle leaves what is stored, rather than a window with a hole
-  CHECK(!market::RawCache(dir.path).has("lme_2023.json"));  // what is not an answer is not kept
+  CHECK(!market::RawCache(dir.path).has("kar_2023.json"));  // what is not an answer is not kept
 
-  LmeSite old;
+  KarSite old;
   madeUp(old);
   TempDir dir2;
-  Lme later(old, market::RawCache(dir2.path), fast(kTestNow + 120 * 86400));  // a quarter after the last price: not carried
+  Kar later(old, market::RawCache(dir2.path), fast(kTestNow + 120 * 86400));  // a quarter after the last price: not carried
   const auto left = later.load(spec("xaueur"), {{Resolution::Day}, false}, kQuiet);
   CHECK(left.inactive && left.series.empty());
 }
 
-TEST(lme_ingest_writes_the_bars_the_quote_and_the_listing_under_the_dataset_lme) {
-  LmeSite site;
+TEST(kar_ingest_writes_the_bars_the_quote_and_the_listing_under_the_dataset_kar) {
+  KarSite site;
   madeUp(site);
   TempDir dir;
   StoreOptions options;
   options.invent_isins = false;
   auto store = makeMemoryStore(std::move(options));
-  Lme adapter(site, market::RawCache(dir.path), fast());
+  Kar adapter(site, market::RawCache(dir.path), fast());
   market::IngestOptions ingest;
   ingest.codes = {"xaueur", "xauusd", "xagusd"};
   ingest.resolutions = {Resolution::Day, Resolution::Week};

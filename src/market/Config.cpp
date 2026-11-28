@@ -52,8 +52,8 @@ bool loadConfig(const std::string & path, Config & config, std::string & error) 
   if (const auto * datasets = section("datasets")) {
     if (auto it = datasets->find("histdata"); it != datasets->end() && it->is_object())
       if (!take(*it, "cache_dir", config.histdataCacheDir, error, "datasets.histdata.")) return false;
-    if (auto it = datasets->find("lme"); it != datasets->end() && it->is_object())
-      if (!take(*it, "cache_dir", config.lmeCacheDir, error, "datasets.lme.")) return false;
+    if (auto it = datasets->find("kar"); it != datasets->end() && it->is_object())
+      if (!take(*it, "cache_dir", config.karCacheDir, error, "datasets.kar.")) return false;
   }
   if (const auto * server = section("server"))
     if (!take(*server, "listen", config.listen, error, "server.") || !take(*server, "port", config.port, error, "server.")) return false;
@@ -77,7 +77,7 @@ bool loadConfig(const std::string & path, Config & config, std::string & error) 
     if (file.is_relative()) file = base / file;
     config.database.path = file.lexically_normal().string();
   }
-  for (std::string * dir : {&config.histdataCacheDir, &config.lmeCacheDir}) {
+  for (std::string * dir : {&config.histdataCacheDir, &config.karCacheDir}) {
     std::filesystem::path cache = *dir;
     if (cache.is_relative()) cache = base / cache;
     *dir = cache.lexically_normal().string();
