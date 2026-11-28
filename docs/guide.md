@@ -144,7 +144,7 @@ An item is identified by its dataset and the dataset's own id: two datasets with
 ## Data sources
 
 Each source runs on a thread of its own. With no `--source`, these run: `auto`, `spfb`, `ecb`, `goldprice`,
-`gold-api`, `kar`, `physical`, `sifter`, a `funds:NAME` for every schema in `data/funds` and a `metals:NAME` for every schema in `data/metals`. `--source` chooses instead: one
+`gold-api`, `physical`, `sifter`, a `funds:NAME` for every schema in `data/funds` and a `metals:NAME` for every schema in `data/metals`. `--source` chooses instead: one
 name, or several separated by commas.
 
 | source | what it gives |
@@ -154,11 +154,10 @@ name, or several separated by commas.
 | `ecb` | the euro short-term rate (€STR) from the ECB |
 | `goldprice` | [spot prices](#spot-prices-of-metals) of gold, silver and copper |
 | `gold-api` | [spot prices](#spot-prices-of-metals) of metals and two coins |
-| `kar` | daily prices of gold, silver, platinum and palladium in dollars, with the history from 2019, no key |
 | `physical` | estimated prices of [physical metals](#physical-metals) |
 | `sifter` | NAV history of the Sifter Fund's PA, PB and PI share classes, no key |
 | `funds:NAME` | a fund company described by `data/funds/NAME.json` (shown under All) |
-| `metals:NAME` | the daily prices of metals from a provider described by `data/metals/NAME.json` (the schema that comes with the program is `tavex`) |
+| `metals:NAME` | the daily prices of metals from a provider described by `data/metals/NAME.json` (the schemas that come with the program are `kar` and `tavex`) |
 | `synthetic` | made-up prices for the instruments in the lists, no network |
 
 ### Instrument lists
@@ -205,10 +204,15 @@ what reads a spot price picks one (see [Physical metals](#physical-metals)).
   bars, which the API has none of: they are made of the daily bars the store keeps, so the history grows with every load
   (load at least once a month, or a gap is left), and a longer history from another source or a paid plan joins it. Its prices
   are 15 minutes late.
-- **`kar`** (no key) asks for one request of the whole history of the daily prices of gold, silver, platinum, palladium and rhodium
-  in dollars per troy ounce, from November 2019 (rhodium from 2021, gold from December 2020), one price a day, and makes the weekly bars of the 3 and 10 years of them. The first four are
-  on the London Bullion Market, whose price the fix is, so for now a metal has a row of its own beside the spot prices of the others (on no market); rhodium, which has no fix, is on no market. The page also gives euros, kroner and kronor, but those are
-  the dollar's price converted with an exchange rate, and are left out.
+- **`metals:NAME`** (no key) reads the daily prices of metals from the provider that `data/metals/NAME.json` describes: where to ask, what for, and how the days are
+  told apart. The first load asks for ten years, one price a day (or an open, high, low and close), and writes the daily bars, the weekly bars made of them (the 3 and 10 years read
+  weeks) and the last price; the loads after it ask only from before the last day the store has (two weeks, or what the schema's `overlapDays` says), so that the data used stays small. An answer whose bars are not daily
+  is not written, and the message says what they were. The schemas that come with the program:
+  - `kar`: gold, silver, platinum and palladium in dollars on the LBM, whose price the fix is, and rhodium, which has no fix, on no market; one request has every metal, from
+    November 2019 (rhodium from 2021, gold in dollars from December 2020), one price a day. The same page gives euros, kroner and kronor, but those are the dollar's price converted
+    with an exchange rate, and are left out.
+  - `tavex`: gold, silver, platinum and palladium in dollars on no market, ten years of daily bars with an open, a high, a low and a close, one request for each metal, and the later loads ask for the last 60 days (a range shorter than about 45 days comes back as hourly bars, whatever is asked for, which the adapter does not write). A bar runs from 15:00
+    to 15:00 UTC, so it is of the day it ends on (the one that starts on a Sunday evening is Monday's), and the few hours of a Friday evening are Friday's.
 - **`gold-api`** ([gold-api.com](https://gold-api.com), no key) lists its symbols (gold, silver, platinum, palladium,
   copper, Bitcoin and Ethereum) and asks the price of each in euros and dollars. The metals are in the Commodities
   preset and the coins in Currencies, beside the currency pairs (on a terminal without pictures their icon is ₿ or ⟠); all are in All. Its prices

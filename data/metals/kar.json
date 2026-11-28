@@ -1,0 +1,23 @@
+{
+ "name": "kar",
+ "dataset": "KAR",
+ "title": "KAR",
+ "market": "XLBM",
+ "pauseMs": 1000,
+ "refreshHours": 3,
+ "headers": {"Referer": "https://karasmussen.fi/paivan-hinnat/"},
+ "request": {
+  "url": "https://karasmussen.fi/wp-json/price-history/v1/prices?from={from}&to={to}",
+  "time": "date",
+  "years": 10
+ },
+ "currencyLabel": "Currency",
+ "dayKey": "start",
+ "items": [
+  {"symbol": "XAU", "name": "Gold", "isin": "XC0009655157", "currencies": ["USD"], "labels": {"Code": "AU"}},
+  {"symbol": "XAG", "name": "Silver", "isin": "XC0009653103", "currencies": ["USD"], "labels": {"Code": "AG"}},
+  {"symbol": "XPT", "name": "Platinum", "isin": "XC0009665545", "currencies": ["USD"], "labels": {"Code": "PT"}},
+  {"symbol": "XPD", "name": "Palladium", "isin": "XC0009665529", "currencies": ["USD"], "labels": {"Code": "PD"}},
+  {"symbol": "XRH", "name": "Rhodium", "isin": "ZZ0000000040", "currencies": ["USD"], "labels": {"Code": "RH"}, "market": "XXXX"}
+ ]
+}

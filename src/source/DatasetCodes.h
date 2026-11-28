@@ -23,5 +23,3 @@ inline constexpr const char * kGoldApiDataset = "GOLD-API";
 inline constexpr const char * kGoldPriceDataset = "GOLDPRICE";
 // The NAVs of the Sifter Fund's share classes, SifterSource.
 inline constexpr const char * kSifterDataset = "SIFTER";
-// The daily prices of gold, silver, platinum and palladium in dollars, KarSource.
-inline constexpr const char * kKarDataset = "KAR";

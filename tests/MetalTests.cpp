@@ -6,6 +6,7 @@
 #include "source/MetalSource.h"
 #include "source/SchemaFile.h"
 
+#include <optional>
 #include <set>
 
 namespace {
@@ -216,4 +217,148 @@ TEST(metal_stops_at_a_refusal_and_does_not_ask_the_others) {
     MetalSource(schema(), [] { return kNow; }).load(*store, http, said);
     CHECK(http.urls.size() == 1 && said.messages.size() == 1 && said.messages[0].find("stopping") != std::string::npos);
   }
+}
+
+namespace {
+
+// A provider with every metal and currency in one answer, as `kar` is: gold in dollars and euros (the euros are the dollar's converted: not carried), silver, rhodium and
+// a code that is not asked for. The numbers are the real ones of those days.
+const char * kEvery = R"([
+ {"Code":"AU","RateType":"P","RIC":"XAUFIXPM=","Prices":[
+  {"Currency":"EUR","TradeTime":"2026-11-25T15:00:00","Bid":1.0937,"Ask":1.0939,"BidGram":101.879200330146,"AskGram":101.897830521301},
+  {"Currency":"USD","TradeTime":"2026-11-25T15:14:00","Bid":3466.35,"Ask":3466.35,"BidGram":111.445657241146,"AskGram":111.445657241146},
+  {"Currency":"EUR","TradeTime":"2026-11-26T15:00:00","Bid":1.0978,"Ask":1.098,"BidGram":104.794372557713,"AskGram":104.813464263407},
+  {"Currency":"USD","TradeTime":"2026-11-26T15:03:00","Bid":3578.9,"Ask":3578.9,"BidGram":115.064221068369,"AskGram":115.064221068369}]},
+ {"Code":"AG","RateType":"A","RIC":"LDNXAG=","Prices":[
+  {"Currency":"USD","TradeTime":"2026-11-26T12:00:00","Bid":41.54,"Ask":41.54,"BidGram":1.3355410162843,"AskGram":1.3355410162843}]},
+ {"Code":"RH","RateType":"S","RIC":"RH","Prices":[
+  {"Currency":"USD","TradeTime":"2026-11-25T09:31:00","Bid":8900,"Ask":8900,"BidGram":286.141431028662,"AskGram":286.141431028662}]},
+ {"Code":"XX","RateType":"S","RIC":"XX","Prices":[{"Currency":"USD","TradeTime":"2026-11-25T09:31:00","Bid":1,"Ask":1,"BidGram":1,"AskGram":1}]}
+])";
+
+MetalSchema kar() {
+  MetalSchema s;
+  std::string error;
+  const bool ok = MetalSchema::load("kar", s, error);
+  CHECK(ok);
+  if (!ok) std::printf("  %s\n", error.c_str());
+  return s;
+}
+
+// The edge of a metal (by its ISIN) in dollars on a market, in a dataset.
+std::optional<EdgeKey> edgeOf(const Snapshot & s, const char * isin, const char * mic, const char * dataset) {
+  const auto base = s.findInstrumentByIsin(isin), quote = s.findInstrument("USD");
+  const auto market = s.findMarket(mic);
+  const auto set = s.findDataset(dataset);
+  if (!base || !quote || !market || !set) return std::nullopt;
+  return EdgeKey{*base, *quote, *market, *set};
+}
+
+// A bar for each weekday from `first` to `last` (day numbers), as a dealer's: from 15:00 the day before to 15:00, so the Monday's starts on the Sunday.
+std::string daysAnswer(int64_t first, int64_t last, double base = 3000) {
+  std::string bars;
+  for (int64_t d = first; d <= last; d++) {
+    if (weekday(d) >= 5) continue;
+    const Timestamp end = (d - kUnixEpochDayNumber) * 86400 + 15 * 3600;
+    const double close = base + static_cast<double>(d % 200);
+    bars += (bars.empty() ? "" : ",") + bar(end - 86400, end, close - 1, close + 5, close - 5, close);
+  }
+  return "{\"statusCode\":200,\"data\":[" + bars + "]}";
+}
+
+}  // namespace
+
+TEST(metal_an_answer_of_every_metal_is_one_request_and_the_series_are_found_by_their_labels) {
+  const MetalSchema s = kar();
+  CHECK(!s.perItem() && s.items.size() == 5 && s.items[4].market == "XXXX" && s.items[4].labels.at("Code") == "RH" && s.market == "XLBM");
+  auto store = makeMemoryStore();
+  FakeHttp http;
+  http.answer = [](const std::string &) { return ok(kEvery); };
+  Said said;
+  MetalSource(s, [] { return kNow; }).load(*store, http, said);
+  CHECK(http.urls.size() == 1 && http.urls[0] == "https://karasmussen.fi/wp-json/price-history/v1/prices?from=2016-12-03&to=2026-12-01");
+  // The Referer is the page's, over the browser's headers.
+  bool referer = false;
+  for (const auto & [name, value] : http.headers[0])
+    if (name == "Referer" && value == "https://karasmussen.fi/paivan-hinnat/") referer = true;
+  CHECK(referer);
+  // Platinum and palladium are not in the made-up answer: said, and the others written.
+  CHECK(said.messages == std::vector<std::string>({"kar: XPT/USD: not in the answer", "kar: XPD/USD: not in the answer"}) && said.changes == 3);
+  const auto snapshot = store->snapshot();
+  const auto gold = edgeOf(*snapshot, known_isin::kGold, "XLBM", "KAR");
+  const auto silver = edgeOf(*snapshot, known_isin::kSilver, "XLBM", "KAR");
+  const auto rhodium = edgeOf(*snapshot, known_isin::kRhodium, "XXXX", "KAR");
+  CHECK(gold && silver && rhodium);
+  if (!gold || !silver || !rhodium) return;
+  CHECK(snapshot->quoteRowsSince(0).size() == 3);  // gold, silver and rhodium in dollars: no euros
+  // A price a day: a value queue, at the price; a bid and an ask equal are one price, so none is written.
+  const auto days = snapshot->queue(*gold, Resolution::Day);
+  CHECK(days.size() == 2 && days[1].time == dayNumber(2026, 11, 26) && days[1].close == 3578.9);
+  CHECK(snapshot->coverage(*gold, Resolution::Day)->kind == QueueKind::Scalar);
+  const auto quote = snapshot->quote(*gold);
+  CHECK(quote && quote->last == 3578.9 && quote->time == 1795705380 && !isDefined(quote->bid) && !isDefined(quote->ask));  // 2026-11-26 15:03 UTC, the fix's time
+  CHECK(snapshot->quote(*silver)->last == 41.54 && snapshot->quote(*rhodium)->last == 8900);
+  // Rhodium has no fix: it is on no market, and not on the other.
+  CHECK(!snapshot->quote(EdgeKey{rhodium->base, rhodium->quote, gold->market, rhodium->dataset}) && !snapshot->quote(EdgeKey{gold->base, gold->quote, rhodium->market, gold->dataset}));
+  // A series that is not found by its labels is not another's.
+  MetalSchema other = kar();
+  other.items.resize(1);
+  other.items[0].labels["Code"] = "ZZ";
+  auto empty = makeMemoryStore();
+  Said none;
+  MetalSource(other, [] { return kNow; }).load(*empty, http, none);
+  CHECK(none.messages == std::vector<std::string>({"kar: XAU/USD: not in the answer"}) && none.changes == 0);
+}
+
+TEST(metal_a_load_after_the_first_asks_from_two_weeks_before_the_last_day_it_has) {
+  MetalSchema s = schema();
+  s.items.resize(1);
+  auto store = makeMemoryStore();
+  FakeHttp http;
+  const int64_t first = dayNumber(2025, 10, 1), last = dayNumber(2026, 11, 30);  // a Wednesday and a Monday: some fifty-eight weeks
+  http.answer = [&](const std::string &) { return ok(daysAnswer(first, last)); };
+  Said said;
+  MetalSource source(s, [] { return kNow; });
+  source.load(*store, http, said);
+  CHECK(said.messages.empty() && http.urls.size() == 1 && http.urls[0] == MetalSource::url(s, s.items[0], "USD", kNow));  // the first asks for ten years
+
+  // Now the store has them: the next asks from the last day less 14, and what it gets goes on the end.
+  http.answer = [&](const std::string &) { return ok(daysAnswer(last - 14, last + 1)); };
+  source.load(*store, http, said);
+  const Timestamp since = (last - 14 - kUnixEpochDayNumber) * 86400;
+  CHECK(said.messages.empty() && http.urls.size() == 2 && http.urls[1] == MetalSource::url(s, s.items[0], "USD", kNow, since));
+  CHECK(http.urls[1].find("from=2026-11-16T00%3A00%3A00Z") != std::string::npos);  // two weeks before Monday the 30th
+  const auto snapshot = store->snapshot();
+  const auto gold = edgeOf(*snapshot, known_isin::kGold, "XXXX", "DEALER");
+  CHECK(gold.has_value());
+  if (!gold) return;
+  const auto days = snapshot->queue(*gold, Resolution::Day);
+  CHECK(days.back().time == last + 1 && days[days.size() - 2].time == last);  // Tuesday the 1st of December is on the end, and nothing before it was lost
+  const auto weeks = snapshot->queue(*gold, Resolution::Week);
+  CHECK(weeks.size() >= 55 && weeks.back().time == dayNumber(2026, 11, 30));
+  // What came with the overlap did not change what was there.
+  CHECK(days.size() > 250);
+
+  // A store that does not have the edge, or has only a few weeks of it, asks for the whole.
+  auto fresh = makeMemoryStore();
+  FakeHttp again;
+  again.answer = [](const std::string &) { return ok(week()); };
+  Said sa;
+  MetalSource second(s, [] { return kNow; });
+  second.load(*fresh, again, sa);
+  second.load(*fresh, again, sa);
+  CHECK(again.urls.size() == 2 && again.urls[0] == again.urls[1] && again.urls[0] == MetalSource::url(s, s.items[0], "USD", kNow));
+}
+
+TEST(metal_an_answer_of_every_metal_asks_from_the_earliest_day_any_of_them_needs) {
+  const MetalSchema s = kar();
+  auto store = makeMemoryStore();
+  FakeHttp http;
+  http.answer = [](const std::string &) { return ok(kEvery); };
+  Said said;
+  MetalSource source(s, [] { return kNow; });
+  source.load(*store, http, said);
+  source.load(*store, http, said);
+  // Two days of bars are not what a store has of a metal that was loaded whole (half a year of weeks), so the second asks for the whole history again.
+  CHECK(http.urls.size() == 2 && http.urls[0] == http.urls[1]);
 }

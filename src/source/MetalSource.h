@@ -7,6 +7,7 @@
 
 #include <chrono>
 #include <functional>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -20,31 +21,37 @@
 //   market             the MIC the edges are on (XXXX, no market, where there is none)
 //   pauseMs, refreshHours   the wait between two requests (1000) and how often to load again (3)
 //   headers            sent with every request, over a Chrome's (`browserHeaders`: a Referer says which page asks, an empty value leaves the browser's out)
-//   request            {url, interval, years, time}: the request for the daily history of one metal in one currency. `url` has `{symbol}`, `{currency}`, `{from}`, `{to}` and
-//                      `{interval}`; with `{symbol}` there is a request for each metal and currency, without it one request that has them all (not yet read: a schema that
-//                      says so is refused). `interval` (P1D) is what is asked for, `years` (10) how far back, `time` how `{from}` and `{to}` are written: "iso" (2026-11-28T11:36:00Z,
-//                      the colons percent-encoded, for a URL) or "date" (2026-11-28).
+//   request            {url, interval, years, overlapDays, time}: the request for the daily history. `url` has `{from}`, `{to}` and `{interval}`, and `{symbol}` and `{currency}` where the
+//                      answer is of one metal in one currency: there is then a request for each. Without `{symbol}` the answer has every metal and currency (series told
+//                      apart by their labels: see `labels` of an item and `currencyLabel`), and there is one request. `interval` (P1D) is what is asked for, `years` (10) how far back
+//                      the first request goes, `overlapDays` (14) how far before the last day the store has the later ones begin (so a load after the first asks for two weeks,
+//                      not ten years), `time` how `{from}` and `{to}` are written: "iso" (2026-11-28T11:36:00Z, the colons percent-encoded, for a URL) or "date" (2026-11-28).
+//   currencyLabel      where an answer of every metal and currency says the currency: the label of the series ("Currency").
 //   dayKey             which day a daily bar is of: "start" (the date it starts on, the default) or "end" (the date of its last second: a bar from 15:00 to 15:00 is of the day it ends,
 //                      so the one that starts on a Sunday evening is Monday's)
 //   foldWeekends       a bar that comes to a Saturday or a Sunday (the few hours of a Friday evening) is added to the day before (false)
 //   fields, rows       hints for the reader (SeriesReader.h `Hints`): which key is which role, a JSON pointer to the rows. Only where its heuristics do not tell.
-//   items              [{symbol, name, isin, currencies, type, unit}]: what is asked for. `isin` is the metal's (the gold of the other sources), `currencies` ["USD"], `type` ("METAL"),
-//                      `unit` ("troy oz") what a price is for, which the table's name for the metal says.
+//   items              [{symbol, name, isin, currencies, type, unit, market, labels}]: what is asked for. `isin` is the metal's (the gold of the other sources), `currencies` ["USD"],
+//                      `type` ("METAL"), `unit` ("troy oz") what a price is for, which the table's name for the metal says, `market` the MIC of this metal where it is not the
+//                      schema's, `labels` what tells its series in an answer of every metal ({"Code": "AU"}).
 //
-// What is written, for each metal and currency: an edge of the metal's ISIN, the currency, the schema's market and dataset, with the daily bars (open, high, low, close),
-// the weekly bars made of them (the 3 and 10 years read weeks), and the last price as the edge's quote. A bar length that is not a day's (the answer may give finer or
-// coarser bars than it was asked for) is not written, and is said.
+// What is written, for each metal and currency: an edge of the metal's ISIN, the currency, the market and the schema's dataset, with the daily bars (open, high, low, close; a
+// close alone where the answer has a price a day, and the mean of a bid and an ask where it has those), the weekly bars made of them (the 3 and 10 years read weeks), and the
+// last price as the edge's quote. A bar length that is not a day's (the answer may give finer or coarser bars than it was asked for) is not written, and is said.
+// The first load asks for `years`; where the store has the bars of an edge it asks from `overlapDays` before the last day it has, so that the data used stays small.
 struct MetalSchema {
   struct Item {
-    std::string symbol, name, isin, type = "METAL", unit = "troy oz";
+    std::string symbol, name, isin, type = "METAL", unit = "troy oz", market;  // market: the schema's where empty
     std::vector<std::string> currencies{"USD"};
+    std::map<std::string, std::string> labels;
   };
-  std::string name, dataset, title, market = "XXXX";
+  std::string name, dataset, title, market = "XXXX", currencyLabel = "Currency";
   std::chrono::milliseconds pause{1000}, refresh{std::chrono::hours(3)};
   HttpHeaders headers;
   std::string url, interval = "P1D", time = "iso", dayKey = "start";
-  int years = 10;
+  int years = 10, overlapDays = 14;
   bool foldWeekends = false;
+  bool perItem() const { return url.find("{symbol}") != std::string::npos; }
   series::Hints hints;
   std::vector<Item> items;
 
@@ -65,13 +72,18 @@ class MetalSource : public Source {
   void load(Store &, Http &, SourceListener &) override;
   std::chrono::milliseconds refreshInterval() const override { return schema_.refresh; }
 
-  // The request for one metal in one currency, as the schema makes it, for the days that end at `now`.
-  static std::string url(const MetalSchema &, const MetalSchema::Item &, const std::string & currency, Timestamp now);
+  // The request for one metal in one currency (for an answer of every metal, the one request: the item and the currency are not used), as the schema makes it, for the days from
+  // `since` (UTC seconds; 0: the schema's `years` back) to `now`.
+  static std::string url(const MetalSchema &, const MetalSchema::Item &, const std::string & currency, Timestamp now, Timestamp since = 0);
   // The daily bars of a series, each of its day (by the schema's `dayKey`), the days of two bars of one day joined, and the bars that come to a weekend folded into the day
   // before where the schema says so. Oldest first.
   static std::vector<Candle> days(const MetalSchema &, const series::Series &);
 
  private:
+  // The day (UTC seconds) the next request for an edge begins: where the store has its daily and weekly bars, the overlap before the last day it has; else 0, the whole history.
+  Timestamp sinceOf(const Snapshot &, const MetalSchema::Item &, const std::string & currency) const;
+  // One metal in one currency, its series in hand: checked, made into bars and written. False where it was not.
+  bool write(Store &, const MetalSchema::Item &, const std::string & currency, const series::Series &, Timestamp now, const std::string & label, SourceListener &);
   MetalSchema schema_;
   std::function<Timestamp()> now_;
 };
