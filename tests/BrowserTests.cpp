@@ -349,6 +349,20 @@ TEST(a_preset_shows_one_row_per_group_with_what_its_datasets_say_together) {
   CHECK(t.model()->trace(0, Quotes::HISTORY).empty());  // no intraday bars: the day has no trace
 }
 
+TEST(the_commodities_preset_has_the_metals_of_the_london_bullion_market_beside_those_of_no_market) {
+  Fixture f(false);
+  InstrumentId gold = f.store->addInstrument("XAU", "Gold", InstrumentKind::Commodity, "XC0009655157");
+  InstrumentId silver = f.store->addInstrument("XAG", "Silver", InstrumentKind::Commodity, "XC0009653103");
+  InstrumentId usd = f.store->addInstrument("USD", "US dollar", InstrumentKind::Currency);
+  MarketId none = f.store->addMarket("XXXX", "No market"), bullion = f.store->addMarket("XLBM", "London Bullion Market");
+  DatasetId a = f.store->addDataset("providera"), b = f.store->addDataset("providerb");
+  f.store->appendCandles({gold, usd, none, a}, Resolution::Day, {{900, 1, 1, 1, 1.0, 1}, {1000, 1, 1, 1, 2.0, 1}});
+  f.store->appendCandles({silver, usd, bullion, b}, Resolution::Day, {{900, 1, 1, 1, 1.0, 1}, {1000, 1, 1, 1, 2.0, 1}});
+  f.app->execute("show-indices");  // the first preset is the one shown before the data is there
+  f.app->execute("show-commodities");
+  CHECK(f.browser->table().model()->rowCount() == 2);  // the metal that is on the bullion market is a row of the preset too
+}
+
 TEST(a_preset_whose_market_has_no_data_shows_no_rows_and_a_book_alone_is_not_a_row) {
   Fixture f(false);
   InstrumentId eur = f.store->addInstrument("EUR", "Euro", InstrumentKind::Currency);
