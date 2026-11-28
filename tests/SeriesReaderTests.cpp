@@ -1,6 +1,8 @@
 #include "TestFramework.h"
 
+#include "source/NordnetHistory.h"
 #include "source/SeriesReader.h"
+#include "source/YahooHistory.h"
 
 #include <fstream>
 #include <sstream>
@@ -186,4 +188,55 @@ TEST(series_an_answer_with_no_rows_is_an_empty_series_and_not_a_failure) {
   CHECK(r.ok && r.series.size() == 1 && r.series[0].bars.empty());
   const Result nested = read(R"([{"Code":"AU","Prices":[]},{"Code":"RH","Prices":[]}])");
   CHECK(nested.ok && nested.series.size() == 2 && nested.series[1].label("Code") == "RH" && nested.series[1].bars.empty());
+}
+
+TEST(series_reads_a_chart_whose_time_is_apart_from_its_values_as_the_table_it_joins) {
+  // Yahoo's layout: `timestamp` beside `indicators.quote[0].{open,...}`, arrays of one length. The same bars as the adapter's own parser makes.
+  for (const char * name : {"yahoo/gold.json", "yahoo/nokia.json", "yahoo/eurusd.json"}) {
+    const std::string body = fixture(name);
+    const Result r = read(body);
+    CHECK(r.ok && r.shape == Shape::Columns && r.series.size() == 1);
+    if (!r.ok) continue;
+    const Series & s = r.series[0];
+    std::vector<Candle> own;
+    std::string error;
+    CHECK(YahooHistory::parse(body, own, error));
+    CHECK(!s.bars.empty() && !own.empty());
+    CHECK(isDefined(s.bars[0].open) && isDefined(s.bars[0].high) && isDefined(s.bars[0].low) && isDefined(s.bars[0].close));
+    CHECK(noteSays(r, "fields not used: adjclose"));
+  }
+  // Small and exact, with a gap in the values (a null) and the columns named twice.
+  const Result r = read(R"({"chart":{"result":[{"meta":{"symbol":"X","validRanges":["1d","5d"]},"timestamp":[1700000000,1700086400,1700172800],
+      "indicators":{"quote":[{"open":[1,2,null],"high":[3,4,null],"low":[0.5,1,null],"close":[2,3,null],"volume":[10,20,null]}],"adjclose":[{"adjclose":[1.9,2.9,null]}]}}],"error":null}})");
+  CHECK(r.ok && r.series.size() == 1 && r.series[0].bars.size() == 2);  // the row with no values is not a bar
+  CHECK(r.series[0].bars[1].open == 2 && r.series[0].bars[1].high == 4 && r.series[0].bars[1].low == 1 && r.series[0].bars[1].close == 3 && r.series[0].bars[1].volume == 20);
+  CHECK(r.series[0].barSeconds == 86400 && noteSays(r, "1 rows that are not bars left out"));
+  // A time with nothing of its length beside it is not a table.
+  const Result alone = read(R"({"timestamp":[1700000000,1700086400],"other":[1,2,3]})");
+  CHECK(!alone.ok);
+  // A chart that says it failed.
+  const Result failed = read(R"({"chart":{"result":null,"error":{"code":"Not Found","description":"No data found, symbol may be delisted"}}})");
+  CHECK(!failed.ok && failed.error == "No data found, symbol may be delisted");
+}
+
+TEST(series_rows_beside_empty_lists_are_the_series_as_a_price_history_comes) {
+  // Nordnet's layout: `pricePoints` with the rows, beside lists that have nothing this time, lists of text and summary numbers.
+  for (const char * name : {"nordnet/history-gold-week.json", "nordnet/history-gold-year5-day.json", "nordnet/history-stock-day.json", "nordnet/history-fund-nav.json"}) {
+    const std::string body = fixture(name);
+    const Result r = read(body);
+    CHECK(r.ok && r.series.size() == 1 && r.shape == Shape::Structs);
+    if (!r.ok) continue;
+    NordnetHistory::Series own;
+    std::string error;
+    CHECK(NordnetHistory::parse(body, std::string(name).find("fund") != std::string::npos, own, error));
+    CHECK(r.series[0].bars.size() == own.bars.size() && !own.bars.empty());
+    CHECK(r.series[0].bars.back().close == own.bars.back().close);  // the last price of the last point, as the adapter reads it
+  }
+  const Result r = read(fixture("nordnet/history-gold-week.json"));
+  CHECK(r.ok && r.series[0].bars.size() == 7 && r.series[0].bars[0].time == 865814400 && r.series[0].bars[0].close == 340.9 && r.series[0].bars[0].open == 342.3);
+  // Two lists with rows are series by name, and an empty one beside them is a series with no rows (not a reason to call the answer ambiguous).
+  const Result two = read(R"({"a":[[1700000000,1]],"b":[[1700000000,2]],"c":[]})");
+  CHECK(two.ok && two.series.size() == 3 && two.series[2].label("key") == "c" && two.series[2].bars.empty());
+  // Only empty lists: an answer with no rows.
+  CHECK(read(R"({"a":[],"b":[]})").error.find("ambiguous") != std::string::npos);
 }

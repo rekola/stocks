@@ -12,8 +12,8 @@
 // a metals dealer's bars, a provider with every metal in one answer) share it, and a schema only says what the heuristics cannot tell.
 //
 // What it works out, in this order, and says in `Result::notes` where it had to choose:
-//   - The envelope: `{"statusCode":200,"data":[...]}`, `{"symbol":"XAU/USD","bars":[...],"meta":{...}}`: the one member that holds the series (a lone one, or
-//     the one named like a series: data, result, bars, prices, ...). An answer that says it is an error (an `error` member that is not empty, a
+//   - The envelope: `{"statusCode":200,"data":[...]}`, `{"symbol":"XAU/USD","bars":[...],"meta":{...}}`: the one member that holds the series (a lone one, the one
+//     named like a series: data, result, bars, prices, ..., or the only one with rows beside lists that are empty or of text). An answer that says it is an error (an `error` member that is not empty, a
 //     `statusCode` or `status` of 400 and over) is no series, and its message is the `error`.
 //   - The shape of the rows:
 //       rows of arrays        [[1700000000000, 41.5], [t, o, h, l, c], [t, o, h, l, c, v]]
@@ -22,6 +22,8 @@
 //       series by name        {"XAU": [...], "XAG": [...]}, each member read as one of the above, the name its label
 //       series in a struct    [{"Code": "AU", "Prices": [{"Currency": "EUR", "TradeTime": ..., "Bid": ...}, ...]}, ...]: a struct that holds an array of rows
 //                             is a series (or several), and its other members that are text (Code, RateType) are its labels
+//       joined columns        {"timestamp": [...], "indicators": {"quote": [{"open": [...], "close": [...]}]}}: a time that is an array, with arrays of its length
+//                             anywhere under the same object (a chart's), which are its columns (a name used twice keeps the first)
 //   - What each field is, by its name (time, start, date, bar_start ...; open, high, low, close, value, price, last, rate, nav ...; volume; bid, ask), and
 //     where a name does not say, by its value (the one field of ISO times). A struct with a time and one number is a value (kept as `close`).
 //   - What labels the series: the fields of text that are not times, and are the same within a series and differ between series (a `Currency` in
