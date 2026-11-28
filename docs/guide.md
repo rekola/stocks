@@ -204,10 +204,10 @@ what reads a spot price picks one (see [Physical metals](#physical-metals)).
   bars, which the API has none of: they are made of the daily bars the store keeps, so the history grows with every load
   (load at least once a month, or a gap is left), and a longer history from another source or a paid plan joins it. Its prices
   are 15 minutes late.
-- **`kar`** (no key) asks for one request of the whole history of the daily prices of gold, silver, platinum and palladium
-  in dollars per troy ounce, from November 2019 (gold from December 2020), one price a day, and makes the weekly bars of the 3 and 10 years of them. They are
-  on the London Bullion Market, whose price the fix is, so for now a metal has a row of its own beside the spot prices of the others (on no market). The page also gives euros, kroner and kronor, but those are
-  the dollar's price converted with an exchange rate, and are left out. Rhodium is not carried.
+- **`kar`** (no key) asks for one request of the whole history of the daily prices of gold, silver, platinum, palladium and rhodium
+  in dollars per troy ounce, from November 2019 (rhodium from 2021, gold from December 2020), one price a day, and makes the weekly bars of the 3 and 10 years of them. The first four are
+  on the London Bullion Market, whose price the fix is, so for now a metal has a row of its own beside the spot prices of the others (on no market); rhodium, which has no fix, is on no market. The page also gives euros, kroner and kronor, but those are
+  the dollar's price converted with an exchange rate, and are left out.
 - **`gold-api`** ([gold-api.com](https://gold-api.com), no key) lists its symbols (gold, silver, platinum, palladium,
   copper, Bitcoin and Ethereum) and asks the price of each in euros and dollars. The metals are in the Commodities
   preset and the coins in Currencies, beside the currency pairs (on a terminal without pictures their icon is ₿ or ⟠); all are in All. Its prices

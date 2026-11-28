@@ -24,11 +24,13 @@ constexpr const char * kFirstDay = "2019-11-01";                         // the 
 struct Metal {
   const char * code;  // the answer's
   const char * symbol, *name, *isin;
+  const char * market;  // the MIC: the London Bullion Market for the four whose fix it is, no market for rhodium
 };
-constexpr Metal kMetals[] = {{"AU", "XAU", "Gold", known_isin::kGold},
-                             {"AG", "XAG", "Silver", known_isin::kSilver},
-                             {"PT", "XPT", "Platinum", known_isin::kPlatinum},
-                             {"PD", "XPD", "Palladium", known_isin::kPalladium}};
+constexpr Metal kMetals[] = {{"AU", "XAU", "Gold", known_isin::kGold, kMarket},
+                             {"AG", "XAG", "Silver", known_isin::kSilver, kMarket},
+                             {"PT", "XPT", "Platinum", known_isin::kPlatinum, kMarket},
+                             {"PD", "XPD", "Palladium", known_isin::kPalladium, kMarket},
+                             {"RH", "XRH", "Rhodium", known_isin::kRhodium, kNoMarket}};
 
 const Metal * metalOfCode(const std::string & code) {
   for (const Metal & m : kMetals)
@@ -123,7 +125,6 @@ void KarSource::load(Store & store, Http & http, SourceListener & listener) {
   }
   store.batch([&](Batch & b) {
     const DatasetId dataset = b.addDataset(kKarDataset, "KAR");
-    const MarketId market = b.addMarket(kMarket, marketNameOfMic(kMarket));  // the fix is the London Bullion Market's price
     const InstrumentId quote = currencyNode(b, "USD");
     for (auto & [code, s] : series) {
       const Metal * metal = metalOfCode(code);
@@ -134,6 +135,7 @@ void KarSource::load(Store & store, Http & http, SourceListener & listener) {
       Quote last;
       last.last = s.last.price;
       last.time = s.last.time;
+      const MarketId market = b.addMarket(metal->market, marketNameOfMic(metal->market));
       const EdgeKey edge{base, quote, market, dataset};
       b.appendCandles(edge, Resolution::Day, s.bars, QueueKind::Scalar);
       b.appendCandles(edge, Resolution::Week, weeks, QueueKind::Scalar);
