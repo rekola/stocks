@@ -123,8 +123,7 @@ void KarSource::load(Store & store, Http & http, SourceListener & listener) {
   }
   store.batch([&](Batch & b) {
     const DatasetId dataset = b.addDataset(kKarDataset, "K. A. Rasmussen");
-    // The fix is the London Bullion Market's price, and it is also the price of the metal: on no market it is one row with the other spot prices.
-    const MarketId markets[] = {b.addMarket(kMarket, marketNameOfMic(kMarket)), b.addMarket(kNoMarket, marketNameOfMic(kNoMarket))};
+    const MarketId market = b.addMarket(kMarket, marketNameOfMic(kMarket));  // the fix is the London Bullion Market's price
     const InstrumentId quote = currencyNode(b, "USD");
     for (auto & [code, s] : series) {
       const Metal * metal = metalOfCode(code);
@@ -135,13 +134,11 @@ void KarSource::load(Store & store, Http & http, SourceListener & listener) {
       Quote last;
       last.last = s.last.price;
       last.time = s.last.time;
-      for (const MarketId market : markets) {
-        const EdgeKey edge{base, quote, market, dataset};
-        b.appendCandles(edge, Resolution::Day, s.bars, QueueKind::Scalar);
-        b.appendCandles(edge, Resolution::Week, weeks, QueueKind::Scalar);
-        b.setQuote(edge, last);
-        b.setListing({edge, metal->symbol, "", "", "METAL", std::string(metal->name) + ", per troy oz"});
-      }
+      const EdgeKey edge{base, quote, market, dataset};
+      b.appendCandles(edge, Resolution::Day, s.bars, QueueKind::Scalar);
+      b.appendCandles(edge, Resolution::Week, weeks, QueueKind::Scalar);
+      b.setQuote(edge, last);
+      b.setListing({edge, metal->symbol, "", "", "METAL", std::string(metal->name) + ", per troy oz"});
     }
   });
   listener.changed();
