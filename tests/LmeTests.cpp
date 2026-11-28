@@ -78,8 +78,8 @@ TEST(lme_reads_the_answer_as_prices_per_ounce) {
   Parsed parsed;
   std::string error;
   CHECK(parse(kAnswer, parsed, error));
-  // the GBP row and the XX metal are not carried, and are not rows that failed
-  CHECK(parsed.rows.size() == 5 && parsed.skipped == 0);
+  // the GBP row and the rhodium and XX metals are not carried, and are not rows that failed
+  CHECK(parsed.rows.size() == 4 && parsed.skipped == 0);
   const Row & usd = parsed.rows[3];
   CHECK(usd.metal == "AU" && usd.currency == "USD" && usd.time == kNov26);
   CHECK_NEAR(usd.bid, 3578.9, 0.01);  // the gram's price times 31.1035: the ounce of the fix
