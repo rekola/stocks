@@ -22,7 +22,7 @@
 // (`Bid` and `Ask` are then the sides of the rate, and the gram's price after them), so they say nothing the dollar's does not and carry the cost of converting as
 // if it were the metal's spread: they are left out.
 //
-// What is written, for each metal, an edge of the metal's ISIN (the gold of the other sources), the dollar, the London Bullion Market (XLBM), whose price the
+// What is written, for each metal, an edge of the metal's ISIN (the gold of the other sources), the dollar, the LBM (XLBM), whose price the
 // fix is, and "KAR". It is one row of the metal with the other spot prices (on no market) when the rows are of an instrument whatever its market (plans/data-model.md):
 //   - the daily bars, one value a day, per troy ounce (the unit of the metals' ISINs), and the weekly bars of those (the 3 and 10 years read weeks,
 //     which the answer has none of);

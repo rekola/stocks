@@ -35,7 +35,7 @@ constexpr KnownMarket kMarkets[] = {
     {82, "Madrid Stock Exchange", "XMAD"},
     {83, "SIX Swiss Exchange", "XSWX"},
     {0, "NYSE Arca", "ARCX"},
-    {0, "London Bullion Market", "XLBM"},  // the over-the-counter market of gold, silver, platinum and palladium, whose fixings are the daily prices
+    {0, "LBM", "XLBM"},  // the over-the-counter market of gold, silver, platinum and palladium, whose fixings are the daily prices
     {0, "No market", "XXXX"}, // indices, spot prices and currency pairs: what
                               // is quoted on no venue
     {78, "Off exchange",

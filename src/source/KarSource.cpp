@@ -18,7 +18,7 @@ namespace {
 
 constexpr const char * kEndpoint = "https://karasmussen.fi/wp-json/price-history/v1/prices";
 constexpr const char * kPage = "https://karasmussen.fi/paivan-hinnat/";  // the page whose script asks, which is the Referer
-constexpr const char * kMarket = "XLBM";                                  // the London Bullion Market
+constexpr const char * kMarket = "XLBM";                                  // the LBM
 constexpr const char * kFirstDay = "2019-11-01";                         // the first price of any metal is of 2019-11-13
 
 struct Metal {
@@ -123,7 +123,7 @@ void KarSource::load(Store & store, Http & http, SourceListener & listener) {
   }
   store.batch([&](Batch & b) {
     const DatasetId dataset = b.addDataset(kKarDataset, "K. A. Rasmussen");
-    const MarketId market = b.addMarket(kMarket, marketNameOfMic(kMarket));  // the fix is the London Bullion Market's price
+    const MarketId market = b.addMarket(kMarket, marketNameOfMic(kMarket));  // the fix is the LBM's price
     const InstrumentId quote = currencyNode(b, "USD");
     for (auto & [code, s] : series) {
       const Metal * metal = metalOfCode(code);

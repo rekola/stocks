@@ -99,7 +99,7 @@ TEST(kar_asks_for_the_whole_history_as_a_browser_does_with_the_pages_referer) {
   CHECK(source.name() == "kar" && source.datasetCodes() == std::vector<std::string>{kKarDataset} && std::string(kKarDataset) == "KAR");
 }
 
-TEST(kar_writes_the_daily_bars_and_the_last_price_of_each_metal_in_dollars_on_the_bullion_market) {
+TEST(kar_writes_the_daily_bars_and_the_last_price_of_each_metal_in_dollars_on_the_lbm) {
   Loaded l;
   CHECK(l.said.changes == 1 && l.said.messages.empty());
   const auto gold = l.edge(known_isin::kGold), silver = l.edge(known_isin::kSilver);

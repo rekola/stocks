@@ -29,7 +29,7 @@ struct Preset {
   const char *mic = nullptr;
   KindSet kinds;
   const char * list = nullptr;
-  const char * also = nullptr;  // a second market, where the preset is of two (the commodities of no market and of the London Bullion Market)
+  const char * also = nullptr;  // a second market, where the preset is of two (the commodities of no market and of the LBM)
 };
 constexpr Preset kPresets[] = {
     {"Commodities", "show-commodities", kNoMarket, InstrumentKind::Commodity, nullptr, "XLBM"},
