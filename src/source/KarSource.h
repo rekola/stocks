@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-// The daily prices of gold, silver, platinum and palladium in dollars.
+// The daily prices of gold, silver, platinum, palladium and rhodium in dollars.
 //
 // One request answers for a range of days, every metal and currency in it, as the page's script asks (browser headers, the page as Referer):
 //   GET https://karasmussen.fi/wp-json/price-history/v1/prices?from=2019-11-01&to=2026-11-28
@@ -20,8 +20,9 @@
 // (`Bid` and `Ask` are then the sides of the rate, and the gram's price after them), so they say nothing the dollar's does not and carry the cost of converting as
 // if it were the metal's spread: they are left out.
 //
-// What is written, for each metal, an edge of the metal's ISIN (the gold of the other sources), the dollar, the London Bullion Market (XLBM), whose price the
-// fix is, and "KAR". It is one row of the metal with the other spot prices (on no market) when the rows are of an instrument whatever its market (plans/data-model.md):
+// What is written, for each metal, an edge of the metal's ISIN (the gold of the other sources), the dollar and "KAR", on the London Bullion Market (XLBM), whose
+// price the fix is, for gold, silver, platinum and palladium, and on no market for rhodium (it has no fix). It is one row of the metal with the other spot
+// prices when the rows are of an instrument whatever its market (plans/data-model.md):
 //   - the daily bars, one value a day, per troy ounce (the unit of the metals' ISINs), and the weekly bars of those (the 3 and 10 years read weeks,
 //     which the answer has none of);
 //   - the last day's price as the edge's `Quote`: a last price, with no bid or ask.
@@ -33,7 +34,7 @@ class KarSource : public Source {
 
   std::string name() const override { return "kar"; }
   std::vector<std::string> datasetCodes() const override { return {kKarDataset}; }
-  std::string description() const override { return "daily prices of gold, silver, platinum and palladium in dollars (no key)"; }
+  std::string description() const override { return "daily prices of gold, silver, platinum, palladium and rhodium in dollars (no key)"; }
   void load(Store &, Http &, SourceListener &) override;
   std::chrono::milliseconds refreshInterval() const override { return refresh_; }
 
