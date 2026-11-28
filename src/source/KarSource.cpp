@@ -122,7 +122,7 @@ void KarSource::load(Store & store, Http & http, SourceListener & listener) {
     return;
   }
   store.batch([&](Batch & b) {
-    const DatasetId dataset = b.addDataset(kKarDataset, "K. A. Rasmussen");
+    const DatasetId dataset = b.addDataset(kKarDataset, "KAR");
     const MarketId market = b.addMarket(kMarket, marketNameOfMic(kMarket));  // the fix is the London Bullion Market's price
     const InstrumentId quote = currencyNode(b, "USD");
     for (auto & [code, s] : series) {
