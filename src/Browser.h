@@ -92,8 +92,10 @@ class Browser {
   void requestHistory();
   // Shows what the store holds now, keeping the sort, the scroll position and the selected row.
   void refresh();
-  // Does so unless it did lately, in which case it does when it is time.
-  void requestRefresh();
+  // The view is changed by what arrives (the store's data, icons, a source's message) only once every min_refresh_, all at
+  // the same time: whatever is waiting is shown together when it is time, and at once when it has been a while. True while
+  // something still waits, so the next frame asks again.
+  bool flushUpdates();
   void layout(int rows, int cols);
   // The info line's help: the keys as this display's keymap binds them.
   void showHelp();
@@ -188,5 +190,7 @@ class Browser {
   std::chrono::steady_clock::time_point last_refresh_{};
   std::optional<int> action_row_;  // the row a button was clicked on, while its command runs: not the selected one
   bool pending_ = false;        // the store changed and the table does not show it yet
+  bool icons_pending_ = false;  // an icon arrived and the table does not show it yet
+  std::optional<std::string> message_pending_;  // what a source said, not yet on the status line
   cellui::Connection period_tag_, button_, chart_click_, chart_enter_, resized_, display_, tag_, message_, frame_, changed_, said_, loaded_;
 };
